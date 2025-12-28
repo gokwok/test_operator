@@ -36,6 +36,10 @@ interface ScreenWithDisplayId extends screen.Screen {
   displayId?: number;
 }
 
+interface AppControllerFocusApi {
+  requestFocus?: (targetWindowId: number) => boolean;
+}
+
 export class VTSBackend {
   private ctx: common.UIAbilityContext;
   private runtime: VTSRuntimeInfo | null = null;
@@ -208,6 +212,11 @@ export class VTSBackend {
         const ret = AppController.transferWindowToTargetScreen(winInfo.windowId, 0, false);
         console.info(`${LOG_TAG} transferWindowToTargetScreen window ${winInfo.windowId} -> main ret ${ret}`);
         transferred += 1;
+        const focusApi = AppController as AppControllerFocusApi;
+        if (typeof focusApi.requestFocus === 'function') {
+          const ok = focusApi.requestFocus(winInfo.windowId);
+          console.info(`${LOG_TAG} requestFocus window ${winInfo.windowId} ok=${ok}`);
+        }
       } catch (e) {
         const err = e as BusinessError;
         console.error(`${LOG_TAG} transferWindowToTargetScreen failed. Code:${err.code}, message:${err.message}`);
