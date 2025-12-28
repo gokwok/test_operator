@@ -13,6 +13,48 @@ const POINTER_ACTION_DOWN: number = 2;
 const POINTER_ACTION_MOVE: number = 3;
 const POINTER_ACTION_UP: number = 4;
 
+enum defaultInputMethodConnId {
+  UNREGISTER_VIRTUALSCREEN = 0,
+  REGISTER_VIRTUALSCREEN = 1,
+  UNREGISTER_MAINSCREEN = 2,
+  REGISTER_MAINSCREEN = 3,
+  UNREGISTER_NOTIFY_ONLY_MAIN = 4,
+  REGISTER_NOTIFY_ONLY_MAIN = 5,
+}
+
+enum defaultInputMethodOperatorId {
+  INSERT = 0,
+  DELETE_FORWARD = 1,
+  DELETE_BACKWARD = 2,
+  MOVE_CURSOR = 3,
+  ENTER = 4,
+}
+
+function onInputStatusFunc(unused: undefined, status: number): void {
+  void unused;
+  void status;
+}
+
+function onSetCallingWindowFunc(unused: undefined, windowId: number): void {
+  void unused;
+  void windowId;
+}
+
+function onSelectionChangeFunc(unused: undefined, data: AppController.onSelChgParam): void {
+  void unused;
+  void data;
+}
+
+function onTextChangeFunc(unused: undefined, data: string): void {
+  void unused;
+  void data;
+}
+
+function onFunctionKeyFunc(unused: undefined, funcKey: number): void {
+  void unused;
+  void funcKey;
+}
+
 export interface AppTarget {
   bundleName: string;
   abilityName: string;
@@ -44,6 +86,7 @@ export class VTSBackend {
   private ctx: common.UIAbilityContext;
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;
+  private imeRegistered: boolean = false;
 
   constructor(ctx: common.UIAbilityContext) {
     this.ctx = ctx;
@@ -118,6 +161,10 @@ export class VTSBackend {
     const screenId = this.runtime.screenId;
     this.runtime = null;
     this.lastTarget = null;
+    if (this.imeRegistered) {
+      this.unregisterImeBestEffort(screenId);
+      this.imeRegistered = false;
+    }
     try {
       await screen.destroyVirtualScreen(screenId);
     } catch (e) {
@@ -153,6 +200,31 @@ export class VTSBackend {
       const err = e as BusinessError;
       throw new Error(`startAbility failed. Code:${err.code}, message:${err.message}`);
     }
+  }
+
+  async inputText(text: string, sendEnter: boolean): Promise<void> {
+    const rt = this.requireRuntime();
+    if (!this.imeRegistered) {
+      this.registerImeBestEffort(rt.screenId);
+      this.imeRegistered = true;
+    }
+    if (text.length > 0) {
+      AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
+    }
+    if (sendEnter) {
+      AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
+    }
+  }
+
+  async pressEnter(): Promise<void> {
+    if (!this.runtime) {
+      return;
+    }
+    if (!this.imeRegistered) {
+      this.registerImeBestEffort(this.runtime.screenId);
+      this.imeRegistered = true;
+    }
+    AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
   }
 
   async screenshotBase64(): Promise<string> {
@@ -197,7 +269,24 @@ export class VTSBackend {
     AppController.processPointEvent(event);
   }
 
-  async swipePx(startX: number, startY: number, endX: number, endY: number): Promise<void> {
+  async longClickPx(x: number, y: number, durationMs: number): Promise<void> {
+    const rt = this.requireRuntime();
+    const event: AppController.PointEvent = {
+      id: -1,
+      pressed: 0,
+      action: POINTER_ACTION_DOWN,
+      type: 2,
+      displayX: x,
+      displayY: y,
+      displayId: rt.screenId,
+    };
+    AppController.processPointEvent(event);
+    await sleep(Math.max(0, durationMs));
+    event.action = POINTER_ACTION_UP;
+    AppController.processPointEvent(event);
+  }
+
+  async swipePx(startX: number, startY: number, endX: number, endY: number, durationMs?: number): Promise<void> {
     const rt = this.requireRuntime();
     const event: AppController.PointEvent = {
       id: -1,
@@ -218,6 +307,7 @@ export class VTSBackend {
     if (steps < 1) {
       steps = 1;
     }
+    const stepDelay = durationMs !== undefined && durationMs > 0 ? Math.floor(durationMs / steps) : 0;
     const stepX = Math.floor(dx / steps);
     const stepY = Math.floor(dy / steps);
     let curX = startX;
@@ -228,6 +318,9 @@ export class VTSBackend {
       event.displayX = curX;
       event.displayY = curY;
       AppController.processPointEvent(event);
+      if (stepDelay > 0) {
+        await sleep(stepDelay);
+      }
     }
 
     event.displayX = endX;
@@ -284,6 +377,50 @@ export class VTSBackend {
     return this.runtime;
   }
 
+  private registerImeBestEffort(screenId: number): void {
+    const textCallback: AppController.inputViewCallback = {
+      onSelectionChange: onSelectionChangeFunc,
+      onTextChange: onTextChangeFunc,
+      onFunctionKey: onFunctionKeyFunc,
+    };
+    const sysCallback: AppController.inputSysCallback = {
+      onInputStatus: onInputStatusFunc,
+      onSetCallingWindow: onSetCallingWindowFunc,
+    };
+    try {
+      AppController.connectInputMethod(
+        defaultInputMethodConnId.REGISTER_VIRTUALSCREEN,
+        screenId,
+        textCallback,
+        sysCallback
+      );
+    } catch (e) {
+      console.error(`${LOG_TAG} connectInputMethod failed: ${String(e)}`);
+    }
+  }
+
+  private unregisterImeBestEffort(screenId: number): void {
+    const textCallback: AppController.inputViewCallback = {
+      onSelectionChange: onSelectionChangeFunc,
+      onTextChange: onTextChangeFunc,
+      onFunctionKey: onFunctionKeyFunc,
+    };
+    const sysCallback: AppController.inputSysCallback = {
+      onInputStatus: onInputStatusFunc,
+      onSetCallingWindow: onSetCallingWindowFunc,
+    };
+    try {
+      AppController.connectInputMethod(
+        defaultInputMethodConnId.UNREGISTER_VIRTUALSCREEN,
+        screenId,
+        textCallback,
+        sysCallback
+      );
+    } catch (e) {
+      console.error(`${LOG_TAG} disconnectInputMethod failed: ${String(e)}`);
+    }
+  }
+
   private async startAppOnMain(target: AppTarget): Promise<void> {
     const want: Want = {
       bundleName: target.bundleName,
@@ -322,4 +459,8 @@ async function pixelMapToBase64(format: string, pixelMap: image.PixelMap): Promi
   });
   const base64 = new util.Base64Helper();
   return base64.encodeToStringSync(new Uint8Array(value));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -9,7 +9,7 @@ import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_compo
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
 import type { common, Want } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
-import type { AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
+import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 
 @Entry
@@ -21,6 +21,8 @@ struct Index {
   @State vtsStatus: string = 'idle';
   @State vtsError: string = '';
   @State vtsScreenshotInfo: string = '';
+  @State actionInput: string = 'hello';
+  @State actionResult: string = '';
   @State targetBundleName: string = 'com.sina.weibo.stage';
   @State targetAbilityName: string = 'EntryAbility';
   private readonly initialStatus: string = 'hello world';
@@ -374,6 +376,89 @@ struct Index {
                 })
             }
 
+            Text('Action Debug')
+              .fontSize(12)
+              .fontColor(Color.White)
+              .fontWeight(FontWeight.Medium)
+
+            Row({ space: 8 }) {
+              TextInput({ placeholder: 'type content', text: this.actionInput })
+                .layoutWeight(1)
+                .height(32)
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#1A1B22')
+                .borderRadius(10)
+                .padding({ left: 8, right: 8 })
+                .onChange((v: string) => {
+                  this.actionInput = v;
+                })
+            }
+
+            Row({ space: 8 }) {
+              Button('Long Click')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onActionLongClick();
+                })
+
+              Button('Action Swipe')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onActionSwipe();
+                })
+            }
+
+            Row({ space: 8 }) {
+              Button('Type')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onActionType(false);
+                })
+
+              Button('Type @C')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onActionType(true);
+                })
+
+              Button('Back')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onActionPressBack();
+                })
+
+              Button('Enter')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onActionPressEnter();
+                })
+            }
+
             Row({ space: 8 }) {
               TextInput({ placeholder: 'bundleName', text: this.targetBundleName })
                 .layoutWeight(1)
@@ -408,6 +493,12 @@ struct Index {
 
             if (this.vtsScreenshotInfo.length > 0) {
               Text(this.vtsScreenshotInfo)
+                .fontSize(11)
+                .fontColor('#B8C1CC')
+            }
+
+            if (this.actionResult.length > 0) {
+              Text(this.actionResult)
                 .fontSize(11)
                 .fontColor('#B8C1CC')
             }
@@ -625,5 +716,62 @@ struct Index {
     const max = Math.max(1, limit);
     const px = Math.floor(clamped * (max - 1));
     return px < 0 ? 0 : px;
+  }
+
+  private async runAction(label: string, action: AgentAction): Promise<void> {
+    this.vtsError = '';
+    try {
+      await this.ensureRuntime();
+      const result: ActionResult = await this.getAgentSpace().executeAction(action);
+      const msg = result.error ? ` error=${result.error}` : '';
+      this.actionResult = `${label}: ${result.status}${msg}`;
+    } catch (e) {
+      this.vtsError = `Action ${label} failed: ${String(e)}`;
+    }
+  }
+
+  private async onActionLongClick(): Promise<void> {
+    const params: ActionParameters = {
+      point: [500, 500],
+      duration_ms: 1500,
+    };
+    const action: AgentAction = { name: 'long_click', parameters: params };
+    await this.runAction('long_click', action);
+  }
+
+  private async onActionSwipe(): Promise<void> {
+    const params: ActionParameters = {
+      start_point: [500, 800],
+      end_point: [500, 200],
+      duration_ms: 300,
+    };
+    const action: AgentAction = { name: 'swipe', parameters: params };
+    await this.runAction('swipe', action);
+  }
+
+  private async onActionType(usePoint: boolean): Promise<void> {
+    const content = this.actionInput;
+    if (content.length === 0) {
+      this.vtsError = 'Type content is empty';
+      return;
+    }
+    const params: ActionParameters = {
+      content,
+    };
+    if (usePoint) {
+      params.point = [500, 500];
+    }
+    const action: AgentAction = { name: 'type', parameters: params };
+    await this.runAction('type', action);
+  }
+
+  private async onActionPressBack(): Promise<void> {
+    const action: AgentAction = { name: 'press_back' };
+    await this.runAction('press_back', action);
+  }
+
+  private async onActionPressEnter(): Promise<void> {
+    const action: AgentAction = { name: 'press_enter' };
+    await this.runAction('press_enter', action);
   }
 }
