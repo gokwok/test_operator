@@ -458,8 +458,8 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
-      await this.getVtsBackend().transferToMain();
-      this.vtsStatus = 'VTS transfer -> main';
+      const count = await this.getVtsBackend().transferToMain();
+      this.vtsStatus = `VTS transfer -> main (windows: ${count})`;
     } catch (e) {
       this.vtsError = `VTS transfer failed: ${String(e)}`;
     }

@@ -190,10 +190,42 @@ export class VTSBackend {
     AppController.processPointEvent(event);
   }
 
-  async transferToMain(): Promise<void> {
+  async transferToMain(): Promise<number> {
     const rt = this.requireRuntime();
+    const primaryFilterId = rt.displayId ?? rt.screenId;
+    let winLst = this.listWindowsBestEffort(primaryFilterId);
+    if (
+      winLst.length === 0 &&
+      rt.displayId !== undefined &&
+      rt.displayId !== rt.screenId
+    ) {
+      winLst = this.listWindowsBestEffort(rt.screenId);
+    }
+
+    let transferred = 0;
+    for (const winInfo of winLst) {
+      try {
+        const ret = AppController.transferWindowToTargetScreen(winInfo.windowId, 0, false);
+        console.info(`${LOG_TAG} transferWindowToTargetScreen window ${winInfo.windowId} -> main ret ${ret}`);
+        transferred += 1;
+      } catch (e) {
+        const err = e as BusinessError;
+        console.error(`${LOG_TAG} transferWindowToTargetScreen failed. Code:${err.code}, message:${err.message}`);
+      }
+    }
+    return transferred;
+  }
+
+  private requireRuntime(): VTSRuntimeInfo {
+    if (!this.runtime) {
+      throw new Error('VTS is not created');
+    }
+    return this.runtime;
+  }
+
+  private listWindowsBestEffort(displayIdFilter: number): AppController.WindowInfoUnit[] {
     const opt: AppController.ListWindowInfoOption = {
-      displayIdFilter: rt.screenId,
+      displayIdFilter,
       windowInfoFilterOption: 1,
       windowInfoTypeOption: -1,
       windowIdFilter: 0,
@@ -202,31 +234,13 @@ export class VTSBackend {
       abilityNameFilter: '',
     };
 
-    let winLst: AppController.WindowInfoUnit[] = [];
     try {
-      winLst = AppController.listWindowInfo(opt);
+      return AppController.listWindowInfo(opt);
     } catch (e) {
       const err = e as BusinessError;
       console.error(`${LOG_TAG} listWindowInfo failed. Code:${err.code}, message:${err.message}`);
-      return;
+      return [];
     }
-
-    for (const winInfo of winLst) {
-      try {
-        const ret = AppController.transferWindowToTargetScreen(winInfo.windowId, 0, false);
-        console.info(`${LOG_TAG} transferWindowToTargetScreen window ${winInfo.windowId} -> main ret ${ret}`);
-      } catch (e) {
-        const err = e as BusinessError;
-        console.error(`${LOG_TAG} transferWindowToTargetScreen failed. Code:${err.code}, message:${err.message}`);
-      }
-    }
-  }
-
-  private requireRuntime(): VTSRuntimeInfo {
-    if (!this.runtime) {
-      throw new Error('VTS is not created');
-    }
-    return this.runtime;
   }
 }
 
