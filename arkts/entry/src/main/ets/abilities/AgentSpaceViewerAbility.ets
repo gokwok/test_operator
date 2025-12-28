@@ -65,6 +65,18 @@ export default class AgentSpaceViewerAbility extends UIAbility {
 
   private getBoolParam(want: Want, key: string): boolean {
     const val = want?.parameters?.[key];
-    return typeof val === 'boolean' ? val : false;
+    if (typeof val === 'boolean') {
+      return val;
+    }
+    if (val instanceof Boolean) {
+      return val.valueOf();
+    }
+    if (typeof val === 'number') {
+      return val !== 0;
+    }
+    if (typeof val === 'string') {
+      return val === 'true';
+    }
+    return false;
   }
 }
