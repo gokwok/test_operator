@@ -34,12 +34,6 @@ export default class AgentSpaceViewerAbility extends UIAbility {
     windowClass.setWindowLayoutFullScreen(true).catch((err: BusinessError) => {
       hilog.error(DOMAIN, TAG, 'setWindowLayoutFullScreen failed. Code:%{public}d, msg:%{public}s', err.code, err.message);
     });
-    windowClass.setSpecificSystemBarEnabled('status', false).catch((err: BusinessError) => {
-      hilog.error(DOMAIN, TAG, 'hide status bar failed. Code:%{public}d, msg:%{public}s', err.code, err.message);
-    });
-    windowClass.setSpecificSystemBarEnabled('navigationIndicator', false).catch((err: BusinessError) => {
-      hilog.error(DOMAIN, TAG, 'hide navigation bar failed. Code:%{public}d, msg:%{public}s', err.code, err.message);
-    });
 
     if (this.currentWindowStage === null) {
       this.currentWindowStage = windowStage;

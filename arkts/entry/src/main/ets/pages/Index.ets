@@ -299,14 +299,46 @@ struct Index {
             }
 
             Row({ space: 8 }) {
-              Button('Click')
+              Button('Click TL')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
                 .borderRadius(14)
                 .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                 .onClick(() => {
-                  void this.onVtsClickCenter();
+                  void this.onVtsClickPreset(0.1, 0.2);
+                })
+
+              Button('Click C')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onVtsClickPreset(0.5, 0.5);
+                })
+
+              Button('Click BR')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onVtsClickPreset(0.9, 0.8);
+                })
+            }
+
+            Row({ space: 8 }) {
+              Button('Swipe Up')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onVtsSwipeUp();
                 })
 
               Button('Shot')
@@ -327,6 +359,18 @@ struct Index {
                 .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                 .onClick(() => {
                   void this.onVtsTransfer();
+                })
+            }
+
+            Row({ space: 8 }) {
+              Button('Stop')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.onVtsStop();
                 })
             }
 
@@ -500,12 +544,41 @@ struct Index {
     }
   }
 
+  private async onVtsClickPreset(rx: number, ry: number): Promise<void> {
+    this.vtsError = '';
+    try {
+      const rt = await this.ensureRuntime();
+      const x = this.ratioToPx(rt.widthPx, rx);
+      const y = this.ratioToPx(rt.heightPx, ry);
+      await this.getAgentSpace().clickPx(x, y);
+      this.vtsStatus = `click: (${x}, ${y})`;
+    } catch (e) {
+      this.vtsError = `VTS click failed: ${String(e)}`;
+    }
+  }
+
+  private async onVtsSwipeUp(): Promise<void> {
+    this.vtsError = '';
+    try {
+      const rt = await this.ensureRuntime();
+      const x = this.ratioToPx(rt.widthPx, 0.5);
+      const startY = this.ratioToPx(rt.heightPx, 0.8);
+      const endY = this.ratioToPx(rt.heightPx, 0.2);
+      await this.getAgentSpace().swipePx(x, startY, x, endY);
+      this.vtsStatus = `swipe: (${x}, ${startY}) -> (${x}, ${endY})`;
+    } catch (e) {
+      this.vtsError = `VTS swipe failed: ${String(e)}`;
+    }
+  }
+
   private async onVtsScreenshot(): Promise<void> {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
+      const startMs = Date.now();
       const raw = await this.getAgentSpace().screenshotBase64();
-      this.vtsScreenshotInfo = `screenshot(base64) len: ${raw.length}`;
+      const costMs = Date.now() - startMs;
+      this.vtsScreenshotInfo = `screenshot len: ${raw.length} ms: ${costMs}`;
       if (raw.length === 0) {
         this.vtsError = 'Screenshot empty';
       }
@@ -533,5 +606,24 @@ struct Index {
     } catch (e) {
       this.vtsError = `VTS destroy failed: ${String(e)}`;
     }
+  }
+
+  private async onVtsStop(): Promise<void> {
+    this.vtsError = '';
+    try {
+      await this.ensureRuntime();
+      const count = await this.getAgentSpace().transferToMain();
+      await this.getAgentSpace().destroy();
+      this.vtsStatus = `stopped (windows: ${count})`;
+    } catch (e) {
+      this.vtsError = `VTS stop failed: ${String(e)}`;
+    }
+  }
+
+  private ratioToPx(limit: number, ratio: number): number {
+    const clamped = Math.min(Math.max(ratio, 0), 1);
+    const max = Math.max(1, limit);
+    const px = Math.floor(clamped * (max - 1));
+    return px < 0 ? 0 : px;
   }
 }

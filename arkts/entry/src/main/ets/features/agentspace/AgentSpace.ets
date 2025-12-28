@@ -99,6 +99,11 @@ export class AgentSpace {
     await this.backend.clickPx(x, y);
   }
 
+  async swipePx(startX: number, startY: number, endX: number, endY: number): Promise<void> {
+    await this.ensureVts();
+    await this.backend.swipePx(startX, startY, endX, endY);
+  }
+
   async screenshotBase64(): Promise<string> {
     await this.ensureVts();
     return await this.backend.screenshotBase64();

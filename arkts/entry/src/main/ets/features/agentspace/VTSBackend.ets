@@ -197,6 +197,47 @@ export class VTSBackend {
     AppController.processPointEvent(event);
   }
 
+  async swipePx(startX: number, startY: number, endX: number, endY: number): Promise<void> {
+    const rt = this.requireRuntime();
+    const event: AppController.PointEvent = {
+      id: -1,
+      pressed: 0,
+      action: POINTER_ACTION_DOWN,
+      type: 2,
+      displayX: startX,
+      displayY: startY,
+      displayId: rt.screenId,
+    };
+    AppController.processPointEvent(event);
+    event.action = POINTER_ACTION_MOVE;
+    AppController.processPointEvent(event);
+
+    const dx = endX - startX;
+    const dy = endY - startY;
+    let steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 10);
+    if (steps < 1) {
+      steps = 1;
+    }
+    const stepX = Math.floor(dx / steps);
+    const stepY = Math.floor(dy / steps);
+    let curX = startX;
+    let curY = startY;
+    for (let i = 0; i < steps; i++) {
+      curX += stepX;
+      curY += stepY;
+      event.displayX = curX;
+      event.displayY = curY;
+      AppController.processPointEvent(event);
+    }
+
+    event.displayX = endX;
+    event.displayY = endY;
+    AppController.processPointEvent(event);
+
+    event.action = POINTER_ACTION_UP;
+    AppController.processPointEvent(event);
+  }
+
   async transferToMain(): Promise<number> {
     const rt = this.requireRuntime();
     const primaryFilterId = rt.displayId ?? rt.screenId;
