@@ -43,6 +43,7 @@ interface AppControllerFocusApi {
 export class VTSBackend {
   private ctx: common.UIAbilityContext;
   private runtime: VTSRuntimeInfo | null = null;
+  private lastTarget: AppTarget | null = null;
 
   constructor(ctx: common.UIAbilityContext) {
     this.ctx = ctx;
@@ -116,6 +117,7 @@ export class VTSBackend {
     }
     const screenId = this.runtime.screenId;
     this.runtime = null;
+    this.lastTarget = null;
     try {
       await screen.destroyVirtualScreen(screenId);
     } catch (e) {
@@ -146,6 +148,7 @@ export class VTSBackend {
 
     try {
       await this.ctx.startAbility(want, opt);
+      this.lastTarget = target;
     } catch (e) {
       const err = e as BusinessError;
       throw new Error(`startAbility failed. Code:${err.code}, message:${err.message}`);
@@ -222,6 +225,14 @@ export class VTSBackend {
         console.error(`${LOG_TAG} transferWindowToTargetScreen failed. Code:${err.code}, message:${err.message}`);
       }
     }
+
+    if (this.lastTarget) {
+      try {
+        await this.startAppOnMain(this.lastTarget);
+      } catch (e) {
+        console.error(`${LOG_TAG} startAppOnMain failed: ${String(e)}`);
+      }
+    }
     return transferred;
   }
 
@@ -230,6 +241,14 @@ export class VTSBackend {
       throw new Error('VTS is not created');
     }
     return this.runtime;
+  }
+
+  private async startAppOnMain(target: AppTarget): Promise<void> {
+    const want: Want = {
+      bundleName: target.bundleName,
+      abilityName: target.abilityName,
+    };
+    await this.ctx.startAbility(want);
   }
 
   private listWindowsBestEffort(displayIdFilter: number): AppController.WindowInfoUnit[] {
