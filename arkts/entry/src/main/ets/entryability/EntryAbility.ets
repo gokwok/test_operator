@@ -22,6 +22,15 @@ export default class EntryAbility extends UIAbility {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    windowStage.getMainWindow()
+      .then((mainWindow: window.Window) => {
+        mainWindow.setWindowLayoutFullScreen(true);
+        mainWindow.setWindowSystemBarEnable([]);
+      })
+      .catch((err: Error) => {
+        hilog.error(DOMAIN, 'testTag', 'Failed to enable full screen. Cause: %{public}s', JSON.stringify(err));
+      });
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
