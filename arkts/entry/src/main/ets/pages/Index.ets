@@ -12,10 +12,7 @@ import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 
-interface CloseViewerParams {
-  [key: string]: Object;
-  closeViewer: Boolean;
-}
+const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 
 @Entry
 @Component
@@ -600,11 +597,10 @@ struct Index {
     this.vtsError = '';
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
-      const params: CloseViewerParams = { closeViewer: new Boolean(true) };
       const want: Want = {
         bundleName: 'com.huawei.aios.agent.operation',
         abilityName: 'AgentSpaceViewerAbility',
-        parameters: params,
+        action: VIEWER_CLOSE_ACTION,
       };
       await ctx.startAbility(want);
     } catch (e) {

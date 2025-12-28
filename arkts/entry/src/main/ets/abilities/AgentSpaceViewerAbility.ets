@@ -52,7 +52,7 @@ export default class AgentSpaceViewerAbility extends UIAbility {
   }
 
   private handleCloseIfNeeded(want: Want): boolean {
-    if (!this.getBoolParam(want, 'closeViewer')) {
+    if (want?.action !== VIEWER_CLOSE_ACTION) {
       return false;
     }
     const space = AgentSpace.getInstance(this.context);
@@ -62,21 +62,6 @@ export default class AgentSpaceViewerAbility extends UIAbility {
     });
     return true;
   }
-
-  private getBoolParam(want: Want, key: string): boolean {
-    const val = want?.parameters?.[key];
-    if (typeof val === 'boolean') {
-      return val;
-    }
-    if (val instanceof Boolean) {
-      return val.valueOf();
-    }
-    if (typeof val === 'number') {
-      return val !== 0;
-    }
-    if (typeof val === 'string') {
-      return val === 'true';
-    }
-    return false;
-  }
 }
+
+const VIEWER_CLOSE_ACTION: string = 'closeViewer';

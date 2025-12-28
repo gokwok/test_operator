@@ -48,13 +48,9 @@ interface AbilityStarterContext {
   startAbility?: (w: Want) => Promise<void> | void;
 }
 
-interface CloseViewerParams {
-  [key: string]: Object;
-  closeViewer: Boolean;
-}
-
 const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
+const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 
 export class AgentSpace {
   private static instance: AgentSpace | null = null;
@@ -374,18 +370,17 @@ export class AgentSpace {
     }
     const starterCtx: AbilityStarterContext = this.ctx as AbilityStarterContext;
     const starter = starterCtx.startAbility;
-    if (typeof starter !== 'function') {
+    if (typeof starter !== 'function') {3
       this.viewerActive = false;
       this.surfaceId = '';
       this.surfaceAttached = false;
       return;
     }
 
-    const params: CloseViewerParams = { closeViewer: new Boolean(true) };
     const want: Want = {
       bundleName: VIEWER_BUNDLE_NAME,
       abilityName: VIEWER_ABILITY_NAME,
-      parameters: params,
+      action: VIEWER_CLOSE_ACTION,
     };
     try {
       await starter(want);
