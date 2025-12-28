@@ -7,7 +7,7 @@ import {
 } from '../ui_components/InteractionEffectOverlay';
 import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
-import type { common } from '@kit.AbilityKit';
+import type { common, Want } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
@@ -18,7 +18,7 @@ struct Index {
   @State paletteIndex: number = 0;
   @State showStatus: boolean = false;
   @State showGlow: boolean = false;
-  @State vtsStatus: string = 'VTS: idle';
+  @State vtsStatus: string = 'idle';
   @State vtsError: string = '';
   @State vtsScreenshotInfo: string = '';
   @State targetBundleName: string = 'com.sina.weibo.stage';
@@ -228,14 +228,36 @@ struct Index {
               })
           }
 
+          Row({ space: 8 }) {
+            Button('Show Viewer')
+              .fontSize(12)
+              .fontColor(Color.White)
+              .backgroundColor('#2A2C34')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.onShowViewer();
+              })
+
+            Button('Close Viewer')
+              .fontSize(12)
+              .fontColor(Color.White)
+              .backgroundColor('#2A2C34')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.onCloseViewer();
+              })
+          }
+
           Column({ space: 8 }) {
-            Text('VTS Debug')
+            Text('Debug')
               .fontSize(12)
               .fontColor(Color.White)
               .fontWeight(FontWeight.Medium)
 
             Row({ space: 8 }) {
-              Button('VTS Create')
+              Button('Create')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -245,7 +267,7 @@ struct Index {
                   void this.onVtsCreate();
                 })
 
-              Button('VTS State')
+              Button('State')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -255,7 +277,7 @@ struct Index {
                   this.onVtsStatus();
                 })
 
-              Button('VTS Launch')
+              Button('Launch')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -265,7 +287,7 @@ struct Index {
                   void this.onVtsLaunch();
                 })
 
-              Button('VTS Destroy')
+              Button('Destroy')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -277,7 +299,7 @@ struct Index {
             }
 
             Row({ space: 8 }) {
-              Button('VTS Click')
+              Button('Click')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -287,7 +309,7 @@ struct Index {
                   void this.onVtsClickCenter();
                 })
 
-              Button('VTS Shot')
+              Button('Shot')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -297,7 +319,7 @@ struct Index {
                   void this.onVtsScreenshot();
                 })
 
-              Button('VTS Transfer')
+              Button('Transfer')
                 .fontSize(12)
                 .fontColor(Color.White)
                 .backgroundColor('#2A2C34')
@@ -388,7 +410,7 @@ struct Index {
 
   private formatRuntime(rt: AgentSpaceRuntimeInfo): string {
     const displayId = rt.displayId === undefined ? 'n/a' : String(rt.displayId);
-    return `VTS: screen=${rt.screenId} display=${displayId} size=${rt.widthPx}x${rt.heightPx} state=${rt.state} viewer=${rt.viewerActive} surface=${rt.surfaceAttached}`;
+    return `screen=${rt.screenId} display=${displayId} size=${rt.widthPx}x${rt.heightPx} state=${rt.state} viewer=${rt.viewerActive} surface=${rt.surfaceAttached}`;
   }
 
   private async onVtsCreate(): Promise<void> {
@@ -419,6 +441,36 @@ struct Index {
     return target;
   }
 
+  private async onShowViewer(): Promise<void> {
+    this.vtsError = '';
+    try {
+      await this.ensureRuntime();
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const want: Want = {
+        bundleName: 'com.huawei.aios.agent.operation',
+        abilityName: 'AgentSpaceViewerAbility',
+      };
+      await ctx.startAbility(want);
+    } catch (e) {
+      this.vtsError = `Show viewer failed: ${String(e)}`;
+    }
+  }
+
+  private async onCloseViewer(): Promise<void> {
+    this.vtsError = '';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const want: Want = {
+        bundleName: 'com.huawei.aios.agent.operation',
+        abilityName: 'AgentSpaceViewerAbility',
+        parameters: { closeViewer: true },
+      };
+      await ctx.startAbility(want);
+    } catch (e) {
+      this.vtsError = `Close viewer failed: ${String(e)}`;
+    }
+  }
+
   private async onVtsLaunch(): Promise<void> {
     this.vtsError = '';
     try {
@@ -429,7 +481,7 @@ struct Index {
         return;
       }
       await this.getAgentSpace().startApp(target);
-      this.vtsStatus = `VTS launch: ${target.bundleName}/${target.abilityName}`;
+      this.vtsStatus = `launch: ${target.bundleName}/${target.abilityName}`;
     } catch (e) {
       this.vtsError = `VTS launch failed: ${String(e)}`;
     }
@@ -442,7 +494,7 @@ struct Index {
       const x = Math.floor(rt.widthPx / 2);
       const y = Math.floor(rt.heightPx / 2);
       await this.getAgentSpace().clickPx(x, y);
-      this.vtsStatus = `VTS click: (${x}, ${y})`;
+      this.vtsStatus = `click: (${x}, ${y})`;
     } catch (e) {
       this.vtsError = `VTS click failed: ${String(e)}`;
     }
@@ -467,7 +519,7 @@ struct Index {
     try {
       await this.ensureRuntime();
       const count = await this.getAgentSpace().transferToMain();
-      this.vtsStatus = `VTS transfer -> main (windows: ${count})`;
+      this.vtsStatus = `transfer -> main (windows: ${count})`;
     } catch (e) {
       this.vtsError = `VTS transfer failed: ${String(e)}`;
     }
@@ -477,7 +529,7 @@ struct Index {
     this.vtsError = '';
     try {
       await this.getAgentSpace().destroy();
-      this.vtsStatus = 'VTS: destroyed';
+      this.vtsStatus = 'destroyed';
     } catch (e) {
       this.vtsError = `VTS destroy failed: ${String(e)}`;
     }
