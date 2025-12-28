@@ -159,10 +159,11 @@ export class VTSBackend {
       return;
     }
     const screenId = this.runtime.screenId;
+    const imeDisplayId = this.runtime.displayId ?? this.runtime.screenId;
     this.runtime = null;
     this.lastTarget = null;
     if (this.imeRegistered) {
-      this.unregisterImeBestEffort(screenId);
+      this.unregisterImeBestEffort(imeDisplayId);
       this.imeRegistered = false;
     }
     try {
@@ -204,10 +205,11 @@ export class VTSBackend {
 
   async inputText(text: string, sendEnter: boolean): Promise<void> {
     const rt = this.requireRuntime();
+    const imeDisplayId = rt.displayId ?? rt.screenId;
     if (!this.imeRegistered) {
-      this.registerImeBestEffort(rt.screenId);
-      this.imeRegistered = true;
+      this.imeRegistered = this.registerImeBestEffort(imeDisplayId);
     }
+    this.focusWindowBestEffort(imeDisplayId);
     if (text.length > 0) {
       AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
     }
@@ -220,10 +222,11 @@ export class VTSBackend {
     if (!this.runtime) {
       return;
     }
+    const imeDisplayId = this.runtime.displayId ?? this.runtime.screenId;
     if (!this.imeRegistered) {
-      this.registerImeBestEffort(this.runtime.screenId);
-      this.imeRegistered = true;
+      this.imeRegistered = this.registerImeBestEffort(imeDisplayId);
     }
+    this.focusWindowBestEffort(imeDisplayId);
     AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
   }
 
@@ -377,7 +380,7 @@ export class VTSBackend {
     return this.runtime;
   }
 
-  private registerImeBestEffort(screenId: number): void {
+  private registerImeBestEffort(displayId: number): boolean {
     const textCallback: AppController.inputViewCallback = {
       onSelectionChange: onSelectionChangeFunc,
       onTextChange: onTextChangeFunc,
@@ -388,18 +391,23 @@ export class VTSBackend {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
-      AppController.connectInputMethod(
+      const ret = AppController.connectInputMethod(
         defaultInputMethodConnId.REGISTER_VIRTUALSCREEN,
-        screenId,
+        displayId,
         textCallback,
         sysCallback
       );
+      if (ret !== 0) {
+        console.error(`${LOG_TAG} connectInputMethod ret ${ret}`);
+      }
+      return ret === 0;
     } catch (e) {
       console.error(`${LOG_TAG} connectInputMethod failed: ${String(e)}`);
+      return false;
     }
   }
 
-  private unregisterImeBestEffort(screenId: number): void {
+  private unregisterImeBestEffort(displayId: number): void {
     const textCallback: AppController.inputViewCallback = {
       onSelectionChange: onSelectionChangeFunc,
       onTextChange: onTextChangeFunc,
@@ -412,7 +420,7 @@ export class VTSBackend {
     try {
       AppController.connectInputMethod(
         defaultInputMethodConnId.UNREGISTER_VIRTUALSCREEN,
-        screenId,
+        displayId,
         textCallback,
         sysCallback
       );
@@ -427,6 +435,27 @@ export class VTSBackend {
       abilityName: target.abilityName,
     };
     await this.ctx.startAbility(want);
+  }
+
+  private focusWindowBestEffort(displayId: number): void {
+    const winLst = this.listWindowsBestEffort(displayId);
+    if (winLst.length === 0) {
+      return;
+    }
+    let target = winLst[0];
+    if (this.lastTarget) {
+      const match = winLst.find((win) =>
+        win.bundleName === this.lastTarget?.bundleName && win.abilityName === this.lastTarget?.abilityName
+      );
+      if (match) {
+        target = match;
+      }
+    }
+    const focusApi = AppController as AppControllerFocusApi;
+    if (typeof focusApi.requestFocus === 'function') {
+      const ok = focusApi.requestFocus(target.windowId);
+      console.info(`${LOG_TAG} requestFocus window ${target.windowId} ok=${ok}`);
+    }
   }
 
   private listWindowsBestEffort(displayIdFilter: number): AppController.WindowInfoUnit[] {
