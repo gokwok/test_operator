@@ -8,16 +8,16 @@ import {
 import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
 import type { common } from '@kit.AbilityKit';
-import { VTSBackend } from '../features/agentspace/VTSBackend';
-import type { AppTarget, VTSRuntimeInfo } from '../features/agentspace/VTSBackend';
+import { AgentSpace } from '../features/agentspace/AgentSpace';
+import type { AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
+import type { AppTarget } from '../features/agentspace/VTSBackend';
 
 @Entry
 @Component
 struct Index {
-  @State message: string = 'Hello World';
   @State paletteIndex: number = 0;
-  @State showStatus: boolean = true;
-  @State showGlow: boolean = true;
+  @State showStatus: boolean = false;
+  @State showGlow: boolean = false;
   @State vtsStatus: string = 'VTS: idle';
   @State vtsError: string = '';
   @State vtsScreenshotInfo: string = '';
@@ -26,7 +26,7 @@ struct Index {
   private readonly initialStatus: string = 'hello world';
   private readonly statusResetDelayMs: number = 260;
   private statusResetTimerId: number = -1;
-  private vtsBackend: VTSBackend | null = null;
+  private agentSpace: AgentSpace | null = null;
 
   private readonly palettes: GlowPalette[] = GLOW_PALETTES;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
@@ -58,6 +58,12 @@ struct Index {
   private readonly swipeEnd: InteractionPoint = { x: 800, y: 300 };
   private readonly swipeOptions: InteractionEffectOptions = { durationMs: 800 };
 
+  aboutToAppear(): void {
+    this.showGlow = false;
+    this.showStatus = false;
+    this.orbController.hide();
+  }
+
   private getActivePalette(): GlowPalette {
     if (this.paletteIndex < 0 || this.paletteIndex >= this.palettes.length) {
       return this.palettes[0];
@@ -81,19 +87,6 @@ struct Index {
         .height('100%')
 
       RelativeContainer() {
-        Text(this.message)
-          .id('HelloWorld')
-          .fontSize($r('app.float.page_text_font_size'))
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .alignRules({
-            center: { anchor: '__container__', align: VerticalAlign.Center },
-            middle: { anchor: '__container__', align: HorizontalAlign.Center }
-          })
-          .onClick(() => {
-            this.message = this.message === 'Hello World' ? 'Welcome' : 'Hello World';
-          })
-
         Column({ space: 12 }) {
           Row({ space: 8 }) {
             ForEach(this.palettes, (item: GlowPalette, index: number) => {
@@ -252,6 +245,16 @@ struct Index {
                   void this.onVtsCreate();
                 })
 
+              Button('VTS State')
+                .fontSize(12)
+                .fontColor(Color.White)
+                .backgroundColor('#2A2C34')
+                .borderRadius(14)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.onVtsStatus();
+                })
+
               Button('VTS Launch')
                 .fontSize(12)
                 .fontColor(Color.White)
@@ -369,28 +372,23 @@ struct Index {
     .width('100%')
   }
 
-  private getVtsBackend(): VTSBackend {
-    const ctx = getContext(this) as common.UIAbilityContext;
-    if (!this.vtsBackend) {
-      this.vtsBackend = new VTSBackend(ctx);
+  private getAgentSpace(): AgentSpace {
+    const ctx = getContext(this) as common.Context;
+    if (!this.agentSpace) {
+      this.agentSpace = AgentSpace.getInstance(ctx);
     } else {
-      this.vtsBackend.updateContext(ctx);
+      this.agentSpace.updateContext(ctx);
     }
-    return this.vtsBackend;
+    return this.agentSpace;
   }
 
-  private async ensureRuntime(): Promise<VTSRuntimeInfo> {
-    const backend = this.getVtsBackend();
-    const rt = backend.getRuntime();
-    if (rt) {
-      return rt;
-    }
-    return await backend.create();
+  private async ensureRuntime(): Promise<AgentSpaceRuntimeInfo> {
+    return await this.getAgentSpace().ensureVts();
   }
 
-  private formatRuntime(rt: VTSRuntimeInfo): string {
+  private formatRuntime(rt: AgentSpaceRuntimeInfo): string {
     const displayId = rt.displayId === undefined ? 'n/a' : String(rt.displayId);
-    return `VTS: screen=${rt.screenId} display=${displayId} size=${rt.widthPx}x${rt.heightPx}`;
+    return `VTS: screen=${rt.screenId} display=${displayId} size=${rt.widthPx}x${rt.heightPx} state=${rt.state} viewer=${rt.viewerActive} surface=${rt.surfaceAttached}`;
   }
 
   private async onVtsCreate(): Promise<void> {
@@ -400,6 +398,16 @@ struct Index {
       this.vtsStatus = this.formatRuntime(rt);
     } catch (e) {
       this.vtsError = `VTS create failed: ${String(e)}`;
+    }
+  }
+
+  private onVtsStatus(): void {
+    this.vtsError = '';
+    try {
+      const rt = this.getAgentSpace().getRuntimeInfo();
+      this.vtsStatus = this.formatRuntime(rt);
+    } catch (e) {
+      this.vtsError = `VTS status failed: ${String(e)}`;
     }
   }
 
@@ -420,7 +428,7 @@ struct Index {
         this.vtsError = 'Target bundle/ability is empty';
         return;
       }
-      await this.getVtsBackend().startApp(target);
+      await this.getAgentSpace().startApp(target);
       this.vtsStatus = `VTS launch: ${target.bundleName}/${target.abilityName}`;
     } catch (e) {
       this.vtsError = `VTS launch failed: ${String(e)}`;
@@ -433,7 +441,7 @@ struct Index {
       const rt = await this.ensureRuntime();
       const x = Math.floor(rt.widthPx / 2);
       const y = Math.floor(rt.heightPx / 2);
-      await this.getVtsBackend().clickPx(x, y);
+      await this.getAgentSpace().clickPx(x, y);
       this.vtsStatus = `VTS click: (${x}, ${y})`;
     } catch (e) {
       this.vtsError = `VTS click failed: ${String(e)}`;
@@ -444,7 +452,7 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
-      const raw = await this.getVtsBackend().screenshotBase64();
+      const raw = await this.getAgentSpace().screenshotBase64();
       this.vtsScreenshotInfo = `screenshot(base64) len: ${raw.length}`;
       if (raw.length === 0) {
         this.vtsError = 'Screenshot empty';
@@ -458,7 +466,7 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
-      const count = await this.getVtsBackend().transferToMain();
+      const count = await this.getAgentSpace().transferToMain();
       this.vtsStatus = `VTS transfer -> main (windows: ${count})`;
     } catch (e) {
       this.vtsError = `VTS transfer failed: ${String(e)}`;
@@ -468,7 +476,7 @@ struct Index {
   private async onVtsDestroy(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.getVtsBackend().destroy();
+      await this.getAgentSpace().destroy();
       this.vtsStatus = 'VTS: destroyed';
     } catch (e) {
       this.vtsError = `VTS destroy failed: ${String(e)}`;
