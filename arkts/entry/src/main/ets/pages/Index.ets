@@ -595,10 +595,11 @@ struct Index {
     this.vtsError = '';
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
+      const params: Record<string, Object> = { closeViewer: true as unknown as Object };
       const want: Want = {
         bundleName: 'com.huawei.aios.agent.operation',
         abilityName: 'AgentSpaceViewerAbility',
-        parameters: { closeViewer: true },
+        parameters: params,
       };
       await ctx.startAbility(want);
     } catch (e) {

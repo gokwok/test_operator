@@ -44,10 +44,6 @@ export interface ActionParameters {
   options?: Array<string>;
 }
 
-interface CloseViewerParams {
-  closeViewer: boolean;
-}
-
 interface AbilityStarterContext {
   startAbility?: (w: Want) => Promise<void> | void;
 }
@@ -334,7 +330,14 @@ export class AgentSpace {
     if (!params) {
       return null;
     }
-    const raw = params[key];
+    let raw: Array<number> | undefined;
+    if (key === 'point') {
+      raw = params.point;
+    } else if (key === 'start_point') {
+      raw = params.start_point;
+    } else {
+      raw = params.end_point;
+    }
     if (!raw || raw.length < 2) {
       return null;
     }
@@ -373,7 +376,7 @@ export class AgentSpace {
       return;
     }
 
-    const params: CloseViewerParams = { closeViewer: true };
+    const params: Record<string, Object> = { closeViewer: true as unknown as Object };
     const want: Want = {
       bundleName: VIEWER_BUNDLE_NAME,
       abilityName: VIEWER_ABILITY_NAME,
