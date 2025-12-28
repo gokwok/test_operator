@@ -27,6 +27,11 @@ export interface VTSRuntimeInfo {
   screenName: string;
 }
 
+interface ScreenshotImageSize {
+  width: number;
+  height: number;
+}
+
 interface ScreenWithDisplayId extends screen.Screen {
   displayId?: number;
 }
@@ -145,7 +150,7 @@ export class VTSBackend {
 
   async screenshotBase64(): Promise<string> {
     const rt = this.requireRuntime();
-    const imageSize = { width: rt.widthPx, height: rt.heightPx };
+    const imageSize: ScreenshotImageSize = { width: rt.widthPx, height: rt.heightPx };
     const displayId = rt.displayId ?? rt.screenId;
     const options: screenshot.ScreenshotOptions = {
       imageSize,

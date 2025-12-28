@@ -9,7 +9,7 @@ import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_compo
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
 import type { common } from '@kit.AbilityKit';
 import { VTSBackend } from '../features/agentspace/VTSBackend';
-import type { VTSRuntimeInfo } from '../features/agentspace/VTSBackend';
+import type { AppTarget, VTSRuntimeInfo } from '../features/agentspace/VTSBackend';
 
 @Entry
 @Component
@@ -403,11 +403,12 @@ struct Index {
     }
   }
 
-  private buildTarget(): { bundleName: string; abilityName: string } {
-    return {
+  private buildTarget(): AppTarget {
+    const target: AppTarget = {
       bundleName: this.targetBundleName.trim(),
       abilityName: this.targetAbilityName.trim(),
     };
+    return target;
   }
 
   private async onVtsLaunch(): Promise<void> {
