@@ -102,6 +102,9 @@ export class VTSBackend {
 
   async create(): Promise<VTSRuntimeInfo> {
     if (this.runtime) {
+      if (!this.imeRegistered) {
+        this.imeRegistered = this.registerImeBestEffort(this.runtime.displayId ?? this.runtime.screenId);
+      }
       return this.runtime;
     }
 
@@ -151,6 +154,7 @@ export class VTSBackend {
     }
 
     this.runtime = runtime;
+    this.imeRegistered = this.registerImeBestEffort(runtime.displayId ?? runtime.screenId);
     return runtime;
   }
 
@@ -204,12 +208,7 @@ export class VTSBackend {
   }
 
   async inputText(text: string, sendEnter: boolean): Promise<void> {
-    const rt = this.requireRuntime();
-    const imeDisplayId = rt.displayId ?? rt.screenId;
-    if (!this.imeRegistered) {
-      this.imeRegistered = this.registerImeBestEffort(imeDisplayId);
-    }
-    this.focusWindowBestEffort(imeDisplayId);
+    this.requireRuntime();
     if (text.length > 0) {
       AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
     }
@@ -222,11 +221,6 @@ export class VTSBackend {
     if (!this.runtime) {
       return;
     }
-    const imeDisplayId = this.runtime.displayId ?? this.runtime.screenId;
-    if (!this.imeRegistered) {
-      this.imeRegistered = this.registerImeBestEffort(imeDisplayId);
-    }
-    this.focusWindowBestEffort(imeDisplayId);
     AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
   }
 
@@ -435,27 +429,6 @@ export class VTSBackend {
       abilityName: target.abilityName,
     };
     await this.ctx.startAbility(want);
-  }
-
-  private focusWindowBestEffort(displayId: number): void {
-    const winLst = this.listWindowsBestEffort(displayId);
-    if (winLst.length === 0) {
-      return;
-    }
-    let target = winLst[0];
-    if (this.lastTarget) {
-      const match = winLst.find((win) =>
-        win.bundleName === this.lastTarget?.bundleName && win.abilityName === this.lastTarget?.abilityName
-      );
-      if (match) {
-        target = match;
-      }
-    }
-    const focusApi = AppController as AppControllerFocusApi;
-    if (typeof focusApi.requestFocus === 'function') {
-      const ok = focusApi.requestFocus(target.windowId);
-      console.info(`${LOG_TAG} requestFocus window ${target.windowId} ok=${ok}`);
-    }
   }
 
   private listWindowsBestEffort(displayIdFilter: number): AppController.WindowInfoUnit[] {
