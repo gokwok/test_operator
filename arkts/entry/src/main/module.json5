@@ -12,6 +12,14 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.ACCESS_VIRTUAL_SCREEN"
+      },
+      {
+        "name": "ohos.permission.CAPTURE_SCREEN"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
