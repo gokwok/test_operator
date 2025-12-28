@@ -68,7 +68,8 @@ export class AgentSpace {
       this.state = AgentSpaceState.READY;
     } catch (e) {
       this.state = AgentSpaceState.ERROR;
-      throw e;
+      const err = e instanceof Error ? e : new Error(String(e));
+      throw err;
     }
     return this.getRuntimeInfo();
   }
