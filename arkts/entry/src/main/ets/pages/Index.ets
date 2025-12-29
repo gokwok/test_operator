@@ -221,6 +221,18 @@ struct Index {
         }
 
         Row({ space: 8 }) {
+          Button('Delay Click C')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsClickPresetDelayed(0.5, 0.5, 1000);
+            })
+        }
+
+        Row({ space: 8 }) {
           Button('Swipe Up')
             .fontSize(12)
             .fontColor(Color.White)
@@ -753,6 +765,22 @@ struct Index {
       const rt = await this.ensureRuntime();
       const x = this.ratioToPx(rt.widthPx, rx);
       const y = this.ratioToPx(rt.heightPx, ry);
+      await this.getAgentSpace().clickPx(x, y);
+      this.vtsStatus = `click: (${x}, ${y})`;
+    } catch (e) {
+      this.vtsError = `VTS click failed: ${String(e)}`;
+    }
+  }
+
+  private async onVtsClickPresetDelayed(rx: number, ry: number, delayMs: number): Promise<void> {
+    this.vtsError = '';
+    try {
+      const rt = await this.ensureRuntime();
+      const x = this.ratioToPx(rt.widthPx, rx);
+      const y = this.ratioToPx(rt.heightPx, ry);
+      const waitMs = Math.max(0, Math.floor(delayMs));
+      this.vtsStatus = `click in ${waitMs}ms`;
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
       await this.getAgentSpace().clickPx(x, y);
       this.vtsStatus = `click: (${x}, ${y})`;
     } catch (e) {
