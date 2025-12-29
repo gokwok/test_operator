@@ -978,17 +978,26 @@ struct Index {
   private async ensureBundleListPermission(ctx: common.UIAbilityContext): Promise<boolean> {
     const atManager = abilityAccessCtrl.createAtManager();
     const tokenId = ctx.applicationInfo.accessTokenId;
+    const permission = 'ohos.permission.GET_INSTALLED_BUNDLE_LIST';
     try {
-      const status = await atManager.checkAccessToken(tokenId, 'ohos.permission.GET_INSTALLED_BUNDLE_LIST');
+      const status = await atManager.checkAccessToken(tokenId, permission);
       if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
         return true;
       }
-      const permission = 'ohos.permission.GET_INSTALLED_BUNDLE_LIST';
       const result = await atManager.requestPermissionsFromUser(ctx, [permission]);
-      if (!result.authResults || result.authResults.length === 0) {
-        return false;
+      if (result.authResults && result.authResults.length > 0) {
+        if (result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+          return true;
+        }
       }
-      return result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      const statuses = await atManager.requestPermissionOnSetting(ctx, [permission]);
+      if (statuses && statuses.length > 0) {
+        if (statuses[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+          return true;
+        }
+      }
+      const statusAfter = await atManager.checkAccessToken(tokenId, permission);
+      return statusAfter === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
     } catch (e) {
       this.vtsError = `Permission request failed: ${String(e)}`;
       return false;
