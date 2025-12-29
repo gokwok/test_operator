@@ -55,6 +55,17 @@ export interface AgentSpacePointerEvent {
   pointerId?: number;
 }
 
+export interface AgentSpaceViewerEffect {
+  kind: 'tap';
+  xNorm: number;
+  yNorm: number;
+}
+
+export interface AgentSpaceViewerEffectBatch {
+  sequence: number;
+  effects: Array<AgentSpaceViewerEffect>;
+}
+
 export interface AgentSpaceHost {
   startViewer(mode: AgentSpaceViewerMode): Promise<void>;
   closeViewer(): Promise<void>;
@@ -71,6 +82,8 @@ export class AgentSpace {
   private surfaceId: string = '';
   private surfaceAttached: boolean = false;
   private viewerMode: AgentSpaceViewerMode = 'display';
+  private viewerEffectSequence: number = 0;
+  private viewerEffects: Array<AgentSpaceViewerEffect> = [];
 
   static init(ctx: common.UIAbilityContext, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
     if (!AgentSpace.instance) {
@@ -156,6 +169,19 @@ export class AgentSpace {
     await this.handleViewerPointerInternal(event);
   }
 
+  async pullViewerEffects(lastSequence: number): Promise<AgentSpaceViewerEffectBatch | null> {
+    if (this.viewerEffectSequence === lastSequence || this.viewerEffects.length === 0) {
+      return null;
+    }
+    const effects = this.viewerEffects;
+    this.viewerEffects = [];
+    const batch: AgentSpaceViewerEffectBatch = {
+      sequence: this.viewerEffectSequence,
+      effects,
+    };
+    return batch;
+  }
+
   async startViewer(mode: AgentSpaceViewerMode): Promise<void> {
     this.viewerMode = mode;
     const host = this.host;
@@ -182,8 +208,9 @@ export class AgentSpace {
   }
 
   async clickPx(x: number, y: number): Promise<void> {
-    await this.ensureVts();
+    const rt = await this.ensureVts();
     await this.backend.clickPx(x, y);
+    this.emitViewerTapFromPx(x, y, rt);
   }
 
   async swipePx(startX: number, startY: number, endX: number, endY: number): Promise<void> {
@@ -263,6 +290,7 @@ export class AgentSpace {
     const x = this.normToPx(rt.widthPx, pt[0]);
     const y = this.normToPx(rt.heightPx, pt[1]);
     await this.backend.clickPx(x, y);
+    this.emitViewerTapNorm(pt[0], pt[1]);
     return { status: 'SUCCESS' };
   }
 
@@ -275,8 +303,10 @@ export class AgentSpace {
     const x = this.normToPx(rt.widthPx, pt[0]);
     const y = this.normToPx(rt.heightPx, pt[1]);
     await this.backend.clickPx(x, y);
+    this.emitViewerTapNorm(pt[0], pt[1]);
     await sleep(80);
     await this.backend.clickPx(x, y);
+    this.emitViewerTapNorm(pt[0], pt[1]);
     return { status: 'SUCCESS' };
   }
 
@@ -395,6 +425,28 @@ export class AgentSpace {
     this.backend.injectPointer(action, x, y, pointerId);
   }
 
+  private emitViewerTapNorm(xNorm: number, yNorm: number): void {
+    if (!this.viewerActive) {
+      return;
+    }
+    const effect: AgentSpaceViewerEffect = {
+      kind: 'tap',
+      xNorm: this.clampNorm(xNorm),
+      yNorm: this.clampNorm(yNorm),
+    };
+    this.viewerEffectSequence += 1;
+    this.viewerEffects = [...this.viewerEffects, effect];
+  }
+
+  private emitViewerTapFromPx(x: number, y: number, rt: AgentSpaceRuntimeInfo): void {
+    if (!this.viewerActive) {
+      return;
+    }
+    const xNorm = this.pxToNorm(rt.widthPx, x);
+    const yNorm = this.pxToNorm(rt.heightPx, y);
+    this.emitViewerTapNorm(xNorm, yNorm);
+  }
+
   private readPoint(params: ActionParameters | undefined, key: 'point' | 'start_point' | 'end_point'): Array<number> | null {
     if (!params) {
       return null;
@@ -440,6 +492,22 @@ export class AgentSpace {
     const max = Math.max(1, limit);
     const px = Math.round(clamped * (max - 1));
     return px < 0 ? 0 : px;
+  }
+
+  private pxToNorm(limit: number, value: number): number {
+    if (!Number.isFinite(value) || limit <= 1) {
+      return 0;
+    }
+    const max = Math.max(1, limit);
+    const ratio = value / (max - 1);
+    return this.clampNorm(ratio * 1000);
+  }
+
+  private clampNorm(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.min(1000, Math.max(0, Math.round(value)));
   }
 
   private async closeViewerBestEffort(): Promise<void> {
