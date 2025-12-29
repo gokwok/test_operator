@@ -731,7 +731,9 @@ struct Index {
       const granted = await this.ensureBundleListPermission(ctx);
       if (!granted) {
         this.appListInfo = '';
-        this.vtsError = 'Permission denied for app list';
+        if (this.vtsError.length === 0) {
+          this.vtsError = 'Permission not granted. Open settings and retry.';
+        }
         return;
       }
       const apps = await AppState.listInstalledApps();
@@ -990,14 +992,8 @@ struct Index {
           return true;
         }
       }
-      const statuses = await atManager.requestPermissionOnSetting(ctx, [permission]);
-      if (statuses && statuses.length > 0) {
-        if (statuses[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
-          return true;
-        }
-      }
-      const statusAfter = await atManager.checkAccessToken(tokenId, permission);
-      return statusAfter === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      await atManager.requestPermissionOnApplicationSetting(tokenId);
+      return false;
     } catch (e) {
       this.vtsError = `Permission request failed: ${String(e)}`;
       return false;
