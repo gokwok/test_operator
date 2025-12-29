@@ -18,6 +18,9 @@
       },
       {
         "name": "ohos.permission.CAPTURE_SCREEN"
+      },
+      {
+        "name": "ohos.permission.WRITE_IMAGEVIDEO"
       }
     ],
     "abilities": [

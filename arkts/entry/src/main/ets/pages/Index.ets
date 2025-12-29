@@ -12,6 +12,7 @@ import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import image from '@ohos.multimedia.image';
+import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import util from '@ohos.util';
 
 const VIEWER_CLOSE_ACTION: string = 'closeViewer';
@@ -35,6 +36,12 @@ struct Index {
   private readonly statusResetDelayMs: number = 260;
   private statusResetTimerId: number = -1;
   private agentSpace: AgentSpace | null = null;
+  private screenshotBase64: string = '';
+  private screenshotLongPressTimerId: number = -1;
+  private screenshotPressX: number = 0;
+  private screenshotPressY: number = 0;
+  private readonly screenshotLongPressMs: number = 520;
+  private readonly screenshotMoveThresholdPx: number = 12;
 
   private readonly palettes: GlowPalette[] = GLOW_PALETTES;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
@@ -303,6 +310,9 @@ struct Index {
             .borderRadius(12)
             .backgroundColor('#111217')
             .objectFit(ImageFit.Contain)
+            .onTouch((event: TouchEvent) => {
+              this.handleScreenshotTouch(event);
+            })
         }
 
         if (this.vtsError.length > 0) {
@@ -794,9 +804,11 @@ struct Index {
       const raw = await this.getAgentSpace().screenshotBase64();
       const costMs = Date.now() - startMs;
       this.vtsScreenshotInfo = `screenshot len: ${raw.length} ms: ${costMs}`;
+      this.screenshotBase64 = raw;
       if (raw.length === 0) {
         this.vtsError = 'Screenshot empty';
         this.screenshotPixelMap = null;
+        this.screenshotBase64 = '';
         return;
       }
       await this.updateScreenshotPreview(raw);
@@ -808,6 +820,7 @@ struct Index {
   private async updateScreenshotPreview(base64: string): Promise<void> {
     if (base64.length === 0) {
       this.screenshotPixelMap = null;
+      this.screenshotBase64 = '';
       return;
     }
     let source: image.ImageSource | null = null;
@@ -830,6 +843,81 @@ struct Index {
         }
       }
     }
+  }
+
+  private handleScreenshotTouch(event: TouchEvent): void {
+    if (!this.screenshotPixelMap || this.screenshotBase64.length === 0) {
+      return;
+    }
+    const touch = this.getPrimaryTouch(event);
+    if (event.type === TouchType.Down) {
+      if (touch) {
+        this.screenshotPressX = touch.windowX;
+        this.screenshotPressY = touch.windowY;
+      }
+      this.resetScreenshotLongPress();
+      this.screenshotLongPressTimerId = setTimeout(() => {
+        this.screenshotLongPressTimerId = -1;
+        void this.saveScreenshotToAlbum();
+      }, this.screenshotLongPressMs);
+      return;
+    }
+    if (event.type === TouchType.Move && touch) {
+      const dx = touch.windowX - this.screenshotPressX;
+      const dy = touch.windowY - this.screenshotPressY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > this.screenshotMoveThresholdPx) {
+        this.resetScreenshotLongPress();
+      }
+      return;
+    }
+    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.resetScreenshotLongPress();
+    }
+  }
+
+  private resetScreenshotLongPress(): void {
+    if (this.screenshotLongPressTimerId !== -1) {
+      clearTimeout(this.screenshotLongPressTimerId);
+      this.screenshotLongPressTimerId = -1;
+    }
+  }
+
+  private async saveScreenshotToAlbum(): Promise<void> {
+    if (this.screenshotBase64.length === 0) {
+      this.vtsError = 'No screenshot to save';
+      return;
+    }
+    this.vtsError = '';
+    try {
+      const ctx = getContext(this) as common.Context;
+      const helper = photoAccessHelper.getPhotoAccessHelper(ctx);
+      const request = photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(
+        ctx,
+        photoAccessHelper.PhotoType.IMAGE,
+        'jpg'
+      );
+      const base64 = new util.Base64Helper();
+      const decoded = base64.decodeSync(this.screenshotBase64);
+      const buffer = decoded.buffer.slice(decoded.byteOffset, decoded.byteOffset + decoded.byteLength);
+      request.addResource(photoAccessHelper.ResourceType.IMAGE_RESOURCE, buffer);
+      await helper.applyChanges(request);
+      this.vtsStatus = 'Saved to album';
+    } catch (e) {
+      this.vtsError = `Save screenshot failed: ${String(e)}`;
+    }
+  }
+
+  private getPrimaryTouch(event: TouchEvent): TouchObject | null {
+    const changed = event.changedTouches;
+    if (changed && changed.length > 0) {
+      return changed[0];
+    }
+    const touches = event.touches;
+    if (touches && touches.length > 0) {
+      return touches[0];
+    }
+    return null;
   }
 
   private async onVtsTransfer(): Promise<void> {
