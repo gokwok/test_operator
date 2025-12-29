@@ -780,7 +780,9 @@ struct Index {
       const y = this.ratioToPx(rt.heightPx, ry);
       const waitMs = Math.max(0, Math.floor(delayMs));
       this.vtsStatus = `click in ${waitMs}ms`;
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      await new Promise<void>((resolve: () => void) => {
+        setTimeout(() => resolve(), waitMs);
+      });
       await this.getAgentSpace().clickPx(x, y);
       this.vtsStatus = `click: (${x}, ${y})`;
     } catch (e) {
