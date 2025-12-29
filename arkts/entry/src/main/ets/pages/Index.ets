@@ -727,42 +727,18 @@ struct Index {
     this.vtsError = '';
     this.appListInfo = 'Loading app list...';
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const granted = await this.ensureBundleListPermission(ctx);
-      if (!granted) {
-        this.appListInfo = '';
-        this.vtsError = 'Permission denied for app list';
-        return;
-      }
-      const apps = await AppState.listInstalledApps();
+      const result = await AppState.listInstalledApps();
+      const apps = result.apps;
       if (apps.length === 0) {
-        this.appListInfo = 'No apps found';
+        this.appListInfo = result.scope === 'self' ? 'Self app info unavailable' : 'No apps found';
         return;
       }
       const preview = apps.slice(0, 6).map((item) => item.bundleName).join(', ');
-      this.appListInfo = `Apps: ${apps.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
+      const scopeLabel = result.scope === 'self' ? 'Apps (self only)' : 'Apps';
+      this.appListInfo = `${scopeLabel}: ${apps.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
     } catch (e) {
       this.appListInfo = '';
       this.vtsError = `List apps failed: ${String(e)}`;
-    }
-  }
-
-  private async ensureBundleListPermission(ctx: common.UIAbilityContext): Promise<boolean> {
-    const atManager = abilityAccessCtrl.createAtManager();
-    const tokenId = ctx.applicationInfo.accessTokenId;
-    try {
-      const status = await atManager.checkAccessToken(tokenId, 'ohos.permission.GET_INSTALLED_BUNDLE_LIST');
-      if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
-        return true;
-      }
-      const result = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.GET_INSTALLED_BUNDLE_LIST']);
-      if (!result.authResults || result.authResults.length === 0) {
-        return false;
-      }
-      return result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
-    } catch (e) {
-      this.vtsError = `Permission request failed: ${String(e)}`;
-      return false;
     }
   }
 
