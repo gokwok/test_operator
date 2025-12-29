@@ -1,14 +1,8 @@
 import type { common, Want } from '@kit.AbilityKit';
-import type { ElementName } from '@ohos.bundle.bundleManager';
+import bundleManager from '@ohos.bundle.bundleManager';
 import rpc from '@ohos.rpc';
 
 import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
-
-interface ServiceConnectionOptions {
-  onConnect(elementName: ElementName, remote: rpc.IRemoteObject): void;
-  onDisconnect(elementName: ElementName): void;
-  onFailed(code: number): void;
-}
 
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
@@ -30,12 +24,12 @@ export class AgentServiceClient {
         bundleName: SERVICE_BUNDLE_NAME,
         abilityName: SERVICE_ABILITY_NAME,
       };
-      const options: ServiceConnectionOptions = {
-        onConnect: (_elementName: ElementName, remote: rpc.IRemoteObject) => {
+      const options: common.ConnectOptions = {
+        onConnect: (_elementName: bundleManager.ElementName, remote: rpc.IRemoteObject) => {
           this.remote = remote;
           resolve();
         },
-        onDisconnect: (_elementName: ElementName) => {
+        onDisconnect: (_elementName: bundleManager.ElementName) => {
           this.remote = null;
         },
         onFailed: (code: number) => {
