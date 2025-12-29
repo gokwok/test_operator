@@ -1,6 +1,4 @@
 import { display } from '@kit.ArkUI';
-import { Action } from '@ohos.multimodalInput.touchEvent';
-import type { TouchEvent } from '@ohos.multimodalInput.touchEvent';
 
 export type AgentSpaceDisplayMode = 'display' | 'control';
 
@@ -23,6 +21,16 @@ interface SurfaceRect {
   surfaceWidth: number;
   surfaceHeight: number;
   offsetX: number;
+}
+
+class SurfaceSize {
+  width: number;
+  height: number;
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
 }
 
 @Component
@@ -64,21 +72,25 @@ export struct AgentSpaceDisplay {
         this.viewWidth = Number(newValue.width);
         this.viewHeight = Number(newValue.height);
       })
-      .onTouch((event: TouchEvent) => {
+      .onTouch((event) => {
         if (this.mode !== 'control' || !this.onPointerEvent) {
           return;
         }
-        const action = this.mapAction(event.action);
+        const touch = this.getPrimaryTouch(event);
+        if (!touch) {
+          return;
+        }
+        const action = this.mapAction(event.type);
         if (!action) {
           return;
         }
-        const xNorm = this.normalize(event.touch.windowX, this.viewWidth);
-        const yNorm = this.normalize(event.touch.windowY, this.viewHeight);
+        const xNorm = this.normalize(touch.windowX, this.viewWidth);
+        const yNorm = this.normalize(touch.windowY, this.viewHeight);
         const payload: AgentSpacePointerEvent = {
           action,
           xNorm,
           yNorm,
-          pointerId: event.touch.id,
+          pointerId: touch.id,
         };
         this.onPointerEvent(payload);
       })
@@ -86,12 +98,12 @@ export struct AgentSpaceDisplay {
       .height('100%')
   }
 
-  private resolveSurfaceSize(): { width: number; height: number } {
+  private resolveSurfaceSize(): SurfaceSize {
     if (this.surfaceWidth > 0 && this.surfaceHeight > 0) {
-      return { width: this.surfaceWidth, height: this.surfaceHeight };
+      return new SurfaceSize(this.surfaceWidth, this.surfaceHeight);
     }
     const d = display.getDefaultDisplaySync();
-    return { width: d.width, height: d.height };
+    return new SurfaceSize(d.width, d.height);
   }
 
   private normalize(value: number, limit: number): number {
@@ -102,18 +114,30 @@ export struct AgentSpaceDisplay {
     return clamped;
   }
 
-  private mapAction(action: Action): AgentSpacePointerAction | null {
-    if (action === Action.DOWN) {
+  private mapAction(action: TouchType): AgentSpacePointerAction | null {
+    if (action === TouchType.Down) {
       return 'down';
     }
-    if (action === Action.MOVE) {
+    if (action === TouchType.Move) {
       return 'move';
     }
-    if (action === Action.UP) {
+    if (action === TouchType.Up) {
       return 'up';
     }
-    if (action === Action.CANCEL) {
+    if (action === TouchType.Cancel) {
       return 'cancel';
+    }
+    return null;
+  }
+
+  private getPrimaryTouch(event: TouchEvent): TouchObject | null {
+    const changed = event.changedTouches;
+    if (changed && changed.length > 0) {
+      return changed[0];
+    }
+    const touches = event.touches;
+    if (touches && touches.length > 0) {
+      return touches[0];
     }
     return null;
   }
