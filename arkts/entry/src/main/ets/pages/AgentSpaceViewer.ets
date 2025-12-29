@@ -66,26 +66,22 @@ struct AgentSpaceViewer {
         .height('100%')
 
       if (this.showStatus) {
-        Stack()
-          .width('100%')
-          .height('100%')
-          .backgroundColor('#00000000')
-          .onClick(() => {
-            this.switchToOrb();
-          })
-      }
+        Column() {
+          Row()
+            .layoutWeight(1)
+            .width('100%')
+            .backgroundColor('#00000001')
+            .onClick(() => {
+              this.switchToOrb();
+            })
 
-      RelativeContainer() {
-        StatusFloatWindow({ controller: this.statusController, visible: this.showStatus })
-          .width('100%')
-          .alignRules({
-            bottom: { anchor: '__container__', align: VerticalAlign.Bottom },
-            middle: { anchor: '__container__', align: HorizontalAlign.Center }
-          })
+          StatusFloatWindow({ controller: this.statusController, visible: this.showStatus })
+            .width('100%')
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ left: 16, right: 16, bottom: 24 })
       }
-      .width('100%')
-      .height('100%')
-      .padding({ left: 16, right: 16, bottom: 24 })
 
       FloatingOrb({ controller: this.orbController, visible: !this.showStatus })
     }
