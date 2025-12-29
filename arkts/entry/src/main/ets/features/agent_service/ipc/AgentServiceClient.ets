@@ -70,6 +70,18 @@ export class AgentServiceClient {
     return await this.sendRequest(AgentServiceRequestCode.GET_SNAPSHOT);
   }
 
+  async startTask(sessionId: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.START_FAKE_TASK, sessionId);
+  }
+
+  async stopTask(reason: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.STOP_TASK, reason);
+  }
+
+  async pullEvents(lastSequence: number): Promise<string> {
+    return await this.sendRequestWithInt(AgentServiceRequestCode.PULL_EVENTS, lastSequence);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
@@ -80,6 +92,52 @@ export class AgentServiceClient {
     const option = new rpc.MessageOption();
     try {
       data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithString(code: number, value: string): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeString(value);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithInt(code: number, value: number): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInt(value);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
       if (result.errCode !== 0) {

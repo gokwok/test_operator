@@ -32,6 +32,23 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString(this.service.getSnapshotJson());
         return true;
       }
+      if (code === AgentServiceRequestCode.START_FAKE_TASK) {
+        const sessionId = data.readString();
+        this.service.startFakeTask(sessionId);
+        reply.writeString('ok');
+        return true;
+      }
+      if (code === AgentServiceRequestCode.STOP_TASK) {
+        const reason = data.readString();
+        this.service.stopTask(reason);
+        reply.writeString('ok');
+        return true;
+      }
+      if (code === AgentServiceRequestCode.PULL_EVENTS) {
+        const lastSequence = data.readInt();
+        reply.writeString(this.service.pullEventsJson(lastSequence));
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

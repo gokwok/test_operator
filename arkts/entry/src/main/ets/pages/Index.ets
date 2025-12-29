@@ -35,6 +35,7 @@ struct Index {
   @State serviceStatus: string = '';
   @State serviceSnapshot: string = '';
   @State serviceError: string = '';
+  @State serviceEvents: string = '';
   @State targetBundleName: string = 'com.sina.weibo.stage';
   @State targetAbilityName: string = 'EntryAbility';
   private readonly initialStatus: string = 'hello world';
@@ -403,6 +404,38 @@ struct Index {
             })
         }
 
+        Row({ space: 8 }) {
+          Button('Start Task')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServiceStart();
+            })
+
+          Button('Stop Task')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServiceStop();
+            })
+
+          Button('Pull Events')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServicePullEvents();
+            })
+        }
+
         if (this.serviceStatus.length > 0) {
           Text(this.serviceStatus)
             .fontSize(11)
@@ -411,6 +444,12 @@ struct Index {
 
         if (this.serviceSnapshot.length > 0) {
           Text(this.serviceSnapshot)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.serviceEvents.length > 0) {
+          Text(this.serviceEvents)
             .fontSize(11)
             .fontColor('#B8C1CC')
         }
@@ -859,6 +898,43 @@ struct Index {
       this.serviceStatus = 'snapshot ok';
     } catch (e) {
       this.serviceError = `Service snapshot failed: ${String(e)}`;
+    }
+  }
+
+  private async onServiceStart(): Promise<void> {
+    this.serviceError = '';
+    try {
+      const sessionId = `s-${Date.now()}`;
+      await this.getServiceClient().startTask(sessionId);
+      this.serviceEvents = '';
+      this.serviceStatus = `started: ${sessionId}`;
+    } catch (e) {
+      this.serviceError = `Service start failed: ${String(e)}`;
+    }
+  }
+
+  private async onServiceStop(): Promise<void> {
+    this.serviceError = '';
+    try {
+      await this.getServiceClient().stopTask('user_stop');
+      this.serviceStatus = 'stopped';
+    } catch (e) {
+      this.serviceError = `Service stop failed: ${String(e)}`;
+    }
+  }
+
+  private async onServicePullEvents(): Promise<void> {
+    this.serviceError = '';
+    try {
+      const payload = await this.getServiceClient().pullEvents(0);
+      if (payload.length === 0) {
+        this.serviceStatus = 'no events';
+        return;
+      }
+      this.serviceEvents = payload;
+      this.serviceStatus = 'events ok';
+    } catch (e) {
+      this.serviceError = `Service events failed: ${String(e)}`;
     }
   }
 
