@@ -1,16 +1,60 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import type { common } from '@kit.AbilityKit';
+import { AgentSpace } from '../features/agentspace/AgentSpace';
+import type { AgentSpaceHost, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
 
 const DOMAIN = 0x0000;
+const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
+const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
+const VIEWER_CLOSE_ACTION: string = 'closeViewer';
+
+class EntryAbilityHost implements AgentSpaceHost {
+  private ctx: common.UIAbilityContext;
+
+  constructor(ctx: common.UIAbilityContext) {
+    this.ctx = ctx;
+  }
+
+  updateContext(ctx: common.UIAbilityContext): void {
+    this.ctx = ctx;
+  }
+
+  async startViewer(unused: AgentSpaceViewerMode): Promise<void> {
+    void unused;
+    const want: Want = {
+      bundleName: VIEWER_BUNDLE_NAME,
+      abilityName: VIEWER_ABILITY_NAME,
+    };
+    await this.ctx.startAbility(want);
+  }
+
+  async closeViewer(): Promise<void> {
+    const want: Want = {
+      bundleName: VIEWER_BUNDLE_NAME,
+      abilityName: VIEWER_ABILITY_NAME,
+      action: VIEWER_CLOSE_ACTION,
+    };
+    await this.ctx.startAbility(want);
+  }
+}
 
 export default class EntryAbility extends UIAbility {
+  private agentSpaceHost: EntryAbilityHost | null = null;
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+    if (!this.agentSpaceHost) {
+      this.agentSpaceHost = new EntryAbilityHost(this.context);
+    } else {
+      this.agentSpaceHost.updateContext(this.context);
+    }
+    AgentSpace.init(this.context, this.agentSpaceHost);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 

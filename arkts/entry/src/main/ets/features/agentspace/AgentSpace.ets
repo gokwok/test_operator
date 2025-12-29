@@ -1,7 +1,7 @@
-import type { common, Want } from '@kit.AbilityKit';
+import type { common } from '@kit.AbilityKit';
 
 import { VTSBackend } from './VTSBackend';
-import type { AppTarget } from './VTSBackend';
+import type { AppTarget, VTSBackendPort } from './VTSBackend';
 
 export enum AgentSpaceState {
   IDLE = 'IDLE',
@@ -55,44 +55,55 @@ export interface AgentSpacePointerEvent {
   pointerId?: number;
 }
 
-interface AbilityStarterContext {
-  startAbility?: (w: Want) => Promise<void> | void;
+export interface AgentSpaceHost {
+  startViewer(mode: AgentSpaceViewerMode): Promise<void>;
+  closeViewer(): Promise<void>;
 }
 
-const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
-const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
-const VIEWER_CLOSE_ACTION: string = 'closeViewer';
+export type VTSBackendFactory = (ctx: common.UIAbilityContext) => VTSBackendPort;
 
 export class AgentSpace {
   private static instance: AgentSpace | null = null;
-  private ctx: common.Context;
-  private backend: VTSBackend;
+  private backend: VTSBackendPort;
+  private host: AgentSpaceHost | null = null;
   private state: AgentSpaceState = AgentSpaceState.IDLE;
   private viewerActive: boolean = false;
   private surfaceId: string = '';
   private surfaceAttached: boolean = false;
   private viewerMode: AgentSpaceViewerMode = 'display';
 
-  static getInstance(ctx: common.Context): AgentSpace {
+  static init(ctx: common.UIAbilityContext, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
     if (!AgentSpace.instance) {
-      AgentSpace.instance = new AgentSpace(ctx);
+      AgentSpace.instance = new AgentSpace(ctx, backendFactory);
     } else {
       AgentSpace.instance.updateContext(ctx);
+    }
+    if (host) {
+      AgentSpace.instance.setHost(host);
     }
     return AgentSpace.instance;
   }
 
-  private constructor(ctx: common.Context) {
-    this.ctx = ctx;
-    this.backend = new VTSBackend(ctx as common.UIAbilityContext);
+  static getInstance(): AgentSpace {
+    if (!AgentSpace.instance) {
+      throw new Error('AgentSpace not initialized. Call AgentSpace.init() first.');
+    }
+    return AgentSpace.instance;
   }
 
-  updateContext(ctx: common.Context): void {
-    this.ctx = ctx;
-    this.backend.updateContext(ctx as common.UIAbilityContext);
+  private constructor(ctx: common.UIAbilityContext, backendFactory?: VTSBackendFactory) {
+    this.backend = backendFactory ? backendFactory(ctx) : new VTSBackend(ctx);
   }
 
-  getRuntimeInfo(): AgentSpaceRuntimeInfo {
+  private updateContext(ctx: common.UIAbilityContext): void {
+    this.backend.updateContext(ctx);
+  }
+
+  private setHost(host: AgentSpaceHost): void {
+    this.host = host;
+  }
+
+  async getRuntimeInfo(): Promise<AgentSpaceRuntimeInfo> {
     const rt = this.backend.getRuntime();
     const info: AgentSpaceRuntimeInfo = {
       state: this.state,
@@ -115,7 +126,7 @@ export class AgentSpace {
       const err = e instanceof Error ? e : new Error(String(e));
       throw err;
     }
-    return this.getRuntimeInfo();
+    return await this.getRuntimeInfo();
   }
 
   async attachViewerSurface(surfaceId: string): Promise<void> {
@@ -125,7 +136,7 @@ export class AgentSpace {
     this.surfaceAttached = true;
   }
 
-  setViewerActive(active: boolean): void {
+  async setViewerActive(active: boolean): Promise<void> {
     this.viewerActive = active;
     if (!active) {
       this.surfaceId = '';
@@ -133,16 +144,36 @@ export class AgentSpace {
     }
   }
 
-  setViewerMode(mode: AgentSpaceViewerMode): void {
+  async setViewerMode(mode: AgentSpaceViewerMode): Promise<void> {
     this.viewerMode = mode;
   }
 
-  getViewerMode(): AgentSpaceViewerMode {
+  async getViewerMode(): Promise<AgentSpaceViewerMode> {
     return this.viewerMode;
   }
 
-  handleViewerPointer(event: AgentSpacePointerEvent): void {
-    void this.handleViewerPointerInternal(event);
+  async sendViewerEvent(event: AgentSpacePointerEvent): Promise<void> {
+    await this.handleViewerPointerInternal(event);
+  }
+
+  async startViewer(mode: AgentSpaceViewerMode): Promise<void> {
+    this.viewerMode = mode;
+    const host = this.host;
+    if (!host) {
+      return;
+    }
+    await host.startViewer(mode);
+  }
+
+  async closeViewer(): Promise<void> {
+    const host = this.host;
+    if (!host) {
+      this.viewerActive = false;
+      this.surfaceId = '';
+      this.surfaceAttached = false;
+      return;
+    }
+    await host.closeViewer();
   }
 
   async startApp(target: AppTarget): Promise<void> {
@@ -415,22 +446,15 @@ export class AgentSpace {
     if (!this.viewerActive) {
       return;
     }
-    const starterCtx: AbilityStarterContext = this.ctx as AbilityStarterContext;
-    const starter = starterCtx.startAbility;
-    if (typeof starter !== 'function') {3
+    const host = this.host;
+    if (!host) {
       this.viewerActive = false;
       this.surfaceId = '';
       this.surfaceAttached = false;
       return;
     }
-
-    const want: Want = {
-      bundleName: VIEWER_BUNDLE_NAME,
-      abilityName: VIEWER_ABILITY_NAME,
-      action: VIEWER_CLOSE_ACTION,
-    };
     try {
-      await starter(want);
+      await host.closeViewer();
     } catch {
       // Ignore viewer close failures (best-effort).
     }

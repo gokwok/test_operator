@@ -7,7 +7,7 @@ import {
 } from '../ui_components/InteractionEffectOverlay';
 import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
-import type { common, Want } from '@kit.AbilityKit';
+import type { common } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
@@ -15,8 +15,6 @@ import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import util from '@ohos.util';
-
-const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 
 @Entry
 @Component
@@ -166,7 +164,7 @@ struct Index {
             .borderRadius(14)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
-              this.onVtsStatus();
+              void this.onVtsStatus();
             })
 
           Button('Launch')
@@ -648,11 +646,8 @@ struct Index {
   }
 
   private getAgentSpace(): AgentSpace {
-    const ctx = getContext(this) as common.Context;
     if (!this.agentSpace) {
-      this.agentSpace = AgentSpace.getInstance(ctx);
-    } else {
-      this.agentSpace.updateContext(ctx);
+      this.agentSpace = AgentSpace.getInstance();
     }
     return this.agentSpace;
   }
@@ -676,10 +671,10 @@ struct Index {
     }
   }
 
-  private onVtsStatus(): void {
+  private async onVtsStatus(): Promise<void> {
     this.vtsError = '';
     try {
-      const rt = this.getAgentSpace().getRuntimeInfo();
+      const rt = await this.getAgentSpace().getRuntimeInfo();
       this.vtsStatus = this.formatRuntime(rt);
     } catch (e) {
       this.vtsError = `VTS status failed: ${String(e)}`;
@@ -698,13 +693,7 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
-      this.getAgentSpace().setViewerMode('display');
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const want: Want = {
-        bundleName: 'com.huawei.aios.agent.operation',
-        abilityName: 'AgentSpaceViewerAbility',
-      };
-      await ctx.startAbility(want);
+      await this.getAgentSpace().startViewer('display');
     } catch (e) {
       this.vtsError = `Show viewer failed: ${String(e)}`;
     }
@@ -713,13 +702,7 @@ struct Index {
   private async onCloseViewer(): Promise<void> {
     this.vtsError = '';
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const want: Want = {
-        bundleName: 'com.huawei.aios.agent.operation',
-        abilityName: 'AgentSpaceViewerAbility',
-        action: VIEWER_CLOSE_ACTION,
-      };
-      await ctx.startAbility(want);
+      await this.getAgentSpace().closeViewer();
     } catch (e) {
       this.vtsError = `Close viewer failed: ${String(e)}`;
     }
@@ -729,13 +712,7 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
-      this.getAgentSpace().setViewerMode('control');
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const want: Want = {
-        bundleName: 'com.huawei.aios.agent.operation',
-        abilityName: 'AgentSpaceViewerAbility',
-      };
-      await ctx.startAbility(want);
+      await this.getAgentSpace().startViewer('control');
     } catch (e) {
       this.vtsError = `Show viewer control failed: ${String(e)}`;
     }

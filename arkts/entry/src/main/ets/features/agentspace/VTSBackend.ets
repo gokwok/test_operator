@@ -13,7 +13,8 @@ const POINTER_ACTION_DOWN: number = 2;
 const POINTER_ACTION_MOVE: number = 3;
 const POINTER_ACTION_UP: number = 4;
 
-type PointerAction = 'down' | 'move' | 'up' | 'cancel';
+export type VTSBackendPointerAction = 'down' | 'move' | 'up' | 'cancel';
+type PointerAction = VTSBackendPointerAction;
 
 enum defaultInputMethodConnId {
   UNREGISTER_VIRTUALSCREEN = 0,
@@ -71,6 +72,23 @@ export interface VTSRuntimeInfo {
   screenName: string;
 }
 
+export interface VTSBackendPort {
+  updateContext(ctx: common.UIAbilityContext): void;
+  getRuntime(): VTSRuntimeInfo | null;
+  create(): Promise<VTSRuntimeInfo>;
+  attachSurface(surfaceId: string): Promise<void>;
+  startApp(target: AppTarget): Promise<void>;
+  clickPx(x: number, y: number): Promise<void>;
+  longClickPx(x: number, y: number, durationMs: number): Promise<void>;
+  swipePx(startX: number, startY: number, endX: number, endY: number, durationMs?: number): Promise<void>;
+  inputText(text: string, sendEnter: boolean): Promise<void>;
+  pressEnter(): Promise<void>;
+  screenshotBase64(): Promise<string>;
+  transferToMain(): Promise<number>;
+  destroy(): Promise<void>;
+  injectPointer(action: VTSBackendPointerAction, x: number, y: number, pointerId: number): void;
+}
+
 interface ScreenshotImageSize {
   width: number;
   height: number;
@@ -84,7 +102,7 @@ interface AppControllerFocusApi {
   requestFocus?: (targetWindowId: number) => boolean;
 }
 
-export class VTSBackend {
+export class VTSBackend implements VTSBackendPort {
   private ctx: common.UIAbilityContext;
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;

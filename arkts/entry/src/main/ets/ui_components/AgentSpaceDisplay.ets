@@ -17,11 +17,6 @@ export interface AgentSpaceDisplaySurfaceInfo {
   surfaceHeight: number;
 }
 
-export class AgentSpaceDisplayCallbacks {
-  onSurfaceReady?: (info: AgentSpaceDisplaySurfaceInfo) => void;
-  onPointerEvent?: (event: AgentSpacePointerEvent) => void;
-}
-
 interface SurfaceRect {
   surfaceWidth: number;
   surfaceHeight: number;
@@ -43,7 +38,9 @@ export struct AgentSpaceDisplay {
   @Prop mode: AgentSpaceDisplayMode = 'display';
   @Prop surfaceWidth: number = -1;
   @Prop surfaceHeight: number = -1;
-  @Prop callbacks: AgentSpaceDisplayCallbacks | null = null;
+  @Link surfaceInfo!: AgentSpaceDisplaySurfaceInfo | null;
+  @Link pointerEvent!: AgentSpacePointerEvent | null;
+  @Link eventSequence!: number;
 
   private xComponentController: XComponentController = new XComponentController();
   private viewWidth: number = 0;
@@ -68,18 +65,15 @@ export struct AgentSpaceDisplay {
           surfaceWidth: size.width,
           surfaceHeight: size.height,
         };
-        const cb = this.callbacks;
-        if (cb && cb.onSurfaceReady) {
-          cb.onSurfaceReady(info);
-        }
+        this.surfaceInfo = info;
+        this.bumpSequence();
       })
       .onAreaChange((_oldValue, newValue): void => {
         this.viewWidth = Number(newValue.width);
         this.viewHeight = Number(newValue.height);
       })
       .onTouch((event) => {
-        const cb = this.callbacks;
-        if (this.mode !== 'control' || !cb || !cb.onPointerEvent) {
+        if (this.mode !== 'control') {
           return;
         }
         const touch = this.getPrimaryTouch(event);
@@ -98,7 +92,8 @@ export struct AgentSpaceDisplay {
           yNorm,
           pointerId: touch.id,
         };
-        cb.onPointerEvent(payload);
+        this.pointerEvent = payload;
+        this.bumpSequence();
       })
       .width('100%')
       .height('100%')
@@ -118,6 +113,11 @@ export struct AgentSpaceDisplay {
     }
     const clamped = Math.min(Math.max(value / limit, 0), 1);
     return clamped;
+  }
+
+  private bumpSequence(): void {
+    const current = Number.isFinite(this.eventSequence) ? this.eventSequence : 0;
+    this.eventSequence = current + 1;
   }
 
   private mapAction(action: TouchType): AgentSpacePointerAction | null {

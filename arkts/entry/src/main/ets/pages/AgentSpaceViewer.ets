@@ -1,23 +1,26 @@
 import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
-import type { common } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentSpacePointerEvent } from '../features/agentspace/AgentSpace';
-import { AgentSpaceDisplay, AgentSpaceDisplayCallbacks } from '../ui_components/AgentSpaceDisplay';
+import { AgentSpaceDisplay } from '../ui_components/AgentSpaceDisplay';
 import type { AgentSpaceDisplayMode, AgentSpaceDisplaySurfaceInfo } from '../ui_components/AgentSpaceDisplay';
 
 @Entry
 @Component
 struct AgentSpaceViewer {
   @State private viewerMode: AgentSpaceDisplayMode = 'display';
+  @State @Watch('onDisplayEventSequence') private displayEventSequence: number = 0;
+  @State private displaySurfaceInfo: AgentSpaceDisplaySurfaceInfo | null = null;
+  @State private displayPointerEvent: AgentSpacePointerEvent | null = null;
   private agentSpace: AgentSpace | null = null;
-  private displayCallbacks: AgentSpaceDisplayCallbacks = new AgentSpaceDisplayCallbacks();
 
   build() {
     Stack() {
       AgentSpaceDisplay({
         mode: this.viewerMode,
-        callbacks: this.displayCallbacks,
+        surfaceInfo: $displaySurfaceInfo,
+        pointerEvent: $displayPointerEvent,
+        eventSequence: $displayEventSequence,
       })
         .width('100%')
         .height('100%')
@@ -28,17 +31,12 @@ struct AgentSpaceViewer {
   }
 
   aboutToAppear(): void {
-    const ctx = getContext(this) as common.UIAbilityContext;
-    const space = AgentSpace.getInstance(ctx);
+    const space = AgentSpace.getInstance();
     this.agentSpace = space;
-    space.setViewerActive(true);
-    this.viewerMode = space.getViewerMode();
-    this.displayCallbacks.onSurfaceReady = (info: AgentSpaceDisplaySurfaceInfo) => {
-      void this.onSurfaceReady(info);
-    };
-    this.displayCallbacks.onPointerEvent = (event: AgentSpacePointerEvent) => {
-      space.handleViewerPointer(event);
-    };
+    void space.setViewerActive(true);
+    void space.getViewerMode().then((mode) => {
+      this.viewerMode = mode;
+    });
   }
 
   onBackPress(): boolean | void {
@@ -47,11 +45,23 @@ struct AgentSpaceViewer {
   }
 
   aboutToDisappear(): void {
-    const ctx = getContext(this) as common.Context;
-    const agentSpace = AgentSpace.getInstance(ctx);
-    agentSpace.setViewerActive(false);
-    this.displayCallbacks.onSurfaceReady = undefined;
-    this.displayCallbacks.onPointerEvent = undefined;
+    const agentSpace = AgentSpace.getInstance();
+    void agentSpace.setViewerActive(false);
+    this.displaySurfaceInfo = null;
+    this.displayPointerEvent = null;
+  }
+
+  private onDisplayEventSequence(): void {
+    const surfaceInfo = this.displaySurfaceInfo;
+    if (surfaceInfo) {
+      this.displaySurfaceInfo = null;
+      void this.onSurfaceReady(surfaceInfo);
+    }
+    const pointerEvent = this.displayPointerEvent;
+    if (pointerEvent) {
+      this.displayPointerEvent = null;
+      void this.getAgentSpace().sendViewerEvent(pointerEvent);
+    }
   }
 
   private async onSurfaceReady(info: AgentSpaceDisplaySurfaceInfo): Promise<void> {
@@ -69,8 +79,7 @@ struct AgentSpaceViewer {
     if (this.agentSpace) {
       return this.agentSpace;
     }
-    const ctx = getContext(this) as common.UIAbilityContext;
-    const space = AgentSpace.getInstance(ctx);
+    const space = AgentSpace.getInstance();
     this.agentSpace = space;
     return space;
   }

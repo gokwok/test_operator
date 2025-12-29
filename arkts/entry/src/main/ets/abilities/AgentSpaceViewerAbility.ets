@@ -12,6 +12,7 @@ export default class AgentSpaceViewerAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     void launchParam;
+    AgentSpace.init(this.context);
     if (this.handleCloseIfNeeded(want)) {
       return;
     }
@@ -20,6 +21,7 @@ export default class AgentSpaceViewerAbility extends UIAbility {
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     void launchParam;
+    AgentSpace.init(this.context);
     if (this.handleCloseIfNeeded(want)) {
       return;
     }
@@ -46,8 +48,8 @@ export default class AgentSpaceViewerAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    const space = AgentSpace.getInstance(this.context);
-    space.setViewerActive(false);
+    const space = AgentSpace.getInstance();
+    void space.setViewerActive(false);
     hilog.info(DOMAIN, TAG, 'onDestroy');
   }
 
@@ -55,8 +57,8 @@ export default class AgentSpaceViewerAbility extends UIAbility {
     if (want?.action !== VIEWER_CLOSE_ACTION) {
       return false;
     }
-    const space = AgentSpace.getInstance(this.context);
-    space.setViewerActive(false);
+    const space = AgentSpace.getInstance();
+    void space.setViewerActive(false);
     this.context.terminateSelf((err: BusinessError) => {
       void err;
     });
