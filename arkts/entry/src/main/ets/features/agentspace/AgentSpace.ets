@@ -292,11 +292,8 @@ export class AgentSpace {
   }
 
   private async handlePressBack(): Promise<ActionResult> {
-    const rt = await this.ensureVts();
-    const startX = this.normToPx(rt.widthPx, 50);
-    const endX = this.normToPx(rt.widthPx, 350);
-    const y = this.normToPx(rt.heightPx, 500);
-    await this.backend.swipePx(startX, y, endX, y, 220);
+    await this.ensureVts();
+    await this.backend.pressBack();
     return { status: 'SUCCESS' };
   }
 

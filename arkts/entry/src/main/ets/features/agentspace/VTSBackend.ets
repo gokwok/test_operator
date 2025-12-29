@@ -3,6 +3,7 @@ import { display, screen, screenshot } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
 import util from '@ohos.util';
+import { Driver } from '@kit.TestKit';
 import * as AppController from '@hms.ai.appController';
 
 const LOG_TAG: string = '[VTSBackend]';
@@ -12,6 +13,7 @@ const POINTER_ACTION_CANCEL: number = 1;
 const POINTER_ACTION_DOWN: number = 2;
 const POINTER_ACTION_MOVE: number = 3;
 const POINTER_ACTION_UP: number = 4;
+const KEYCODE_ENTER: number = 2054;
 
 enum defaultInputMethodConnId {
   UNREGISTER_VIRTUALSCREEN = 0,
@@ -87,6 +89,7 @@ export class VTSBackend {
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;
   private imeRegistered: boolean = false;
+  private uiTestDriver: Driver | null = null;
 
   constructor(ctx: common.UIAbilityContext) {
     this.ctx = ctx;
@@ -218,10 +221,9 @@ export class VTSBackend {
   }
 
   async pressEnter(): Promise<void> {
-    if (!this.runtime) {
-      return;
-    }
-    AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
+    const rt = this.requireRuntime();
+    const displayId = rt.displayId ?? rt.screenId;
+    await this.getUiTestDriver().triggerKey(KEYCODE_ENTER, displayId);
   }
 
   async screenshotBase64(): Promise<string> {
@@ -328,6 +330,12 @@ export class VTSBackend {
     AppController.processPointEvent(event);
   }
 
+  async pressBack(): Promise<void> {
+    const rt = this.requireRuntime();
+    const displayId = rt.displayId ?? rt.screenId;
+    await this.getUiTestDriver().pressBack(displayId);
+  }
+
   async transferToMain(): Promise<number> {
     const rt = this.requireRuntime();
     const primaryFilterId = rt.displayId ?? rt.screenId;
@@ -372,6 +380,13 @@ export class VTSBackend {
       throw new Error('VTS is not created');
     }
     return this.runtime;
+  }
+
+  private getUiTestDriver(): Driver {
+    if (this.uiTestDriver === null) {
+      this.uiTestDriver = Driver.create();
+    }
+    return this.uiTestDriver;
   }
 
   private registerImeBestEffort(displayId: number): boolean {
