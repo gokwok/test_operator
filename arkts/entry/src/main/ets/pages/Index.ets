@@ -11,6 +11,7 @@ import type { common } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
+import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import { AppState } from '../features/state/app_state';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
@@ -31,12 +32,16 @@ struct Index {
   @State actionInput: string = 'hello';
   @State actionResult: string = '';
   @State appListInfo: string = '';
+  @State serviceStatus: string = '';
+  @State serviceSnapshot: string = '';
+  @State serviceError: string = '';
   @State targetBundleName: string = 'com.sina.weibo.stage';
   @State targetAbilityName: string = 'EntryAbility';
   private readonly initialStatus: string = 'hello world';
   private readonly statusResetDelayMs: number = 260;
   private statusResetTimerId: number = -1;
   private agentSpace: AgentSpace | null = null;
+  private serviceClient: AgentServiceClient | null = null;
   private screenshotBase64: string = '';
   private screenshotLongPressTimerId: number = -1;
   private screenshotPressX: number = 0;
@@ -358,6 +363,70 @@ struct Index {
   }
 
   @Builder
+  private serviceTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('Service')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          Button('Connect')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServiceConnect();
+            })
+
+          Button('Ping')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServicePing();
+            })
+
+          Button('Snapshot')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServiceSnapshot();
+            })
+        }
+
+        if (this.serviceStatus.length > 0) {
+          Text(this.serviceStatus)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.serviceSnapshot.length > 0) {
+          Text(this.serviceSnapshot)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.serviceError.length > 0) {
+          Text(this.serviceError)
+            .fontSize(11)
+            .fontColor('#F8B4B4')
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
+  @Builder
   private actionTab(): void {
     Scroll() {
       Column({ space: 12 }) {
@@ -653,6 +722,11 @@ struct Index {
           .tabBar('VTS')
 
           TabContent() {
+            this.serviceTab();
+          }
+          .tabBar('Service')
+
+          TabContent() {
             this.actionTab();
           }
           .tabBar('Actions')
@@ -692,6 +766,13 @@ struct Index {
       this.agentSpace = AgentSpace.getInstance();
     }
     return this.agentSpace;
+  }
+
+  private getServiceClient(): AgentServiceClient {
+    if (!this.serviceClient) {
+      this.serviceClient = new AgentServiceClient();
+    }
+    return this.serviceClient;
   }
 
   private async ensureRuntime(): Promise<AgentSpaceRuntimeInfo> {
@@ -746,6 +827,38 @@ struct Index {
     } catch (e) {
       this.appListInfo = '';
       this.vtsError = `List apps failed: ${String(e)}`;
+    }
+  }
+
+  private async onServiceConnect(): Promise<void> {
+    this.serviceError = '';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await this.getServiceClient().connect(ctx);
+      this.serviceStatus = 'connected';
+    } catch (e) {
+      this.serviceError = `Service connect failed: ${String(e)}`;
+    }
+  }
+
+  private async onServicePing(): Promise<void> {
+    this.serviceError = '';
+    try {
+      const pong = await this.getServiceClient().ping();
+      this.serviceStatus = `ping: ${pong}`;
+    } catch (e) {
+      this.serviceError = `Service ping failed: ${String(e)}`;
+    }
+  }
+
+  private async onServiceSnapshot(): Promise<void> {
+    this.serviceError = '';
+    try {
+      const snapshot = await this.getServiceClient().getSnapshot();
+      this.serviceSnapshot = snapshot;
+      this.serviceStatus = 'snapshot ok';
+    } catch (e) {
+      this.serviceError = `Service snapshot failed: ${String(e)}`;
     }
   }
 
