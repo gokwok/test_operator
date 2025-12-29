@@ -24,13 +24,14 @@ struct AgentSpaceViewer {
   @State private interactionController: InteractionEffectController = InteractionEffectController.create();
   @State private showGlow: boolean = true;
   @State private showStatus: boolean = true;
+  @State private showOrb: boolean = false;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
     'Viewer active',
     () => {},
     () => {},
     () => {},
     () => {
-      this.switchToOrb();
+      this.hideOverlays();
     }
   );
   @State private orbController: FloatingOrbController = FloatingOrbController.create(
@@ -83,7 +84,7 @@ struct AgentSpaceViewer {
         .padding({ left: 16, right: 16, bottom: 24 })
       }
 
-      FloatingOrb({ controller: this.orbController, visible: !this.showStatus })
+      FloatingOrb({ controller: this.orbController, visible: this.showOrb })
     }
     .width('100%')
     .height('100%')
@@ -214,9 +215,21 @@ struct AgentSpaceViewer {
 
   private switchToOrb(): void {
     this.showStatus = false;
+    this.showGlow = true;
+    this.showOrb = true;
+    this.orbController.setMode('compact');
+    this.orbController.show();
   }
 
   private showFloatWindow(): void {
     this.showStatus = true;
+    this.showGlow = true;
+    this.showOrb = false;
+  }
+
+  private hideOverlays(): void {
+    this.showStatus = false;
+    this.showGlow = false;
+    this.showOrb = false;
   }
 }
