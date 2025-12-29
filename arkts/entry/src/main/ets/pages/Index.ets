@@ -12,6 +12,7 @@ import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import image from '@ohos.multimedia.image';
+import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import util from '@ohos.util';
 
@@ -890,7 +891,12 @@ struct Index {
     }
     this.vtsError = '';
     try {
-      const ctx = getContext(this) as common.Context;
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const granted = await this.ensureWriteImagePermission(ctx);
+      if (!granted) {
+        this.vtsError = 'Permission denied for album save';
+        return;
+      }
       const helper = photoAccessHelper.getPhotoAccessHelper(ctx);
       const request = photoAccessHelper.MediaAssetChangeRequest.createAssetRequest(
         ctx,
@@ -905,6 +911,25 @@ struct Index {
       this.vtsStatus = 'Saved to album';
     } catch (e) {
       this.vtsError = `Save screenshot failed: ${String(e)}`;
+    }
+  }
+
+  private async ensureWriteImagePermission(ctx: common.UIAbilityContext): Promise<boolean> {
+    const atManager = abilityAccessCtrl.createAtManager();
+    const tokenId = ctx.applicationInfo.accessTokenId;
+    try {
+      const status = await atManager.checkAccessToken(tokenId, 'ohos.permission.WRITE_IMAGEVIDEO');
+      if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+        return true;
+      }
+      const result = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.WRITE_IMAGEVIDEO']);
+      if (!result.authResults || result.authResults.length === 0) {
+        return false;
+      }
+      return result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+    } catch (e) {
+      this.vtsError = `Permission request failed: ${String(e)}`;
+      return false;
     }
   }
 
