@@ -12,7 +12,6 @@ export default class AgentSpaceViewerAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     void launchParam;
-    AgentSpace.init(this.context);
     if (this.handleCloseIfNeeded(want)) {
       return;
     }
@@ -21,7 +20,6 @@ export default class AgentSpaceViewerAbility extends UIAbility {
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     void launchParam;
-    AgentSpace.init(this.context);
     if (this.handleCloseIfNeeded(want)) {
       return;
     }
