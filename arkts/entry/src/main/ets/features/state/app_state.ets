@@ -8,13 +8,12 @@ export interface AppListItem {
 
 export class AppState {
   static async listInstalledApps(): Promise<AppListItem[]> {
-    const bundles = await bundleManager.getBundleInfos(
-      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION
-    );
+    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT;
+    const bundles: Array<bundleManager.BundleInfo> = await bundleManager.getAllBundleInfo(flags);
     const items: AppListItem[] = [];
     for (let i = 0; i < bundles.length; i++) {
-      const info = bundles[i];
-      const bundleName = info.bundleName ?? '';
+      const info: bundleManager.BundleInfo = bundles[i];
+      const bundleName: string = info.bundleName ?? '';
       if (bundleName.length === 0) {
         continue;
       }

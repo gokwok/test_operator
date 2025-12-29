@@ -13,6 +13,10 @@
       "value": "label"
     },
     {
+      "name": "permission_get_installed_bundle_list_reason",
+      "value": "List installed apps for debugging."
+    },
+    {
       "name": "permission_write_imagevideo_reason",
       "value": "Save screenshots to album."
     }
