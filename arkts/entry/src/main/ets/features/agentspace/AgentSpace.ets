@@ -44,6 +44,17 @@ export interface ActionParameters {
   options?: Array<string>;
 }
 
+export type AgentSpaceViewerMode = 'display' | 'control';
+
+export type AgentSpacePointerAction = 'down' | 'move' | 'up' | 'cancel';
+
+export interface AgentSpacePointerEvent {
+  action: AgentSpacePointerAction;
+  xNorm: number;
+  yNorm: number;
+  pointerId?: number;
+}
+
 interface AbilityStarterContext {
   startAbility?: (w: Want) => Promise<void> | void;
 }
@@ -60,6 +71,7 @@ export class AgentSpace {
   private viewerActive: boolean = false;
   private surfaceId: string = '';
   private surfaceAttached: boolean = false;
+  private viewerMode: AgentSpaceViewerMode = 'display';
 
   static getInstance(ctx: common.Context): AgentSpace {
     if (!AgentSpace.instance) {
@@ -119,6 +131,18 @@ export class AgentSpace {
       this.surfaceId = '';
       this.surfaceAttached = false;
     }
+  }
+
+  setViewerMode(mode: AgentSpaceViewerMode): void {
+    this.viewerMode = mode;
+  }
+
+  getViewerMode(): AgentSpaceViewerMode {
+    return this.viewerMode;
+  }
+
+  handleViewerPointer(event: AgentSpacePointerEvent): void {
+    void this.handleViewerPointerInternal(event);
   }
 
   async startApp(target: AppTarget): Promise<void> {
@@ -322,6 +346,24 @@ export class AgentSpace {
     return null;
   }
 
+  private async handleViewerPointerInternal(event: AgentSpacePointerEvent): Promise<void> {
+    if (!event) {
+      return;
+    }
+    if (this.viewerMode !== 'control') {
+      return;
+    }
+    const action = event.action;
+    if (action !== 'down' && action !== 'move' && action !== 'up' && action !== 'cancel') {
+      return;
+    }
+    const rt = await this.ensureVts();
+    const x = this.ratioToPx(rt.widthPx, event.xNorm);
+    const y = this.ratioToPx(rt.heightPx, event.yNorm);
+    const pointerId = typeof event.pointerId === 'number' ? event.pointerId : 0;
+    this.backend.injectPointer(action, x, y, pointerId);
+  }
+
   private readPoint(params: ActionParameters | undefined, key: 'point' | 'start_point' | 'end_point'): Array<number> | null {
     if (!params) {
       return null;
@@ -356,6 +398,16 @@ export class AgentSpace {
     const clamped = Math.min(Math.max(value, 0), 1000);
     const max = Math.max(1, limit);
     const px = Math.round((clamped / 1000) * (max - 1));
+    return px < 0 ? 0 : px;
+  }
+
+  private ratioToPx(limit: number, ratio: number): number {
+    if (!Number.isFinite(ratio)) {
+      return 0;
+    }
+    const clamped = Math.min(Math.max(ratio, 0), 1);
+    const max = Math.max(1, limit);
+    const px = Math.round(clamped * (max - 1));
     return px < 0 ? 0 : px;
   }
 

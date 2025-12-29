@@ -252,6 +252,16 @@ struct Index {
               .onClick(() => {
                 void this.onCloseViewer();
               })
+
+            Button('Viewer Control')
+              .fontSize(12)
+              .fontColor(Color.White)
+              .backgroundColor('#2A2C34')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.onShowViewerControl();
+              })
           }
 
           Column({ space: 8 }) {
@@ -582,6 +592,7 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
+      this.getAgentSpace().setViewerMode('display');
       const ctx = getContext(this) as common.UIAbilityContext;
       const want: Want = {
         bundleName: 'com.huawei.aios.agent.operation',
@@ -605,6 +616,22 @@ struct Index {
       await ctx.startAbility(want);
     } catch (e) {
       this.vtsError = `Close viewer failed: ${String(e)}`;
+    }
+  }
+
+  private async onShowViewerControl(): Promise<void> {
+    this.vtsError = '';
+    try {
+      await this.ensureRuntime();
+      this.getAgentSpace().setViewerMode('control');
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const want: Want = {
+        bundleName: 'com.huawei.aios.agent.operation',
+        abilityName: 'AgentSpaceViewerAbility',
+      };
+      await ctx.startAbility(want);
+    } catch (e) {
+      this.vtsError = `Show viewer control failed: ${String(e)}`;
     }
   }
 

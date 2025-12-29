@@ -13,6 +13,8 @@ const POINTER_ACTION_DOWN: number = 2;
 const POINTER_ACTION_MOVE: number = 3;
 const POINTER_ACTION_UP: number = 4;
 
+type PointerAction = 'down' | 'move' | 'up' | 'cancel';
+
 enum defaultInputMethodConnId {
   UNREGISTER_VIRTUALSCREEN = 0,
   REGISTER_VIRTUALSCREEN = 1,
@@ -328,6 +330,21 @@ export class VTSBackend {
     AppController.processPointEvent(event);
   }
 
+  injectPointer(action: PointerAction, x: number, y: number, pointerId: number): void {
+    const rt = this.requireRuntime();
+    const safeId = Number.isFinite(pointerId) ? Math.max(0, Math.floor(pointerId)) : 0;
+    const event: AppController.PointEvent = {
+      id: safeId,
+      pressed: 0,
+      action: this.mapPointerAction(action),
+      type: 2,
+      displayX: x,
+      displayY: y,
+      displayId: rt.screenId,
+    };
+    AppController.processPointEvent(event);
+  }
+
   async transferToMain(): Promise<number> {
     const rt = this.requireRuntime();
     const primaryFilterId = rt.displayId ?? rt.screenId;
@@ -372,6 +389,19 @@ export class VTSBackend {
       throw new Error('VTS is not created');
     }
     return this.runtime;
+  }
+
+  private mapPointerAction(action: PointerAction): number {
+    if (action === 'down') {
+      return POINTER_ACTION_DOWN;
+    }
+    if (action === 'move') {
+      return POINTER_ACTION_MOVE;
+    }
+    if (action === 'up') {
+      return POINTER_ACTION_UP;
+    }
+    return POINTER_ACTION_CANCEL;
   }
 
 
