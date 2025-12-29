@@ -727,6 +727,13 @@ struct Index {
     this.vtsError = '';
     this.appListInfo = 'Loading app list...';
     try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const granted = await this.ensureBundleListPermission(ctx);
+      if (!granted) {
+        this.appListInfo = '';
+        this.vtsError = 'Permission denied for app list';
+        return;
+      }
       const apps = await AppState.listInstalledApps();
       if (apps.length === 0) {
         this.appListInfo = 'No apps found';
@@ -965,6 +972,25 @@ struct Index {
       this.vtsStatus = 'Saved to album';
     } catch (e) {
       this.vtsError = `Save screenshot failed: ${String(e)}`;
+    }
+  }
+
+  private async ensureBundleListPermission(ctx: common.UIAbilityContext): Promise<boolean> {
+    const atManager = abilityAccessCtrl.createAtManager();
+    const tokenId = ctx.applicationInfo.accessTokenId;
+    try {
+      const status = await atManager.checkAccessToken(tokenId, 'ohos.permission.GET_INSTALLED_BUNDLE_LIST');
+      if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+        return true;
+      }
+      const result = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.GET_INSTALLED_BUNDLE_LIST']);
+      if (!result.authResults || result.authResults.length === 0) {
+        return false;
+      }
+      return result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+    } catch (e) {
+      this.vtsError = `Permission request failed: ${String(e)}`;
+      return false;
     }
   }
 
