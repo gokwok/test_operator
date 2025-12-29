@@ -361,6 +361,16 @@ struct Index {
         }
 
         Row({ space: 8 }) {
+          Button('Double Click')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionDoubleClick();
+            })
+
           Button('Long Click')
             .fontSize(12)
             .fontColor(Color.White)
@@ -1011,6 +1021,14 @@ struct Index {
     };
     const action: AgentAction = { name: 'long_click', parameters: params };
     await this.runAction('long_click', action);
+  }
+
+  private async onActionDoubleClick(): Promise<void> {
+    const params: ActionParameters = {
+      point: [500, 500],
+    };
+    const action: AgentAction = { name: 'double_click', parameters: params };
+    await this.runAction('double_click', action);
   }
 
   private async onActionSwipe(): Promise<void> {

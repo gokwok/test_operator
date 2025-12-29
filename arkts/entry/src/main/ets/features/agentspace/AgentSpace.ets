@@ -55,11 +55,30 @@ export interface AgentSpacePointerEvent {
   pointerId?: number;
 }
 
-export interface AgentSpaceViewerEffect {
+export interface AgentSpaceViewerTapEffect {
   kind: 'tap';
   xNorm: number;
   yNorm: number;
 }
+
+export interface AgentSpaceViewerLongPressEffect {
+  kind: 'long_press';
+  xNorm: number;
+  yNorm: number;
+  durationMs?: number;
+}
+
+export interface AgentSpaceViewerSwipeEffect {
+  kind: 'swipe';
+  startXNorm: number;
+  startYNorm: number;
+  endXNorm: number;
+  endYNorm: number;
+  durationMs?: number;
+}
+
+export type AgentSpaceViewerEffect =
+  AgentSpaceViewerTapEffect | AgentSpaceViewerLongPressEffect | AgentSpaceViewerSwipeEffect;
 
 export interface AgentSpaceViewerEffectBatch {
   sequence: number;
@@ -214,8 +233,9 @@ export class AgentSpace {
   }
 
   async swipePx(startX: number, startY: number, endX: number, endY: number): Promise<void> {
-    await this.ensureVts();
+    const rt = await this.ensureVts();
     await this.backend.swipePx(startX, startY, endX, endY);
+    this.emitViewerSwipeFromPx(startX, startY, endX, endY, undefined, rt);
   }
 
   async screenshotBase64(): Promise<string> {
@@ -320,6 +340,7 @@ export class AgentSpace {
     const x = this.normToPx(rt.widthPx, pt[0]);
     const y = this.normToPx(rt.heightPx, pt[1]);
     await this.backend.longClickPx(x, y, duration);
+    this.emitViewerLongPressNorm(pt[0], pt[1], duration);
     return { status: 'SUCCESS' };
   }
 
@@ -336,6 +357,7 @@ export class AgentSpace {
     const ex = this.normToPx(rt.widthPx, end[0]);
     const ey = this.normToPx(rt.heightPx, end[1]);
     await this.backend.swipePx(sx, sy, ex, ey, duration);
+    this.emitViewerSwipeNorm(start[0], start[1], end[0], end[1], duration);
     return { status: 'SUCCESS' };
   }
 
@@ -350,6 +372,7 @@ export class AgentSpace {
       const x = this.normToPx(rt.widthPx, pt[0]);
       const y = this.normToPx(rt.heightPx, pt[1]);
       await this.backend.clickPx(x, y);
+      this.emitViewerTapNorm(pt[0], pt[1]);
       await sleep(120);
     } else {
       await this.ensureVts();
@@ -425,26 +448,74 @@ export class AgentSpace {
     this.backend.injectPointer(action, x, y, pointerId);
   }
 
-  private emitViewerTapNorm(xNorm: number, yNorm: number): void {
+  private pushViewerEffect(effect: AgentSpaceViewerEffect): void {
     if (!this.viewerActive) {
       return;
     }
-    const effect: AgentSpaceViewerEffect = {
-      kind: 'tap',
-      xNorm: this.clampNorm(xNorm),
-      yNorm: this.clampNorm(yNorm),
-    };
     this.viewerEffectSequence += 1;
     this.viewerEffects = [...this.viewerEffects, effect];
   }
 
-  private emitViewerTapFromPx(x: number, y: number, rt: AgentSpaceRuntimeInfo): void {
-    if (!this.viewerActive) {
-      return;
+  private emitViewerTapNorm(xNorm: number, yNorm: number): void {
+    const effect: AgentSpaceViewerTapEffect = {
+      kind: 'tap',
+      xNorm: this.clampNorm(xNorm),
+      yNorm: this.clampNorm(yNorm),
+    };
+    this.pushViewerEffect(effect);
+  }
+
+  private emitViewerLongPressNorm(xNorm: number, yNorm: number, durationMs: number): void {
+    const effect: AgentSpaceViewerLongPressEffect = {
+      kind: 'long_press',
+      xNorm: this.clampNorm(xNorm),
+      yNorm: this.clampNorm(yNorm),
+    };
+    if (Number.isFinite(durationMs)) {
+      effect.durationMs = Math.max(0, Math.floor(durationMs));
     }
+    this.pushViewerEffect(effect);
+  }
+
+  private emitViewerSwipeNorm(
+    startXNorm: number,
+    startYNorm: number,
+    endXNorm: number,
+    endYNorm: number,
+    durationMs: number | undefined
+  ): void {
+    const effect: AgentSpaceViewerSwipeEffect = {
+      kind: 'swipe',
+      startXNorm: this.clampNorm(startXNorm),
+      startYNorm: this.clampNorm(startYNorm),
+      endXNorm: this.clampNorm(endXNorm),
+      endYNorm: this.clampNorm(endYNorm),
+    };
+    if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
+      effect.durationMs = Math.max(0, Math.floor(durationMs));
+    }
+    this.pushViewerEffect(effect);
+  }
+
+  private emitViewerTapFromPx(x: number, y: number, rt: AgentSpaceRuntimeInfo): void {
     const xNorm = this.pxToNorm(rt.widthPx, x);
     const yNorm = this.pxToNorm(rt.heightPx, y);
     this.emitViewerTapNorm(xNorm, yNorm);
+  }
+
+  private emitViewerSwipeFromPx(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    durationMs: number | undefined,
+    rt: AgentSpaceRuntimeInfo
+  ): void {
+    const sxNorm = this.pxToNorm(rt.widthPx, startX);
+    const syNorm = this.pxToNorm(rt.heightPx, startY);
+    const exNorm = this.pxToNorm(rt.widthPx, endX);
+    const eyNorm = this.pxToNorm(rt.heightPx, endY);
+    this.emitViewerSwipeNorm(sxNorm, syNorm, exNorm, eyNorm, durationMs);
   }
 
   private readPoint(params: ActionParameters | undefined, key: 'point' | 'start_point' | 'end_point'): Array<number> | null {

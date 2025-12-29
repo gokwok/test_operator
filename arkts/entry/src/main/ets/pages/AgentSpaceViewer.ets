@@ -2,7 +2,12 @@ import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentSpacePointerEvent, AgentSpaceViewerEffect } from '../features/agentspace/AgentSpace';
-import { InteractionEffectController, InteractionEffectOverlay, InteractionPoint } from '../ui_components/InteractionEffectOverlay';
+import {
+  InteractionEffectController,
+  InteractionEffectOverlay,
+  InteractionEffectOptions,
+  InteractionPoint
+} from '../ui_components/InteractionEffectOverlay';
 import { AgentSpaceDisplay } from '../ui_components/AgentSpaceDisplay';
 import type { AgentSpaceDisplayMode, AgentSpaceDisplaySurfaceInfo } from '../ui_components/AgentSpaceDisplay';
 
@@ -134,10 +139,30 @@ struct AgentSpaceViewer {
   }
 
   private playEffect(effect: AgentSpaceViewerEffect): void {
-    if (effect.kind !== 'tap') {
+    if (effect.kind === 'tap') {
+      const point: InteractionPoint = { x: effect.xNorm, y: effect.yNorm };
+      this.interactionController.tap(point);
       return;
     }
-    const point: InteractionPoint = { x: effect.xNorm, y: effect.yNorm };
-    this.interactionController.tap(point);
+    if (effect.kind === 'long_press') {
+      const point: InteractionPoint = { x: effect.xNorm, y: effect.yNorm };
+      const options = this.resolveEffectOptions(effect.durationMs);
+      this.interactionController.longPress(point, options);
+      return;
+    }
+    if (effect.kind === 'swipe') {
+      const start: InteractionPoint = { x: effect.startXNorm, y: effect.startYNorm };
+      const end: InteractionPoint = { x: effect.endXNorm, y: effect.endYNorm };
+      const options = this.resolveEffectOptions(effect.durationMs);
+      this.interactionController.swipe(start, end, options);
+    }
+  }
+
+  private resolveEffectOptions(durationMs?: number): InteractionEffectOptions | undefined {
+    if (typeof durationMs !== 'number' || !Number.isFinite(durationMs)) {
+      return undefined;
+    }
+    const payload: InteractionEffectOptions = { durationMs };
+    return payload;
   }
 }
