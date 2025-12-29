@@ -11,6 +11,7 @@ import type { common } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
+import { AppState } from '../features/state/app_state';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
@@ -29,6 +30,7 @@ struct Index {
   @State screenshotPixelMap: image.PixelMap | null = null;
   @State actionInput: string = 'hello';
   @State actionResult: string = '';
+  @State appListInfo: string = '';
   @State targetBundleName: string = 'com.sina.weibo.stage';
   @State targetAbilityName: string = 'EntryAbility';
   private readonly initialStatus: string = 'hello world';
@@ -189,6 +191,18 @@ struct Index {
         }
 
         Row({ space: 8 }) {
+          Button('List Apps')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onListApps();
+            })
+        }
+
+        Row({ space: 8 }) {
           Button('Click TL')
             .fontSize(12)
             .fontColor(Color.White)
@@ -310,6 +324,12 @@ struct Index {
 
         if (this.vtsScreenshotInfo.length > 0) {
           Text(this.vtsScreenshotInfo)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.appListInfo.length > 0) {
+          Text(this.appListInfo)
             .fontSize(11)
             .fontColor('#B8C1CC')
         }
@@ -700,6 +720,23 @@ struct Index {
       this.vtsStatus = this.formatRuntime(rt);
     } catch (e) {
       this.vtsError = `VTS status failed: ${String(e)}`;
+    }
+  }
+
+  private async onListApps(): Promise<void> {
+    this.vtsError = '';
+    this.appListInfo = 'Loading app list...';
+    try {
+      const apps = await AppState.listInstalledApps();
+      if (apps.length === 0) {
+        this.appListInfo = 'No apps found';
+        return;
+      }
+      const preview = apps.slice(0, 6).map((item) => item.bundleName).join(', ');
+      this.appListInfo = `Apps: ${apps.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
+    } catch (e) {
+      this.appListInfo = '';
+      this.vtsError = `List apps failed: ${String(e)}`;
     }
   }
 
