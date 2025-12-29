@@ -292,9 +292,7 @@ export class AgentSpace {
   }
 
   private async handlePressBack(): Promise<ActionResult> {
-    await this.ensureVts();
-    await this.backend.pressBack();
-    return { status: 'SUCCESS' };
+    return { status: 'SKIPPED', error: 'press_back_not_implemented' };
   }
 
   private async handleLaunchApp(params?: ActionParameters): Promise<ActionResult> {
