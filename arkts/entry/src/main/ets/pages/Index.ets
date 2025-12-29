@@ -727,15 +727,13 @@ struct Index {
     this.vtsError = '';
     this.appListInfo = 'Loading app list...';
     try {
-      const result = await AppState.listInstalledApps();
-      const apps = result.apps;
+      const apps = await AppState.listInstalledApps();
       if (apps.length === 0) {
-        this.appListInfo = result.scope === 'self' ? 'Self app info unavailable' : 'No apps found';
+        this.appListInfo = 'No apps found';
         return;
       }
       const preview = apps.slice(0, 6).map((item) => item.bundleName).join(', ');
-      const scopeLabel = result.scope === 'self' ? 'Apps (self only)' : 'Apps';
-      this.appListInfo = `${scopeLabel}: ${apps.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
+      this.appListInfo = `Apps: ${apps.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
     } catch (e) {
       this.appListInfo = '';
       this.vtsError = `List apps failed: ${String(e)}`;
