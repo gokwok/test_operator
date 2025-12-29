@@ -3,7 +3,7 @@ import type { BusinessError } from '@kit.BasicServicesKit';
 import type { common } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentSpacePointerEvent } from '../features/agentspace/AgentSpace';
-import { AgentSpaceDisplay } from '../ui_components/AgentSpaceDisplay';
+import { AgentSpaceDisplay, AgentSpaceDisplayCallbacks } from '../ui_components/AgentSpaceDisplay';
 import type { AgentSpaceDisplayMode, AgentSpaceDisplaySurfaceInfo } from '../ui_components/AgentSpaceDisplay';
 
 @Entry
@@ -11,16 +11,13 @@ import type { AgentSpaceDisplayMode, AgentSpaceDisplaySurfaceInfo } from '../ui_
 struct AgentSpaceViewer {
   @State private viewerMode: AgentSpaceDisplayMode = 'display';
   private agentSpace: AgentSpace | null = null;
-  private pointerHandler: ((event: AgentSpacePointerEvent) => void) | null = null;
+  private displayCallbacks: AgentSpaceDisplayCallbacks = new AgentSpaceDisplayCallbacks();
 
   build() {
     Stack() {
       AgentSpaceDisplay({
         mode: this.viewerMode,
-        onSurfaceReady: (info: AgentSpaceDisplaySurfaceInfo) => {
-          void this.onSurfaceReady(info);
-        },
-        onPointerEvent: this.pointerHandler ?? undefined,
+        callbacks: this.displayCallbacks,
       })
         .width('100%')
         .height('100%')
@@ -36,7 +33,12 @@ struct AgentSpaceViewer {
     this.agentSpace = space;
     space.setViewerActive(true);
     this.viewerMode = space.getViewerMode();
-    this.pointerHandler = space.handleViewerPointer.bind(space);
+    this.displayCallbacks.onSurfaceReady = (info: AgentSpaceDisplaySurfaceInfo) => {
+      void this.onSurfaceReady(info);
+    };
+    this.displayCallbacks.onPointerEvent = (event: AgentSpacePointerEvent) => {
+      space.handleViewerPointer(event);
+    };
   }
 
   onBackPress(): boolean | void {
@@ -48,6 +50,8 @@ struct AgentSpaceViewer {
     const ctx = getContext(this) as common.Context;
     const agentSpace = AgentSpace.getInstance(ctx);
     agentSpace.setViewerActive(false);
+    this.displayCallbacks.onSurfaceReady = undefined;
+    this.displayCallbacks.onPointerEvent = undefined;
   }
 
   private async onSurfaceReady(info: AgentSpaceDisplaySurfaceInfo): Promise<void> {

@@ -17,6 +17,11 @@ export interface AgentSpaceDisplaySurfaceInfo {
   surfaceHeight: number;
 }
 
+export class AgentSpaceDisplayCallbacks {
+  onSurfaceReady?: (info: AgentSpaceDisplaySurfaceInfo) => void;
+  onPointerEvent?: (event: AgentSpacePointerEvent) => void;
+}
+
 interface SurfaceRect {
   surfaceWidth: number;
   surfaceHeight: number;
@@ -38,8 +43,7 @@ export struct AgentSpaceDisplay {
   @Prop mode: AgentSpaceDisplayMode = 'display';
   @Prop surfaceWidth: number = -1;
   @Prop surfaceHeight: number = -1;
-  @Prop onSurfaceReady?: (info: AgentSpaceDisplaySurfaceInfo) => void;
-  @Prop onPointerEvent?: (event: AgentSpacePointerEvent) => void;
+  @Prop callbacks: AgentSpaceDisplayCallbacks | null = null;
 
   private xComponentController: XComponentController = new XComponentController();
   private viewWidth: number = 0;
@@ -64,8 +68,9 @@ export struct AgentSpaceDisplay {
           surfaceWidth: size.width,
           surfaceHeight: size.height,
         };
-        if (this.onSurfaceReady) {
-          this.onSurfaceReady(info);
+        const cb = this.callbacks;
+        if (cb && cb.onSurfaceReady) {
+          cb.onSurfaceReady(info);
         }
       })
       .onAreaChange((_oldValue, newValue): void => {
@@ -73,7 +78,8 @@ export struct AgentSpaceDisplay {
         this.viewHeight = Number(newValue.height);
       })
       .onTouch((event) => {
-        if (this.mode !== 'control' || !this.onPointerEvent) {
+        const cb = this.callbacks;
+        if (this.mode !== 'control' || !cb || !cb.onPointerEvent) {
           return;
         }
         const touch = this.getPrimaryTouch(event);
@@ -92,7 +98,7 @@ export struct AgentSpaceDisplay {
           yNorm,
           pointerId: touch.id,
         };
-        this.onPointerEvent(payload);
+        cb.onPointerEvent(payload);
       })
       .width('100%')
       .height('100%')
