@@ -984,14 +984,7 @@ struct Index {
         return true;
       }
       const permission = 'ohos.permission.GET_INSTALLED_BUNDLE_LIST';
-      let result: abilityAccessCtrl.PermissionRequestResult;
-      try {
-        const mainWindow = await ctx.windowStage.getMainWindow();
-        const windowId: number = mainWindow.getWindowProperties().id;
-        result = await atManager.requestPermissionsFromUserWithWindowId(ctx, windowId, [permission]);
-      } catch (e) {
-        result = await atManager.requestPermissionsFromUser(ctx, [permission]);
-      }
+      const result = await atManager.requestPermissionsFromUser(ctx, [permission]);
       if (!result.authResults || result.authResults.length === 0) {
         return false;
       }

@@ -23,6 +23,16 @@ interface GlowRectSpec {
 }
 
 const DEFAULT_PALETTE_NAME = 'Intelligence';
+const DEFAULT_FRAME_INTERVAL_MS = 33; // ~30fps
+const DEFAULT_LAYERS: GlowLayerOptions[] = [
+  { lineWidth: 32, alpha: 0.05 },
+  { lineWidth: 30, alpha: 0.08 },
+  { lineWidth: 28, alpha: 0.12 },
+  { lineWidth: 26, alpha: 0.16 },
+  { lineWidth: 24, alpha: 0.22 },
+  { lineWidth: 20, alpha: 0.3 },
+  { lineWidth: 6, alpha: 0.45 }
+];
 
 export const GLOW_PALETTES: GlowPalette[] = [
   {
@@ -52,6 +62,7 @@ export struct GlowOverlay {
   private readonly settings: RenderingContextSettings = new RenderingContextSettings(true);
 
   private readonly ctxGlow: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
+  private readonly frameIntervalMs: number = DEFAULT_FRAME_INTERVAL_MS;
 
   private viewportWidth: number = 0;
   private viewportHeight: number = 0;
@@ -108,7 +119,7 @@ export struct GlowOverlay {
     if (this.animationTimerId !== -1) {
       return;
     }
-    this.animationTimerId = setInterval(() => this.tick(), 16);
+    this.animationTimerId = setInterval(() => this.tick(), this.frameIntervalMs);
   }
 
   private stop(): void {
@@ -153,18 +164,7 @@ export struct GlowOverlay {
 
   private drawAll(mix: number): void {
     const cornerRadius = this.computeCornerRadius();
-
-    const layers: GlowLayerOptions[] = [
-      { lineWidth: 32, alpha: 0.05 },
-      { lineWidth: 30, alpha: 0.08 },
-      { lineWidth: 28, alpha: 0.12 },
-      { lineWidth: 26, alpha: 0.16 },
-      { lineWidth: 24, alpha: 0.22 },
-      { lineWidth: 20, alpha: 0.3 },
-      { lineWidth: 6, alpha: 0.45 }
-    ];
-
-    this.drawLayer(this.ctxGlow, layers, cornerRadius, mix);
+    this.drawLayer(this.ctxGlow, DEFAULT_LAYERS, cornerRadius, mix);
   }
 
   private drawLayer(
@@ -176,18 +176,28 @@ export struct GlowOverlay {
     const w = this.viewportWidth;
     const h = this.viewportHeight;
     ctx.clearRect(0, 0, w, h);
+    const centerX = w / 2;
+    const centerY = h / 2;
+    let currentGradient: CanvasGradient | null = null;
+    let nextGradient: CanvasGradient | null = null;
+    if (mix < 1) {
+      currentGradient = this.createGlowGradient(ctx, centerX, centerY, this.rotationRad, this.currentStops);
+    }
+    if (mix > 0) {
+      nextGradient = this.createGlowGradient(ctx, centerX, centerY, this.rotationRad, this.nextStops);
+    }
     for (let i = 0; i < layers.length; i++) {
       const layer = layers[i];
       if (mix <= 0) {
-        this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha, cornerRadius, this.currentStops);
+        this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha, cornerRadius, currentGradient!);
         continue;
       }
       if (mix >= 1) {
-        this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha, cornerRadius, this.nextStops);
+        this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha, cornerRadius, nextGradient!);
         continue;
       }
-      this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha * (1 - mix), cornerRadius, this.currentStops);
-      this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha * mix, cornerRadius, this.nextStops);
+      this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha * (1 - mix), cornerRadius, currentGradient!);
+      this.strokeGlowRect(ctx, layer.lineWidth, layer.alpha * mix, cornerRadius, nextGradient!);
     }
   }
 
@@ -196,7 +206,7 @@ export struct GlowOverlay {
     lineWidth: number,
     alpha: number,
     cornerRadius: number,
-    stops: GlowStop[]
+    gradient: CanvasGradient
   ): void {
     const rect = this.computeRect(lineWidth, cornerRadius);
     ctx.save();
@@ -204,7 +214,7 @@ export struct GlowOverlay {
     ctx.lineWidth = lineWidth;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = this.createGlowGradient(ctx, this.viewportWidth / 2, this.viewportHeight / 2, this.rotationRad, stops);
+    ctx.strokeStyle = gradient;
     ctx.beginPath();
     this.roundedRectPath(ctx, rect.x, rect.y, rect.width, rect.height, rect.radius);
     ctx.stroke();
