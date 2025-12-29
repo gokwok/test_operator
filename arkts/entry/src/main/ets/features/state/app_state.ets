@@ -13,14 +13,14 @@ export class AppState {
     const items: AppListItem[] = [];
     for (let i = 0; i < bundles.length; i++) {
       const info: bundleManager.BundleInfo = bundles[i];
-      const bundleName: string = info.bundleName ?? '';
+      const bundleName: string = info.name;
       if (bundleName.length === 0) {
         continue;
       }
       items.push({
         bundleName,
-        versionName: info.versionName ?? '',
-        versionCode: Number(info.versionCode ?? 0),
+        versionName: info.versionName,
+        versionCode: Number(info.versionCode),
       });
     }
     items.sort((a, b) => a.bundleName.localeCompare(b.bundleName));
