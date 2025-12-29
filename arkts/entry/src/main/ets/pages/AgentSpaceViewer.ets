@@ -2,6 +2,9 @@ import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentSpacePointerEvent, AgentSpaceViewerEffect } from '../features/agentspace/AgentSpace';
+import { GlowOverlay, GLOW_PALETTES } from '../ui_components/GlowOverlay';
+import { FloatingOrb, FloatingOrbController } from '../ui_components/FloatingOrb';
+import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
 import {
   InteractionEffectController,
   InteractionEffectOverlay,
@@ -19,10 +22,29 @@ struct AgentSpaceViewer {
   @State private displaySurfaceInfo: AgentSpaceDisplaySurfaceInfo | null = null;
   @State private displayPointerEvent: AgentSpacePointerEvent | null = null;
   @State private interactionController: InteractionEffectController = InteractionEffectController.create();
+  @State private showGlow: boolean = true;
+  @State private showStatus: boolean = true;
+  @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
+    'Viewer active',
+    () => {},
+    () => {},
+    () => {},
+    () => {
+      this.switchToOrb();
+    }
+  );
+  @State private orbController: FloatingOrbController = FloatingOrbController.create(
+    'AgentSpace',
+    'compact',
+    () => {
+      this.showFloatWindow();
+    }
+  );
   private agentSpace: AgentSpace | null = null;
   private effectSequence: number = 0;
   private effectPollTimerId: number = -1;
   private effectPolling: boolean = false;
+  private readonly glowPaletteName: string = GLOW_PALETTES[0].name;
 
   build() {
     Stack() {
@@ -35,9 +57,36 @@ struct AgentSpaceViewer {
         .width('100%')
         .height('100%')
 
+      GlowOverlay({ paletteName: this.glowPaletteName, visible: this.showGlow })
+        .width('100%')
+        .height('100%')
+
       InteractionEffectOverlay({ controller: this.interactionController })
         .width('100%')
         .height('100%')
+
+      if (this.showStatus) {
+        Stack()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#00000000')
+          .onClick(() => {
+            this.switchToOrb();
+          })
+      }
+
+      RelativeContainer() {
+        StatusFloatWindow({ controller: this.statusController, visible: this.showStatus })
+          .width('100%')
+          .alignRules({
+            bottom: { anchor: '__container__', align: VerticalAlign.Bottom },
+            middle: { anchor: '__container__', align: HorizontalAlign.Center }
+          })
+      }
+      .width('100%')
+      .height('100%')
+
+      FloatingOrb({ controller: this.orbController, visible: !this.showStatus })
     }
     .width('100%')
     .height('100%')
@@ -164,5 +213,13 @@ struct AgentSpaceViewer {
     }
     const payload: InteractionEffectOptions = { durationMs };
     return payload;
+  }
+
+  private switchToOrb(): void {
+    this.showStatus = false;
+  }
+
+  private showFloatWindow(): void {
+    this.showStatus = true;
   }
 }
