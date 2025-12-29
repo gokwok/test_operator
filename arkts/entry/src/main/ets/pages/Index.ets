@@ -19,7 +19,7 @@ const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 @Entry
 @Component
 struct Index {
-  @State tabIndex: number = 0;
+  @State activeTabIndex: number = 0;
   @State paletteIndex: number = 0;
   @State showStatus: boolean = false;
   @State showGlow: boolean = false;
@@ -590,7 +590,7 @@ struct Index {
         .height('100%')
 
       RelativeContainer() {
-        Tabs({ index: this.tabIndex }) {
+        Tabs({ index: this.activeTabIndex }) {
           TabContent() {
             this.viewerTab();
           }
@@ -614,7 +614,7 @@ struct Index {
         .barPosition(BarPosition.Start)
         .scrollable(true)
         .onChange((index: number) => {
-          this.tabIndex = index;
+          this.activeTabIndex = index;
         })
         .width('100%')
         .height('100%')
