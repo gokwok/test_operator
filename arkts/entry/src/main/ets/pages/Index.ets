@@ -11,18 +11,22 @@ import type { common, Want } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
+import image from '@ohos.multimedia.image';
+import util from '@ohos.util';
 
 const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 
 @Entry
 @Component
 struct Index {
+  @State tabIndex: number = 0;
   @State paletteIndex: number = 0;
   @State showStatus: boolean = false;
   @State showGlow: boolean = false;
   @State vtsStatus: string = 'idle';
   @State vtsError: string = '';
   @State vtsScreenshotInfo: string = '';
+  @State screenshotPixelMap: image.PixelMap | null = null;
   @State actionInput: string = 'hello';
   @State actionResult: string = '';
   @State targetBundleName: string = 'com.sina.weibo.stage';
@@ -75,6 +79,501 @@ struct Index {
     return this.palettes[this.paletteIndex];
   }
 
+  @Builder
+  private viewerTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('Viewer')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          Button('Show Viewer')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onShowViewer();
+            })
+
+          Button('Viewer Control')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onShowViewerControl();
+            })
+
+          Button('Close Viewer')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onCloseViewer();
+            })
+        }
+
+        if (this.vtsError.length > 0) {
+          Text(this.vtsError)
+            .fontSize(11)
+            .fontColor('#F8B4B4')
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
+  @Builder
+  private vtsTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('VTS')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          Button('Create')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsCreate();
+            })
+
+          Button('State')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.onVtsStatus();
+            })
+
+          Button('Launch')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsLaunch();
+            })
+
+          Button('Destroy')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsDestroy();
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Click TL')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsClickPreset(0.1, 0.2);
+            })
+
+          Button('Click C')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsClickPreset(0.5, 0.5);
+            })
+
+          Button('Click BR')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsClickPreset(0.9, 0.8);
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Swipe Up')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsSwipeUp();
+            })
+
+          Button('Shot')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsScreenshot();
+            })
+
+          Button('Transfer')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsTransfer();
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Stop')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onVtsStop();
+            })
+        }
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: 'bundleName', text: this.targetBundleName })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((v: string) => {
+              this.targetBundleName = v;
+            })
+
+          TextInput({ placeholder: 'abilityName', text: this.targetAbilityName })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((v: string) => {
+              this.targetAbilityName = v;
+            })
+        }
+
+        if (this.vtsStatus.length > 0) {
+          Text(this.vtsStatus)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.vtsScreenshotInfo.length > 0) {
+          Text(this.vtsScreenshotInfo)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.screenshotPixelMap) {
+          Image(this.screenshotPixelMap)
+            .width('100%')
+            .height(220)
+            .borderRadius(12)
+            .backgroundColor('#111217')
+            .objectFit(ImageFit.Contain)
+        }
+
+        if (this.vtsError.length > 0) {
+          Text(this.vtsError)
+            .fontSize(11)
+            .fontColor('#F8B4B4')
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
+  @Builder
+  private actionTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('Actions')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: 'type content', text: this.actionInput })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((v: string) => {
+              this.actionInput = v;
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Long Click')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionLongClick();
+            })
+
+          Button('Action Swipe')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionSwipe();
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Type')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionType(false);
+            })
+
+          Button('Type @C')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionType(true);
+            })
+
+          Button('Back')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionPressBack();
+            })
+
+          Button('Enter')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionPressEnter();
+            })
+        }
+
+        if (this.actionResult.length > 0) {
+          Text(this.actionResult)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.vtsError.length > 0) {
+          Text(this.vtsError)
+            .fontSize(11)
+            .fontColor('#F8B4B4')
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
+  @Builder
+  private fxTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('FX')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          ForEach(this.palettes, (item: GlowPalette, index: number) => {
+            Button(item.name)
+              .fontSize(12)
+              .fontColor(this.paletteIndex === index ? Color.Black : Color.White)
+              .backgroundColor(this.paletteIndex === index ? '#F2F2F2' : '#1A1B22')
+              .borderRadius(16)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.paletteIndex = index;
+              })
+          }, (item: GlowPalette) => item.name)
+        }
+
+        Row({ space: 8 }) {
+          Button('Status: short')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.statusController.setStatus('hello world');
+            })
+
+          Button('Status: alert')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.statusController.setStatus('- **Thinkflow**：智能体“程序/包”的抽象（交付物 + 入口 + 资源声明 + 运行配置）。Thinkflow 不定义推理循环，不绑定框架。\n' +
+                '- **Thinkflow Runtime（TFR）**：承载 Thinkflow 的执行抽象，类似线程/actor。负责会话与运行生命周期、**会话级隔离**、调度与事件输出，以及把 AIOS 资源以 localhost 端点注入。\n' +
+                '- **AIOS**：平台底座，提供并治理智能资源（LPU/Memory/Tools 等）。');
+            })
+
+          Button('Status: long')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.statusController.setStatus(
+                'This is a longer status message that should wrap onto a second line to verify auto height.'
+              );
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button(this.showStatus ? 'Hide Status' : 'Show Status')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.showStatus = !this.showStatus;
+            })
+
+          Button(this.showGlow ? 'Hide Glow' : 'Show Glow')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.showGlow = !this.showGlow;
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button(this.orbController.visible ? 'Hide Orb' : 'Show Orb')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.orbController.toggle();
+            })
+
+          Button('Orb Mode')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              const nextMode: FloatingOrbMode =
+                this.orbController.mode === 'expanded' ? 'compact' : 'expanded';
+              this.orbController.setMode(nextMode);
+            })
+
+          Button('Orb Text')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              const nextText =
+                this.orbController.text === '任务即将恢复 (4)' ? '继续播放' : '任务即将恢复 (4)';
+              this.orbController.setText(nextText);
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Click')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.interactionController.tap(this.tapPoint);
+            })
+
+          Button('LongPress')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.interactionController.longPress(this.tapPoint);
+            })
+
+          Button('Swipe')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              this.interactionController.swipe(this.swipeStart, this.swipeEnd, this.swipeOptions);
+            })
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
   build() {
     Stack() {
       Column()
@@ -91,446 +590,42 @@ struct Index {
         .height('100%')
 
       RelativeContainer() {
-        Column({ space: 12 }) {
-          Row({ space: 8 }) {
-            ForEach(this.palettes, (item: GlowPalette, index: number) => {
-              Button(item.name)
-                .fontSize(12)
-                .fontColor(this.paletteIndex === index ? Color.Black : Color.White)
-                .backgroundColor(this.paletteIndex === index ? '#F2F2F2' : '#1A1B22')
-                .borderRadius(16)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  this.paletteIndex = index;
-                })
-            }, (item: GlowPalette) => item.name)
+        Tabs({ index: this.tabIndex }) {
+          TabContent() {
+            this.viewerTab();
           }
+          .tabBar('Viewer')
 
-          Row({ space: 8 }) {
-            Button('Status: short')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.statusController.setStatus('hello world');
-              })
-
-            Button('Status: alert')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.statusController.setStatus('- **Thinkflow**：智能体“程序/包”的抽象（交付物 + 入口 + 资源声明 + 运行配置）。Thinkflow 不定义推理循环，不绑定框架。\n' +
-                  '- **Thinkflow Runtime（TFR）**：承载 Thinkflow 的执行抽象，类似线程/actor。负责会话与运行生命周期、**会话级隔离**、调度与事件输出，以及把 AIOS 资源以 localhost 端点注入。\n' +
-                  '- **AIOS**：平台底座，提供并治理智能资源（LPU/Memory/Tools 等）。');
-              })
-
-            Button('Status: long')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.statusController.setStatus(
-                  'This is a longer status message that should wrap onto a second line to verify auto height.'
-                );
-              })
+          TabContent() {
+            this.vtsTab();
           }
+          .tabBar('VTS')
 
-          Row({ space: 8 }) {
-            Button(this.showStatus ? 'Hide Status' : 'Show Status')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.showStatus = !this.showStatus;
-              })
-
-            Button(this.showGlow ? 'Hide Glow' : 'Show Glow')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.showGlow = !this.showGlow;
-              })
+          TabContent() {
+            this.actionTab();
           }
+          .tabBar('Actions')
 
-          Row({ space: 8 }) {
-            Button(this.orbController.visible ? 'Hide Orb' : 'Show Orb')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.orbController.toggle();
-              })
-
-            Button('Orb Mode')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                const nextMode: FloatingOrbMode =
-                  this.orbController.mode === 'expanded' ? 'compact' : 'expanded';
-                this.orbController.setMode(nextMode);
-              })
-
-            Button('Orb Text')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                const nextText =
-                  this.orbController.text === '任务即将恢复 (4)' ? '继续播放' : '任务即将恢复 (4)';
-                this.orbController.setText(nextText);
-              })
+          TabContent() {
+            this.fxTab();
           }
-
-          Row({ space: 8 }) {
-            Button('Click')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.interactionController.tap(this.tapPoint);
-              })
-
-            Button('LongPress')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.interactionController.longPress(this.tapPoint);
-              })
-
-            Button('Swipe')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                this.interactionController.swipe(this.swipeStart, this.swipeEnd, this.swipeOptions);
-              })
-          }
-
-          Row({ space: 8 }) {
-            Button('Show Viewer')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                void this.onShowViewer();
-              })
-
-            Button('Close Viewer')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                void this.onCloseViewer();
-              })
-
-            Button('Viewer Control')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .backgroundColor('#2A2C34')
-              .borderRadius(14)
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .onClick(() => {
-                void this.onShowViewerControl();
-              })
-          }
-
-          Column({ space: 8 }) {
-            Text('Debug')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .fontWeight(FontWeight.Medium)
-
-            Row({ space: 8 }) {
-              Button('Create')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsCreate();
-                })
-
-              Button('State')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  this.onVtsStatus();
-                })
-
-              Button('Launch')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsLaunch();
-                })
-
-              Button('Destroy')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsDestroy();
-                })
-            }
-
-            Row({ space: 8 }) {
-              Button('Click TL')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsClickPreset(0.1, 0.2);
-                })
-
-              Button('Click C')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsClickPreset(0.5, 0.5);
-                })
-
-              Button('Click BR')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsClickPreset(0.9, 0.8);
-                })
-            }
-
-            Row({ space: 8 }) {
-              Button('Swipe Up')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsSwipeUp();
-                })
-
-              Button('Shot')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsScreenshot();
-                })
-
-              Button('Transfer')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsTransfer();
-                })
-            }
-
-            Row({ space: 8 }) {
-              Button('Stop')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onVtsStop();
-                })
-            }
-
-            Text('Action Debug')
-              .fontSize(12)
-              .fontColor(Color.White)
-              .fontWeight(FontWeight.Medium)
-
-            Row({ space: 8 }) {
-              TextInput({ placeholder: 'type content', text: this.actionInput })
-                .layoutWeight(1)
-                .height(32)
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#1A1B22')
-                .borderRadius(10)
-                .padding({ left: 8, right: 8 })
-                .onChange((v: string) => {
-                  this.actionInput = v;
-                })
-            }
-
-            Row({ space: 8 }) {
-              Button('Long Click')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onActionLongClick();
-                })
-
-              Button('Action Swipe')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onActionSwipe();
-                })
-            }
-
-            Row({ space: 8 }) {
-              Button('Type')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onActionType(false);
-                })
-
-              Button('Type @C')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onActionType(true);
-                })
-
-              Button('Back')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onActionPressBack();
-                })
-
-              Button('Enter')
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#2A2C34')
-                .borderRadius(14)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .onClick(() => {
-                  void this.onActionPressEnter();
-                })
-            }
-
-            Row({ space: 8 }) {
-              TextInput({ placeholder: 'bundleName', text: this.targetBundleName })
-                .layoutWeight(1)
-                .height(32)
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#1A1B22')
-                .borderRadius(10)
-                .padding({ left: 8, right: 8 })
-                .onChange((v: string) => {
-                  this.targetBundleName = v;
-                })
-
-              TextInput({ placeholder: 'abilityName', text: this.targetAbilityName })
-                .layoutWeight(1)
-                .height(32)
-                .fontSize(12)
-                .fontColor(Color.White)
-                .backgroundColor('#1A1B22')
-                .borderRadius(10)
-                .padding({ left: 8, right: 8 })
-                .onChange((v: string) => {
-                  this.targetAbilityName = v;
-                })
-            }
-
-            if (this.vtsStatus.length > 0) {
-              Text(this.vtsStatus)
-                .fontSize(11)
-                .fontColor('#B8C1CC')
-            }
-
-            if (this.vtsScreenshotInfo.length > 0) {
-              Text(this.vtsScreenshotInfo)
-                .fontSize(11)
-                .fontColor('#B8C1CC')
-            }
-
-            if (this.actionResult.length > 0) {
-              Text(this.actionResult)
-                .fontSize(11)
-                .fontColor('#B8C1CC')
-            }
-
-            if (this.vtsError.length > 0) {
-              Text(this.vtsError)
-                .fontSize(11)
-                .fontColor('#F8B4B4')
-            }
-          }
-
-          StatusFloatWindow({ controller: this.statusController, visible: this.showStatus })
-            .width('100%')
+          .tabBar('FX')
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, bottom: 24 })
-        .alignRules({
-          bottom: { anchor: '__container__', align: VerticalAlign.Bottom },
-          middle: { anchor: '__container__', align: HorizontalAlign.Center }
+        .barPosition(BarPosition.Start)
+        .scrollable(true)
+        .onChange((index: number) => {
+          this.tabIndex = index;
         })
+        .width('100%')
+        .height('100%')
+        .padding({ left: 16, right: 16, top: 16, bottom: 24 })
+
+        StatusFloatWindow({ controller: this.statusController, visible: this.showStatus })
+          .width('100%')
+          .alignRules({
+            bottom: { anchor: '__container__', align: VerticalAlign.Bottom },
+            middle: { anchor: '__container__', align: HorizontalAlign.Center }
+          })
       }
       .width('100%')
       .height('100%')
@@ -701,9 +796,39 @@ struct Index {
       this.vtsScreenshotInfo = `screenshot len: ${raw.length} ms: ${costMs}`;
       if (raw.length === 0) {
         this.vtsError = 'Screenshot empty';
+        this.screenshotPixelMap = null;
+        return;
       }
+      await this.updateScreenshotPreview(raw);
     } catch (e) {
       this.vtsError = `VTS screenshot failed: ${String(e)}`;
+    }
+  }
+
+  private async updateScreenshotPreview(base64: string): Promise<void> {
+    if (base64.length === 0) {
+      this.screenshotPixelMap = null;
+      return;
+    }
+    let source: image.ImageSource | null = null;
+    try {
+      const helper = new util.Base64Helper();
+      const decoded = helper.decodeSync(base64);
+      const buffer = decoded.buffer.slice(decoded.byteOffset, decoded.byteOffset + decoded.byteLength);
+      source = image.createImageSource(buffer);
+      const pixelMap = await source.createPixelMap();
+      this.screenshotPixelMap = pixelMap;
+    } catch (e) {
+      this.screenshotPixelMap = null;
+      this.vtsError = `Screenshot decode failed: ${String(e)}`;
+    } finally {
+      if (source) {
+        try {
+          await source.release();
+        } catch {
+          // Ignore release failures.
+        }
+      }
     }
   }
 
