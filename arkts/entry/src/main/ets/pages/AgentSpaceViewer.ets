@@ -3,6 +3,7 @@ import type { BusinessError } from '@kit.BasicServicesKit';
 import type { common } from '@kit.AbilityKit';
 import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
+import type { TaskSnapshot } from '../features/agent_service/types';
 import { GlowOverlay, GLOW_PALETTES } from '../ui_components/GlowOverlay';
 import { FloatingOrb, FloatingOrbController } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
@@ -50,6 +51,9 @@ struct AgentSpaceViewer {
   private effectSequence: number = 0;
   private effectPollTimerId: number = -1;
   private effectPolling: boolean = false;
+  private statusPollTimerId: number = -1;
+  private statusPolling: boolean = false;
+  private lastStatusText: string = '';
   private readonly glowPaletteName: string = GLOW_PALETTES[0].name;
 
   build() {
@@ -100,6 +104,7 @@ struct AgentSpaceViewer {
     void this.prepareViewer();
     this.interactionController.configure({ coordScale: 1000 });
     this.startEffectPolling();
+    this.startStatusPolling();
   }
 
   onBackPress(): boolean | void {
@@ -112,6 +117,7 @@ struct AgentSpaceViewer {
     this.displaySurfaceInfo = null;
     this.displayPointerEvent = null;
     this.stopEffectPolling();
+    this.stopStatusPolling();
   }
 
   private onDisplayEventSequence(): void {
@@ -199,6 +205,43 @@ struct AgentSpaceViewer {
     this.effectPollTimerId = -1;
   }
 
+  private startStatusPolling(): void {
+    if (this.statusPollTimerId !== -1) {
+      return;
+    }
+    this.statusPollTimerId = setInterval(() => {
+      void this.flushTaskStatus();
+    }, 500);
+  }
+
+  private stopStatusPolling(): void {
+    if (this.statusPollTimerId === -1) {
+      return;
+    }
+    clearInterval(this.statusPollTimerId);
+    this.statusPollTimerId = -1;
+  }
+
+  private async flushTaskStatus(): Promise<void> {
+    if (this.statusPolling) {
+      return;
+    }
+    this.statusPolling = true;
+    try {
+      await this.ensureServiceConnected();
+      const snapshotText = await this.getServiceClient().getSnapshot();
+      const description = this.readSnapshotDescription(snapshotText);
+      if (description.length > 0 && description !== this.lastStatusText) {
+        this.lastStatusText = description;
+        this.statusController.setStatus(description);
+      }
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] status poll failed: ${String(e)}`);
+    } finally {
+      this.statusPolling = false;
+    }
+  }
+
   private async flushViewerEffects(): Promise<void> {
     if (this.effectPolling) {
       return;
@@ -268,6 +311,22 @@ struct AgentSpaceViewer {
     } catch (e) {
       console.error(`[AgentSpaceViewer] parse effects failed: ${String(e)}`);
       return null;
+    }
+  }
+
+  private readSnapshotDescription(payload: string): string {
+    if (payload.length === 0) {
+      return '';
+    }
+    try {
+      const parsed = JSON.parse(payload) as TaskSnapshot;
+      if (!parsed || typeof parsed.lastDescription !== 'string') {
+        return '';
+      }
+      return parsed.lastDescription.trim();
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] parse snapshot failed: ${String(e)}`);
+      return '';
     }
   }
 
