@@ -1,5 +1,6 @@
 import bundleManager from '@ohos.bundle.bundleManager';
 import bundleResourceManager from '@ohos.bundle.bundleResourceManager';
+import preferences from '@ohos.data.preferences';
 import image from '@ohos.multimedia.image';
 import type { common } from '@kit.AbilityKit';
 
@@ -24,20 +25,50 @@ class AppCacheCandidate {
   }
 }
 
+class PersistedAppEntry {
+  appId: string;
+  label: string;
+  displayName: string;
+
+  constructor(appId: string, label: string, displayName: string) {
+    this.appId = appId;
+    this.label = label;
+    this.displayName = displayName;
+  }
+}
+
+class PersistedAppCache {
+  schemaVersion: number;
+  updatedAtMs: number;
+  entries: PersistedAppEntry[];
+
+  constructor(schemaVersion: number, updatedAtMs: number, entries: PersistedAppEntry[]) {
+    this.schemaVersion = schemaVersion;
+    this.updatedAtMs = updatedAtMs;
+    this.entries = entries;
+  }
+}
+
 export class AppState {
   private static readonly appNameToAppId: Map<string, string> = new Map<string, string>();
   private static readonly appIdToInfo: Map<string, appInfo> = new Map<string, appInfo>();
-  private static readonly cacheTtlMs: number = 2000;
+  private static readonly cacheTtlMs: number = 24 * 60 * 60 * 1000;
   private static cacheUpdatedAtMs: number = 0;
   private static cachedAppNames: string[] = [];
+  private static diskCacheLoaded: boolean = false;
+  private static refreshInFlight: Promise<void> | null = null;
 
-  static async listAppNames(_ctx: common.UIAbilityContext): Promise<string[]> {
-    await AppState.ensureAppCache();
+  private static readonly diskSchemaVersion: number = 1;
+  private static readonly prefsName: string = 'app_state_cache';
+  private static readonly prefsKey: string = 'cache_v1';
+
+  static async listAppNames(ctx: common.UIAbilityContext): Promise<string[]> {
+    await AppState.ensureAppCache(ctx);
     return AppState.cachedAppNames.slice();
   }
 
-  static async getLaunchTargetByAppName(appName: string, _ctx: common.UIAbilityContext): Promise<AppLaunchTarget> {
-    const bundleName = await AppState.resolveAppIdByName(appName);
+  static async getLaunchTargetByAppName(appName: string, ctx: common.UIAbilityContext): Promise<AppLaunchTarget> {
+    const bundleName = await AppState.resolveAppIdByName(appName, ctx);
     const want = await bundleManager.getLaunchWantForBundle(bundleName);
     const abilityName = want.abilityName?.trim() ?? '';
     if (abilityName.length === 0) {
@@ -47,27 +78,65 @@ export class AppState {
     return { bundleName, abilityName };
   }
 
-  static async getIconByAppName(appName: string, _ctx: common.UIAbilityContext): Promise<image.PixelMap> {
-    const appId = await AppState.resolveAppIdByName(appName);
-    await AppState.ensureAppCache();
+  static async getIconByAppName(appName: string, ctx: common.UIAbilityContext): Promise<image.PixelMap> {
+    const appId = await AppState.resolveAppIdByName(appName, ctx);
+    await AppState.ensureAppCache(ctx);
 
     const info = AppState.appIdToInfo.get(appId);
-    const pixelMap = info?.appIcon;
+    if (!info) {
+      throw new Error(`App not found: ${appName}`);
+    }
+
+    if (info.appIcon) {
+      return info.appIcon;
+    }
+
+    const appFlags: number = bundleManager.ApplicationFlag.GET_APPLICATION_INFO_DEFAULT |
+      bundleManager.ApplicationFlag.GET_APPLICATION_INFO_WITH_DISABLE;
+
+    const applicationInfo = await bundleManager.getApplicationInfo(appId, appFlags);
+    const iconFlags: number = bundleResourceManager.ResourceFlag.GET_RESOURCE_INFO_WITH_DRAWABLE_DESCRIPTOR;
+    const resourceInfo = bundleResourceManager.getBundleResourceInfo(applicationInfo.name, iconFlags, applicationInfo.appIndex);
+    const pixelMap = resourceInfo?.drawableDescriptor?.getPixelMap();
     if (!pixelMap) {
       throw new Error(`App icon not found: ${appName}`);
     }
+    info.appIcon = pixelMap;
     return pixelMap;
   }
 
-  private static async ensureAppCache(): Promise<void> {
+  private static async ensureAppCache(ctx: common.UIAbilityContext): Promise<void> {
     const now = Date.now();
     if (AppState.cachedAppNames.length > 0 && now - AppState.cacheUpdatedAtMs < AppState.cacheTtlMs) {
       return;
     }
-    await AppState.refreshAppCache();
+
+    if (!AppState.diskCacheLoaded) {
+      AppState.diskCacheLoaded = true;
+      const loaded = await AppState.loadDiskCache(ctx);
+      if (loaded && AppState.cachedAppNames.length > 0 && now - AppState.cacheUpdatedAtMs < AppState.cacheTtlMs) {
+        return;
+      }
+    }
+
+    await AppState.refreshAppCache(ctx);
   }
 
-  private static async refreshAppCache(): Promise<void> {
+  private static async refreshAppCache(ctx: common.UIAbilityContext): Promise<void> {
+    if (AppState.refreshInFlight) {
+      await AppState.refreshInFlight;
+      return;
+    }
+    const task = AppState.refreshAppCacheOnce(ctx);
+    AppState.refreshInFlight = task;
+    try {
+      await task;
+    } finally {
+      AppState.refreshInFlight = null;
+    }
+  }
+
+  private static async refreshAppCacheOnce(ctx: common.UIAbilityContext): Promise<void> {
     const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
     const bundles = await bundleManager.getAllBundleInfo(flags);
 
@@ -86,25 +155,12 @@ export class AppState {
         bundleManager.ApplicationFlag.GET_APPLICATION_INFO_WITH_DISABLE;
 
       let appIndex: number = 0;
-      let applicationName: string = bundleName;
       try {
         const applicationInfo = await bundleManager.getApplicationInfo(bundleName, appFlags);
         appIndex = applicationInfo.appIndex;
-        applicationName = applicationInfo.name;
       } catch (_e) {
         candidates.push(new AppCacheCandidate(info, bundleName));
         continue;
-      }
-
-      try {
-        const iconFlags: number = bundleResourceManager.ResourceFlag.GET_RESOURCE_INFO_WITH_DRAWABLE_DESCRIPTOR;
-        const resourceInfo = bundleResourceManager.getBundleResourceInfo(applicationName, iconFlags, appIndex);
-        const pixelMap = resourceInfo?.drawableDescriptor?.getPixelMap();
-        if (pixelMap) {
-          info.appIcon = pixelMap;
-        }
-      } catch (_e) {
-        // ignore
       }
 
       try {
@@ -141,6 +197,8 @@ export class AppState {
     names.sort((a, b) => AppState.compareAppNames(a, b));
     AppState.cachedAppNames = AppState.uniqueStrings(names);
     AppState.cacheUpdatedAtMs = Date.now();
+
+    await AppState.saveDiskCache(ctx);
   }
 
   private static normalizeAppLabel(label: string | ResourceStr | undefined): string {
@@ -155,13 +213,13 @@ export class AppState {
     return AppState.isResourceLikeLabel(normalized) ? '' : normalized;
   }
 
-  private static async resolveAppIdByName(appName: string): Promise<string> {
+  private static async resolveAppIdByName(appName: string, ctx: common.UIAbilityContext): Promise<string> {
     const normalized = appName.trim();
     if (normalized.length === 0) {
       throw new Error('appName is empty');
     }
 
-    await AppState.ensureAppCache();
+    await AppState.ensureAppCache(ctx);
 
     if (AppState.appIdToInfo.has(normalized)) {
       return normalized;
@@ -173,6 +231,18 @@ export class AppState {
     }
 
     const extracted = AppState.extractBundleNameSuffix(normalized);
+    if (extracted.length > 0 && AppState.appIdToInfo.has(extracted)) {
+      return extracted;
+    }
+
+    await AppState.refreshAppCache(ctx);
+    const retry = AppState.appNameToAppId.get(normalized) ?? AppState.appNameToAppId.get(appName);
+    if (retry) {
+      return retry;
+    }
+    if (AppState.appIdToInfo.has(normalized)) {
+      return normalized;
+    }
     if (extracted.length > 0 && AppState.appIdToInfo.has(extracted)) {
       return extracted;
     }
@@ -235,6 +305,100 @@ export class AppState {
       out.push(value);
     }
     return out;
+  }
+
+  private static async loadDiskCache(ctx: common.UIAbilityContext): Promise<boolean> {
+    try {
+      const prefs = await preferences.getPreferences(ctx, AppState.prefsName);
+      const raw = String(await prefs.get(AppState.prefsKey, '')).trim();
+      if (raw.length === 0) {
+        return false;
+      }
+
+      const parsed = JSON.parse(raw) as PersistedAppCache;
+      const loaded = AppState.parsePersistedCache(parsed);
+      if (!loaded) {
+        return false;
+      }
+      AppState.cacheUpdatedAtMs = loaded.updatedAtMs;
+      AppState.applyPersistedEntries(loaded.entries);
+      return AppState.cachedAppNames.length > 0;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  private static parsePersistedCache(parsed: PersistedAppCache): PersistedAppCache | null {
+    if (!parsed || typeof parsed.schemaVersion !== 'number') {
+      return null;
+    }
+    if (parsed.schemaVersion !== AppState.diskSchemaVersion) {
+      return null;
+    }
+    if (typeof parsed.updatedAtMs !== 'number' || !Number.isFinite(parsed.updatedAtMs) || parsed.updatedAtMs <= 0) {
+      return null;
+    }
+    if (!Array.isArray(parsed.entries)) {
+      return null;
+    }
+    const entries: PersistedAppEntry[] = [];
+    for (let i = 0; i < parsed.entries.length; i++) {
+      const entry = parsed.entries[i] as PersistedAppEntry;
+      if (!entry || typeof entry.appId !== 'string' || typeof entry.displayName !== 'string' || typeof entry.label !== 'string') {
+        continue;
+      }
+      const appId = entry.appId.trim();
+      const displayName = entry.displayName.trim();
+      if (appId.length === 0 || displayName.length === 0) {
+        continue;
+      }
+      const label = entry.label.trim();
+      entries.push(new PersistedAppEntry(appId, label, displayName));
+    }
+    return new PersistedAppCache(parsed.schemaVersion, parsed.updatedAtMs, entries);
+  }
+
+  private static applyPersistedEntries(entries: PersistedAppEntry[]): void {
+    const names: string[] = [];
+    AppState.appNameToAppId.clear();
+    AppState.appIdToInfo.clear();
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const info = new appInfo();
+      info.appId = entry.appId;
+      info.appLabel = entry.label;
+      names.push(entry.displayName);
+      AppState.appNameToAppId.set(entry.displayName, entry.appId);
+      AppState.appIdToInfo.set(entry.appId, info);
+    }
+
+    names.sort((a, b) => AppState.compareAppNames(a, b));
+    AppState.cachedAppNames = AppState.uniqueStrings(names);
+  }
+
+  private static async saveDiskCache(ctx: common.UIAbilityContext): Promise<void> {
+    try {
+      const entries: PersistedAppEntry[] = [];
+      for (let i = 0; i < AppState.cachedAppNames.length; i++) {
+        const displayName = AppState.cachedAppNames[i];
+        const appId = AppState.appNameToAppId.get(displayName);
+        if (!appId) {
+          continue;
+        }
+        const info = AppState.appIdToInfo.get(appId);
+        const label = AppState.normalizeAppLabel(info?.appLabel);
+        entries.push(new PersistedAppEntry(appId, label, displayName));
+      }
+
+      const cache = new PersistedAppCache(AppState.diskSchemaVersion, AppState.cacheUpdatedAtMs, entries);
+      const raw = JSON.stringify(cache);
+      const prefs = await preferences.getPreferences(ctx, AppState.prefsName);
+      await prefs.put(AppState.prefsKey, raw);
+      await prefs.flush();
+    } catch (_e) {
+      // ignore
+    }
   }
 
 }
