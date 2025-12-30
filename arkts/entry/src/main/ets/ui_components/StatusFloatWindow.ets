@@ -267,7 +267,7 @@ export struct StatusFloatWindow {
       Column({ space: 8 }) {
         this.callUserBubble();
         Text(this.callUserTitle)
-          .fontSize(14)
+          .fontSize(13)
           .fontColor('#3A3D45')
           .textAlign(TextAlign.Center)
           .width('100%')
@@ -283,7 +283,7 @@ export struct StatusFloatWindow {
         .width('100%')
 
       Button(this.controller.callUserActionLabel)
-        .fontSize(14)
+        .fontSize(15)
         .fontColor('#FF4D5B')
         .fontWeight(FontWeight.Bold)
         .backgroundColor('#FFE3E6')
