@@ -507,7 +507,7 @@ export class VTSBackend implements VTSBackendPort {
   }
 
   private getStartAbilityContext(): StartAbilityContext {
-    const ctx = this.ctx as StartAbilityContext;
+    const ctx = this.ctx as unknown as StartAbilityContext;
     if (typeof ctx.startAbility !== 'function') {
       throw new Error('startAbility is not available in current context');
     }
