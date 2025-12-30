@@ -46,7 +46,8 @@ export class AppState {
   }
 
   static async listAppNames(): Promise<string[]> {
-    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT;
+    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT |
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
     const bundles: Array<bundleManager.BundleInfo> = await bundleManager.getAllBundleInfo(flags);
 
     const candidates: AppNameCandidate[] = [];
@@ -134,7 +135,8 @@ export class AppState {
   }
 
   private static async resolveBundleNameByAppName(appName: string): Promise<string> {
-    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT;
+    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT |
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
     const bundles: Array<bundleManager.BundleInfo> = await bundleManager.getAllBundleInfo(flags);
 
     const direct = AppState.getBundleNameIfInstalled(bundles, appName);
