@@ -74,8 +74,15 @@ export class AgentServiceStub extends rpc.RemoteObject {
         return true;
       }
       if (code === AgentServiceRequestCode.SCREENSHOT) {
-        const payload = await this.service.screenshotBase64();
-        reply.writeString(payload);
+        const lengthText = await this.service.captureScreenshotLength();
+        reply.writeString(lengthText);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.SCREENSHOT_CHUNK) {
+        const offset = data.readInt();
+        const size = data.readInt();
+        const chunk = this.service.readScreenshotChunk(offset, size);
+        reply.writeString(chunk);
         return true;
       }
       if (code === AgentServiceRequestCode.DESTROY_VTS) {

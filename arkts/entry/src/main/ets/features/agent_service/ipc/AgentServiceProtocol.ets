@@ -13,4 +13,5 @@ export enum AgentServiceRequestCode {
   SCREENSHOT = 14,
   DESTROY_VTS = 15,
   STOP_VTS = 16,
+  SCREENSHOT_CHUNK = 17,
 }

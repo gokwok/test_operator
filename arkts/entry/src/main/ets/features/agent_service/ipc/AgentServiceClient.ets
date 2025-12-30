@@ -99,7 +99,24 @@ export class AgentServiceClient {
   }
 
   async screenshot(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.SCREENSHOT);
+    const lengthText = await this.sendRequest(AgentServiceRequestCode.SCREENSHOT);
+    const total = parseInt(lengthText, 10);
+    if (!Number.isFinite(total) || total <= 0) {
+      return '';
+    }
+    const chunkSize = 16384;
+    let offset = 0;
+    const parts: Array<string> = [];
+    while (offset < total) {
+      const size = Math.min(chunkSize, total - offset);
+      const chunk = await this.sendRequestWithTwoInts(AgentServiceRequestCode.SCREENSHOT_CHUNK, offset, size);
+      if (chunk.length === 0) {
+        break;
+      }
+      parts.push(chunk);
+      offset += chunk.length;
+    }
+    return parts.join('');
   }
 
   async destroyVts(): Promise<void> {

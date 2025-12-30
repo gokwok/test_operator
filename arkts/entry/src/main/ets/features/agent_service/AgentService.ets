@@ -13,6 +13,7 @@ export class AgentService {
   private readonly createdAtMs: number = Date.now();
   private taskManager: TaskManager = new TaskManager();
   private deviceExecutor: DeviceExecutor | null = null;
+  private lastScreenshotBase64: string = '';
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -73,8 +74,23 @@ export class AgentService {
     await this.getDeviceExecutor().clickNorm(xNorm, yNorm);
   }
 
-  async screenshotBase64(): Promise<string> {
-    return await this.getDeviceExecutor().screenshotBase64();
+  async captureScreenshotLength(): Promise<string> {
+    const base64 = await this.getDeviceExecutor().screenshotBase64();
+    this.lastScreenshotBase64 = base64;
+    return String(base64.length);
+  }
+
+  readScreenshotChunk(offset: number, size: number): string {
+    if (this.lastScreenshotBase64.length === 0) {
+      return '';
+    }
+    const safeOffset = Math.max(0, Math.floor(offset));
+    const safeSize = Math.max(0, Math.floor(size));
+    if (safeSize === 0 || safeOffset >= this.lastScreenshotBase64.length) {
+      return '';
+    }
+    const end = Math.min(this.lastScreenshotBase64.length, safeOffset + safeSize);
+    return this.lastScreenshotBase64.substring(safeOffset, end);
   }
 
   async destroyVts(): Promise<void> {
