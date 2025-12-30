@@ -32,10 +32,12 @@ struct Index {
   @State actionInput: string = 'hello';
   @State actionResult: string = '';
   @State appListInfo: string = '';
+  @State appResolveInfo: string = '';
   @State serviceStatus: string = '';
   @State serviceSnapshot: string = '';
   @State serviceError: string = '';
   @State serviceEvents: string = '';
+  @State targetAppName: string = 'com.sina.weibo.stage';
   @State targetBundleName: string = 'com.sina.weibo.stage';
   @State targetAbilityName: string = 'EntryAbility';
   private readonly initialStatus: string = 'hello world';
@@ -209,6 +211,30 @@ struct Index {
         }
 
         Row({ space: 8 }) {
+          TextInput({ placeholder: 'appName (or bundleName)', text: this.targetAppName })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((v: string) => {
+              this.targetAppName = v;
+            })
+
+          Button('Resolve Launch')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onResolveLaunchTarget();
+            })
+        }
+
+        Row({ space: 8 }) {
           Button('Click TL')
             .fontSize(12)
             .fontColor(Color.White)
@@ -336,6 +362,12 @@ struct Index {
 
         if (this.appListInfo.length > 0) {
           Text(this.appListInfo)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.appResolveInfo.length > 0) {
+          Text(this.appResolveInfo)
             .fontSize(11)
             .fontColor('#B8C1CC')
         }
@@ -848,6 +880,7 @@ struct Index {
   private async onListApps(): Promise<void> {
     this.vtsError = '';
     this.appListInfo = 'Loading app names...';
+    this.appResolveInfo = '';
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
@@ -868,6 +901,30 @@ struct Index {
     } catch (e) {
       this.appListInfo = '';
       this.vtsError = `List app names failed: ${String(e)}`;
+    }
+  }
+
+  private async onResolveLaunchTarget(): Promise<void> {
+    this.vtsError = '';
+    this.appResolveInfo = 'Resolving launch target...';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const granted = await this.ensureBundleListPermission(ctx);
+      if (!granted) {
+        this.appResolveInfo = '';
+        if (this.vtsError.length === 0) {
+          this.vtsError = 'Permission not granted. Open settings and retry.';
+        }
+        return;
+      }
+
+      const target = await AppState.getLaunchTargetByAppName(this.targetAppName);
+      this.targetBundleName = target.bundleName;
+      this.targetAbilityName = target.abilityName;
+      this.appResolveInfo = `Target: ${target.bundleName}/${target.abilityName}`;
+    } catch (e) {
+      this.appResolveInfo = '';
+      this.vtsError = `Resolve launch target failed: ${String(e)}`;
     }
   }
 
