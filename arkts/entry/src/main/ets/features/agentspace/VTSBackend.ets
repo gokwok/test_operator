@@ -102,9 +102,11 @@ interface AppControllerFocusApi {
   requestFocus?: (targetWindowId: number) => boolean;
 }
 
-interface StartAbilityContext extends common.Context {
+interface StartAbilityCapable {
   startAbility: (want: Want, options?: StartOptions) => Promise<void>;
 }
+
+type StartAbilityContext = common.Context & StartAbilityCapable;
 
 export class VTSBackend implements VTSBackendPort {
   private ctx: common.Context;
