@@ -264,31 +264,32 @@ export struct StatusFloatWindow {
   @Builder
   private callUserWaitContent() {
     Column({ space: 16 }) {
-      Column({ space: 10 }) {
+      Column({ space: 8 }) {
         this.callUserBubble();
         Text(this.callUserTitle)
           .fontSize(14)
           .fontColor('#3A3D45')
-          .fontWeight(FontWeight.Bold)
-          .textAlign(TextAlign.Center)
-          .width('100%')
-        Text(this.controller.callUserContent)
-          .fontSize(12)
-          .fontColor('#FF4D5B')
-          .lineHeight(18)
           .textAlign(TextAlign.Center)
           .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
 
+      Text(this.controller.callUserContent)
+        .fontSize(14)
+        .fontColor('#FF4D5B')
+        .fontWeight(FontWeight.Bold)
+        .textAlign(TextAlign.Start)
+        .width('100%')
+
       Button(this.controller.callUserActionLabel)
         .fontSize(14)
         .fontColor('#FF4D5B')
         .fontWeight(FontWeight.Bold)
         .backgroundColor('#FFE3E6')
-        .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-        .borderRadius(20)
+        .height(40)
+        .borderRadius(14)
+        .width('100%')
         .onClick(() => this.controller.triggerCallUserConfirm())
 
       Row() {
@@ -300,7 +301,7 @@ export struct StatusFloatWindow {
     }
     .width('100%')
     .padding({ left: 18, right: 18, top: 20, bottom: 16 })
-    .backgroundColor('#FFF2F2')
+    .backgroundColor('#FFFFFF')
     .borderRadius(26)
     .shadow({ radius: 18, color: '#22000000', offsetX: 0, offsetY: 10 })
   }
