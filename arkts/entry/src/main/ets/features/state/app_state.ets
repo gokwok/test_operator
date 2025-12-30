@@ -3,6 +3,150 @@ import bundleResourceManager from '@ohos.bundle.bundleResourceManager';
 import preferences from '@ohos.data.preferences';
 import image from '@ohos.multimedia.image';
 import type { common } from '@kit.AbilityKit';
+import type { AppTargetDescriptor } from '../agent_service/types';
+
+const APP_NAME_WHITELIST: string[] = [
+  // Social & Messaging
+  '微信',
+  'QQ',
+  '微博',
+  // E-commerce
+  '淘宝',
+  '京东',
+  '拼多多',
+  '淘宝闪购',
+  '京东秒送',
+  // Lifestyle & Social
+  '小红书',
+  '知乎',
+  // Maps & Navigation
+  '高德地图',
+  '百度地图',
+  // Food & Services
+  '美团',
+  '美团外卖',
+  '大众点评',
+  // Travel
+  '铁路12306',
+  '12306',
+  '滴滴出行',
+  // Video & Entertainment
+  'bilibili',
+  '抖音',
+  '快手',
+  '腾讯视频',
+  '爱奇艺',
+  '芒果TV',
+  // Music & Audio
+  'QQ音乐',
+  '汽水音乐',
+  '喜马拉雅',
+  // Productivity
+  '飞书',
+  // AI & Tools
+  '豆包',
+  // News & Information
+  '今日头条',
+
+  // HarmonyOS 第三方应用
+  '百度',
+  '阿里巴巴',
+  'WPS',
+  '企业微信',
+  '同程',
+  '同程旅行',
+  '唯品会',
+  '支付宝',
+  'UC浏览器',
+  '闲鱼',
+  '转转',
+  '迅雷',
+  '搜狗输入法',
+  '扫描全能王',
+  '美图秀秀',
+  '58同城',
+  '得物',
+  '海底捞',
+  '中国移动',
+  '中国联通',
+  '国家税务总局',
+  '建设银行',
+  '快手极速版',
+
+  // HarmonyOS 系统应用 - 工具类
+  '浏览器',
+  '计算器',
+  '日历',
+  '相机',
+  '时钟',
+  '云盘',
+  '云空间',
+  '邮件',
+  '文件管理器',
+  '文件',
+  '查找设备',
+  '查找手机',
+  '录音机',
+  '录音',
+  '录屏',
+  '截屏',
+  '笔记',
+  '备忘录',
+
+  // HarmonyOS 系统应用 - 媒体类
+  '相册',
+  '图库',
+
+  // HarmonyOS 系统应用 - 通讯类
+  '联系人',
+  '通讯录',
+  '短信',
+  '信息',
+  '电话',
+  '拨号',
+
+  // HarmonyOS 系统应用 - 设置类
+  '设置',
+  '系统设置',
+  'AndroidSystemSettings',
+  'Android System Settings',
+  'Android  System Settings',
+  'Android-System-Settings',
+  'Settings',
+
+  // HarmonyOS 系统应用 - 生活服务
+  '健康',
+  '运动健康',
+  '地图',
+  '华为地图',
+  '钱包',
+  '华为钱包',
+  '智慧生活',
+  '智能助手',
+  '小艺',
+
+  // HarmonyOS 服务
+  '应用市场',
+  '华为应用市场',
+  '音乐',
+  '华为音乐',
+  '主题',
+  '主题管理',
+  '天气',
+  '华为天气',
+  '视频',
+  '华为视频',
+  '阅读',
+  '华为阅读',
+  '游戏中心',
+  '华为游戏中心',
+  '搜索',
+  '华为搜索',
+  '指南针',
+  '会员中心',
+  '我的华为',
+  '华为会员',
+];
 
 export interface AppLaunchTarget {
   bundleName: string;
@@ -64,7 +208,7 @@ export class AppState {
 
   static async listAppNames(ctx: common.UIAbilityContext): Promise<string[]> {
     await AppState.ensureAppCache(ctx);
-    return AppState.cachedAppNames.slice();
+    return AppState.filterAppNamesByWhitelist(AppState.cachedAppNames);
   }
 
   static async getLaunchTargetByAppName(appName: string, ctx: common.UIAbilityContext): Promise<AppLaunchTarget> {
@@ -76,6 +220,33 @@ export class AppState {
     }
 
     return { bundleName, abilityName };
+  }
+
+  static async listAppTargets(ctx: common.UIAbilityContext): Promise<Array<AppTargetDescriptor>> {
+    await AppState.ensureAppCache(ctx);
+    const names = AppState.cachedAppNames.slice();
+    const targets: Array<AppTargetDescriptor> = [];
+    for (let i = 0; i < names.length; i++) {
+      const displayName = names[i];
+      let bundleName = '';
+      try {
+        bundleName = await AppState.resolveAppIdByName(displayName, ctx);
+      } catch (_e) {
+        continue;
+      }
+      let abilityName = '';
+      try {
+        const want = await bundleManager.getLaunchWantForBundle(bundleName);
+        abilityName = want.abilityName?.trim() ?? '';
+      } catch (_e) {
+        // ignore
+      }
+      if (abilityName.length === 0) {
+        abilityName = 'EntryAbility';
+      }
+      targets.push({ displayName, bundleName, abilityName });
+    }
+    return targets;
   }
 
   static async getIconByAppName(appName: string, ctx: common.UIAbilityContext): Promise<image.PixelMap> {
@@ -399,6 +570,58 @@ export class AppState {
     } catch (_e) {
       // ignore
     }
+  }
+
+  private static filterAppNamesByWhitelist(names: string[]): string[] {
+    if (APP_NAME_WHITELIST.length === 0) {
+      return names.slice();
+    }
+
+    const normalizedToNames = new Map<string, string[]>();
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      const normalized = AppState.normalizeDisplayNameForWhitelist(name);
+      const existing = normalizedToNames.get(normalized);
+      if (existing) {
+        existing.push(name);
+      } else {
+        normalizedToNames.set(normalized, [name]);
+      }
+    }
+
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < APP_NAME_WHITELIST.length; i++) {
+      const allowed = APP_NAME_WHITELIST[i].trim();
+      if (allowed.length === 0) {
+        continue;
+      }
+      const matches = normalizedToNames.get(allowed);
+      if (!matches) {
+        continue;
+      }
+      for (let j = 0; j < matches.length; j++) {
+        const value = matches[j];
+        if (seen.has(value)) {
+          continue;
+        }
+        seen.add(value);
+        out.push(value);
+      }
+    }
+    return out;
+  }
+
+  private static normalizeDisplayNameForWhitelist(name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed.endsWith(')')) {
+      return trimmed;
+    }
+    const openIndex = trimmed.lastIndexOf('(');
+    if (openIndex < 0) {
+      return trimmed;
+    }
+    return trimmed.slice(0, openIndex).trim();
   }
 
 }

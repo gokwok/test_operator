@@ -28,9 +28,16 @@ export interface TaskSnapshot {
   installedAppsSent: boolean;
 }
 
+export interface AppTargetDescriptor {
+  displayName: string;
+  bundleName: string;
+  abilityName: string;
+}
+
 export interface TaskStartRequest {
   sessionId: string;
   taskText: string;
   installedApps: Array<string>;
+  appTargets: Array<AppTargetDescriptor>;
   waitMs: number;
 }

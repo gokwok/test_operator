@@ -51,7 +51,8 @@ export class TaskManager {
     this.deviceExecutor = deviceExecutor;
     this.waitAfterActionMs = this.normalizeWaitMs(request.waitMs);
     this.taskText = taskText;
-    this.installedApps = request.installedApps.slice();
+    const installed = Array.isArray(request.installedApps) ? request.installedApps : [];
+    this.installedApps = installed.slice();
     this.installedAppsSent = false;
     this.stopRequested = false;
     this.runToken += 1;

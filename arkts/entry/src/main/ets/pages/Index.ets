@@ -10,7 +10,7 @@ import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components
 import type { common, Want } from '@kit.AbilityKit';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
-import type { TaskStartRequest } from '../features/agent_service/types';
+import type { AppTargetDescriptor, TaskStartRequest } from '../features/agent_service/types';
 import { AppState } from '../features/state/app_state';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
@@ -55,6 +55,7 @@ struct Index {
   private serviceClient: AgentServiceClient | null = null;
   private screenshotBase64: string = '';
   private installedApps: Array<string> = [];
+  private installedAppTargets: Array<AppTargetDescriptor> = [];
   private screenshotLongPressTimerId: number = -1;
   private screenshotPressX: number = 0;
   private screenshotPressY: number = 0;
@@ -954,6 +955,7 @@ struct Index {
         return;
       }
       this.installedApps = appNames;
+      this.installedAppTargets = await AppState.listAppTargets(ctx);
       const preview = appNames.slice(0, 6).join(', ');
       this.appListInfo = `Apps: ${appNames.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
     } catch (e) {
@@ -1053,6 +1055,7 @@ struct Index {
         sessionId: this.cloudSessionId.trim(),
         taskText,
         installedApps: this.installedApps.slice(),
+        appTargets: this.installedAppTargets.slice(),
         waitMs,
       };
       await this.getServiceClient().startTask(request);

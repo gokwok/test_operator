@@ -53,6 +53,8 @@ export class AgentService {
 
   startTask(request: TaskStartRequest): void {
     const executor = this.getDeviceExecutor();
+    const targets = Array.isArray(request.appTargets) ? request.appTargets : [];
+    executor.setAppTargets(targets);
     const cloud = this.getCloudClient();
     this.taskManager.startTask(request, cloud, executor);
   }
