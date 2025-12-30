@@ -1,84 +1,33 @@
 import bundleManager from '@ohos.bundle.bundleManager';
+import bundleResourceManager from '@ohos.bundle.bundleResourceManager';
 import image from '@ohos.multimedia.image';
 import type { common } from '@kit.AbilityKit';
-
-export interface AppListItem {
-  bundleName: string;
-  versionName: string;
-  versionCode: number;
-}
 
 export interface AppLaunchTarget {
   bundleName: string;
   abilityName: string;
 }
 
-export interface AppResourceInfo {
-  bundleName: string;
-  moduleName: string;
-  id: number;
-}
-
-export interface AppInfo {
-  appId: string;
-  appLabel: string;
-  appIcon: AppResourceInfo | null;
-}
-
-interface ResourceIdCandidate {
-  bundleName: string;
-  moduleName: string;
-  id: number | string;
-}
-
-interface ApplicationInfoCandidate {
-  label?: string;
-  labelResource?: ResourceIdCandidate;
-  iconResource?: ResourceIdCandidate;
-}
-
-interface BundleInfoCandidate {
-  appInfo?: ApplicationInfoCandidate;
-}
-
-interface AppInfoCandidate {
-  appId: string;
-  label: string;
-  displayName: string;
-  iconResource: AppResourceInfo | null;
+export class appInfo {
+  appId: string = '';
+  appLabel: string | ResourceStr | undefined = '';
+  appIcon: image.PixelMap | undefined = undefined;
 }
 
 export class AppState {
   private static readonly appNameToAppId: Map<string, string> = new Map<string, string>();
-  private static readonly appIdToInfo: Map<string, AppInfo> = new Map<string, AppInfo>();
+  private static readonly appIdToInfo: Map<string, appInfo> = new Map<string, appInfo>();
   private static readonly cacheTtlMs: number = 2000;
   private static cacheUpdatedAtMs: number = 0;
   private static cachedAppNames: string[] = [];
 
-  static async listInstalledApps(): Promise<AppListItem[]> {
-    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT;
-    const bundles: Array<bundleManager.BundleInfo> = await bundleManager.getAllBundleInfo(flags);
-    const items: AppListItem[] = [];
-    for (let i = 0; i < bundles.length; i++) {
-      const info = bundles[i];
-      const item = AppState.buildItem(info);
-      const bundleName: string = item.bundleName;
-      if (bundleName.length === 0) {
-        continue;
-      }
-      items.push(item);
-    }
-    items.sort((a, b) => a.bundleName.localeCompare(b.bundleName));
-    return items;
-  }
-
-  static async listAppNames(ctx: common.UIAbilityContext): Promise<string[]> {
-    await AppState.ensureAppCache(ctx);
+  static async listAppNames(_ctx: common.UIAbilityContext): Promise<string[]> {
+    await AppState.ensureAppCache();
     return AppState.cachedAppNames.slice();
   }
 
-  static async getLaunchTargetByAppName(appName: string, ctx: common.UIAbilityContext): Promise<AppLaunchTarget> {
-    const bundleName = await AppState.resolveAppIdByName(appName, ctx);
+  static async getLaunchTargetByAppName(appName: string, _ctx: common.UIAbilityContext): Promise<AppLaunchTarget> {
+    const bundleName = await AppState.resolveAppIdByName(appName);
     const want = await bundleManager.getLaunchWantForBundle(bundleName);
     const abilityName = want.abilityName?.trim() ?? '';
     if (abilityName.length === 0) {
@@ -88,55 +37,77 @@ export class AppState {
     return { bundleName, abilityName };
   }
 
-  static async getIconByAppName(appName: string, ctx: common.UIAbilityContext): Promise<image.PixelMap> {
-    const appId = await AppState.resolveAppIdByName(appName, ctx);
-    await AppState.ensureAppCache(ctx);
+  static async getIconByAppName(appName: string, _ctx: common.UIAbilityContext): Promise<image.PixelMap> {
+    const appId = await AppState.resolveAppIdByName(appName);
+    await AppState.ensureAppCache();
 
     const info = AppState.appIdToInfo.get(appId);
-    const iconResource = info?.appIcon;
-    if (!iconResource) {
+    const pixelMap = info?.appIcon;
+    if (!pixelMap) {
       throw new Error(`App icon not found: ${appName}`);
     }
-
-    const content = await ctx.resourceManager.getMediaContent(iconResource);
-    const buffer = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
-    const source = image.createImageSource(buffer);
-    return await source.createPixelMap();
+    return pixelMap;
   }
 
-  private static buildItem(info: bundleManager.BundleInfo): AppListItem {
-    return {
-      bundleName: info.name,
-      versionName: info.versionName,
-      versionCode: Number(info.versionCode),
-    };
-  }
-
-  private static async ensureAppCache(ctx: common.UIAbilityContext): Promise<void> {
+  private static async ensureAppCache(): Promise<void> {
     const now = Date.now();
     if (AppState.cachedAppNames.length > 0 && now - AppState.cacheUpdatedAtMs < AppState.cacheTtlMs) {
       return;
     }
-    await AppState.refreshAppCache(ctx);
+    await AppState.refreshAppCache();
   }
 
-  private static async refreshAppCache(ctx: common.UIAbilityContext): Promise<void> {
-    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT |
-      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
-    const bundles: Array<bundleManager.BundleInfo> = await bundleManager.getAllBundleInfo(flags);
+  private static async refreshAppCache(): Promise<void> {
+    const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
+    const bundles = await bundleManager.getAllBundleInfo(flags);
 
-    const candidates: AppInfoCandidate[] = [];
+    const candidates: Array<{ info: appInfo; displayName: string }> = [];
     for (let i = 0; i < bundles.length; i++) {
-      const info = bundles[i];
-      const appId = info.name?.trim() ?? '';
-      if (appId.length === 0) {
+      const bundleInfo = bundles[i];
+      const bundleName = bundleInfo.name?.trim() ?? '';
+      if (bundleName.length === 0) {
         continue;
       }
-      const appInfoCandidate = (info as BundleInfoCandidate).appInfo;
-      const label = await AppState.resolveAppLabel(appInfoCandidate, ctx);
-      const displayName = label.length > 0 ? label : appId;
-      const iconResource = AppState.resolveAppIconResource(appInfoCandidate);
-      candidates.push({ appId, label, displayName, iconResource });
+
+      const info = new appInfo();
+      info.appId = bundleName;
+
+      const appFlags: number = bundleManager.ApplicationFlag.GET_APPLICATION_INFO_DEFAULT |
+        bundleManager.ApplicationFlag.GET_APPLICATION_INFO_WITH_DISABLE;
+
+      let appIndex: number = 0;
+      let applicationName: string = bundleName;
+      try {
+        const applicationInfo = await bundleManager.getApplicationInfo(bundleName, appFlags);
+        appIndex = applicationInfo.appIndex;
+        applicationName = applicationInfo.name;
+      } catch (_e) {
+        candidates.push({ info, displayName: bundleName });
+        continue;
+      }
+
+      try {
+        const iconFlags: number = bundleResourceManager.ResourceFlag.GET_RESOURCE_INFO_WITH_DRAWABLE_DESCRIPTOR;
+        const resourceInfo = bundleResourceManager.getBundleResourceInfo(applicationName, iconFlags, appIndex);
+        const pixelMap = resourceInfo?.drawableDescriptor?.getPixelMap();
+        if (pixelMap) {
+          info.appIcon = pixelMap;
+        }
+      } catch (_e) {
+        // ignore
+      }
+
+      try {
+        const labelFlags: number = bundleResourceManager.ResourceFlag.GET_RESOURCE_INFO_ALL;
+        const resourceInfo = bundleResourceManager.getBundleResourceInfo(bundleName, labelFlags, appIndex);
+        info.appLabel = resourceInfo?.label;
+      } catch (_e) {
+        // ignore
+      }
+
+      const label = AppState.normalizeAppLabel(info.appLabel);
+      const displayName = label.length > 0 ? label : bundleName;
+      candidates.push({ info, displayName });
     }
 
     const duplicateCounts = new Map<string, number>();
@@ -151,95 +122,36 @@ export class AppState {
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i];
       const count = duplicateCounts.get(candidate.displayName) ?? 0;
-      const formattedName = AppState.formatAppName(candidate, count);
+      const formattedName = AppState.formatAppName(candidate.info, candidate.displayName, count);
       names.push(formattedName);
-      AppState.appNameToAppId.set(formattedName, candidate.appId);
-      AppState.appIdToInfo.set(candidate.appId, {
-        appId: candidate.appId,
-        appLabel: candidate.label,
-        appIcon: candidate.iconResource,
-      });
+      AppState.appNameToAppId.set(formattedName, candidate.info.appId);
+      AppState.appIdToInfo.set(candidate.info.appId, candidate.info);
     }
 
-    names.sort((a, b) => a.localeCompare(b));
+    names.sort((a, b) => AppState.compareAppNames(a, b));
     AppState.cachedAppNames = AppState.uniqueStrings(names);
     AppState.cacheUpdatedAtMs = Date.now();
   }
 
-  private static async resolveAppLabel(
-    appInfo: ApplicationInfoCandidate | undefined,
-    ctx: common.UIAbilityContext
-  ): Promise<string> {
-    if (!appInfo) {
+  private static normalizeAppLabel(label: string | ResourceStr | undefined): string {
+    if (!label) {
       return '';
     }
-    const labelResource = appInfo.labelResource;
-    if (labelResource) {
-      const resolved = await AppState.resolveResourceString(labelResource, ctx);
-      if (resolved.length > 0) {
-        return resolved;
-      }
+    if (typeof label === 'string') {
+      const normalized = label.trim();
+      return AppState.isResourceLikeLabel(normalized) ? '' : normalized;
     }
-
-    const label = appInfo.label?.trim() ?? '';
-    if (label.length > 0 && !AppState.isResourceLikeLabel(label)) {
-      return label;
-    }
-
-    return '';
+    const normalized = String(label).trim();
+    return AppState.isResourceLikeLabel(normalized) ? '' : normalized;
   }
 
-  private static async resolveResourceString(resource: ResourceIdCandidate, ctx: common.UIAbilityContext): Promise<string> {
-    try {
-      const id = typeof resource.id === 'number' ? resource.id : Number(resource.id);
-      if (!Number.isFinite(id) || id <= 0) {
-        return '';
-      }
-      const normalized: AppResourceInfo = {
-        bundleName: resource.bundleName,
-        moduleName: resource.moduleName,
-        id,
-      };
-      const value = (await ctx.resourceManager.getStringValue(normalized)).trim();
-      if (value.length === 0) {
-        return '';
-      }
-      if (AppState.isResourceLikeLabel(value)) {
-        return '';
-      }
-      return value;
-    } catch (_e) {
-      return '';
-    }
-  }
-
-  private static resolveAppIconResource(appInfo: ApplicationInfoCandidate | undefined): AppResourceInfo | null {
-    if (!appInfo) {
-      return null;
-    }
-    const resource = appInfo.iconResource;
-    if (!resource) {
-      return null;
-    }
-
-    const id = typeof resource.id === 'number' ? resource.id : Number(resource.id);
-    if (!Number.isFinite(id) || id <= 0) {
-      return null;
-    }
-    return {
-      bundleName: resource.bundleName,
-      moduleName: resource.moduleName,
-      id,
-    };
-  }
-
-  private static async resolveAppIdByName(appName: string, ctx: common.UIAbilityContext): Promise<string> {
+  private static async resolveAppIdByName(appName: string): Promise<string> {
     const normalized = appName.trim();
     if (normalized.length === 0) {
       throw new Error('appName is empty');
     }
 
-    await AppState.ensureAppCache(ctx);
+    await AppState.ensureAppCache();
 
     if (AppState.appIdToInfo.has(normalized)) {
       return normalized;
@@ -258,18 +170,37 @@ export class AppState {
     throw new Error(`App not found: ${appName}`);
   }
 
-  private static formatAppName(candidate: AppInfoCandidate, duplicateCount: number): string {
+  private static formatAppName(info: appInfo, displayName: string, duplicateCount: number): string {
     if (duplicateCount <= 1) {
-      return candidate.displayName;
+      return displayName;
     }
-    if (candidate.label.length > 0) {
-      return `${candidate.label} (${candidate.appId})`;
+    const label = AppState.normalizeAppLabel(info.appLabel);
+    if (label.length > 0) {
+      return `${label} (${info.appId})`;
     }
-    return candidate.appId;
+    return info.appId;
   }
 
   private static isResourceLikeLabel(label: string): boolean {
     return label.startsWith('$');
+  }
+
+  private static compareAppNames(a: string, b: string): number {
+    const aIsBundle = AppState.looksLikeBundleName(a);
+    const bIsBundle = AppState.looksLikeBundleName(b);
+    if (aIsBundle !== bIsBundle) {
+      return aIsBundle ? 1 : -1;
+    }
+    return a.localeCompare(b);
+  }
+
+  private static looksLikeBundleName(name: string): boolean {
+    const normalized = name.trim();
+    return normalized.startsWith('com.') ||
+      normalized.startsWith('ohos.') ||
+      normalized.startsWith('cn.') ||
+      normalized.startsWith('net.') ||
+      normalized.startsWith('org.');
   }
 
   private static extractBundleNameSuffix(input: string): string {

@@ -2,6 +2,7 @@ import rpc from '@ohos.rpc';
 
 import { AgentService } from '../AgentService';
 import type { AgentSpacePointerAction, AgentSpacePointerEvent, AgentSpaceViewerMode } from '../../agentspace/AgentSpace';
+import type { TaskStartRequest } from '../types';
 import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
 
 export class AgentServiceStub extends rpc.RemoteObject {
@@ -33,9 +34,10 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString(this.service.getSnapshotJson());
         return true;
       }
-      if (code === AgentServiceRequestCode.START_FAKE_TASK) {
-        const sessionId = data.readString();
-        this.service.startFakeTask(sessionId);
+      if (code === AgentServiceRequestCode.START_TASK) {
+        const payload = data.readString();
+        const request = JSON.parse(payload) as TaskStartRequest;
+        this.service.startTask(request);
         reply.writeString('ok');
         return true;
       }
@@ -193,6 +195,12 @@ export class AgentServiceStub extends rpc.RemoteObject {
       if (code === AgentServiceRequestCode.ACTION_PRESS_ENTER) {
         const result = await this.service.actionPressEnter();
         reply.writeString(result);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.SET_CLOUD_ENDPOINT) {
+        const endpoint = data.readString();
+        this.service.setCloudEndpoint(endpoint);
+        reply.writeString('ok');
         return true;
       }
       reply.writeString('ERR_UNKNOWN_CODE');

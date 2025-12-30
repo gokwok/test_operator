@@ -3,6 +3,7 @@ import bundleManager from '@ohos.bundle.bundleManager';
 import rpc from '@ohos.rpc';
 
 import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
+import type { TaskStartRequest } from '../types';
 
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
@@ -70,8 +71,9 @@ export class AgentServiceClient {
     return await this.sendRequest(AgentServiceRequestCode.GET_SNAPSHOT);
   }
 
-  async startTask(sessionId: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.START_FAKE_TASK, sessionId);
+  async startTask(request: TaskStartRequest): Promise<void> {
+    const payload = JSON.stringify(request);
+    await this.sendRequestWithString(AgentServiceRequestCode.START_TASK, payload);
   }
 
   async stopTask(reason: string): Promise<void> {
@@ -197,6 +199,10 @@ export class AgentServiceClient {
 
   async actionPressEnter(): Promise<string> {
     return await this.sendRequest(AgentServiceRequestCode.ACTION_PRESS_ENTER);
+  }
+
+  async setCloudEndpoint(endpoint: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.SET_CLOUD_ENDPOINT, endpoint);
   }
 
   private async sendRequest(code: number): Promise<string> {

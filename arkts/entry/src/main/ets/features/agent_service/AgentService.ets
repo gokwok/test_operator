@@ -10,9 +10,12 @@ import type {
   AgentSpaceViewerMode
 } from '../agentspace/AgentSpace';
 import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
+import { CloudAgentClient } from './CloudAgentClient';
 import { DeviceExecutor } from './DeviceExecutor';
-import type { TaskEventBatch, TaskSnapshot } from './types';
+import type { TaskEventBatch, TaskSnapshot, TaskStartRequest } from './types';
 import { TaskManager } from './TaskManager';
+
+const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 
 export class AgentService {
   private static instance: AgentService | null = null;
@@ -21,6 +24,7 @@ export class AgentService {
   private readonly createdAtMs: number = Date.now();
   private taskManager: TaskManager = new TaskManager();
   private deviceExecutor: DeviceExecutor | null = null;
+  private cloudClient: CloudAgentClient | null = null;
   private lastScreenshotBase64: string = '';
 
   static getInstance(): AgentService {
@@ -47,8 +51,10 @@ export class AgentService {
     return this.ctx;
   }
 
-  startFakeTask(sessionId: string): void {
-    this.taskManager.startFakeTask(sessionId);
+  startTask(request: TaskStartRequest): void {
+    const executor = this.getDeviceExecutor();
+    const cloud = this.getCloudClient();
+    this.taskManager.startTask(request, cloud, executor);
   }
 
   stopTask(reason: string): void {
@@ -61,6 +67,10 @@ export class AgentService {
       return '';
     }
     return JSON.stringify(batch);
+  }
+
+  setCloudEndpoint(endpoint: string): void {
+    this.getCloudClient().setEndpoint(endpoint);
   }
 
   async ensureVtsJson(): Promise<string> {
@@ -215,5 +225,12 @@ export class AgentService {
       this.deviceExecutor = new DeviceExecutor(this.ensureAgentSpace());
     }
     return this.deviceExecutor;
+  }
+
+  private getCloudClient(): CloudAgentClient {
+    if (!this.cloudClient) {
+      this.cloudClient = new CloudAgentClient(DEFAULT_CLOUD_ENDPOINT);
+    }
+    return this.cloudClient;
   }
 }

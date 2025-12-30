@@ -10,6 +10,7 @@ import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components
 import type { common, Want } from '@kit.AbilityKit';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
+import type { TaskStartRequest } from '../features/agent_service/types';
 import { AppState } from '../features/state/app_state';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
@@ -19,6 +20,8 @@ import util from '@ohos.util';
 const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
 const VIEWER_CLOSE_ACTION: string = 'closeViewer';
+const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
+const DEFAULT_WAIT_MS: number = 500;
 
 @Entry
 @Component
@@ -39,6 +42,10 @@ struct Index {
   @State serviceSnapshot: string = '';
   @State serviceError: string = '';
   @State serviceEvents: string = '';
+  @State cloudEndpoint: string = DEFAULT_CLOUD_ENDPOINT;
+  @State cloudTaskText: string = '';
+  @State cloudSessionId: string = '';
+  @State cloudWaitMs: string = String(DEFAULT_WAIT_MS);
   @State targetAppName: string = 'com.sina.weibo.stage';
   @State targetBundleName: string = 'com.sina.weibo.stage';
   @State targetAbilityName: string = 'EntryAbility';
@@ -47,6 +54,7 @@ struct Index {
   private statusResetTimerId: number = -1;
   private serviceClient: AgentServiceClient | null = null;
   private screenshotBase64: string = '';
+  private installedApps: Array<string> = [];
   private screenshotLongPressTimerId: number = -1;
   private screenshotPressX: number = 0;
   private screenshotPressY: number = 0;
@@ -438,7 +446,71 @@ struct Index {
         }
 
         Row({ space: 8 }) {
-          Button('Start Task')
+          TextInput({ placeholder: 'cloud endpoint', text: this.cloudEndpoint })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((value: string) => {
+              this.cloudEndpoint = value;
+            })
+
+          Button('Set Cloud')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onServiceSetCloudEndpoint();
+            })
+        }
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: 'task text', text: this.cloudTaskText })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((value: string) => {
+              this.cloudTaskText = value;
+            })
+        }
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: 'session id (optional)', text: this.cloudSessionId })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((value: string) => {
+              this.cloudSessionId = value;
+            })
+
+          TextInput({ placeholder: 'wait_ms', text: this.cloudWaitMs })
+            .width(90)
+            .height(32)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#1A1B22')
+            .borderRadius(10)
+            .padding({ left: 8, right: 8 })
+            .onChange((value: string) => {
+              this.cloudWaitMs = value;
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('Start Cloud Task')
             .fontSize(12)
             .fontColor(Color.White)
             .backgroundColor('#2A2C34')
@@ -881,6 +953,7 @@ struct Index {
         this.appListInfo = 'No apps found';
         return;
       }
+      this.installedApps = appNames;
       const preview = appNames.slice(0, 6).join(', ');
       this.appListInfo = `Apps: ${appNames.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
     } catch (e) {
@@ -945,13 +1018,46 @@ struct Index {
     }
   }
 
+  private async onServiceSetCloudEndpoint(): Promise<void> {
+    this.serviceError = '';
+    try {
+      const endpoint = this.cloudEndpoint.trim();
+      if (endpoint.length === 0) {
+        this.serviceError = 'Cloud endpoint is empty';
+        return;
+      }
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setCloudEndpoint(endpoint);
+      this.serviceStatus = `cloud: ${endpoint}`;
+    } catch (e) {
+      this.serviceError = `Cloud endpoint failed: ${String(e)}`;
+    }
+  }
+
   private async onServiceStart(): Promise<void> {
     this.serviceError = '';
     try {
-      const sessionId = `s-${Date.now()}`;
-      await this.getServiceClient().startTask(sessionId);
+      const taskText = this.cloudTaskText.trim();
+      if (taskText.length === 0) {
+        this.serviceError = 'Task text is empty';
+        return;
+      }
+      await this.ensureServiceConnected();
+      const endpoint = this.cloudEndpoint.trim();
+      if (endpoint.length > 0) {
+        await this.getServiceClient().setCloudEndpoint(endpoint);
+      }
+      const waitMsRaw = parseInt(this.cloudWaitMs, 10);
+      const waitMs = Number.isFinite(waitMsRaw) ? Math.max(0, waitMsRaw) : DEFAULT_WAIT_MS;
+      const request: TaskStartRequest = {
+        sessionId: this.cloudSessionId.trim(),
+        taskText,
+        installedApps: this.installedApps.slice(),
+        waitMs,
+      };
+      await this.getServiceClient().startTask(request);
       this.serviceEvents = '';
-      this.serviceStatus = `started: ${sessionId}`;
+      this.serviceStatus = 'cloud task started';
     } catch (e) {
       this.serviceError = `Service start failed: ${String(e)}`;
     }

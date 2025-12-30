@@ -1,4 +1,22 @@
-import type { ActionResultStatus, TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot } from './types';
+import type { AgentAction, ActionResult } from '../agentspace/AgentSpace';
+import {
+  CloudAgentClient,
+  CloudDeviceState,
+  CloudInvokeError,
+  CloudInvokePayload,
+  CloudInvokeResponse,
+  CloudInvokeOutput
+} from './CloudAgentClient';
+import { DeviceExecutor } from './DeviceExecutor';
+import type { TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest } from './types';
+
+const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
+const MAX_RETRY_COUNT: number = 3;
+
+interface NeedUserPayload {
+  description: string;
+  action: AgentAction;
+}
 
 export class TaskManager {
   private snapshot: TaskSnapshot = {
@@ -7,39 +25,62 @@ export class TaskManager {
     stepIndex: 0,
     lastDescription: '',
     lastActionName: '',
+    lastActionJson: '',
     lastResultStatus: '',
     lastError: '',
+    installedAppsSent: false,
   };
   private eventSequence: number = 0;
   private events: Array<TaskEvent> = [];
-  private tickTimerId: number = -1;
+  private runToken: number = 0;
+  private stopRequested: boolean = false;
+  private cloudClient: CloudAgentClient | null = null;
+  private deviceExecutor: DeviceExecutor | null = null;
+  private waitAfterActionMs: number = DEFAULT_WAIT_AFTER_ACTION_MS;
+  private taskText: string = '';
+  private installedApps: Array<string> = [];
+  private installedAppsSent: boolean = false;
 
-  startFakeTask(sessionId?: string): void {
-    const id = sessionId && sessionId.length > 0 ? sessionId : `s-${Date.now()}`;
-    this.stopTimer();
+  startTask(request: TaskStartRequest, cloudClient: CloudAgentClient, deviceExecutor: DeviceExecutor): void {
+    const taskText = request.taskText.trim();
+    if (taskText.length === 0) {
+      this.failTask('task_text_empty');
+      return;
+    }
+    this.cloudClient = cloudClient;
+    this.deviceExecutor = deviceExecutor;
+    this.waitAfterActionMs = this.normalizeWaitMs(request.waitMs);
+    this.taskText = taskText;
+    this.installedApps = request.installedApps.slice();
+    this.installedAppsSent = false;
+    this.stopRequested = false;
+    this.runToken += 1;
+    const token = this.runToken;
+    this.eventSequence = 0;
+    this.events = [];
     this.snapshot = {
-      sessionId: id,
+      sessionId: request.sessionId.trim(),
       status: 'running',
       stepIndex: 0,
-      lastDescription: 'start',
-      lastActionName: 'tick',
+      lastDescription: '',
+      lastActionName: '',
+      lastActionJson: '',
       lastResultStatus: '',
       lastError: '',
+      installedAppsSent: false,
     };
     this.pushEvent('status', 'running');
-    this.startTimer();
+    void this.runLoop(token);
   }
 
   stopTask(reason: string): void {
-    const status = this.snapshot.status;
-    if (status === 'idle') {
+    if (this.snapshot.status === 'idle') {
       return;
     }
-    this.stopTimer();
-    this.snapshot.status = 'idle';
-    this.snapshot.lastDescription = 'stopped';
+    this.stopRequested = true;
+    this.snapshot.status = 'stopping';
     this.snapshot.lastError = reason;
-    this.pushEvent('status', `stopped:${reason}`);
+    this.pushEvent('status', `stopping:${reason}`);
   }
 
   getSnapshot(): TaskSnapshot {
@@ -49,8 +90,10 @@ export class TaskManager {
       stepIndex: this.snapshot.stepIndex,
       lastDescription: this.snapshot.lastDescription,
       lastActionName: this.snapshot.lastActionName,
+      lastActionJson: this.snapshot.lastActionJson,
       lastResultStatus: this.snapshot.lastResultStatus,
       lastError: this.snapshot.lastError,
+      installedAppsSent: this.snapshot.installedAppsSent,
     };
     return copy;
   }
@@ -67,44 +110,234 @@ export class TaskManager {
     return batch;
   }
 
-  private startTimer(): void {
-    if (this.tickTimerId !== -1) {
+  private async runLoop(token: number): Promise<void> {
+    const cloud = this.cloudClient;
+    const device = this.deviceExecutor;
+    if (!cloud || !device) {
+      this.failTask('dependencies_missing');
       return;
     }
-    this.tickTimerId = setInterval(() => {
-      this.onTick();
-    }, 800);
-  }
+    let sessionId = this.snapshot.sessionId;
+    let pendingAction: AgentAction | null = null;
+    let pendingDescription: string = '';
+    while (!this.stopRequested && token === this.runToken) {
+      if (!pendingAction) {
+        try {
+          const screenshot = await device.screenshotBase64();
+          const payload = this.buildInitialPayload(screenshot);
+          const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+          sessionId = this.applySessionId(response, sessionId);
+          const output = response.output;
+          const action = this.extractAction(cloud, output);
+          if (!action) {
+            this.failTask('missing_action');
+            break;
+          }
+          pendingDescription = output?.description ?? '';
+          const outcome = this.handleIncomingAction(action, pendingDescription);
+          if (outcome !== 'continue') {
+            break;
+          }
+          pendingAction = action;
+        } catch (e) {
+          const err = e instanceof Error ? e : new Error(String(e));
+          this.failTask(`invoke_failed:${err.message}`);
+          break;
+        }
+        continue;
+      }
 
-  private stopTimer(): void {
-    if (this.tickTimerId === -1) {
+      try {
+        const result = await this.executeAction(device, pendingAction);
+        this.recordActionResult(result);
+        await this.waitAfterAction(token);
+        const screenshot = await device.screenshotBase64();
+        const payload = this.buildFollowupPayload(screenshot, result);
+        const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+        sessionId = this.applySessionId(response, sessionId);
+        const output = response.output;
+        const action = this.extractAction(cloud, output);
+        if (!action) {
+          this.failTask('missing_action');
+          break;
+        }
+        pendingDescription = output?.description ?? '';
+        const outcome = this.handleIncomingAction(action, pendingDescription);
+        if (outcome !== 'continue') {
+          break;
+        }
+        pendingAction = action;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        this.failTask(`action_failed:${err.message}`);
+        break;
+      }
+    }
+
+    if (token !== this.runToken) {
       return;
     }
-    clearInterval(this.tickTimerId);
-    this.tickTimerId = -1;
+    if (this.stopRequested && (this.snapshot.status === 'stopping' || this.snapshot.status === 'running')) {
+      this.snapshot.status = 'idle';
+      this.pushEvent('status', 'idle');
+    }
   }
 
-  private onTick(): void {
-    if (this.snapshot.status !== 'running') {
-      return;
+  private buildInitialPayload(screenshot: string): CloudInvokePayload {
+    const state = this.buildStatePayload(screenshot);
+    const payload: CloudInvokePayload = {
+      task: this.taskText,
+      state,
+    };
+    return payload;
+  }
+
+  private buildFollowupPayload(screenshot: string, result: ActionResult): CloudInvokePayload {
+    const state = this.buildStatePayload(screenshot);
+    const payload: CloudInvokePayload = {
+      state,
+      action_result: result,
+    };
+    return payload;
+  }
+
+  private buildStatePayload(screenshot: string): CloudDeviceState {
+    const state: CloudDeviceState = { screenshot };
+    if (!this.installedAppsSent && this.installedApps.length > 0) {
+      state.installed_apps = this.installedApps;
+      this.installedAppsSent = true;
+      this.snapshot.installedAppsSent = true;
+    }
+    return state;
+  }
+
+  private applySessionId(response: CloudInvokeResponse, fallback: string): string {
+    const outputId = response.output?.session_id ?? '';
+    const envelopeId = response.session_id ?? '';
+    const next = envelopeId.length > 0 ? envelopeId : outputId.length > 0 ? outputId : fallback;
+    if (next !== this.snapshot.sessionId) {
+      this.snapshot.sessionId = next;
+    }
+    return next;
+  }
+
+  private extractAction(cloud: CloudAgentClient, output?: CloudInvokeOutput): AgentAction | null {
+    if (!output || !output.action) {
+      return null;
+    }
+    return cloud.normalizeAction(output.action);
+  }
+
+  private handleIncomingAction(action: AgentAction, description: string): 'continue' | 'finish' | 'wait_user' {
+    const name = action.name.trim();
+    if (name.length === 0) {
+      this.failTask('empty_action');
+      return 'finish';
     }
     this.snapshot.stepIndex += 1;
-    this.snapshot.lastDescription = `step:${this.snapshot.stepIndex}`;
-    this.snapshot.lastActionName = 'tick';
-    this.snapshot.lastResultStatus = this.pickResultStatus(this.snapshot.stepIndex);
-    this.pushEvent('log', this.snapshot.lastDescription);
-    if (this.snapshot.stepIndex >= 5) {
+    this.snapshot.lastDescription = description;
+    this.snapshot.lastActionName = name;
+    this.snapshot.lastActionJson = JSON.stringify(action);
+    this.pushEvent('action', name, this.snapshot.lastActionJson);
+
+    const lower = name.toLowerCase();
+    if (lower === 'finish') {
       this.snapshot.status = 'finished';
       this.pushEvent('status', 'finished');
-      this.stopTimer();
+      return 'finish';
+    }
+    if (lower === 'call_user' || lower === 'interact' || lower === 'task_over') {
+      this.snapshot.status = 'waiting_user';
+      const payload: NeedUserPayload = { description, action };
+      this.pushEvent('need_user', lower, JSON.stringify(payload));
+      this.pushEvent('status', 'waiting_user');
+      return 'wait_user';
+    }
+    return 'continue';
+  }
+
+  private async executeAction(device: DeviceExecutor, action: AgentAction): Promise<ActionResult> {
+    const lower = action.name.trim().toLowerCase();
+    if (lower === 'take_note') {
+      const result: ActionResult = { status: 'SUCCESS' };
+      return result;
+    }
+    return await device.executeAction(action);
+  }
+
+  private recordActionResult(result: ActionResult): void {
+    this.snapshot.lastResultStatus = result.status;
+    this.snapshot.lastError = result.error ?? '';
+    this.pushEvent('result', result.status, JSON.stringify(result));
+  }
+
+  private async invokeWithRetry(
+    cloud: CloudAgentClient,
+    sessionId: string,
+    payload: CloudInvokePayload,
+    token: number
+  ): Promise<CloudInvokeResponse> {
+    let attempt = 0;
+    while (true) {
+      if (this.stopRequested || token !== this.runToken) {
+        throw new Error('stopped');
+      }
+      try {
+        return await cloud.invoke(sessionId, payload);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        const status = this.readStatusCode(err);
+        if (status === 409 || status === 408 || status === 502) {
+          attempt += 1;
+          if (attempt > MAX_RETRY_COUNT) {
+            throw err;
+          }
+          const delay = this.retryDelay(attempt);
+          this.pushEvent('log', `retry:${status} in ${delay}ms`);
+          await sleep(delay);
+          continue;
+        }
+        throw err;
+      }
     }
   }
 
-  private pickResultStatus(step: number): ActionResultStatus {
-    if (step % 2 === 0) {
-      return 'SUCCESS';
+  private readStatusCode(error: Error): number {
+    if (error instanceof CloudInvokeError) {
+      return error.statusCode;
     }
-    return 'SKIPPED';
+    return -1;
+  }
+
+  private retryDelay(attempt: number): number {
+    const base = 400;
+    const delay = base * attempt;
+    return Math.min(2000, delay);
+  }
+
+  private async waitAfterAction(token: number): Promise<void> {
+    if (this.waitAfterActionMs <= 0) {
+      return;
+    }
+    if (this.stopRequested || token !== this.runToken) {
+      return;
+    }
+    await sleep(this.waitAfterActionMs);
+  }
+
+  private normalizeWaitMs(value: number): number {
+    if (!Number.isFinite(value)) {
+      return DEFAULT_WAIT_AFTER_ACTION_MS;
+    }
+    return Math.max(0, Math.floor(value));
+  }
+
+  private failTask(reason: string): void {
+    this.stopRequested = true;
+    this.snapshot.status = 'failed';
+    this.snapshot.lastError = reason;
+    this.pushEvent('error', reason);
+    this.pushEvent('status', 'failed');
   }
 
   private pushEvent(type: TaskEventType, message: string, payloadJson?: string): void {
@@ -117,4 +350,8 @@ export class TaskManager {
     };
     this.events.push(event);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

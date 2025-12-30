@@ -3,7 +3,7 @@ export const AGENT_SERVICE_DESCRIPTOR: string = 'com.huawei.aios.agent.operation
 export enum AgentServiceRequestCode {
   PING = 1,
   GET_SNAPSHOT = 2,
-  START_FAKE_TASK = 3,
+  START_TASK = 3,
   STOP_TASK = 4,
   PULL_EVENTS = 5,
   ENSURE_VTS = 10,
@@ -27,4 +27,5 @@ export enum AgentServiceRequestCode {
   ACTION_TYPE = 33,
   ACTION_PRESS_BACK = 34,
   ACTION_PRESS_ENTER = 35,
+  SET_CLOUD_ENDPOINT = 40,
 }

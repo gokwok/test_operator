@@ -2,7 +2,7 @@ export type TaskStatus = 'idle' | 'running' | 'waiting_user' | 'stopping' | 'fin
 
 export type ActionResultStatus = '' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
 
-export type TaskEventType = 'status' | 'log' | 'error';
+export type TaskEventType = 'status' | 'log' | 'action' | 'result' | 'need_user' | 'error';
 
 export interface TaskEvent {
   seq: number;
@@ -22,6 +22,15 @@ export interface TaskSnapshot {
   stepIndex: number;
   lastDescription: string;
   lastActionName: string;
+  lastActionJson: string;
   lastResultStatus: ActionResultStatus;
   lastError: string;
+  installedAppsSent: boolean;
+}
+
+export interface TaskStartRequest {
+  sessionId: string;
+  taskText: string;
+  installedApps: Array<string>;
+  waitMs: number;
 }
