@@ -38,6 +38,8 @@ struct Index {
   @State actionResult: string = '';
   @State appListInfo: string = '';
   @State appResolveInfo: string = '';
+  @State appIconInfo: string = '';
+  @State appIconPixelMap: image.PixelMap | null = null;
   @State serviceStatus: string = '';
   @State serviceSnapshot: string = '';
   @State serviceError: string = '';
@@ -242,6 +244,16 @@ struct Index {
             .onClick(() => {
               void this.onResolveLaunchTarget();
             })
+
+          Button('Show Icon')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onShowAppIcon();
+            })
         }
 
         Row({ space: 8 }) {
@@ -380,6 +392,21 @@ struct Index {
           Text(this.appResolveInfo)
             .fontSize(11)
             .fontColor('#B8C1CC')
+        }
+
+        if (this.appIconInfo.length > 0) {
+          Text(this.appIconInfo)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.appIconPixelMap) {
+          Image(this.appIconPixelMap)
+            .width(72)
+            .height(72)
+            .borderRadius(12)
+            .backgroundColor('#111217')
+            .objectFit(ImageFit.Contain)
         }
 
         if (this.screenshotPixelMap) {
@@ -951,6 +978,8 @@ struct Index {
     this.vtsError = '';
     this.appListInfo = 'Loading app names...';
     this.appResolveInfo = '';
+    this.appIconInfo = '';
+    this.appIconPixelMap = null;
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
@@ -979,6 +1008,8 @@ struct Index {
   private async onResolveLaunchTarget(): Promise<void> {
     this.vtsError = '';
     this.appResolveInfo = 'Resolving launch target...';
+    this.appIconInfo = '';
+    this.appIconPixelMap = null;
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
@@ -997,6 +1028,30 @@ struct Index {
     } catch (e) {
       this.appResolveInfo = '';
       this.vtsError = `Resolve launch target failed: ${String(e)}`;
+    }
+  }
+
+  private async onShowAppIcon(): Promise<void> {
+    this.vtsError = '';
+    this.appIconInfo = 'Loading app icon...';
+    this.appIconPixelMap = null;
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const granted = await this.ensureBundleListPermission(ctx);
+      if (!granted) {
+        this.appIconInfo = '';
+        if (this.vtsError.length === 0) {
+          this.vtsError = 'Permission not granted. Open settings and retry.';
+        }
+        return;
+      }
+
+      const pixelMap = await AppState.getIconByAppName(this.targetAppName, ctx);
+      this.appIconPixelMap = pixelMap;
+      this.appIconInfo = `Icon: ${this.targetAppName}`;
+    } catch (e) {
+      this.appIconInfo = '';
+      this.vtsError = `Get app icon failed: ${String(e)}`;
     }
   }
 

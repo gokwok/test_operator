@@ -2,6 +2,7 @@ import { FadeVisibility } from './FadeVisibility';
 
 type ActionType = 'supplement' | 'takeover' | 'stop';
 export type StatusFloatMode = 'default' | 'call_user_wait' | 'call_user_input';
+type SystemSymbolName = 'arrow_left' | 'mic' | 'paperplane_fill';
 
 @Observed
 export class StatusFloatWindowController {
@@ -146,9 +147,7 @@ export struct StatusFloatWindow {
   private readonly collapseLabel: string = '收起';
   private readonly callUserTitle: string = '等待答复';
   private readonly callUserHeader: string = '操作智能体';
-  private readonly callUserBackLabel: string = '返回';
-  private readonly callUserVoiceLabel: string = '语音';
-  private readonly callUserSendLabel: string = '发送';
+  private readonly callUserPlaceholder: string = '发消息或按住说话…';
 
   @Builder
   private actionButton(label: string, action: ActionType, onTap: () => void) {
@@ -265,41 +264,50 @@ export struct StatusFloatWindow {
   @Builder
   private callUserWaitContent() {
     Column({ space: 16 }) {
-      Column({ space: 8 }) {
+      Column({ space: 10 }) {
+        this.callUserBubble();
         Text(this.callUserTitle)
           .fontSize(14)
-          .fontColor('#FF4D5B')
+          .fontColor('#3A3D45')
           .fontWeight(FontWeight.Bold)
+          .textAlign(TextAlign.Center)
+          .width('100%')
         Text(this.controller.callUserContent)
           .fontSize(12)
-          .fontColor('#8D9098')
+          .fontColor('#FF4D5B')
           .lineHeight(18)
+          .textAlign(TextAlign.Center)
+          .width('100%')
       }
       .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding({ left: 16, right: 16, top: 18 })
+      .alignItems(HorizontalAlign.Center)
 
-      Row({ space: 10 }) {
-        Button(this.controller.callUserActionLabel)
-          .fontSize(14)
-          .fontColor('#2B2D35')
-          .fontWeight(FontWeight.Bold)
-          .backgroundColor('#FDE2E3')
-          .padding({ left: 18, right: 18, top: 8, bottom: 8 })
-          .borderRadius(18)
-          .onClick(() => this.controller.triggerCallUserConfirm())
+      Button(this.controller.callUserActionLabel)
+        .fontSize(14)
+        .fontColor('#FF4D5B')
+        .fontWeight(FontWeight.Bold)
+        .backgroundColor('#FFE3E6')
+        .padding({ left: 24, right: 24, top: 10, bottom: 10 })
+        .borderRadius(20)
+        .onClick(() => this.controller.triggerCallUserConfirm())
 
+      Row() {
+        Row()
+          .layoutWeight(1)
         this.actionButton('停止', 'stop', () => this.controller.triggerStop())
       }
       .width('100%')
-      .justifyContent(FlexAlign.SpaceBetween)
-      .padding({ left: 16, right: 16, bottom: 16 })
     }
+    .width('100%')
+    .padding({ left: 18, right: 18, top: 20, bottom: 16 })
+    .backgroundColor('#FFF2F2')
+    .borderRadius(26)
+    .shadow({ radius: 18, color: '#22000000', offsetX: 0, offsetY: 10 })
   }
 
   @Builder
   private callUserInputContent() {
-    Column({ space: 14 }) {
+    Column({ space: 12 }) {
       Row() {
         Text(this.callUserHeader)
           .fontSize(13)
@@ -307,56 +315,102 @@ export struct StatusFloatWindow {
           .fontWeight(FontWeight.Bold)
         Row()
           .layoutWeight(1)
-        Text(this.callUserBackLabel)
-          .fontSize(12)
-          .fontColor('#8D9098')
-          .onClick(() => this.controller.triggerCallUserBack())
+        this.iconButton('arrow_left', () => this.controller.triggerCallUserBack())
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 14 })
 
       Text(this.controller.callUserContent)
         .fontSize(12)
-        .fontColor('#8D9098')
+        .fontColor('#FF4D5B')
         .lineHeight(18)
         .width('100%')
         .padding({ left: 16, right: 16 })
 
       Row({ space: 10 }) {
-        TextInput({ text: this.controller.callUserInput, placeholder: '输入内容' })
+        TextInput({ text: this.controller.callUserInput, placeholder: this.callUserPlaceholder })
           .layoutWeight(1)
-          .height(34)
+          .height(36)
           .fontSize(12)
           .fontColor('#2B2D35')
           .backgroundColor('#F4F5F7')
-          .borderRadius(12)
-          .padding({ left: 10, right: 10 })
+          .borderRadius(14)
+          .padding({ left: 12, right: 12 })
           .onChange((value: string) => {
             this.controller.setCallUserInput(value);
           })
 
-        Button(this.resolveCallUserButtonLabel())
-          .fontSize(12)
-          .fontColor('#2B2D35')
-          .backgroundColor('#F3F5F7')
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .borderRadius(14)
-          .onClick(() => {
-            if (this.controller.callUserInput.trim().length > 0) {
-              this.controller.triggerCallUserSend();
-            }
-          })
+        if (this.controller.callUserInput.trim().length > 0) {
+          this.iconButton('paperplane_fill', () => this.controller.triggerCallUserSend())
+        } else {
+          this.iconButton('mic', () => {})
+        }
       }
       .width('100%')
       .padding({ left: 16, right: 16, bottom: 16 })
     }
+    .width('100%')
+    .backgroundColor('#FFFFFF')
+    .borderRadius(22)
+    .shadow({ radius: 18, color: '#22000000', offsetX: 0, offsetY: 8 })
   }
 
-  private resolveCallUserButtonLabel(): string {
-    if (this.controller.callUserInput.trim().length > 0) {
-      return this.callUserSendLabel;
+  @Builder
+  private iconButton(symbolName: SystemSymbolName, onTap: () => void) {
+    Row() {
+      this.symbolGlyph(symbolName);
     }
-    return this.callUserVoiceLabel;
+    .width(34)
+    .height(34)
+    .borderRadius(17)
+    .backgroundColor('#F3F5F7')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .onClick(onTap)
+  }
+
+  @Builder
+  private symbolGlyph(symbolName: SystemSymbolName) {
+    if (symbolName === 'arrow_left') {
+      SymbolGlyph($r('sys.symbol.arrow_left'))
+        .fontSize(16)
+        .fontColor(['#2B2D35'])
+    } else if (symbolName === 'mic') {
+      SymbolGlyph($r('sys.symbol.mic'))
+        .fontSize(16)
+        .fontColor(['#2B2D35'])
+    } else {
+      SymbolGlyph($r('sys.symbol.paperplane_fill'))
+        .fontSize(16)
+        .fontColor(['#2B2D35'])
+    }
+  }
+
+  @Builder
+  private callUserBubble() {
+    Row({ space: 4 }) {
+      Row()
+        .width(6)
+        .height(6)
+        .borderRadius(3)
+        .backgroundColor('#FF9AA2')
+      Row()
+        .width(6)
+        .height(6)
+        .borderRadius(3)
+        .backgroundColor('#FF9AA2')
+      Row()
+        .width(6)
+        .height(6)
+        .borderRadius(3)
+        .backgroundColor('#FF9AA2')
+    }
+    .width(36)
+    .height(36)
+    .borderRadius(18)
+    .backgroundColor('#FFE3E6')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -380,23 +434,26 @@ export struct StatusFloatWindow {
   @Builder
   private windowContent() {
     Column({ space: 10 }) {
-      Column() {
-        if (this.controller.stopped) {
+      if (this.controller.stopped) {
+        Column() {
           this.stoppedContent();
-        } else if (this.controller.mode === 'call_user_wait') {
-          this.callUserWaitContent();
-        } else if (this.controller.mode === 'call_user_input') {
-          this.callUserInputContent();
-        } else {
+        }
+        .backgroundColor(Color.White)
+        .borderRadius(26)
+        .shadow({ radius: 18, color: '#26000000', offsetX: 0, offsetY: 8 })
+
+        this.collapseButton();
+      } else if (this.controller.mode === 'call_user_wait') {
+        this.callUserWaitContent();
+      } else if (this.controller.mode === 'call_user_input') {
+        this.callUserInputContent();
+      } else {
+        Column() {
           this.activeContent();
         }
-      }
-      .backgroundColor(Color.White)
-      .borderRadius(26)
-      .shadow({ radius: 18, color: '#26000000', offsetX: 0, offsetY: 8 })
-
-      if (this.controller.stopped) {
-        this.collapseButton();
+        .backgroundColor(Color.White)
+        .borderRadius(26)
+        .shadow({ radius: 18, color: '#26000000', offsetX: 0, offsetY: 8 })
       }
     }
     .alignItems(HorizontalAlign.Center)
