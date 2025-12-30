@@ -2,7 +2,7 @@ import { FadeVisibility } from './FadeVisibility';
 
 type ActionType = 'supplement' | 'takeover' | 'stop';
 export type StatusFloatMode = 'default' | 'call_user_wait' | 'call_user_input';
-type SystemSymbolName = 'arrow_left' | 'mic' | 'paperplane_fill';
+type SystemSymbolName = 'chevron_down' | 'chevron_up_circle' | 'mic_fill';
 
 @Observed
 export class StatusFloatWindowController {
@@ -141,6 +141,7 @@ export class StatusFloatWindowController {
 export struct StatusFloatWindow {
   @ObjectLink controller: StatusFloatWindowController;
   @Prop visible: boolean = true;
+  @State private callUserPlaceholderText: string = '发消息或按住说话…';
 
   private readonly stopTitle: string = '用户已停止任务执行';
   private readonly stopDescription: string = '用户主动停止了当前任务的执行。';
@@ -309,42 +310,59 @@ export struct StatusFloatWindow {
   @Builder
   private callUserInputContent() {
     Column({ space: 12 }) {
-      Row() {
+      Row({ space: 6 }) {
+        SymbolGlyph($r('sys.symbol.hand_point_up_tap_fill_1'))
+          .fontSize(16)
+          .fontColor(['#2B2D35'])
         Text(this.callUserHeader)
           .fontSize(13)
           .fontColor('#2B2D35')
-          .fontWeight(FontWeight.Bold)
         Row()
           .layoutWeight(1)
-        this.iconButton('arrow_left', () => this.controller.triggerCallUserBack())
+        this.iconButton('chevron_down', () => this.controller.triggerCallUserBack())
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 14 })
 
       Text(this.controller.callUserContent)
-        .fontSize(12)
+        .fontSize(14)
         .fontColor('#FF4D5B')
-        .lineHeight(18)
+        .fontWeight(FontWeight.Bold)
+        .lineHeight(20)
         .width('100%')
         .padding({ left: 16, right: 16 })
 
+      Row()
+        .width('100%')
+        .height(1)
+        .backgroundColor('#E6E8EB')
+
       Row({ space: 10 }) {
-        TextInput({ text: this.controller.callUserInput, placeholder: this.callUserPlaceholder })
+        TextInput({ text: this.controller.callUserInput, placeholder: this.callUserPlaceholderText })
           .layoutWeight(1)
           .height(36)
           .fontSize(12)
           .fontColor('#2B2D35')
-          .backgroundColor('#F4F5F7')
-          .borderRadius(14)
-          .padding({ left: 12, right: 12 })
+          .backgroundColor('#00000000')
+          .borderRadius(12)
+          .padding({ left: 6, right: 6 })
+          .placeholderColor('#B6BAC4')
           .onChange((value: string) => {
             this.controller.setCallUserInput(value);
           })
+          .onFocus(() => {
+            this.callUserPlaceholderText = '';
+          })
+          .onBlur(() => {
+            if (this.controller.callUserInput.trim().length === 0) {
+              this.callUserPlaceholderText = this.callUserPlaceholder;
+            }
+          })
 
         if (this.controller.callUserInput.trim().length > 0) {
-          this.iconButton('paperplane_fill', () => this.controller.triggerCallUserSend())
+          this.iconButton('chevron_up_circle', () => this.controller.triggerCallUserSend())
         } else {
-          this.iconButton('mic', () => {})
+          this.iconButton('mic_fill', () => {})
         }
       }
       .width('100%')
@@ -361,10 +379,8 @@ export struct StatusFloatWindow {
     Row() {
       this.symbolGlyph(symbolName);
     }
-    .width(34)
-    .height(34)
-    .borderRadius(17)
-    .backgroundColor('#F3F5F7')
+    .width(28)
+    .height(28)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .onClick(onTap)
@@ -372,17 +388,17 @@ export struct StatusFloatWindow {
 
   @Builder
   private symbolGlyph(symbolName: SystemSymbolName) {
-    if (symbolName === 'arrow_left') {
-      SymbolGlyph($r('sys.symbol.arrow_left'))
-        .fontSize(16)
+    if (symbolName === 'chevron_down') {
+      SymbolGlyph($r('sys.symbol.chevron_down'))
+        .fontSize(18)
         .fontColor(['#2B2D35'])
-    } else if (symbolName === 'mic') {
-      SymbolGlyph($r('sys.symbol.mic'))
+    } else if (symbolName === 'mic_fill') {
+      SymbolGlyph($r('sys.symbol.mic_fill'))
         .fontSize(16)
         .fontColor(['#2B2D35'])
     } else {
-      SymbolGlyph($r('sys.symbol.paperplane_fill'))
-        .fontSize(16)
+      SymbolGlyph($r('sys.symbol.chevron_up_circle'))
+        .fontSize(18)
         .fontColor(['#2B2D35'])
     }
   }
