@@ -90,7 +90,7 @@ export interface AgentSpaceHost {
   closeViewer(): Promise<void>;
 }
 
-export type VTSBackendFactory = (ctx: common.UIAbilityContext) => VTSBackendPort;
+export type VTSBackendFactory = (ctx: common.Context) => VTSBackendPort;
 
 export class AgentSpace {
   private static instance: AgentSpace | null = null;
@@ -104,7 +104,7 @@ export class AgentSpace {
   private viewerEffectSequence: number = 0;
   private viewerEffects: Array<AgentSpaceViewerEffect> = [];
 
-  static init(ctx: common.UIAbilityContext, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
+  static init(ctx: common.Context, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
     if (!AgentSpace.instance) {
       AgentSpace.instance = new AgentSpace(ctx, backendFactory);
     } else {
@@ -123,11 +123,11 @@ export class AgentSpace {
     return AgentSpace.instance;
   }
 
-  private constructor(ctx: common.UIAbilityContext, backendFactory?: VTSBackendFactory) {
+  private constructor(ctx: common.Context, backendFactory?: VTSBackendFactory) {
     this.backend = backendFactory ? backendFactory(ctx) : new VTSBackend(ctx);
   }
 
-  private updateContext(ctx: common.UIAbilityContext): void {
+  private updateContext(ctx: common.Context): void {
     this.backend.updateContext(ctx);
   }
 

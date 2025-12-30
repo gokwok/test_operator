@@ -82,6 +82,34 @@ export class AgentServiceClient {
     return await this.sendRequestWithInt(AgentServiceRequestCode.PULL_EVENTS, lastSequence);
   }
 
+  async ensureVts(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.ENSURE_VTS);
+  }
+
+  async getRuntime(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.GET_RUNTIME);
+  }
+
+  async launchApp(bundleName: string, abilityName: string): Promise<void> {
+    await this.sendRequestWithTwoStrings(AgentServiceRequestCode.LAUNCH_APP, bundleName, abilityName);
+  }
+
+  async clickNorm(xNorm: number, yNorm: number): Promise<void> {
+    await this.sendRequestWithTwoInts(AgentServiceRequestCode.CLICK_NORM, xNorm, yNorm);
+  }
+
+  async screenshot(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.SCREENSHOT);
+  }
+
+  async destroyVts(): Promise<void> {
+    await this.sendRequest(AgentServiceRequestCode.DESTROY_VTS);
+  }
+
+  async stopVts(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.STOP_VTS);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
@@ -138,6 +166,54 @@ export class AgentServiceClient {
     try {
       data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
       data.writeInt(value);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithTwoStrings(code: number, first: string, second: string): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeString(first);
+      data.writeString(second);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithTwoInts(code: number, first: number, second: number): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInt(first);
+      data.writeInt(second);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
       if (result.errCode !== 0) {

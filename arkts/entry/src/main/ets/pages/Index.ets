@@ -826,8 +826,9 @@ struct Index {
   private async onVtsCreate(): Promise<void> {
     this.vtsError = '';
     try {
-      const rt = await this.ensureRuntime();
-      this.vtsStatus = this.formatRuntime(rt);
+      await this.ensureServiceConnected();
+      const payload = await this.getServiceClient().ensureVts();
+      this.vtsStatus = payload.length > 0 ? payload : 'vts ready';
     } catch (e) {
       this.vtsError = `VTS create failed: ${String(e)}`;
     }
@@ -836,8 +837,9 @@ struct Index {
   private async onVtsStatus(): Promise<void> {
     this.vtsError = '';
     try {
-      const rt = await this.getAgentSpace().getRuntimeInfo();
-      this.vtsStatus = this.formatRuntime(rt);
+      await this.ensureServiceConnected();
+      const payload = await this.getServiceClient().getRuntime();
+      this.vtsStatus = payload.length > 0 ? payload : 'runtime empty';
     } catch (e) {
       this.vtsError = `VTS status failed: ${String(e)}`;
     }
@@ -978,13 +980,13 @@ struct Index {
   private async onVtsLaunch(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.ensureRuntime();
       const target = this.buildTarget();
       if (target.bundleName.length === 0 || target.abilityName.length === 0) {
         this.vtsError = 'Target bundle/ability is empty';
         return;
       }
-      await this.getAgentSpace().startApp(target);
+      await this.ensureServiceConnected();
+      await this.getServiceClient().launchApp(target.bundleName, target.abilityName);
       this.vtsStatus = `launch: ${target.bundleName}/${target.abilityName}`;
     } catch (e) {
       this.vtsError = `VTS launch failed: ${String(e)}`;
@@ -992,26 +994,17 @@ struct Index {
   }
 
   private async onVtsClickCenter(): Promise<void> {
-    this.vtsError = '';
-    try {
-      const rt = await this.ensureRuntime();
-      const x = Math.floor(rt.widthPx / 2);
-      const y = Math.floor(rt.heightPx / 2);
-      await this.getAgentSpace().clickPx(x, y);
-      this.vtsStatus = `click: (${x}, ${y})`;
-    } catch (e) {
-      this.vtsError = `VTS click failed: ${String(e)}`;
-    }
+    await this.onVtsClickPreset(0.5, 0.5);
   }
 
   private async onVtsClickPreset(rx: number, ry: number): Promise<void> {
     this.vtsError = '';
     try {
-      const rt = await this.ensureRuntime();
-      const x = this.ratioToPx(rt.widthPx, rx);
-      const y = this.ratioToPx(rt.heightPx, ry);
-      await this.getAgentSpace().clickPx(x, y);
-      this.vtsStatus = `click: (${x}, ${y})`;
+      await this.ensureServiceConnected();
+      const xNorm = this.ratioToNorm(rx);
+      const yNorm = this.ratioToNorm(ry);
+      await this.getServiceClient().clickNorm(xNorm, yNorm);
+      this.vtsStatus = `click: (${xNorm}, ${yNorm})`;
     } catch (e) {
       this.vtsError = `VTS click failed: ${String(e)}`;
     }
@@ -1020,16 +1013,16 @@ struct Index {
   private async onVtsClickPresetDelayed(rx: number, ry: number, delayMs: number): Promise<void> {
     this.vtsError = '';
     try {
-      const rt = await this.ensureRuntime();
-      const x = this.ratioToPx(rt.widthPx, rx);
-      const y = this.ratioToPx(rt.heightPx, ry);
       const waitMs = Math.max(0, Math.floor(delayMs));
       this.vtsStatus = `click in ${waitMs}ms`;
       await new Promise<void>((resolve: () => void) => {
         setTimeout(() => resolve(), waitMs);
       });
-      await this.getAgentSpace().clickPx(x, y);
-      this.vtsStatus = `click: (${x}, ${y})`;
+      await this.ensureServiceConnected();
+      const xNorm = this.ratioToNorm(rx);
+      const yNorm = this.ratioToNorm(ry);
+      await this.getServiceClient().clickNorm(xNorm, yNorm);
+      this.vtsStatus = `click: (${xNorm}, ${yNorm})`;
     } catch (e) {
       this.vtsError = `VTS click failed: ${String(e)}`;
     }
@@ -1052,9 +1045,9 @@ struct Index {
   private async onVtsScreenshot(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.ensureRuntime();
+      await this.ensureServiceConnected();
       const startMs = Date.now();
-      const raw = await this.getAgentSpace().screenshotBase64();
+      const raw = await this.getServiceClient().screenshot();
       const costMs = Date.now() - startMs;
       this.vtsScreenshotInfo = `screenshot len: ${raw.length} ms: ${costMs}`;
       this.screenshotBase64 = raw;
@@ -1234,7 +1227,8 @@ struct Index {
   private async onVtsDestroy(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.getAgentSpace().destroy();
+      await this.ensureServiceConnected();
+      await this.getServiceClient().destroyVts();
       this.vtsStatus = 'destroyed';
     } catch (e) {
       this.vtsError = `VTS destroy failed: ${String(e)}`;
@@ -1244,9 +1238,8 @@ struct Index {
   private async onVtsStop(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.ensureRuntime();
-      const count = await this.getAgentSpace().transferToMain();
-      await this.getAgentSpace().destroy();
+      await this.ensureServiceConnected();
+      const count = await this.getServiceClient().stopVts();
       this.vtsStatus = `stopped (windows: ${count})`;
     } catch (e) {
       this.vtsError = `VTS stop failed: ${String(e)}`;
@@ -1258,6 +1251,16 @@ struct Index {
     const max = Math.max(1, limit);
     const px = Math.floor(clamped * (max - 1));
     return px < 0 ? 0 : px;
+  }
+
+  private ratioToNorm(ratio: number): number {
+    const clamped = Math.min(Math.max(ratio, 0), 1);
+    return Math.round(clamped * 1000);
+  }
+
+  private async ensureServiceConnected(): Promise<void> {
+    const ctx = getContext(this) as common.UIAbilityContext;
+    await this.getServiceClient().connect(ctx);
   }
 
   private async runAction(label: string, action: AgentAction): Promise<void> {

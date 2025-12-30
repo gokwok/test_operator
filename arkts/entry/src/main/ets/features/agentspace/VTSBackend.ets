@@ -73,7 +73,7 @@ export interface VTSRuntimeInfo {
 }
 
 export interface VTSBackendPort {
-  updateContext(ctx: common.UIAbilityContext): void;
+  updateContext(ctx: common.Context): void;
   getRuntime(): VTSRuntimeInfo | null;
   create(): Promise<VTSRuntimeInfo>;
   attachSurface(surfaceId: string): Promise<void>;
@@ -102,17 +102,21 @@ interface AppControllerFocusApi {
   requestFocus?: (targetWindowId: number) => boolean;
 }
 
+interface StartAbilityContext {
+  startAbility: (want: Want, options?: StartOptions) => Promise<void>;
+}
+
 export class VTSBackend implements VTSBackendPort {
-  private ctx: common.UIAbilityContext;
+  private ctx: common.Context;
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;
   private imeRegistered: boolean = false;
 
-  constructor(ctx: common.UIAbilityContext) {
+  constructor(ctx: common.Context) {
     this.ctx = ctx;
   }
 
-  updateContext(ctx: common.UIAbilityContext): void {
+  updateContext(ctx: common.Context): void {
     this.ctx = ctx;
   }
 
@@ -219,7 +223,8 @@ export class VTSBackend implements VTSBackendPort {
     };
 
     try {
-      await this.ctx.startAbility(want, opt);
+      const ctx = this.getStartAbilityContext();
+      await ctx.startAbility(want, opt);
       this.lastTarget = target;
     } catch (e) {
       const err = e as BusinessError;
@@ -477,7 +482,8 @@ export class VTSBackend implements VTSBackendPort {
       bundleName: target.bundleName,
       abilityName: target.abilityName,
     };
-    await this.ctx.startAbility(want);
+    const ctx = this.getStartAbilityContext();
+    await ctx.startAbility(want);
   }
 
   private listWindowsBestEffort(displayIdFilter: number): AppController.WindowInfoUnit[] {
@@ -498,6 +504,14 @@ export class VTSBackend implements VTSBackendPort {
       console.error(`${LOG_TAG} listWindowInfo failed. Code:${err.code}, message:${err.message}`);
       return [];
     }
+  }
+
+  private getStartAbilityContext(): StartAbilityContext {
+    const ctx = this.ctx as StartAbilityContext;
+    if (typeof ctx.startAbility !== 'function') {
+      throw new Error('startAbility is not available in current context');
+    }
+    return ctx;
   }
 }
 

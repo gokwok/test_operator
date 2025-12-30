@@ -1,5 +1,8 @@
 import type { common } from '@kit.AbilityKit';
 
+import { AgentSpace } from '../agentspace/AgentSpace';
+import type { AppTarget } from '../agentspace/VTSBackend';
+import { DeviceExecutor } from './DeviceExecutor';
 import type { TaskEventBatch, TaskSnapshot } from './types';
 import { TaskManager } from './TaskManager';
 
@@ -8,6 +11,7 @@ export class AgentService {
   private ctx: common.Context | null = null;
   private readonly createdAtMs: number = Date.now();
   private taskManager: TaskManager = new TaskManager();
+  private deviceExecutor: DeviceExecutor | null = null;
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -46,5 +50,50 @@ export class AgentService {
       return '';
     }
     return JSON.stringify(batch);
+  }
+
+  async ensureVtsJson(): Promise<string> {
+    const runtime = await this.getDeviceExecutor().ensureVts();
+    return JSON.stringify(runtime);
+  }
+
+  async getRuntimeJson(): Promise<string> {
+    const runtime = await this.getDeviceExecutor().getRuntimeInfo();
+    return JSON.stringify(runtime);
+  }
+
+  async launchApp(bundleName: string, abilityName: string): Promise<void> {
+    const target: AppTarget = { bundleName, abilityName };
+    await this.getDeviceExecutor().launchApp(target);
+  }
+
+  async clickNorm(xNorm: number, yNorm: number): Promise<void> {
+    await this.getDeviceExecutor().clickNorm(xNorm, yNorm);
+  }
+
+  async screenshotBase64(): Promise<string> {
+    return await this.getDeviceExecutor().screenshotBase64();
+  }
+
+  async destroyVts(): Promise<void> {
+    await this.getDeviceExecutor().destroy();
+  }
+
+  async stopVts(): Promise<number> {
+    return await this.getDeviceExecutor().stop();
+  }
+
+  private ensureAgentSpace(): AgentSpace {
+    if (!this.ctx) {
+      throw new Error('Service context not initialized');
+    }
+    return AgentSpace.init(this.ctx);
+  }
+
+  private getDeviceExecutor(): DeviceExecutor {
+    if (!this.deviceExecutor) {
+      this.deviceExecutor = new DeviceExecutor(this.ensureAgentSpace());
+    }
+    return this.deviceExecutor;
   }
 }
