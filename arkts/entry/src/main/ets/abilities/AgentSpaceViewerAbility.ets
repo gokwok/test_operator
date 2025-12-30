@@ -2,13 +2,15 @@ import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
-import { AgentSpace } from '../features/agentspace/AgentSpace';
+import type { common } from '@kit.AbilityKit';
+import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 
 const DOMAIN = 0x0000;
 const TAG = 'AgentSpaceViewerAbility';
 
 export default class AgentSpaceViewerAbility extends UIAbility {
   private currentWindowStage: window.WindowStage | null = null;
+  private serviceClient: AgentServiceClient | null = null;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     void launchParam;
@@ -46,8 +48,7 @@ export default class AgentSpaceViewerAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    const space = AgentSpace.getInstance();
-    void space.setViewerActive(false);
+    void this.updateViewerActive(false);
     hilog.info(DOMAIN, TAG, 'onDestroy');
   }
 
@@ -55,12 +56,28 @@ export default class AgentSpaceViewerAbility extends UIAbility {
     if (want?.action !== VIEWER_CLOSE_ACTION) {
       return false;
     }
-    const space = AgentSpace.getInstance();
-    void space.setViewerActive(false);
+    void this.updateViewerActive(false);
     this.context.terminateSelf((err: BusinessError) => {
       void err;
     });
     return true;
+  }
+
+  private getServiceClient(): AgentServiceClient {
+    if (!this.serviceClient) {
+      this.serviceClient = new AgentServiceClient();
+    }
+    return this.serviceClient;
+  }
+
+  private async updateViewerActive(active: boolean): Promise<void> {
+    try {
+      const ctx = this.context as common.UIAbilityContext;
+      await this.getServiceClient().connect(ctx);
+      await this.getServiceClient().setViewerActive(active);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'updateViewerActive failed: %{public}s', String(e));
+    }
   }
 }
 

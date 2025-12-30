@@ -7,9 +7,7 @@ import {
 } from '../ui_components/InteractionEffectOverlay';
 import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
-import type { common } from '@kit.AbilityKit';
-import { AgentSpace } from '../features/agentspace/AgentSpace';
-import type { AgentAction, ActionParameters, ActionResult, AgentSpaceRuntimeInfo } from '../features/agentspace/AgentSpace';
+import type { common, Want } from '@kit.AbilityKit';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import { AppState } from '../features/state/app_state';
@@ -17,6 +15,10 @@ import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import util from '@ohos.util';
+
+const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
+const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
+const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 
 @Entry
 @Component
@@ -43,7 +45,6 @@ struct Index {
   private readonly initialStatus: string = 'hello world';
   private readonly statusResetDelayMs: number = 260;
   private statusResetTimerId: number = -1;
-  private agentSpace: AgentSpace | null = null;
   private serviceClient: AgentServiceClient | null = null;
   private screenshotBase64: string = '';
   private screenshotLongPressTimerId: number = -1;
@@ -832,27 +833,11 @@ struct Index {
     .width('100%')
   }
 
-  private getAgentSpace(): AgentSpace {
-    if (!this.agentSpace) {
-      this.agentSpace = AgentSpace.getInstance();
-    }
-    return this.agentSpace;
-  }
-
   private getServiceClient(): AgentServiceClient {
     if (!this.serviceClient) {
       this.serviceClient = new AgentServiceClient();
     }
     return this.serviceClient;
-  }
-
-  private async ensureRuntime(): Promise<AgentSpaceRuntimeInfo> {
-    return await this.getAgentSpace().ensureVts();
-  }
-
-  private formatRuntime(rt: AgentSpaceRuntimeInfo): string {
-    const displayId = rt.displayId === undefined ? 'n/a' : String(rt.displayId);
-    return `screen=${rt.screenId} display=${displayId} size=${rt.widthPx}x${rt.heightPx} state=${rt.state} viewer=${rt.viewerActive} surface=${rt.surfaceAttached}`;
   }
 
   private async onVtsCreate(): Promise<void> {
@@ -1008,10 +993,10 @@ struct Index {
   private async onShowViewer(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.ensureRuntime();
       await this.ensureServiceConnected();
       await this.getServiceClient().setViewerMode('display');
-      await this.getAgentSpace().startViewer('display');
+      await this.getServiceClient().ensureVts();
+      await this.startViewerAbility();
     } catch (e) {
       this.vtsError = `Show viewer failed: ${String(e)}`;
     }
@@ -1020,7 +1005,9 @@ struct Index {
   private async onCloseViewer(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.getAgentSpace().closeViewer();
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setViewerActive(false);
+      await this.startViewerAbility(VIEWER_CLOSE_ACTION);
     } catch (e) {
       this.vtsError = `Close viewer failed: ${String(e)}`;
     }
@@ -1029,10 +1016,10 @@ struct Index {
   private async onShowViewerControl(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.ensureRuntime();
       await this.ensureServiceConnected();
       await this.getServiceClient().setViewerMode('control');
-      await this.getAgentSpace().startViewer('control');
+      await this.getServiceClient().ensureVts();
+      await this.startViewerAbility();
     } catch (e) {
       this.vtsError = `Show viewer control failed: ${String(e)}`;
     }
@@ -1092,12 +1079,12 @@ struct Index {
   private async onVtsSwipeUp(): Promise<void> {
     this.vtsError = '';
     try {
-      const rt = await this.ensureRuntime();
-      const x = this.ratioToPx(rt.widthPx, 0.5);
-      const startY = this.ratioToPx(rt.heightPx, 0.8);
-      const endY = this.ratioToPx(rt.heightPx, 0.2);
-      await this.getAgentSpace().swipePx(x, startY, x, endY);
-      this.vtsStatus = `swipe: (${x}, ${startY}) -> (${x}, ${endY})`;
+      await this.ensureServiceConnected();
+      const xNorm = this.ratioToNorm(0.5);
+      const startY = this.ratioToNorm(0.8);
+      const endY = this.ratioToNorm(0.2);
+      const result = await this.getServiceClient().actionSwipe(xNorm, startY, xNorm, endY, 300);
+      this.vtsStatus = `swipe: ${result}`;
     } catch (e) {
       this.vtsError = `VTS swipe failed: ${String(e)}`;
     }
@@ -1277,8 +1264,8 @@ struct Index {
   private async onVtsTransfer(): Promise<void> {
     this.vtsError = '';
     try {
-      await this.ensureRuntime();
-      const count = await this.getAgentSpace().transferToMain();
+      await this.ensureServiceConnected();
+      const count = await this.getServiceClient().transferToMain();
       this.vtsStatus = `transfer -> main (windows: ${count})`;
     } catch (e) {
       this.vtsError = `VTS transfer failed: ${String(e)}`;
@@ -1307,13 +1294,6 @@ struct Index {
     }
   }
 
-  private ratioToPx(limit: number, ratio: number): number {
-    const clamped = Math.min(Math.max(ratio, 0), 1);
-    const max = Math.max(1, limit);
-    const px = Math.floor(clamped * (max - 1));
-    return px < 0 ? 0 : px;
-  }
-
   private ratioToNorm(ratio: number): number {
     const clamped = Math.min(Math.max(ratio, 0), 1);
     return Math.round(clamped * 1000);
@@ -1324,43 +1304,49 @@ struct Index {
     await this.getServiceClient().connect(ctx);
   }
 
-  private async runAction(label: string, action: AgentAction): Promise<void> {
-    this.vtsError = '';
-    try {
-      await this.ensureRuntime();
-      const result: ActionResult = await this.getAgentSpace().executeAction(action);
-      const msg = result.error ? ` error=${result.error}` : '';
-      this.actionResult = `${label}: ${result.status}${msg}`;
-    } catch (e) {
-      this.vtsError = `Action ${label} failed: ${String(e)}`;
+  private async startViewerAbility(action?: string): Promise<void> {
+    const ctx = getContext(this) as common.UIAbilityContext;
+    const want: Want = {
+      bundleName: VIEWER_BUNDLE_NAME,
+      abilityName: VIEWER_ABILITY_NAME,
+    };
+    if (action && action.length > 0) {
+      want.action = action;
     }
+    await ctx.startAbility(want);
   }
 
   private async onActionLongClick(): Promise<void> {
-    const params: ActionParameters = {
-      point: [500, 500],
-      duration_ms: 1500,
-    };
-    const action: AgentAction = { name: 'long_click', parameters: params };
-    await this.runAction('long_click', action);
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const result = await this.getServiceClient().actionLongClick(500, 500, 1500);
+      this.actionResult = `long_click: ${result}`;
+    } catch (e) {
+      this.vtsError = `Action long_click failed: ${String(e)}`;
+    }
   }
 
   private async onActionDoubleClick(): Promise<void> {
-    const params: ActionParameters = {
-      point: [500, 500],
-    };
-    const action: AgentAction = { name: 'double_click', parameters: params };
-    await this.runAction('double_click', action);
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const result = await this.getServiceClient().actionDoubleClick(500, 500);
+      this.actionResult = `double_click: ${result}`;
+    } catch (e) {
+      this.vtsError = `Action double_click failed: ${String(e)}`;
+    }
   }
 
   private async onActionSwipe(): Promise<void> {
-    const params: ActionParameters = {
-      start_point: [500, 800],
-      end_point: [500, 200],
-      duration_ms: 300,
-    };
-    const action: AgentAction = { name: 'swipe', parameters: params };
-    await this.runAction('swipe', action);
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const result = await this.getServiceClient().actionSwipe(500, 800, 500, 200, 300);
+      this.actionResult = `swipe: ${result}`;
+    } catch (e) {
+      this.vtsError = `Action swipe failed: ${String(e)}`;
+    }
   }
 
   private async onActionType(usePoint: boolean): Promise<void> {
@@ -1369,23 +1355,35 @@ struct Index {
       this.vtsError = 'Type content is empty';
       return;
     }
-    const params: ActionParameters = {
-      content,
-    };
-    if (usePoint) {
-      params.point = [500, 500];
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const result = await this.getServiceClient().actionType(content, usePoint, 500, 500);
+      this.actionResult = `type: ${result}`;
+    } catch (e) {
+      this.vtsError = `Action type failed: ${String(e)}`;
     }
-    const action: AgentAction = { name: 'type', parameters: params };
-    await this.runAction('type', action);
   }
 
   private async onActionPressBack(): Promise<void> {
-    const action: AgentAction = { name: 'press_back' };
-    await this.runAction('press_back', action);
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const result = await this.getServiceClient().actionPressBack();
+      this.actionResult = `press_back: ${result}`;
+    } catch (e) {
+      this.vtsError = `Action press_back failed: ${String(e)}`;
+    }
   }
 
   private async onActionPressEnter(): Promise<void> {
-    const action: AgentAction = { name: 'press_enter' };
-    await this.runAction('press_enter', action);
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const result = await this.getServiceClient().actionPressEnter();
+      this.actionResult = `press_enter: ${result}`;
+    } catch (e) {
+      this.vtsError = `Action press_enter failed: ${String(e)}`;
+    }
   }
 }

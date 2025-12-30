@@ -157,6 +157,48 @@ export class AgentServiceClient {
     return await this.sendRequestWithInt(AgentServiceRequestCode.PULL_VIEWER_EFFECTS, lastSequence);
   }
 
+  async transferToMain(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.TRANSFER_TO_MAIN);
+  }
+
+  async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
+    return await this.sendRequestWithTwoInts(AgentServiceRequestCode.ACTION_DOUBLE_CLICK, xNorm, yNorm);
+  }
+
+  async actionLongClick(xNorm: number, yNorm: number, durationMs: number): Promise<string> {
+    return await this.sendRequestWithThreeInts(AgentServiceRequestCode.ACTION_LONG_CLICK, xNorm, yNorm, durationMs);
+  }
+
+  async actionSwipe(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    durationMs: number
+  ): Promise<string> {
+    return await this.sendRequestWithFiveInts(
+      AgentServiceRequestCode.ACTION_SWIPE,
+      startX,
+      startY,
+      endX,
+      endY,
+      durationMs
+    );
+  }
+
+  async actionType(content: string, hasPoint: boolean, xNorm: number, yNorm: number): Promise<string> {
+    const flag = hasPoint ? 1 : 0;
+    return await this.sendRequestWithStringAndInts(AgentServiceRequestCode.ACTION_TYPE, content, flag, xNorm, yNorm);
+  }
+
+  async actionPressBack(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.ACTION_PRESS_BACK);
+  }
+
+  async actionPressEnter(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.ACTION_PRESS_ENTER);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
@@ -261,6 +303,65 @@ export class AgentServiceClient {
       data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
       data.writeInt(first);
       data.writeInt(second);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithThreeInts(code: number, first: number, second: number, third: number): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInt(first);
+      data.writeInt(second);
+      data.writeInt(third);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithFiveInts(
+    code: number,
+    first: number,
+    second: number,
+    third: number,
+    fourth: number,
+    fifth: number
+  ): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInt(first);
+      data.writeInt(second);
+      data.writeInt(third);
+      data.writeInt(fourth);
+      data.writeInt(fifth);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
       if (result.errCode !== 0) {

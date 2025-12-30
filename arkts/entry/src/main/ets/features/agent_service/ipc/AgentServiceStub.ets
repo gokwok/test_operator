@@ -146,6 +146,55 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentServiceRequestCode.TRANSFER_TO_MAIN) {
+        const count = await this.service.transferToMain();
+        reply.writeString(String(count));
+        return true;
+      }
+      if (code === AgentServiceRequestCode.ACTION_DOUBLE_CLICK) {
+        const xNorm = data.readInt();
+        const yNorm = data.readInt();
+        const result = await this.service.actionDoubleClick(xNorm, yNorm);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.ACTION_LONG_CLICK) {
+        const xNorm = data.readInt();
+        const yNorm = data.readInt();
+        const durationMs = data.readInt();
+        const result = await this.service.actionLongClick(xNorm, yNorm, durationMs);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.ACTION_SWIPE) {
+        const startX = data.readInt();
+        const startY = data.readInt();
+        const endX = data.readInt();
+        const endY = data.readInt();
+        const durationMs = data.readInt();
+        const result = await this.service.actionSwipe(startX, startY, endX, endY, durationMs);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.ACTION_TYPE) {
+        const content = data.readString();
+        const hasPoint = data.readInt() === 1;
+        const xNorm = data.readInt();
+        const yNorm = data.readInt();
+        const result = await this.service.actionType(content, hasPoint, xNorm, yNorm);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.ACTION_PRESS_BACK) {
+        const result = await this.service.actionPressBack();
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentServiceRequestCode.ACTION_PRESS_ENTER) {
+        const result = await this.service.actionPressEnter();
+        reply.writeString(result);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

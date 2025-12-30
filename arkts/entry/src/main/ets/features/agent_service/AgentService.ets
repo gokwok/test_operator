@@ -1,7 +1,14 @@
 import type { common } from '@kit.AbilityKit';
 
 import { AgentSpace } from '../agentspace/AgentSpace';
-import type { AgentSpacePointerEvent, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../agentspace/AgentSpace';
+import type {
+  AgentAction,
+  ActionParameters,
+  ActionResult,
+  AgentSpacePointerEvent,
+  AgentSpaceViewerEffectBatch,
+  AgentSpaceViewerMode
+} from '../agentspace/AgentSpace';
 import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
 import { DeviceExecutor } from './DeviceExecutor';
 import type { TaskEventBatch, TaskSnapshot } from './types';
@@ -102,6 +109,57 @@ export class AgentService {
     return await this.getDeviceExecutor().stop();
   }
 
+  async transferToMain(): Promise<number> {
+    return await this.getDeviceExecutor().transferToMain();
+  }
+
+  async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
+    const params: ActionParameters = { point: [xNorm, yNorm] };
+    const action: AgentAction = { name: 'double_click', parameters: params };
+    return await this.executeAction(action);
+  }
+
+  async actionLongClick(xNorm: number, yNorm: number, durationMs: number): Promise<string> {
+    const params: ActionParameters = { point: [xNorm, yNorm], duration_ms: durationMs };
+    const action: AgentAction = { name: 'long_click', parameters: params };
+    return await this.executeAction(action);
+  }
+
+  async actionSwipe(
+    startXNorm: number,
+    startYNorm: number,
+    endXNorm: number,
+    endYNorm: number,
+    durationMs: number
+  ): Promise<string> {
+    const params: ActionParameters = {
+      start_point: [startXNorm, startYNorm],
+      end_point: [endXNorm, endYNorm],
+      duration_ms: durationMs,
+    };
+    const action: AgentAction = { name: 'swipe', parameters: params };
+    return await this.executeAction(action);
+  }
+
+  async actionType(content: string, hasPoint: boolean, xNorm: number, yNorm: number): Promise<string> {
+    const params: ActionParameters = { content };
+    if (hasPoint) {
+      params.point = [xNorm, yNorm];
+    }
+    const action: AgentAction = { name: 'type', parameters: params };
+    return await this.executeAction(action);
+  }
+
+  async actionPressBack(): Promise<string> {
+    const action: AgentAction = { name: 'press_back' };
+    return await this.executeAction(action);
+  }
+
+  async actionPressEnter(): Promise<string> {
+    const action: AgentAction = { name: 'press_enter' };
+    return await this.executeAction(action);
+  }
+
   async setViewerActive(active: boolean): Promise<void> {
     await this.ensureAgentSpace().setViewerActive(active);
   }
@@ -128,6 +186,20 @@ export class AgentService {
       return '';
     }
     return JSON.stringify(batch);
+  }
+
+  private async executeAction(action: AgentAction): Promise<string> {
+    const result = await this.getDeviceExecutor().executeAction(action);
+    return this.formatActionResult(result);
+  }
+
+  private formatActionResult(result: ActionResult): string {
+    const status = result.status;
+    const error = result.error ?? '';
+    if (error.length > 0) {
+      return `${status}:${error}`;
+    }
+    return status;
   }
 
   private ensureAgentSpace(): AgentSpace {

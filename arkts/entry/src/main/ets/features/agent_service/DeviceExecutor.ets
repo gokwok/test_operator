@@ -1,4 +1,4 @@
-import type { AgentSpaceRuntimeInfo } from '../agentspace/AgentSpace';
+import type { AgentAction, ActionResult, AgentSpaceRuntimeInfo } from '../agentspace/AgentSpace';
 import { AgentSpace } from '../agentspace/AgentSpace';
 import type { AppTarget } from '../agentspace/VTSBackend';
 
@@ -31,6 +31,15 @@ export class DeviceExecutor {
   async screenshotBase64(): Promise<string> {
     await this.agentSpace.ensureVts();
     return await this.agentSpace.screenshotBase64();
+  }
+
+  async transferToMain(): Promise<number> {
+    await this.agentSpace.ensureVts();
+    return await this.agentSpace.transferToMain();
+  }
+
+  async executeAction(action: AgentAction): Promise<ActionResult> {
+    return await this.agentSpace.executeAction(action);
   }
 
   async destroy(): Promise<void> {
