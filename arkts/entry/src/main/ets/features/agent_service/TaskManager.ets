@@ -1,4 +1,4 @@
-import type { AgentAction, ActionResult } from '../agentspace/AgentSpace';
+import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
 import {
   CloudAgentClient,
   CloudDeviceState,
@@ -109,10 +109,9 @@ export class TaskManager {
     this.snapshot.status = 'waiting_user';
     this.snapshot.lastDescription = 'call_user';
     this.snapshot.lastActionName = 'call_user';
-    this.snapshot.lastActionJson = JSON.stringify({
-      name: 'call_user',
-      parameters: { content: trimmed }
-    });
+    const params: ActionParameters = { content: trimmed };
+    const action: AgentAction = { name: 'call_user', parameters: params };
+    this.snapshot.lastActionJson = JSON.stringify(action);
     this.pushEvent('need_user', 'call_user', this.snapshot.lastActionJson);
     this.pushEvent('status', 'waiting_user');
   }
