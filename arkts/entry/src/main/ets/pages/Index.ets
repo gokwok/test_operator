@@ -149,7 +149,7 @@ struct Index {
   private vtsTab(): void {
     Scroll() {
       Column({ space: 12 }) {
-        Text('VTS')
+        Text('Service VTS')
           .fontSize(12)
           .fontColor(Color.White)
           .fontWeight(FontWeight.Medium)
@@ -197,7 +197,7 @@ struct Index {
         }
 
         Row({ space: 8 }) {
-          Button('List Apps')
+          Button('List App Names')
             .fontSize(12)
             .fontColor(Color.White)
             .backgroundColor('#2A2C34')
@@ -758,7 +758,7 @@ struct Index {
           TabContent() {
             this.vtsTab();
           }
-          .tabBar('VTS')
+          .tabBar('Service VTS')
 
           TabContent() {
             this.serviceTab();
@@ -847,7 +847,7 @@ struct Index {
 
   private async onListApps(): Promise<void> {
     this.vtsError = '';
-    this.appListInfo = 'Loading app list...';
+    this.appListInfo = 'Loading app names...';
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
@@ -858,16 +858,16 @@ struct Index {
         }
         return;
       }
-      const apps = await AppState.listInstalledApps();
-      if (apps.length === 0) {
+      const appNames = await AppState.listAppNames();
+      if (appNames.length === 0) {
         this.appListInfo = 'No apps found';
         return;
       }
-      const preview = apps.slice(0, 6).map((item) => item.bundleName).join(', ');
-      this.appListInfo = `Apps: ${apps.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
+      const preview = appNames.slice(0, 6).join(', ');
+      this.appListInfo = `Apps: ${appNames.length}${preview.length > 0 ? ` | ${preview}` : ''}`;
     } catch (e) {
       this.appListInfo = '';
-      this.vtsError = `List apps failed: ${String(e)}`;
+      this.vtsError = `List app names failed: ${String(e)}`;
     }
   }
 
