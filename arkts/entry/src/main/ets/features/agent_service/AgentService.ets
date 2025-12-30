@@ -1,6 +1,7 @@
 import type { common } from '@kit.AbilityKit';
 
 import { AgentSpace } from '../agentspace/AgentSpace';
+import type { AgentSpacePointerEvent, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../agentspace/AgentSpace';
 import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
 import { DeviceExecutor } from './DeviceExecutor';
 import type { TaskEventBatch, TaskSnapshot } from './types';
@@ -99,6 +100,34 @@ export class AgentService {
 
   async stopVts(): Promise<number> {
     return await this.getDeviceExecutor().stop();
+  }
+
+  async setViewerActive(active: boolean): Promise<void> {
+    await this.ensureAgentSpace().setViewerActive(active);
+  }
+
+  async getViewerMode(): Promise<AgentSpaceViewerMode> {
+    return await this.ensureAgentSpace().getViewerMode();
+  }
+
+  async setViewerMode(mode: AgentSpaceViewerMode): Promise<void> {
+    await this.ensureAgentSpace().setViewerMode(mode);
+  }
+
+  async attachViewerSurface(surfaceId: string): Promise<void> {
+    await this.ensureAgentSpace().attachViewerSurface(surfaceId);
+  }
+
+  async sendViewerEvent(event: AgentSpacePointerEvent): Promise<void> {
+    await this.ensureAgentSpace().sendViewerEvent(event);
+  }
+
+  async pullViewerEffectsJson(lastSequence: number): Promise<string> {
+    const batch: AgentSpaceViewerEffectBatch | null = await this.ensureAgentSpace().pullViewerEffects(lastSequence);
+    if (!batch) {
+      return '';
+    }
+    return JSON.stringify(batch);
   }
 
   private ensureAgentSpace(): AgentSpace {

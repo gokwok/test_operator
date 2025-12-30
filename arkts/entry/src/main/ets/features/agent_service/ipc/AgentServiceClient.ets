@@ -127,6 +127,36 @@ export class AgentServiceClient {
     return await this.sendRequest(AgentServiceRequestCode.STOP_VTS);
   }
 
+  async setViewerActive(active: boolean): Promise<void> {
+    await this.sendRequestWithInt(AgentServiceRequestCode.SET_VIEWER_ACTIVE, active ? 1 : 0);
+  }
+
+  async getViewerMode(): Promise<string> {
+    return await this.sendRequest(AgentServiceRequestCode.GET_VIEWER_MODE);
+  }
+
+  async setViewerMode(mode: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.SET_VIEWER_MODE, mode);
+  }
+
+  async attachViewerSurface(surfaceId: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.ATTACH_VIEWER_SURFACE, surfaceId);
+  }
+
+  async sendViewerEvent(action: string, xNorm: number, yNorm: number, pointerId: number): Promise<void> {
+    await this.sendRequestWithStringAndInts(
+      AgentServiceRequestCode.SEND_VIEWER_EVENT,
+      action,
+      xNorm,
+      yNorm,
+      pointerId
+    );
+  }
+
+  async pullViewerEffects(lastSequence: number): Promise<string> {
+    return await this.sendRequestWithInt(AgentServiceRequestCode.PULL_VIEWER_EFFECTS, lastSequence);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
@@ -231,6 +261,38 @@ export class AgentServiceClient {
       data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
       data.writeInt(first);
       data.writeInt(second);
+      const result = await remote.sendMessageRequest(code, data, reply, option);
+      const response = reply.readString();
+      if (result.errCode !== 0) {
+        throw new Error(`IPC error: ${result.errCode}`);
+      }
+      return response;
+    } finally {
+      data.reclaim();
+      reply.reclaim();
+    }
+  }
+
+  private async sendRequestWithStringAndInts(
+    code: number,
+    text: string,
+    first: number,
+    second: number,
+    third: number
+  ): Promise<string> {
+    const remote = this.remote;
+    if (!remote) {
+      throw new Error('Service not connected');
+    }
+    const data = rpc.MessageSequence.create();
+    const reply = rpc.MessageSequence.create();
+    const option = new rpc.MessageOption();
+    try {
+      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeString(text);
+      data.writeInt(first);
+      data.writeInt(second);
+      data.writeInt(third);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
       if (result.errCode !== 0) {

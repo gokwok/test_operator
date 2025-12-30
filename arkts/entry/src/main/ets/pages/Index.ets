@@ -952,6 +952,8 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setViewerMode('display');
       await this.getAgentSpace().startViewer('display');
     } catch (e) {
       this.vtsError = `Show viewer failed: ${String(e)}`;
@@ -971,6 +973,8 @@ struct Index {
     this.vtsError = '';
     try {
       await this.ensureRuntime();
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setViewerMode('control');
       await this.getAgentSpace().startViewer('control');
     } catch (e) {
       this.vtsError = `Show viewer control failed: ${String(e)}`;

@@ -1,7 +1,8 @@
 import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
-import { AgentSpace } from '../features/agentspace/AgentSpace';
-import type { AgentSpacePointerEvent, AgentSpaceViewerEffect } from '../features/agentspace/AgentSpace';
+import type { common } from '@kit.AbilityKit';
+import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
+import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import { GlowOverlay, GLOW_PALETTES } from '../ui_components/GlowOverlay';
 import { FloatingOrb, FloatingOrbController } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
@@ -12,7 +13,11 @@ import {
   InteractionPoint
 } from '../ui_components/InteractionEffectOverlay';
 import { AgentSpaceDisplay } from '../ui_components/AgentSpaceDisplay';
-import type { AgentSpaceDisplayMode, AgentSpaceDisplaySurfaceInfo } from '../ui_components/AgentSpaceDisplay';
+import type {
+  AgentSpaceDisplayMode,
+  AgentSpaceDisplaySurfaceInfo,
+  AgentSpacePointerEvent
+} from '../ui_components/AgentSpaceDisplay';
 
 @Entry
 @Component
@@ -41,7 +46,7 @@ struct AgentSpaceViewer {
       this.showFloatWindow();
     }
   );
-  private agentSpace: AgentSpace | null = null;
+  private serviceClient: AgentServiceClient | null = null;
   private effectSequence: number = 0;
   private effectPollTimerId: number = -1;
   private effectPolling: boolean = false;
@@ -92,12 +97,7 @@ struct AgentSpaceViewer {
   }
 
   aboutToAppear(): void {
-    const space = AgentSpace.getInstance();
-    this.agentSpace = space;
-    void space.setViewerActive(true);
-    void space.getViewerMode().then((mode) => {
-      this.viewerMode = mode;
-    });
+    void this.prepareViewer();
     this.interactionController.configure({ coordScale: 1000 });
     this.startEffectPolling();
   }
@@ -108,8 +108,7 @@ struct AgentSpaceViewer {
   }
 
   aboutToDisappear(): void {
-    const agentSpace = AgentSpace.getInstance();
-    void agentSpace.setViewerActive(false);
+    void this.updateViewerActive(false);
     this.displaySurfaceInfo = null;
     this.displayPointerEvent = null;
     this.stopEffectPolling();
@@ -124,28 +123,62 @@ struct AgentSpaceViewer {
     const pointerEvent = this.displayPointerEvent;
     if (pointerEvent) {
       this.displayPointerEvent = null;
-      void this.getAgentSpace().sendViewerEvent(pointerEvent);
+      void this.sendPointerEvent(pointerEvent);
     }
   }
 
   private async onSurfaceReady(info: AgentSpaceDisplaySurfaceInfo): Promise<void> {
-    const space = this.getAgentSpace();
     try {
-      await space.ensureVts();
-      await space.attachViewerSurface(info.surfaceId);
+      await this.ensureServiceConnected();
+      await this.getServiceClient().attachViewerSurface(info.surfaceId);
     } catch (e) {
       const err = e as BusinessError;
       console.error(`[AgentSpaceViewer] attach surface failed. Code:${err.code}, message:${err.message}`);
     }
   }
 
-  private getAgentSpace(): AgentSpace {
-    if (this.agentSpace) {
-      return this.agentSpace;
+  private getServiceClient(): AgentServiceClient {
+    if (!this.serviceClient) {
+      this.serviceClient = new AgentServiceClient();
     }
-    const space = AgentSpace.getInstance();
-    this.agentSpace = space;
-    return space;
+    return this.serviceClient;
+  }
+
+  private async ensureServiceConnected(): Promise<void> {
+    const ctx = getContext(this) as common.UIAbilityContext;
+    await this.getServiceClient().connect(ctx);
+  }
+
+  private async prepareViewer(): Promise<void> {
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setViewerActive(true);
+      const mode = await this.getServiceClient().getViewerMode();
+      this.viewerMode = this.normalizeViewerMode(mode);
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] service init failed: ${String(e)}`);
+    }
+  }
+
+  private async updateViewerActive(active: boolean): Promise<void> {
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setViewerActive(active);
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] viewer active update failed: ${String(e)}`);
+    }
+  }
+
+  private async sendPointerEvent(event: AgentSpacePointerEvent): Promise<void> {
+    try {
+      await this.ensureServiceConnected();
+      const xNorm = this.normToInt(event.xNorm);
+      const yNorm = this.normToInt(event.yNorm);
+      const pointerId = this.toPointerId(event.pointerId);
+      await this.getServiceClient().sendViewerEvent(event.action, xNorm, yNorm, pointerId);
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] send pointer failed: ${String(e)}`);
+    }
   }
 
   private startEffectPolling(): void {
@@ -172,7 +205,9 @@ struct AgentSpaceViewer {
     }
     this.effectPolling = true;
     try {
-      const batch = await this.getAgentSpace().pullViewerEffects(this.effectSequence);
+      await this.ensureServiceConnected();
+      const payload = await this.getServiceClient().pullViewerEffects(this.effectSequence);
+      const batch = this.parseEffectBatch(payload);
       if (!batch) {
         return;
       }
@@ -211,6 +246,44 @@ struct AgentSpaceViewer {
     }
     const payload: InteractionEffectOptions = { durationMs };
     return payload;
+  }
+
+  private normalizeViewerMode(rawMode: string): AgentSpaceViewerMode {
+    if (rawMode === 'control') {
+      return 'control';
+    }
+    return 'display';
+  }
+
+  private parseEffectBatch(payload: string): AgentSpaceViewerEffectBatch | null {
+    if (payload.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(payload) as AgentSpaceViewerEffectBatch;
+      if (!parsed || typeof parsed.sequence !== 'number' || !Array.isArray(parsed.effects)) {
+        return null;
+      }
+      return parsed;
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] parse effects failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  private normToInt(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    const clamped = Math.min(Math.max(value, 0), 1);
+    return Math.round(clamped * 1000);
+  }
+
+  private toPointerId(value?: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return -1;
+    }
+    return Math.floor(value);
   }
 
   private switchToOrb(): void {
