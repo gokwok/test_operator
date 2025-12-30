@@ -91,7 +91,7 @@ export class AppState {
   }
 
   private static resolveAppLabel(info: bundleManager.BundleInfo): string {
-    const candidate = info as bundleManager.BundleInfo & BundleInfoNameCandidate;
+    const candidate = info as BundleInfoNameCandidate;
 
     const directLabel = candidate.label?.trim() ?? '';
     if (directLabel.length > 0) {
