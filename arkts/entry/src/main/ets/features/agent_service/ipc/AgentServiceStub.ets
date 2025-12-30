@@ -1,5 +1,6 @@
 import rpc from '@ohos.rpc';
 
+import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
 import { AgentService } from '../AgentService';
 import type { AgentSpacePointerAction, AgentSpacePointerEvent, AgentSpaceViewerMode } from '../../agentspace/AgentSpace';
 import type { TaskStartRequest, UserReply } from '../types';
@@ -8,7 +9,6 @@ interface DebugInteractPayload {
   content?: string;
   options?: Array<string>;
 }
-import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
 
 export class AgentServiceStub extends rpc.RemoteObject {
   private service: AgentService;
