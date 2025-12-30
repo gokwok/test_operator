@@ -8,7 +8,7 @@ import {
   CloudInvokeOutput
 } from './CloudAgentClient';
 import { DeviceExecutor } from './DeviceExecutor';
-import type { TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest } from './types';
+import type { TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
@@ -40,6 +40,7 @@ export class TaskManager {
   private taskText: string = '';
   private installedApps: Array<string> = [];
   private installedAppsSent: boolean = false;
+  private pendingActionResult: ActionResult | null = null;
 
   startTask(request: TaskStartRequest, cloudClient: CloudAgentClient, deviceExecutor: DeviceExecutor): void {
     const taskText = request.taskText.trim();
@@ -54,6 +55,7 @@ export class TaskManager {
     const installed = Array.isArray(request.installedApps) ? request.installedApps : [];
     this.installedApps = installed.slice();
     this.installedAppsSent = false;
+    this.pendingActionResult = null;
     this.stopRequested = false;
     this.runToken += 1;
     const token = this.runToken;
@@ -72,6 +74,47 @@ export class TaskManager {
     };
     this.pushEvent('status', 'running');
     void this.runLoop(token);
+  }
+
+  submitUserReply(reply: UserReply): void {
+    if (this.snapshot.status !== 'waiting_user') {
+      this.pushEvent('error', 'not_waiting_user');
+      return;
+    }
+    const content = reply.content.trim();
+    if (content.length === 0) {
+      this.pushEvent('error', 'empty_user_reply');
+      return;
+    }
+    const result: ActionResult = { status: 'SKIPPED', output: content };
+    this.pendingActionResult = result;
+    this.snapshot.lastResultStatus = result.status;
+    this.snapshot.lastError = '';
+    this.pushEvent('result', result.status, JSON.stringify(result));
+    this.snapshot.status = 'running';
+    this.pushEvent('status', 'running');
+    this.stopRequested = false;
+    this.runToken += 1;
+    const token = this.runToken;
+    void this.runLoop(token);
+  }
+
+  debugCallUser(content: string): void {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      this.pushEvent('error', 'debug_call_user_empty');
+      return;
+    }
+    this.stopRequested = true;
+    this.snapshot.status = 'waiting_user';
+    this.snapshot.lastDescription = 'call_user';
+    this.snapshot.lastActionName = 'call_user';
+    this.snapshot.lastActionJson = JSON.stringify({
+      name: 'call_user',
+      parameters: { content: trimmed }
+    });
+    this.pushEvent('need_user', 'call_user', this.snapshot.lastActionJson);
+    this.pushEvent('status', 'waiting_user');
   }
 
   stopTask(reason: string): void {
@@ -120,13 +163,18 @@ export class TaskManager {
     }
     let sessionId = this.snapshot.sessionId;
     let pendingAction: AgentAction | null = null;
+    let pendingResult: ActionResult | null = this.pendingActionResult;
+    this.pendingActionResult = null;
     let pendingDescription: string = '';
     while (!this.stopRequested && token === this.runToken) {
       if (!pendingAction) {
         try {
           const screenshot = await device.screenshotBase64();
-          const payload = this.buildInitialPayload(screenshot);
+          const payload = pendingResult
+            ? this.buildFollowupPayload(screenshot, pendingResult)
+            : this.buildInitialPayload(screenshot);
           const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+          pendingResult = null;
           sessionId = this.applySessionId(response, sessionId);
           const output = response.output;
           const action = this.extractAction(cloud, output);

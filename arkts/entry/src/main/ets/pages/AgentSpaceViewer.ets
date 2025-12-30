@@ -3,7 +3,7 @@ import type { BusinessError } from '@kit.BasicServicesKit';
 import type { common } from '@kit.AbilityKit';
 import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
-import type { TaskSnapshot } from '../features/agent_service/types';
+import type { TaskSnapshot, UserReply } from '../features/agent_service/types';
 import { GlowOverlay, GLOW_PALETTES } from '../ui_components/GlowOverlay';
 import { FloatingOrb, FloatingOrbController } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
@@ -19,6 +19,15 @@ import type {
   AgentSpaceDisplaySurfaceInfo,
   AgentSpacePointerEvent
 } from '../ui_components/AgentSpaceDisplay';
+
+interface ParsedCallUserAction {
+  name?: string;
+  parameters?: ParsedCallUserParams;
+}
+
+interface ParsedCallUserParams {
+  content?: string;
+}
 
 @Entry
 @Component
@@ -54,6 +63,8 @@ struct AgentSpaceViewer {
   private statusPollTimerId: number = -1;
   private statusPolling: boolean = false;
   private lastStatusText: string = '';
+  private callUserActive: boolean = false;
+  private callUserContent: string = '';
   private readonly glowPaletteName: string = GLOW_PALETTES[0].name;
 
   build() {
@@ -103,6 +114,7 @@ struct AgentSpaceViewer {
   aboutToAppear(): void {
     void this.prepareViewer();
     this.interactionController.configure({ coordScale: 1000 });
+    this.configureStatusController();
     this.startEffectPolling();
     this.startStatusPolling();
   }
@@ -230,10 +242,32 @@ struct AgentSpaceViewer {
     try {
       await this.ensureServiceConnected();
       const snapshotText = await this.getServiceClient().getSnapshot();
-      const description = this.readSnapshotDescription(snapshotText);
-      if (description.length > 0 && description !== this.lastStatusText) {
-        this.lastStatusText = description;
-        this.statusController.setStatus(description);
+      const snapshot = this.readSnapshot(snapshotText);
+      if (!snapshot) {
+        return;
+      }
+      const waitingCallUser = this.extractCallUserContent(snapshot);
+      if (waitingCallUser.length > 0) {
+        if (!this.callUserActive || waitingCallUser !== this.callUserContent) {
+          this.enterCallUser(waitingCallUser);
+        }
+        return;
+      }
+      if (this.callUserActive) {
+        if (snapshot.status !== 'waiting_user') {
+          this.exitCallUser();
+        } else {
+          return;
+        }
+      }
+      const description = snapshot.lastDescription.trim();
+      const resolved = description.length > 0 ? description : '正在分析用户需求...';
+      if (this.isUserReplyStatusLocked(snapshot)) {
+        return;
+      }
+      if (resolved !== this.lastStatusText) {
+        this.lastStatusText = resolved;
+        this.statusController.setStatus(resolved);
       }
     } catch (e) {
       console.error(`[AgentSpaceViewer] status poll failed: ${String(e)}`);
@@ -314,19 +348,113 @@ struct AgentSpaceViewer {
     }
   }
 
-  private readSnapshotDescription(payload: string): string {
+  private readSnapshot(payload: string): TaskSnapshot | null {
     if (payload.length === 0) {
-      return '';
+      return null;
     }
     try {
       const parsed = JSON.parse(payload) as TaskSnapshot;
-      if (!parsed || typeof parsed.lastDescription !== 'string') {
-        return '';
+      if (!parsed || typeof parsed.lastDescription !== 'string' || typeof parsed.status !== 'string') {
+        return null;
       }
-      return parsed.lastDescription.trim();
+      return parsed;
     } catch (e) {
       console.error(`[AgentSpaceViewer] parse snapshot failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  private extractCallUserContent(snapshot: TaskSnapshot): string {
+    if (snapshot.status !== 'waiting_user') {
       return '';
+    }
+    const actionJson = snapshot.lastActionJson ?? '';
+    if (actionJson.length === 0) {
+      return '';
+    }
+    try {
+      const action = JSON.parse(actionJson) as ParsedCallUserAction;
+      const name = action?.name?.toLowerCase() ?? '';
+      if (name !== 'call_user') {
+        return '';
+      }
+      const content = action?.parameters?.content ?? '';
+      return typeof content === 'string' ? content.trim() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  private isUserReplyStatusLocked(snapshot: TaskSnapshot): boolean {
+    if (!this.lastStatusText.startsWith('已收到你的输入信息：')) {
+      return false;
+    }
+    return snapshot.lastActionName === 'call_user';
+  }
+
+  private configureStatusController(): void {
+    this.statusController.setCallUserActionLabel('告诉AIOS');
+    this.statusController.setCallUserConfirmHandler(() => {
+      this.enterCallUserInput();
+    });
+    this.statusController.setCallUserBackHandler(() => {
+      this.enterCallUserWait();
+    });
+    this.statusController.setCallUserSendHandler((text: string) => {
+      void this.submitCallUserReply(text);
+    });
+  }
+
+  private enterCallUser(content: string): void {
+    this.callUserActive = true;
+    this.callUserContent = content;
+    this.statusController.setStopped(false);
+    this.statusController.setCallUserContent(content);
+    this.statusController.clearCallUserInput();
+    this.statusController.setMode('call_user_wait');
+    this.showFloatWindow();
+  }
+
+  private exitCallUser(): void {
+    this.callUserActive = false;
+    this.callUserContent = '';
+    this.statusController.clearCallUserInput();
+    this.statusController.setMode('default');
+  }
+
+  private enterCallUserWait(): void {
+    if (!this.callUserActive) {
+      return;
+    }
+    this.statusController.setMode('call_user_wait');
+  }
+
+  private enterCallUserInput(): void {
+    if (!this.callUserActive) {
+      return;
+    }
+    this.statusController.setMode('call_user_input');
+  }
+
+  private async submitCallUserReply(text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    try {
+      await this.ensureServiceConnected();
+      const reply: UserReply = { kind: 'call_user', content: trimmed };
+      await this.getServiceClient().submitUserReply(reply);
+      this.callUserActive = false;
+      this.callUserContent = '';
+      this.statusController.clearCallUserInput();
+      this.statusController.setMode('default');
+      const message = `已收到你的输入信息：\n「${trimmed}」`;
+      this.lastStatusText = message;
+      this.statusController.setStatus(message);
+      this.showFloatWindow();
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] submit call_user failed: ${String(e)}`);
     }
   }
 
@@ -346,6 +474,9 @@ struct AgentSpaceViewer {
   }
 
   private switchToOrb(): void {
+    if (this.callUserActive) {
+      return;
+    }
     this.showStatus = false;
     this.showGlow = true;
     this.showOrb = true;

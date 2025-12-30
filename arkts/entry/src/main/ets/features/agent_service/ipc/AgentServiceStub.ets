@@ -2,7 +2,7 @@ import rpc from '@ohos.rpc';
 
 import { AgentService } from '../AgentService';
 import type { AgentSpacePointerAction, AgentSpacePointerEvent, AgentSpaceViewerMode } from '../../agentspace/AgentSpace';
-import type { TaskStartRequest } from '../types';
+import type { TaskStartRequest, UserReply } from '../types';
 import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
 
 export class AgentServiceStub extends rpc.RemoteObject {
@@ -50,6 +50,13 @@ export class AgentServiceStub extends rpc.RemoteObject {
       if (code === AgentServiceRequestCode.PULL_EVENTS) {
         const lastSequence = data.readInt();
         reply.writeString(this.service.pullEventsJson(lastSequence));
+        return true;
+      }
+      if (code === AgentServiceRequestCode.SUBMIT_USER_REPLY) {
+        const payload = data.readString();
+        const replyPayload = JSON.parse(payload) as UserReply;
+        this.service.submitUserReply(replyPayload);
+        reply.writeString('ok');
         return true;
       }
       if (code === AgentServiceRequestCode.ENSURE_VTS) {
@@ -200,6 +207,12 @@ export class AgentServiceStub extends rpc.RemoteObject {
       if (code === AgentServiceRequestCode.SET_CLOUD_ENDPOINT) {
         const endpoint = data.readString();
         this.service.setCloudEndpoint(endpoint);
+        reply.writeString('ok');
+        return true;
+      }
+      if (code === AgentServiceRequestCode.DEBUG_CALL_USER) {
+        const content = data.readString();
+        this.service.debugCallUser(content);
         reply.writeString('ok');
         return true;
       }

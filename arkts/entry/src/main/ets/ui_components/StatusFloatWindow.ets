@@ -1,16 +1,24 @@
 import { FadeVisibility } from './FadeVisibility';
 
 type ActionType = 'supplement' | 'takeover' | 'stop';
+export type StatusFloatMode = 'default' | 'call_user_wait' | 'call_user_input';
 
 @Observed
 export class StatusFloatWindowController {
   statusText: string = '';
   stopped: boolean = false;
+  mode: StatusFloatMode = 'default';
+  callUserContent: string = '';
+  callUserInput: string = '';
+  callUserActionLabel: string = '告诉AIOS';
 
   private supplementHandler: () => void = () => {};
   private takeoverHandler: () => void = () => {};
   private stopHandler: () => void = () => {};
   private destroyHandler: () => void = () => {};
+  private callUserConfirmHandler: () => void = () => {};
+  private callUserBackHandler: () => void = () => {};
+  private callUserSendHandler: (text: string) => void = () => {};
 
   static create(
     statusText?: string,
@@ -42,6 +50,10 @@ export class StatusFloatWindowController {
     this.statusText = text;
   }
 
+  setMode(mode: StatusFloatMode): void {
+    this.mode = mode;
+  }
+
   setStopped(stopped: boolean): void {
     this.stopped = stopped;
   }
@@ -62,6 +74,34 @@ export class StatusFloatWindowController {
     this.destroyHandler = handler;
   }
 
+  setCallUserContent(content: string): void {
+    this.callUserContent = content;
+  }
+
+  setCallUserInput(text: string): void {
+    this.callUserInput = text;
+  }
+
+  clearCallUserInput(): void {
+    this.callUserInput = '';
+  }
+
+  setCallUserActionLabel(label: string): void {
+    this.callUserActionLabel = label;
+  }
+
+  setCallUserConfirmHandler(handler: () => void): void {
+    this.callUserConfirmHandler = handler;
+  }
+
+  setCallUserBackHandler(handler: () => void): void {
+    this.callUserBackHandler = handler;
+  }
+
+  setCallUserSendHandler(handler: (text: string) => void): void {
+    this.callUserSendHandler = handler;
+  }
+
   triggerSupplement(): void {
     this.supplementHandler();
   }
@@ -78,6 +118,22 @@ export class StatusFloatWindowController {
   triggerDestroy(): void {
     this.destroyHandler();
   }
+
+  triggerCallUserConfirm(): void {
+    this.callUserConfirmHandler();
+  }
+
+  triggerCallUserBack(): void {
+    this.callUserBackHandler();
+  }
+
+  triggerCallUserSend(): void {
+    const text = this.callUserInput.trim();
+    if (text.length === 0) {
+      return;
+    }
+    this.callUserSendHandler(text);
+  }
 }
 
 @Component
@@ -88,6 +144,11 @@ export struct StatusFloatWindow {
   private readonly stopTitle: string = '用户已停止任务执行';
   private readonly stopDescription: string = '用户主动停止了当前任务的执行。';
   private readonly collapseLabel: string = '收起';
+  private readonly callUserTitle: string = '等待答复';
+  private readonly callUserHeader: string = '操作智能体';
+  private readonly callUserBackLabel: string = '返回';
+  private readonly callUserVoiceLabel: string = '语音';
+  private readonly callUserSendLabel: string = '发送';
 
   @Builder
   private actionButton(label: string, action: ActionType, onTap: () => void) {
@@ -202,6 +263,103 @@ export struct StatusFloatWindow {
   }
 
   @Builder
+  private callUserWaitContent() {
+    Column({ space: 16 }) {
+      Column({ space: 8 }) {
+        Text(this.callUserTitle)
+          .fontSize(14)
+          .fontColor('#FF4D5B')
+          .fontWeight(FontWeight.Bold)
+        Text(this.controller.callUserContent)
+          .fontSize(12)
+          .fontColor('#8D9098')
+          .lineHeight(18)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({ left: 16, right: 16, top: 18 })
+
+      Row({ space: 10 }) {
+        Button(this.controller.callUserActionLabel)
+          .fontSize(14)
+          .fontColor('#2B2D35')
+          .fontWeight(FontWeight.Bold)
+          .backgroundColor('#FDE2E3')
+          .padding({ left: 18, right: 18, top: 8, bottom: 8 })
+          .borderRadius(18)
+          .onClick(() => this.controller.triggerCallUserConfirm())
+
+        this.actionButton('停止', 'stop', () => this.controller.triggerStop())
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.SpaceBetween)
+      .padding({ left: 16, right: 16, bottom: 16 })
+    }
+  }
+
+  @Builder
+  private callUserInputContent() {
+    Column({ space: 14 }) {
+      Row() {
+        Text(this.callUserHeader)
+          .fontSize(13)
+          .fontColor('#2B2D35')
+          .fontWeight(FontWeight.Bold)
+        Row()
+          .layoutWeight(1)
+        Text(this.callUserBackLabel)
+          .fontSize(12)
+          .fontColor('#8D9098')
+          .onClick(() => this.controller.triggerCallUserBack())
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 14 })
+
+      Text(this.controller.callUserContent)
+        .fontSize(12)
+        .fontColor('#8D9098')
+        .lineHeight(18)
+        .width('100%')
+        .padding({ left: 16, right: 16 })
+
+      Row({ space: 10 }) {
+        TextInput({ text: this.controller.callUserInput, placeholder: '输入内容' })
+          .layoutWeight(1)
+          .height(34)
+          .fontSize(12)
+          .fontColor('#2B2D35')
+          .backgroundColor('#F4F5F7')
+          .borderRadius(12)
+          .padding({ left: 10, right: 10 })
+          .onChange((value: string) => {
+            this.controller.setCallUserInput(value);
+          })
+
+        Button(this.resolveCallUserButtonLabel())
+          .fontSize(12)
+          .fontColor('#2B2D35')
+          .backgroundColor('#F3F5F7')
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .borderRadius(14)
+          .onClick(() => {
+            if (this.controller.callUserInput.trim().length > 0) {
+              this.controller.triggerCallUserSend();
+            }
+          })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, bottom: 16 })
+    }
+  }
+
+  private resolveCallUserButtonLabel(): string {
+    if (this.controller.callUserInput.trim().length > 0) {
+      return this.callUserSendLabel;
+    }
+    return this.callUserVoiceLabel;
+  }
+
+  @Builder
   private collapseButton() {
     Row({ space: 6 }) {
       Image($r('app.media.ic_public_close_filled'))
@@ -225,6 +383,10 @@ export struct StatusFloatWindow {
       Column() {
         if (this.controller.stopped) {
           this.stoppedContent();
+        } else if (this.controller.mode === 'call_user_wait') {
+          this.callUserWaitContent();
+        } else if (this.controller.mode === 'call_user_input') {
+          this.callUserInputContent();
         } else {
           this.activeContent();
         }

@@ -668,6 +668,18 @@ struct Index {
             })
         }
 
+        Row({ space: 8 }) {
+          Button('CallUser Debug')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionDebugCallUser();
+            })
+        }
+
         if (this.actionResult.length > 0) {
           Text(this.actionResult)
             .fontSize(11)
@@ -1493,6 +1505,22 @@ struct Index {
       this.actionResult = `press_enter: ${result}`;
     } catch (e) {
       this.vtsError = `Action press_enter failed: ${String(e)}`;
+    }
+  }
+
+  private async onActionDebugCallUser(): Promise<void> {
+    const content = this.actionInput.trim();
+    if (content.length === 0) {
+      this.vtsError = 'CallUser content is empty';
+      return;
+    }
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().debugCallUser(content);
+      this.actionResult = 'call_user dispatched';
+    } catch (e) {
+      this.vtsError = `Debug call_user failed: ${String(e)}`;
     }
   }
 }

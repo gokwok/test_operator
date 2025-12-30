@@ -34,6 +34,11 @@ export interface AppTargetDescriptor {
   abilityName: string;
 }
 
+export interface UserReply {
+  kind: 'call_user' | 'interact' | 'task_over';
+  content: string;
+}
+
 export interface TaskStartRequest {
   sessionId: string;
   taskText: string;

@@ -12,7 +12,7 @@ import type {
 import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
 import { CloudAgentClient } from './CloudAgentClient';
 import { DeviceExecutor } from './DeviceExecutor';
-import type { TaskEventBatch, TaskSnapshot, TaskStartRequest } from './types';
+import type { TaskEventBatch, TaskSnapshot, TaskStartRequest, UserReply } from './types';
 import { TaskManager } from './TaskManager';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
@@ -69,6 +69,14 @@ export class AgentService {
       return '';
     }
     return JSON.stringify(batch);
+  }
+
+  submitUserReply(reply: UserReply): void {
+    this.taskManager.submitUserReply(reply);
+  }
+
+  debugCallUser(content: string): void {
+    this.taskManager.debugCallUser(content);
   }
 
   setCloudEndpoint(endpoint: string): void {
