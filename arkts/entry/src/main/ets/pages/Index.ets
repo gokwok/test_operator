@@ -876,7 +876,7 @@ struct Index {
         }
         return;
       }
-      const appNames = await AppState.listAppNames();
+      const appNames = await AppState.listAppNames(ctx);
       if (appNames.length === 0) {
         this.appListInfo = 'No apps found';
         return;
@@ -903,7 +903,7 @@ struct Index {
         return;
       }
 
-      const target = await AppState.getLaunchTargetByAppName(this.targetAppName);
+      const target = await AppState.getLaunchTargetByAppName(this.targetAppName, ctx);
       this.targetBundleName = target.bundleName;
       this.targetAbilityName = target.abilityName;
       this.appResolveInfo = `Target: ${target.bundleName}/${target.abilityName}`;

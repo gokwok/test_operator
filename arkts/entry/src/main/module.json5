@@ -23,6 +23,9 @@
         "name": "ohos.permission.GET_BUNDLE_INFO_PRIVILEGED"
       },
       {
+        "name": "ohos.permission.GET_BUNDLE_RESOURCES"
+      },
+      {
         "name": "ohos.permission.GET_INSTALLED_BUNDLE_LIST",
         "reason": "$string:permission_get_installed_bundle_list_reason",
         "usedScene": {
