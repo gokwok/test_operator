@@ -5,6 +5,11 @@ import rpc from '@ohos.rpc';
 import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
 import type { TaskStartRequest, UserReply } from '../types';
 
+interface DebugInteractPayload {
+  content: string;
+  options: Array<string>;
+}
+
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
 
@@ -212,6 +217,12 @@ export class AgentServiceClient {
 
   async debugCallUser(content: string): Promise<void> {
     await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_CALL_USER, content);
+  }
+
+  async debugInteract(content: string, options: Array<string>): Promise<void> {
+    const payload: DebugInteractPayload = { content, options };
+    const text = JSON.stringify(payload);
+    await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_INTERACT, text);
   }
 
   private async sendRequest(code: number): Promise<string> {

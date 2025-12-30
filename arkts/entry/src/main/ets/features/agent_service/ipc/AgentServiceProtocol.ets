@@ -30,4 +30,5 @@ export enum AgentServiceRequestCode {
   ACTION_PRESS_ENTER = 35,
   SET_CLOUD_ENDPOINT = 40,
   DEBUG_CALL_USER = 41,
+  DEBUG_INTERACT = 42,
 }

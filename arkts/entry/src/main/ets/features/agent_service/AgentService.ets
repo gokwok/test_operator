@@ -79,6 +79,10 @@ export class AgentService {
     this.taskManager.debugCallUser(content);
   }
 
+  debugInteract(content: string, options: Array<string>): void {
+    this.taskManager.debugInteract(content, options);
+  }
+
   setCloudEndpoint(endpoint: string): void {
     this.getCloudClient().setEndpoint(endpoint);
   }

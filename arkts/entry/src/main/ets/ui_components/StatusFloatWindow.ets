@@ -12,6 +12,7 @@ export class StatusFloatWindowController {
   callUserContent: string = '';
   callUserInput: string = '';
   callUserActionLabel: string = '告诉AIOS';
+  callUserOptions: Array<string> = [];
 
   private supplementHandler: () => void = () => {};
   private takeoverHandler: () => void = () => {};
@@ -20,6 +21,7 @@ export class StatusFloatWindowController {
   private callUserConfirmHandler: () => void = () => {};
   private callUserBackHandler: () => void = () => {};
   private callUserSendHandler: (text: string) => void = () => {};
+  private callUserOptionHandler: (label: string) => void = () => {};
 
   static create(
     statusText?: string,
@@ -91,6 +93,10 @@ export class StatusFloatWindowController {
     this.callUserActionLabel = label;
   }
 
+  setCallUserOptions(options: Array<string>): void {
+    this.callUserOptions = options;
+  }
+
   setCallUserConfirmHandler(handler: () => void): void {
     this.callUserConfirmHandler = handler;
   }
@@ -101,6 +107,10 @@ export class StatusFloatWindowController {
 
   setCallUserSendHandler(handler: (text: string) => void): void {
     this.callUserSendHandler = handler;
+  }
+
+  setCallUserOptionHandler(handler: (label: string) => void): void {
+    this.callUserOptionHandler = handler;
   }
 
   triggerSupplement(): void {
@@ -134,6 +144,10 @@ export class StatusFloatWindowController {
       return;
     }
     this.callUserSendHandler(text);
+  }
+
+  triggerCallUserOption(label: string): void {
+    this.callUserOptionHandler(label);
   }
 }
 
@@ -283,15 +297,20 @@ export struct StatusFloatWindow {
         .textAlign(TextAlign.Start)
         .width('100%')
 
-      Button(this.controller.callUserActionLabel)
-        .fontSize(15)
-        .fontColor('#FF4D5B')
-        .fontWeight(FontWeight.Bold)
-        .backgroundColor('#FFE3E6')
-        .height(40)
-        .borderRadius(14)
-        .width('100%')
-        .onClick(() => this.controller.triggerCallUserConfirm())
+      Column({ space: 10 }) {
+        ForEach(this.resolveCallUserOptions(), (label: string) => {
+          Button(label)
+            .fontSize(15)
+            .fontColor('#FF4D5B')
+            .fontWeight(FontWeight.Bold)
+            .backgroundColor('#FFE3E6')
+            .height(40)
+            .borderRadius(14)
+            .width('100%')
+            .onClick(() => this.controller.triggerCallUserOption(label))
+        }, (label: string) => label)
+      }
+      .width('100%')
 
       Row() {
         Row()
@@ -372,6 +391,16 @@ export struct StatusFloatWindow {
     .backgroundColor('#FFFFFF')
     .borderRadius(22)
     .shadow({ radius: 18, color: '#22000000', offsetX: 0, offsetY: 8 })
+  }
+
+  private resolveCallUserOptions(): Array<string> {
+    if (this.controller.callUserOptions.length > 0) {
+      return this.controller.callUserOptions;
+    }
+    if (this.controller.callUserActionLabel.length > 0) {
+      return [this.controller.callUserActionLabel];
+    }
+    return [];
   }
 
   @Builder

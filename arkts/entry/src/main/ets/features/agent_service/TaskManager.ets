@@ -116,6 +116,28 @@ export class TaskManager {
     this.pushEvent('status', 'waiting_user');
   }
 
+  debugInteract(content: string, options: Array<string>): void {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      this.pushEvent('error', 'debug_interact_empty');
+      return;
+    }
+    const normalizedOptions = this.normalizeOptionList(options);
+    if (normalizedOptions.length < 2) {
+      this.pushEvent('error', 'debug_interact_options_short');
+      return;
+    }
+    this.stopRequested = true;
+    this.snapshot.status = 'waiting_user';
+    this.snapshot.lastDescription = 'interact';
+    this.snapshot.lastActionName = 'interact';
+    const params: ActionParameters = { content: trimmed, options: normalizedOptions };
+    const action: AgentAction = { name: 'interact', parameters: params };
+    this.snapshot.lastActionJson = JSON.stringify(action);
+    this.pushEvent('need_user', 'interact', this.snapshot.lastActionJson);
+    this.pushEvent('status', 'waiting_user');
+  }
+
   stopTask(reason: string): void {
     if (this.snapshot.status === 'idle') {
       return;
@@ -371,6 +393,22 @@ export class TaskManager {
       return;
     }
     await sleep(this.waitAfterActionMs);
+  }
+
+  private normalizeOptionList(options: Array<string>): Array<string> {
+    const result: Array<string> = [];
+    for (let i = 0; i < options.length; i++) {
+      const value = options[i];
+      if (typeof value !== 'string') {
+        continue;
+      }
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      result.push(trimmed);
+    }
+    return result;
   }
 
   private normalizeWaitMs(value: number): number {

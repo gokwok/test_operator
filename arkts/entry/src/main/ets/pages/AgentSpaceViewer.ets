@@ -20,13 +20,20 @@ import type {
   AgentSpacePointerEvent
 } from '../ui_components/AgentSpaceDisplay';
 
-interface ParsedCallUserAction {
-  name?: string;
-  parameters?: ParsedCallUserParams;
+interface ParsedInteractionParams {
+  content?: string;
+  options?: Array<string>;
 }
 
-interface ParsedCallUserParams {
-  content?: string;
+interface ParsedInteractionAction {
+  name?: string;
+  parameters?: ParsedInteractionParams;
+}
+
+interface InteractionPayload {
+  kind: 'call_user' | 'interact';
+  content: string;
+  options: Array<string>;
 }
 
 @Entry
@@ -65,6 +72,7 @@ struct AgentSpaceViewer {
   private lastStatusText: string = '';
   private callUserActive: boolean = false;
   private callUserContent: string = '';
+  private callUserKind: 'call_user' | 'interact' = 'call_user';
   private readonly glowPaletteName: string = GLOW_PALETTES[0].name;
 
   build() {
@@ -246,10 +254,12 @@ struct AgentSpaceViewer {
       if (!snapshot) {
         return;
       }
-      const waitingCallUser = this.extractCallUserContent(snapshot);
-      if (waitingCallUser.length > 0) {
-        if (!this.callUserActive || waitingCallUser !== this.callUserContent) {
-          this.enterCallUser(waitingCallUser);
+      const interaction = this.extractInteraction(snapshot);
+      if (interaction) {
+        if (!this.callUserActive ||
+          interaction.content !== this.callUserContent ||
+          interaction.kind !== this.callUserKind) {
+          this.enterInteraction(interaction);
         }
         return;
       }
@@ -364,32 +374,61 @@ struct AgentSpaceViewer {
     }
   }
 
-  private extractCallUserContent(snapshot: TaskSnapshot): string {
+  private extractInteraction(snapshot: TaskSnapshot): InteractionPayload | null {
     if (snapshot.status !== 'waiting_user') {
-      return '';
+      return null;
     }
     const actionJson = snapshot.lastActionJson ?? '';
     if (actionJson.length === 0) {
-      return '';
+      return null;
     }
     try {
-      const action = JSON.parse(actionJson) as ParsedCallUserAction;
+      const action = JSON.parse(actionJson) as ParsedInteractionAction;
       const name = action?.name?.toLowerCase() ?? '';
-      if (name !== 'call_user') {
-        return '';
+      if (name !== 'call_user' && name !== 'interact') {
+        return null;
       }
       const content = action?.parameters?.content ?? '';
-      return typeof content === 'string' ? content.trim() : '';
+      const normalizedContent = typeof content === 'string' ? content.trim() : '';
+      if (normalizedContent.length === 0) {
+        return null;
+      }
+      const options = this.normalizeOptions(action?.parameters?.options);
+      const payload: InteractionPayload = {
+        kind: name === 'interact' ? 'interact' : 'call_user',
+        content: normalizedContent,
+        options,
+      };
+      return payload;
     } catch {
-      return '';
+      return null;
     }
   }
 
+  private normalizeOptions(raw?: Array<string>): Array<string> {
+    if (!raw || raw.length === 0) {
+      return [];
+    }
+    const result: Array<string> = [];
+    for (let i = 0; i < raw.length; i++) {
+      const value = raw[i];
+      if (typeof value !== 'string') {
+        continue;
+      }
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      result.push(trimmed);
+    }
+    return result;
+  }
+
   private isUserReplyStatusLocked(snapshot: TaskSnapshot): boolean {
-    if (!this.lastStatusText.startsWith('已收到你的输入信息：')) {
+    if (!this.lastStatusText.startsWith('已收到你的输入信息')) {
       return false;
     }
-    return snapshot.lastActionName === 'call_user';
+    return snapshot.lastActionName === 'call_user' || snapshot.lastActionName === 'interact';
   }
 
   private configureStatusController(): void {
@@ -403,14 +442,23 @@ struct AgentSpaceViewer {
     this.statusController.setCallUserSendHandler((text: string) => {
       void this.submitCallUserReply(text);
     });
+    this.statusController.setCallUserOptionHandler((label: string) => {
+      this.onInteractionOption(label);
+    });
   }
 
-  private enterCallUser(content: string): void {
+  private enterInteraction(payload: InteractionPayload): void {
     this.callUserActive = true;
-    this.callUserContent = content;
+    this.callUserKind = payload.kind;
+    this.callUserContent = payload.content;
     this.statusController.setStopped(false);
-    this.statusController.setCallUserContent(content);
+    this.statusController.setCallUserContent(payload.content);
     this.statusController.clearCallUserInput();
+    if (payload.kind === 'interact') {
+      this.statusController.setCallUserOptions(payload.options);
+    } else {
+      this.statusController.setCallUserOptions([]);
+    }
     this.statusController.setMode('call_user_wait');
     this.showFloatWindow();
   }
@@ -418,7 +466,9 @@ struct AgentSpaceViewer {
   private exitCallUser(): void {
     this.callUserActive = false;
     this.callUserContent = '';
+    this.callUserKind = 'call_user';
     this.statusController.clearCallUserInput();
+    this.statusController.setCallUserOptions([]);
     this.statusController.setMode('default');
   }
 
@@ -437,24 +487,38 @@ struct AgentSpaceViewer {
   }
 
   private async submitCallUserReply(text: string): Promise<void> {
+    await this.submitUserReply('call_user', text);
+  }
+
+  private onInteractionOption(label: string): void {
+    if (this.callUserKind === 'call_user') {
+      this.enterCallUserInput();
+      return;
+    }
+    void this.submitUserReply('interact', label);
+  }
+
+  private async submitUserReply(kind: 'call_user' | 'interact', text: string): Promise<void> {
     const trimmed = text.trim();
     if (trimmed.length === 0) {
       return;
     }
     try {
       await this.ensureServiceConnected();
-      const reply: UserReply = { kind: 'call_user', content: trimmed };
+      const reply: UserReply = { kind, content: trimmed };
       await this.getServiceClient().submitUserReply(reply);
       this.callUserActive = false;
       this.callUserContent = '';
+      this.callUserKind = 'call_user';
       this.statusController.clearCallUserInput();
+      this.statusController.setCallUserOptions([]);
       this.statusController.setMode('default');
       const message = `已收到你的输入信息：\n「${trimmed}」`;
       this.lastStatusText = message;
       this.statusController.setStatus(message);
       this.showFloatWindow();
     } catch (e) {
-      console.error(`[AgentSpaceViewer] submit call_user failed: ${String(e)}`);
+      console.error(`[AgentSpaceViewer] submit user reply failed: ${String(e)}`);
     }
   }
 

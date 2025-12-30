@@ -3,6 +3,11 @@ import rpc from '@ohos.rpc';
 import { AgentService } from '../AgentService';
 import type { AgentSpacePointerAction, AgentSpacePointerEvent, AgentSpaceViewerMode } from '../../agentspace/AgentSpace';
 import type { TaskStartRequest, UserReply } from '../types';
+
+interface DebugInteractPayload {
+  content?: string;
+  options?: Array<string>;
+}
 import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
 
 export class AgentServiceStub extends rpc.RemoteObject {
@@ -213,6 +218,15 @@ export class AgentServiceStub extends rpc.RemoteObject {
       if (code === AgentServiceRequestCode.DEBUG_CALL_USER) {
         const content = data.readString();
         this.service.debugCallUser(content);
+        reply.writeString('ok');
+        return true;
+      }
+      if (code === AgentServiceRequestCode.DEBUG_INTERACT) {
+        const payload = data.readString();
+        const parsed = JSON.parse(payload) as DebugInteractPayload;
+        const content = parsed?.content ?? '';
+        const options = Array.isArray(parsed?.options) ? parsed.options : [];
+        this.service.debugInteract(content, options);
         reply.writeString('ok');
         return true;
       }

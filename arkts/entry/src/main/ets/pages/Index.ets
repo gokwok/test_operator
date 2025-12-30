@@ -705,6 +705,16 @@ struct Index {
             .onClick(() => {
               void this.onActionDebugCallUser();
             })
+
+          Button('Interact Debug')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionDebugInteract();
+            })
         }
 
         if (this.actionResult.length > 0) {
@@ -1576,6 +1586,23 @@ struct Index {
       this.actionResult = 'call_user dispatched';
     } catch (e) {
       this.vtsError = `Debug call_user failed: ${String(e)}`;
+    }
+  }
+
+  private async onActionDebugInteract(): Promise<void> {
+    const content = this.actionInput.trim();
+    if (content.length === 0) {
+      this.vtsError = 'Interact content is empty';
+      return;
+    }
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      const options: Array<string> = ['选项 A', '选项 B', '选项 C'];
+      await this.getServiceClient().debugInteract(content, options);
+      this.actionResult = 'interact dispatched';
+    } catch (e) {
+      this.vtsError = `Debug interact failed: ${String(e)}`;
     }
   }
 }
