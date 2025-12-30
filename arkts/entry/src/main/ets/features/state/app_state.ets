@@ -1,5 +1,4 @@
 import bundleManager from '@ohos.bundle.bundleManager';
-import type { Want } from '@kit.AbilityKit';
 
 export interface AppListItem {
   bundleName: string;
@@ -26,14 +25,6 @@ interface AppNameCandidate {
   bundleName: string;
   label: string;
   displayName: string;
-}
-
-interface BundleManagerLaunchWantApi {
-  getLaunchWantForBundle?: (bundleName: string) => Promise<Want>;
-}
-
-interface WantNameCandidate {
-  abilityName?: string;
 }
 
 export class AppState {
@@ -103,16 +94,8 @@ export class AppState {
     }
 
     const bundleName = await AppState.resolveBundleNameByAppName(normalizedAppName);
-
-    const bm = bundleManager as BundleManagerLaunchWantApi;
-    const getLaunchWantForBundle = bm.getLaunchWantForBundle;
-    if (!getLaunchWantForBundle) {
-      throw new Error('bundleManager.getLaunchWantForBundle is not available');
-    }
-
-    const want = await getLaunchWantForBundle(bundleName);
-    const candidate = want as WantNameCandidate;
-    const abilityName = candidate.abilityName?.trim() ?? '';
+    const want = await bundleManager.getLaunchWantForBundle(bundleName);
+    const abilityName = want.abilityName?.trim() ?? '';
     if (abilityName.length === 0) {
       throw new Error(`Launch ability not found for bundle: ${bundleName}`);
     }
