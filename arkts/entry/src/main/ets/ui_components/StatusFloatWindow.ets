@@ -341,11 +341,11 @@ export struct StatusFloatWindow {
         TextInput({ text: this.controller.callUserInput, placeholder: this.callUserPlaceholderText })
           .layoutWeight(1)
           .height(36)
-          .fontSize(12)
+          .fontSize(13)
           .fontColor('#2B2D35')
           .backgroundColor('#00000000')
           .borderRadius(12)
-          .padding({ left: 6, right: 6 })
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .placeholderColor('#B6BAC4')
           .onChange((value: string) => {
             this.controller.setCallUserInput(value);
@@ -398,7 +398,7 @@ export struct StatusFloatWindow {
         .fontColor(['#2B2D35'])
     } else {
       SymbolGlyph($r('sys.symbol.chevron_up_circle'))
-        .fontSize(18)
+        .fontSize(20)
         .fontColor(['#2B2D35'])
     }
   }
