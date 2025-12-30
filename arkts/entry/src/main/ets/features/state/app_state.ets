@@ -14,6 +14,16 @@ export class appInfo {
   appIcon: image.PixelMap | undefined = undefined;
 }
 
+class AppCacheCandidate {
+  info: appInfo;
+  displayName: string;
+
+  constructor(info: appInfo, displayName: string) {
+    this.info = info;
+    this.displayName = displayName;
+  }
+}
+
 export class AppState {
   private static readonly appNameToAppId: Map<string, string> = new Map<string, string>();
   private static readonly appIdToInfo: Map<string, appInfo> = new Map<string, appInfo>();
@@ -61,7 +71,7 @@ export class AppState {
     const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
     const bundles = await bundleManager.getAllBundleInfo(flags);
 
-    const candidates: Array<{ info: appInfo; displayName: string }> = [];
+    const candidates: AppCacheCandidate[] = [];
     for (let i = 0; i < bundles.length; i++) {
       const bundleInfo = bundles[i];
       const bundleName = bundleInfo.name?.trim() ?? '';
@@ -82,7 +92,7 @@ export class AppState {
         appIndex = applicationInfo.appIndex;
         applicationName = applicationInfo.name;
       } catch (_e) {
-        candidates.push({ info, displayName: bundleName });
+        candidates.push(new AppCacheCandidate(info, bundleName));
         continue;
       }
 
@@ -107,7 +117,7 @@ export class AppState {
 
       const label = AppState.normalizeAppLabel(info.appLabel);
       const displayName = label.length > 0 ? label : bundleName;
-      candidates.push({ info, displayName });
+      candidates.push(new AppCacheCandidate(info, displayName));
     }
 
     const duplicateCounts = new Map<string, number>();
