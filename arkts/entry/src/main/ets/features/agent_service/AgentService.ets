@@ -1,7 +1,7 @@
 import type { common } from '@kit.AbilityKit';
 
 import { AgentSpace } from '../agentspace/AgentSpace';
-import type { AppTarget } from '../agentspace/VTSBackend';
+import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
 import { DeviceExecutor } from './DeviceExecutor';
 import type { TaskEventBatch, TaskSnapshot } from './types';
 import { TaskManager } from './TaskManager';
@@ -9,6 +9,7 @@ import { TaskManager } from './TaskManager';
 export class AgentService {
   private static instance: AgentService | null = null;
   private ctx: common.Context | null = null;
+  private startAbilityInvoker: StartAbilityInvoker | null = null;
   private readonly createdAtMs: number = Date.now();
   private taskManager: TaskManager = new TaskManager();
   private deviceExecutor: DeviceExecutor | null = null;
@@ -20,8 +21,9 @@ export class AgentService {
     return AgentService.instance;
   }
 
-  init(ctx: common.Context): void {
+  init(ctx: common.Context, startAbilityInvoker: StartAbilityInvoker): void {
     this.ctx = ctx;
+    this.startAbilityInvoker = startAbilityInvoker;
   }
 
   ping(): string {
@@ -84,10 +86,11 @@ export class AgentService {
   }
 
   private ensureAgentSpace(): AgentSpace {
-    if (!this.ctx) {
-      throw new Error('Service context not initialized');
+    const invoker = this.startAbilityInvoker;
+    if (!invoker) {
+      throw new Error('Service startAbility not initialized');
     }
-    return AgentSpace.init(this.ctx);
+    return AgentSpace.init(invoker);
   }
 
   private getDeviceExecutor(): DeviceExecutor {

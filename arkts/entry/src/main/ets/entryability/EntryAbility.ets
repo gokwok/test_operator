@@ -4,6 +4,7 @@ import { window } from '@kit.ArkUI';
 import type { common } from '@kit.AbilityKit';
 import { AgentSpace } from '../features/agentspace/AgentSpace';
 import type { AgentSpaceHost, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
+import type { StartAbilityInvoker } from '../features/agentspace/VTSBackend';
 
 const DOMAIN = 0x0000;
 const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
@@ -54,7 +55,8 @@ export default class EntryAbility extends UIAbility {
     } else {
       this.agentSpaceHost.updateContext(this.context);
     }
-    AgentSpace.init(this.context, this.agentSpaceHost);
+    const startAbilityInvoker: StartAbilityInvoker = (want, options) => this.context.startAbility(want, options);
+    AgentSpace.init(startAbilityInvoker, this.agentSpaceHost);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 

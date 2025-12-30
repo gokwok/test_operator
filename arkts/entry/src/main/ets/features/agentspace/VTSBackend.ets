@@ -1,4 +1,4 @@
-import type { common, StartOptions, Want } from '@kit.AbilityKit';
+import type { StartOptions, Want } from '@kit.AbilityKit';
 import { display, screen, screenshot } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
@@ -63,6 +63,8 @@ export interface AppTarget {
   abilityName: string;
 }
 
+export type StartAbilityInvoker = (want: Want, options?: StartOptions) => Promise<void>;
+
 export interface VTSRuntimeInfo {
   screenId: number;
   displayId?: number;
@@ -73,7 +75,7 @@ export interface VTSRuntimeInfo {
 }
 
 export interface VTSBackendPort {
-  updateContext(ctx: common.Context): void;
+  updateStartAbility(invoker: StartAbilityInvoker): void;
   getRuntime(): VTSRuntimeInfo | null;
   create(): Promise<VTSRuntimeInfo>;
   attachSurface(surfaceId: string): Promise<void>;
@@ -102,24 +104,18 @@ interface AppControllerFocusApi {
   requestFocus?: (targetWindowId: number) => boolean;
 }
 
-interface StartAbilityCapable {
-  startAbility: (want: Want, options?: StartOptions) => Promise<void>;
-}
-
-type StartAbilityContext = common.Context & StartAbilityCapable;
-
 export class VTSBackend implements VTSBackendPort {
-  private ctx: common.Context;
+  private startAbilityInvoker: StartAbilityInvoker;
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;
   private imeRegistered: boolean = false;
 
-  constructor(ctx: common.Context) {
-    this.ctx = ctx;
+  constructor(startAbilityInvoker: StartAbilityInvoker) {
+    this.startAbilityInvoker = startAbilityInvoker;
   }
 
-  updateContext(ctx: common.Context): void {
-    this.ctx = ctx;
+  updateStartAbility(invoker: StartAbilityInvoker): void {
+    this.startAbilityInvoker = invoker;
   }
 
   getRuntime(): VTSRuntimeInfo | null {
@@ -225,8 +221,7 @@ export class VTSBackend implements VTSBackendPort {
     };
 
     try {
-      const ctx = this.getStartAbilityContext();
-      await ctx.startAbility(want, opt);
+      await this.startAbilityInvoker(want, opt);
       this.lastTarget = target;
     } catch (e) {
       const err = e as BusinessError;
@@ -484,8 +479,7 @@ export class VTSBackend implements VTSBackendPort {
       bundleName: target.bundleName,
       abilityName: target.abilityName,
     };
-    const ctx = this.getStartAbilityContext();
-    await ctx.startAbility(want);
+    await this.startAbilityInvoker(want);
   }
 
   private listWindowsBestEffort(displayIdFilter: number): AppController.WindowInfoUnit[] {
@@ -508,13 +502,6 @@ export class VTSBackend implements VTSBackendPort {
     }
   }
 
-  private getStartAbilityContext(): StartAbilityContext {
-    const ctx = this.ctx as StartAbilityContext;
-    if (typeof ctx.startAbility !== 'function') {
-      throw new Error('startAbility is not available in current context');
-    }
-    return ctx;
-  }
 }
 
 async function pixelMapToBase64(format: string, pixelMap: image.PixelMap): Promise<string> {

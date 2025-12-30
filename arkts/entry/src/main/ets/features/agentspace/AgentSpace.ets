@@ -1,7 +1,5 @@
-import type { common } from '@kit.AbilityKit';
-
 import { VTSBackend } from './VTSBackend';
-import type { AppTarget, VTSBackendPort } from './VTSBackend';
+import type { AppTarget, StartAbilityInvoker, VTSBackendPort } from './VTSBackend';
 
 export enum AgentSpaceState {
   IDLE = 'IDLE',
@@ -90,7 +88,7 @@ export interface AgentSpaceHost {
   closeViewer(): Promise<void>;
 }
 
-export type VTSBackendFactory = (ctx: common.Context) => VTSBackendPort;
+export type VTSBackendFactory = (invoker: StartAbilityInvoker) => VTSBackendPort;
 
 export class AgentSpace {
   private static instance: AgentSpace | null = null;
@@ -104,11 +102,11 @@ export class AgentSpace {
   private viewerEffectSequence: number = 0;
   private viewerEffects: Array<AgentSpaceViewerEffect> = [];
 
-  static init(ctx: common.Context, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
+  static init(startAbilityInvoker: StartAbilityInvoker, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
     if (!AgentSpace.instance) {
-      AgentSpace.instance = new AgentSpace(ctx, backendFactory);
+      AgentSpace.instance = new AgentSpace(startAbilityInvoker, backendFactory);
     } else {
-      AgentSpace.instance.updateContext(ctx);
+      AgentSpace.instance.updateStartAbility(startAbilityInvoker);
     }
     if (host) {
       AgentSpace.instance.setHost(host);
@@ -123,12 +121,12 @@ export class AgentSpace {
     return AgentSpace.instance;
   }
 
-  private constructor(ctx: common.Context, backendFactory?: VTSBackendFactory) {
-    this.backend = backendFactory ? backendFactory(ctx) : new VTSBackend(ctx);
+  private constructor(startAbilityInvoker: StartAbilityInvoker, backendFactory?: VTSBackendFactory) {
+    this.backend = backendFactory ? backendFactory(startAbilityInvoker) : new VTSBackend(startAbilityInvoker);
   }
 
-  private updateContext(ctx: common.Context): void {
-    this.backend.updateContext(ctx);
+  private updateStartAbility(startAbilityInvoker: StartAbilityInvoker): void {
+    this.backend.updateStartAbility(startAbilityInvoker);
   }
 
   private setHost(host: AgentSpaceHost): void {
