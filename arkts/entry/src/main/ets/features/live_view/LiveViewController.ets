@@ -25,7 +25,7 @@ export interface LiveViewTapTarget {
   bundleName: string;
   abilityName: string;
   action?: string;
-  parameters?: Object;
+  parameters?: Record<string, Object>;
 }
 
 export interface LiveViewContents {
