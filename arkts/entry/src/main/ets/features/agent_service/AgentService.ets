@@ -54,7 +54,8 @@ export class AgentService {
   private liveViewTaskText: string = '';
   private liveViewIcon: image.PixelMap | null = null;
   private liveViewAppName: string = '';
-  private liveViewStopTimerId: number = -1;
+  private liveViewNotificationId: number = 0;
+  private liveViewSeq: number = 0;
   private listenerBound: boolean = false;
 
   static getInstance(): AgentService {
@@ -87,7 +88,6 @@ export class AgentService {
 
   startTask(request: TaskStartRequest): void {
     this.ensureListenerBound();
-    this.clearLiveViewAutoStop();
     const normalized = this.normalizeStartRequest(request);
     const executor = this.getDeviceExecutor();
     const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
@@ -98,6 +98,7 @@ export class AgentService {
     this.liveViewStarted = false;
     this.liveViewAppName = '';
     this.liveViewIcon = null;
+    this.liveViewNotificationId = this.allocateLiveViewId();
     this.taskManager.startTask(normalized, cloud, executor);
     void this.publishRunningLiveView();
   }
@@ -329,9 +330,6 @@ export class AgentService {
     if (status === this.liveViewPhase && status !== 'waiting_user') {
       return;
     }
-    if (status === 'running' || status === 'waiting_user') {
-      this.clearLiveViewAutoStop();
-    }
     this.liveViewPhase = status;
     if (status === 'running') {
       await this.publishRunningLiveView();
@@ -344,17 +342,14 @@ export class AgentService {
     }
     if (status === 'finished') {
       await this.publishFinishedLiveView();
-      this.scheduleLiveViewAutoStop(LIVE_VIEW_AUTO_STOP_DELAY_MS);
       return;
     }
     if (status === 'failed') {
       await this.publishFailedLiveView(snapshot.lastError);
-      this.scheduleLiveViewAutoStop(LIVE_VIEW_AUTO_STOP_DELAY_MS);
       return;
     }
     if (status === 'stopping') {
       await this.publishStoppedLiveView(snapshot.lastError);
-      this.scheduleLiveViewAutoStop(LIVE_VIEW_AUTO_STOP_DELAY_MS);
     }
   }
 
@@ -443,7 +438,7 @@ export class AgentService {
     }
     const icon = await this.resolveLiveViewIcon();
     const payload = this.buildLiveViewPayload('任务完成', '', CAPSULE_FINISHED, icon);
-    await this.publishLiveView(payload);
+    await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
   private async publishStoppedLiveView(reason: string): Promise<void> {
@@ -457,7 +452,7 @@ export class AgentService {
     const icon = await this.resolveLiveViewIcon();
     const content = reason.trim().length > 0 ? reason.trim() : '';
     const payload = this.buildLiveViewPayload('任务已停止', content, CAPSULE_STOPPED, icon);
-    await this.publishLiveView(payload);
+    await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
   private async publishFailedLiveView(reason: string): Promise<void> {
@@ -471,7 +466,7 @@ export class AgentService {
     const icon = await this.resolveLiveViewIcon();
     const content = reason.trim().length > 0 ? reason.trim() : '';
     const payload = this.buildLiveViewPayload('任务异常', content, CAPSULE_FAILED, icon);
-    await this.publishLiveView(payload);
+    await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
   private buildLiveViewPayload(
@@ -482,6 +477,7 @@ export class AgentService {
   ): LiveViewContents {
     const payload: LiveViewContents = {
       type: LiveViewType.VIEWER,
+      id: this.liveViewNotificationId > 0 ? this.liveViewNotificationId : undefined,
       primary: { title, content },
       capsule: { title: capsuleTitle },
     };
@@ -511,40 +507,15 @@ export class AgentService {
     }
   }
 
-  private scheduleLiveViewAutoStop(delayMs: number): void {
-    if (!this.liveViewEnabled || !this.liveViewStarted) {
-      return;
-    }
-    this.clearLiveViewAutoStop();
-    const delay = Math.max(0, Math.floor(delayMs));
-    this.liveViewStopTimerId = setTimeout(() => {
-      this.liveViewStopTimerId = -1;
-      void this.stopLiveView();
-    }, delay) as number;
-  }
-
-  private clearLiveViewAutoStop(): void {
-    if (this.liveViewStopTimerId === -1) {
-      return;
-    }
-    clearTimeout(this.liveViewStopTimerId);
-    this.liveViewStopTimerId = -1;
-  }
-
-  private async stopLiveView(): Promise<void> {
-    if (!this.liveViewEnabled || !this.liveViewStarted) {
+  private async stopLiveViewWithPayload(payload: LiveViewContents, delayMs: number): Promise<void> {
+    if (!this.liveViewEnabled) {
       return;
     }
     const ctx = this.ctx;
     if (!ctx) {
       return;
     }
-    const payload: LiveViewContents = {
-      type: LiveViewType.VIEWER,
-      stopTimeoutMs: 100,
-      primary: { title: '', content: '' },
-      capsule: { title: '' },
-    };
+    payload.stopTimeoutMs = Math.max(0, Math.floor(delayMs));
     try {
       await this.liveViewController.stop(ctx, payload);
     } catch (e) {
@@ -552,6 +523,12 @@ export class AgentService {
     } finally {
       this.liveViewStarted = false;
     }
+  }
+
+  private allocateLiveViewId(): number {
+    this.liveViewSeq = (this.liveViewSeq + 1) % 1000;
+    const base = Date.now() % 1000000000;
+    return Math.floor(base + this.liveViewSeq);
   }
 
   private async resolveLiveViewIcon(): Promise<image.PixelMap | null> {
