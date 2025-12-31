@@ -1,6 +1,7 @@
 @Component
 export struct FloatChatInputBar {
   @Link text!: string;
+  @Link sendSequence!: number;
   @Prop placeholder: string = '点击进行输入';
   @Prop inputEnabled: boolean = true;
 
@@ -72,7 +73,13 @@ export struct FloatChatInputBar {
       .enabled(this.inputEnabled && this.text.trim().length > 0)
       .opacity(this.inputEnabled && this.text.trim().length > 0 ? 1 : 0.45)
       .onClick(() => {
-        // UI only
+        if (!this.inputEnabled) {
+          return;
+        }
+        if (this.text.trim().length === 0) {
+          return;
+        }
+        this.sendSequence += 1;
       })
     }
     .width('100%')

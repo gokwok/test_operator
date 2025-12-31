@@ -27,10 +27,6 @@ const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const DEFAULT_WAIT_MS: number = 500;
 
-interface ServiceExtensionStarter {
-  startServiceExtensionAbility?: (w: Want) => Promise<void> | void;
-}
-
 @Entry
 @Component
 struct Index {
@@ -1126,10 +1122,11 @@ struct Index {
       abilityName: FLOAT_WINDOW_ABILITY_NAME,
       action,
     };
-    const starter = (ctx as ServiceExtensionStarter).startServiceExtensionAbility;
-    if (typeof starter === 'function') {
-      await (ctx as ServiceExtensionStarter).startServiceExtensionAbility!(want);
+    try {
+      await ctx.startServiceExtensionAbility(want);
       return;
+    } catch (_e) {
+      // fallback to startAbility for older environments
     }
     try {
       await ctx.startAbility(want);

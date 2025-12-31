@@ -37,14 +37,6 @@ const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 
-interface ServiceExtensionStarter {
-  startServiceExtensionAbility?: (w: Want) => Promise<void> | void;
-}
-
-interface AbilityStarter {
-  startAbility?: (w: Want) => Promise<void> | void;
-}
-
 export class AgentService {
   private static instance: AgentService | null = null;
   private ctx: common.Context | null = null;
@@ -166,15 +158,14 @@ export class AgentService {
       abilityName: FLOAT_WINDOW_ABILITY_NAME,
       action: 'hide',
     };
-    const starter = (ctx as ServiceExtensionStarter).startServiceExtensionAbility;
-    if (typeof starter === 'function') {
-      await (ctx as ServiceExtensionStarter).startServiceExtensionAbility!(want);
+    const extCtx = ctx as common.ServiceExtensionContext;
+    try {
+      await extCtx.startServiceExtensionAbility(want);
       return;
+    } catch (_e) {
+      // fallback to startAbility when service extension start is unavailable
     }
-    const abilityStarter = (ctx as AbilityStarter).startAbility;
-    if (typeof abilityStarter === 'function') {
-      await (ctx as AbilityStarter).startAbility!(want);
-    }
+    await extCtx.startAbility(want);
   }
 
   pullEventsJson(lastSequence: number): string {

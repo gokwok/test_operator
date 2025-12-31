@@ -19,6 +19,14 @@ export class AgentServiceClient {
   private connectPromise: Promise<void> | null = null;
 
   async connect(ctx: common.UIAbilityContext): Promise<void> {
+    await this.connectInternal(ctx);
+  }
+
+  async connectFromExtension(ctx: common.UIExtensionContext): Promise<void> {
+    await this.connectInternal(ctx);
+  }
+
+  private async connectInternal(ctx: common.UIAbilityContext | common.UIExtensionContext): Promise<void> {
     if (this.remote) {
       return;
     }
@@ -59,18 +67,21 @@ export class AgentServiceClient {
   }
 
   async disconnect(ctx: common.UIAbilityContext): Promise<void> {
+    await this.disconnectInternal(ctx);
+  }
+
+  async disconnectFromExtension(ctx: common.UIExtensionContext): Promise<void> {
+    await this.disconnectInternal(ctx);
+  }
+
+  private async disconnectInternal(ctx: common.UIAbilityContext | common.UIExtensionContext): Promise<void> {
     if (this.connectionId === -1) {
       return;
     }
     const id = this.connectionId;
     this.connectionId = -1;
     this.remote = null;
-    try {
-      // disconnectServiceExtensionAbility may be sync in some SDKs.
-      void ctx.disconnectServiceExtensionAbility(id);
-    } catch (e) {
-      throw new Error(`Service disconnect failed: ${String(e)}`);
-    }
+    await ctx.disconnectServiceExtensionAbility(id);
   }
 
   async ping(): Promise<string> {
