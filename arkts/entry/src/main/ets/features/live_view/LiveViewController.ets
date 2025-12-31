@@ -21,15 +21,11 @@ export interface LiveViewCapsuleData {
   title: string;
 }
 
-export interface LiveViewWantParams {
-  [key: string]: Object;
-}
-
 export interface LiveViewTapTarget {
   bundleName: string;
   abilityName: string;
   action?: string;
-  parameters?: LiveViewWantParams;
+  parameters?: Object;
 }
 
 export interface LiveViewContents {
