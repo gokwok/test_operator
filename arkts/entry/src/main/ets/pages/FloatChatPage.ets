@@ -1,5 +1,6 @@
 import type { common, Want } from '@kit.AbilityKit';
 import { FloatChatInputBar } from '../ui_components/FloatChatInputBar';
+import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
@@ -11,6 +12,10 @@ interface ServiceExtensionStarter {
 
 interface AbilityStarter {
   startAbility?: (w: Want) => Promise<void> | void;
+}
+
+interface ServiceConnectContext {
+  connectServiceExtensionAbility(want: Want, options: common.ConnectOptions): number;
 }
 
 @Entry
@@ -27,6 +32,7 @@ struct FloatChatPage {
   private readonly ANIMATION_DURATION_MS: number = 350;
   private readonly ENTER_DELAY_MS: number = 50;
   private enterTimerId: number = -1;
+  private serviceClient: AgentServiceClient = new AgentServiceClient();
 
   aboutToAppear(): void {
     AppStorage.setOrCreate('FloatWindow_IsClosing', false);
@@ -95,6 +101,29 @@ struct FloatChatPage {
     AppStorage.setOrCreate('FloatWindow_IsWaiting', true);
     try {
       const ctx = getContext(this) as common.Context;
+      await this.connectService(ctx);
+      await this.serviceClient.startTaskText(taskText);
+      this.inputText = '';
+    } catch (e) {
+      console.error(`[FloatChatPage] dispatch task failed: ${String(e)}`);
+      await this.dispatchTaskFallback(taskText);
+    } finally {
+      AppStorage.setOrCreate('FloatWindow_IsWaiting', false);
+    }
+  }
+
+  private async connectService(ctx: common.Context): Promise<void> {
+    const connector = ctx as ServiceConnectContext;
+    if (typeof connector.connectServiceExtensionAbility === 'function') {
+      await this.serviceClient.connect(connector);
+      return;
+    }
+    throw new Error('connectServiceExtensionAbility_missing');
+  }
+
+  private async dispatchTaskFallback(taskText: string): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.Context;
       const encodedTask = encodeURIComponent(taskText);
       const want: Want = {
         bundleName: SERVICE_BUNDLE_NAME,
@@ -105,17 +134,14 @@ struct FloatChatPage {
       const starter = (ctx as ServiceExtensionStarter).startServiceExtensionAbility;
       if (typeof starter === 'function') {
         await (ctx as ServiceExtensionStarter).startServiceExtensionAbility!(want);
-      } else {
-        const abilityStarter = (ctx as AbilityStarter).startAbility;
-        if (typeof abilityStarter === 'function') {
-          await (ctx as AbilityStarter).startAbility!(want);
-        }
+        return;
       }
-      this.inputText = '';
+      const abilityStarter = (ctx as AbilityStarter).startAbility;
+      if (typeof abilityStarter === 'function') {
+        await (ctx as AbilityStarter).startAbility!(want);
+      }
     } catch (e) {
-      console.error(`[FloatChatPage] dispatch task failed: ${String(e)}`);
-    } finally {
-      AppStorage.setOrCreate('FloatWindow_IsWaiting', false);
+      console.error(`[FloatChatPage] fallback start_task failed: ${String(e)}`);
     }
   }
 }

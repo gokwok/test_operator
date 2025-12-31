@@ -6,9 +6,6 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AgentService } from '../features/agent_service/AgentService';
 import { AgentServiceStub } from '../features/agent_service/ipc/AgentServiceStub';
 import type { StartAbilityInvoker } from '../features/agentspace/VTSBackend';
-import type { AppTargetDescriptor, TaskStartRequest } from '../features/agent_service/types';
-import { AppState } from '../features/state/app_state';
-import { AgentSettings } from '../features/settings/AgentSettings';
 
 const LOG_TAG: string = '[AgentServiceExt]';
 const DOMAIN: number = 0x0000;
@@ -44,23 +41,8 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
     }
 
     try {
-      const settings = await AgentSettings.load(this.context);
-      const installedApps = await this.safeListAppNames();
-      const appTargets = await this.safeListAppTargets();
-      const request: TaskStartRequest = {
-        sessionId: '',
-        taskText,
-        installedApps,
-        appTargets,
-        waitMs: settings.waitMs,
-      };
       const service = AgentService.getInstance();
-      service.applySettings(settings);
-      if (settings.cloudEndpoint.length > 0) {
-        service.setCloudEndpoint(settings.cloudEndpoint);
-      }
-      service.startTask(request);
-      await service.hideFloatWindow();
+      await service.startTaskWithDefaults(taskText);
     } catch (e) {
       hilog.error(DOMAIN, LOG_TAG, 'start_task failed: %{public}s', String(e));
     }
@@ -79,24 +61,6 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
 
   onDestroy(): void {
     this.stub = null;
-  }
-
-  private async safeListAppNames(): Promise<string[]> {
-    try {
-      return await AppState.listAppNames(this.context);
-    } catch (e) {
-      hilog.warn(DOMAIN, LOG_TAG, 'listAppNames failed: %{public}s', String(e));
-      return [];
-    }
-  }
-
-  private async safeListAppTargets(): Promise<Array<AppTargetDescriptor>> {
-    try {
-      return await AppState.listAppTargets(this.context);
-    } catch (e) {
-      hilog.warn(DOMAIN, LOG_TAG, 'listAppTargets failed: %{public}s', String(e));
-      return [];
-    }
   }
 
   private resolveTaskText(want: Want, params: AgentServiceStartParams): string {

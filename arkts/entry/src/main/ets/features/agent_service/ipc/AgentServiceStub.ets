@@ -64,6 +64,12 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
+      if (code === AgentServiceRequestCode.START_TASK_TEXT) {
+        const taskText = data.readString();
+        await this.service.startTaskWithDefaults(taskText);
+        reply.writeString('ok');
+        return true;
+      }
       if (code === AgentServiceRequestCode.ENSURE_VTS) {
         const payload = await this.service.ensureVtsJson();
         reply.writeString(payload);

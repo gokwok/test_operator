@@ -10,6 +10,11 @@ interface DebugInteractPayload {
   options: Array<string>;
 }
 
+interface ServiceConnectContext {
+  connectServiceExtensionAbility(want: Want, options: common.ConnectOptions): number;
+  disconnectServiceExtensionAbility(connection: number): Promise<void>;
+}
+
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
 
@@ -18,7 +23,7 @@ export class AgentServiceClient {
   private connectionId: number = -1;
   private connectPromise: Promise<void> | null = null;
 
-  async connect(ctx: common.UIAbilityContext): Promise<void> {
+  async connect(ctx: ServiceConnectContext): Promise<void> {
     if (this.remote) {
       return;
     }
@@ -58,7 +63,7 @@ export class AgentServiceClient {
     });
   }
 
-  async disconnect(ctx: common.UIAbilityContext): Promise<void> {
+  async disconnect(ctx: ServiceConnectContext): Promise<void> {
     if (this.connectionId === -1) {
       return;
     }
@@ -92,6 +97,10 @@ export class AgentServiceClient {
   async submitUserReply(reply: UserReply): Promise<void> {
     const payload = JSON.stringify(reply);
     await this.sendRequestWithString(AgentServiceRequestCode.SUBMIT_USER_REPLY, payload);
+  }
+
+  async startTaskText(taskText: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.START_TASK_TEXT, taskText);
   }
 
   async ensureVts(): Promise<string> {

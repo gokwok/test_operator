@@ -13,10 +13,18 @@ import type {
 import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
 import { CloudAgentClient } from './CloudAgentClient';
 import { DeviceExecutor } from './DeviceExecutor';
-import type { TaskEventBatch, TaskSnapshot, TaskStartRequest, TaskStatus, UserReply } from './types';
+import type {
+  AppTargetDescriptor,
+  TaskEventBatch,
+  TaskSnapshot,
+  TaskStartRequest,
+  TaskStatus,
+  UserReply
+} from './types';
 import { TaskManager, TaskManagerListener } from './TaskManager';
 import { LiveViewController, LiveViewContents, LiveViewType } from '../live_view/LiveViewController';
 import type { AgentSettingsData } from '../settings/AgentSettings';
+import { AgentSettings } from '../settings/AgentSettings';
 import { AppState } from '../state/app_state';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
@@ -97,6 +105,51 @@ export class AgentService {
     this.liveViewIcon = null;
     this.taskManager.startTask(normalized, cloud, executor);
     void this.publishRunningLiveView();
+  }
+
+  async startTaskWithDefaults(taskText: string): Promise<void> {
+    const trimmed = taskText.trim();
+    if (trimmed.length === 0) {
+      throw new Error('task_text_empty');
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const settings = await AgentSettings.load(ctx);
+    const installedApps = await this.safeListAppNames(ctx);
+    const appTargets = await this.safeListAppTargets(ctx);
+    const request: TaskStartRequest = {
+      sessionId: '',
+      taskText: trimmed,
+      installedApps,
+      appTargets,
+      waitMs: settings.waitMs,
+    };
+    this.applySettings(settings);
+    if (settings.cloudEndpoint.length > 0) {
+      this.setCloudEndpoint(settings.cloudEndpoint);
+    }
+    this.startTask(request);
+    await this.hideFloatWindow();
+  }
+
+  private async safeListAppNames(ctx: common.Context): Promise<string[]> {
+    try {
+      return await AppState.listAppNames(ctx);
+    } catch (e) {
+      console.warn(`[AgentService] listAppNames failed: ${String(e)}`);
+      return [];
+    }
+  }
+
+  private async safeListAppTargets(ctx: common.Context): Promise<AppTargetDescriptor[]> {
+    try {
+      return await AppState.listAppTargets(ctx);
+    } catch (e) {
+      console.warn(`[AgentService] listAppTargets failed: ${String(e)}`);
+      return [];
+    }
   }
 
   stopTask(reason: string): void {

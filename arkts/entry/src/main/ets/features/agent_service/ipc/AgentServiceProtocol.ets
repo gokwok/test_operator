@@ -7,6 +7,7 @@ export enum AgentServiceRequestCode {
   STOP_TASK = 4,
   PULL_EVENTS = 5,
   SUBMIT_USER_REPLY = 6,
+  START_TASK_TEXT = 7,
   ENSURE_VTS = 10,
   GET_RUNTIME = 11,
   LAUNCH_APP = 12,

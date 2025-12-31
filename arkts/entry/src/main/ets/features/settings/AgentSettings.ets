@@ -19,7 +19,7 @@ const KEY_WAIT_MS: string = 'wait_ms';
 const KEY_LIVE_VIEW: string = 'live_view_enabled';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
-const DEFAULT_WAIT_MS: number = 500;
+const DEFAULT_WAIT_MS: number = 1000;
 const DEFAULT_LIVE_VIEW_ENABLED: boolean = true;
 
 export class AgentSettings {
