@@ -42,7 +42,8 @@
         "reason": "$string:permission_get_installed_bundle_list_reason",
         "usedScene": {
           "abilities": [
-            "EntryAbility"
+            "EntryAbility",
+            "AgentServiceExtAbility"
           ],
           "when": "always"
         }
@@ -52,7 +53,8 @@
         "reason": "$string:permission_write_imagevideo_reason",
         "usedScene": {
           "abilities": [
-            "EntryAbility"
+            "EntryAbility",
+            "AgentServiceExtAbility"
           ],
           "when": "inuse"
         }
