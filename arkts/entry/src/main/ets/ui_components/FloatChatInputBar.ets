@@ -1,11 +1,8 @@
 @Component
 export struct FloatChatInputBar {
-  @Prop text: string = '';
+  @Link text!: string;
   @Prop placeholder: string = '点击进行输入';
   @Prop inputEnabled: boolean = true;
-  @Prop onTextChange: (text: string) => void = (_text: string) => {};
-  @Prop onMic: () => void = () => {};
-  @Prop onSend: () => void = () => {};
 
   @State private inputFocused: boolean = false;
 
@@ -24,7 +21,7 @@ export struct FloatChatInputBar {
       .enabled(this.inputEnabled)
       .opacity(this.inputEnabled ? 1 : 0.45)
       .onClick(() => {
-        this.onMic();
+        // UI only
       })
 
       Stack() {
@@ -39,7 +36,7 @@ export struct FloatChatInputBar {
           .padding({ left: 8 })
           .enabled(this.inputEnabled)
           .onChange((value: string) => {
-            this.onTextChange(value);
+            this.text = value;
           })
           .onFocus(() => {
             this.inputFocused = true;
@@ -75,7 +72,7 @@ export struct FloatChatInputBar {
       .enabled(this.inputEnabled && this.text.trim().length > 0)
       .opacity(this.inputEnabled && this.text.trim().length > 0 ? 1 : 0.45)
       .onClick(() => {
-        this.onSend();
+        // UI only
       })
     }
     .width('100%')

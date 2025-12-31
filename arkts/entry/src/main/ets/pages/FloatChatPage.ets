@@ -50,13 +50,8 @@ struct FloatChatPage {
         Blank()
 
         FloatChatInputBar({
-          text: this.inputText,
+          text: $inputText,
           inputEnabled: !this.isClosing,
-          onTextChange: (value: string) => {
-            this.inputText = value;
-          },
-          onMic: () => {},
-          onSend: () => {},
         })
           .opacity(this.isVisible ? 1 : 0)
           .translate({ y: this.isVisible ? 0 : 20 })
