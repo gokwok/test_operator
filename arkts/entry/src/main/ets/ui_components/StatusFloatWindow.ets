@@ -297,11 +297,10 @@ export struct StatusFloatWindow {
 
   @Builder
   private callUserWaitContent() {
-    const title = this.resolveWaitTitle();
     Column({ space: 16 }) {
       Column({ space: 8 }) {
         this.callUserBubble();
-        Text(title)
+        Text(this.resolveWaitTitle())
           .fontSize(13)
           .fontColor('#3A3D45')
           .textAlign(TextAlign.Center)
