@@ -51,7 +51,7 @@ struct FloatChatPage {
 
         FloatChatInputBar({
           text: this.inputText,
-          enabled: !this.isClosing,
+          inputEnabled: !this.isClosing,
           onTextChange: (value: string) => {
             this.inputText = value;
           },
@@ -72,4 +72,3 @@ struct FloatChatPage {
     .hitTestBehavior(HitTestMode.Transparent)
   }
 }
-

@@ -2,7 +2,7 @@
 export struct FloatChatInputBar {
   @Prop text: string = '';
   @Prop placeholder: string = '点击进行输入';
-  @Prop enabled: boolean = true;
+  @Prop inputEnabled: boolean = true;
   @Prop onTextChange: (text: string) => void = (_text: string) => {};
   @Prop onMic: () => void = () => {};
   @Prop onSend: () => void = () => {};
@@ -21,8 +21,8 @@ export struct FloatChatInputBar {
       .height(this.ICON_BTN_SIZE)
       .backgroundColor(Color.Transparent)
       .borderRadius(this.ICON_BTN_SIZE / 2)
-      .enabled(this.enabled)
-      .opacity(this.enabled ? 1 : 0.45)
+      .enabled(this.inputEnabled)
+      .opacity(this.inputEnabled ? 1 : 0.45)
       .onClick(() => {
         this.onMic();
       })
@@ -37,7 +37,7 @@ export struct FloatChatInputBar {
           .caretColor('#004D40')
           .fontSize(16)
           .padding({ left: 8 })
-          .enabled(this.enabled)
+          .enabled(this.inputEnabled)
           .onChange((value: string) => {
             this.onTextChange(value);
           })
@@ -72,8 +72,8 @@ export struct FloatChatInputBar {
       .height(this.ICON_BTN_SIZE)
       .backgroundColor(Color.Transparent)
       .borderRadius(this.ICON_BTN_SIZE / 2)
-      .enabled(this.enabled && this.text.trim().length > 0)
-      .opacity(this.enabled && this.text.trim().length > 0 ? 1 : 0.45)
+      .enabled(this.inputEnabled && this.text.trim().length > 0)
+      .opacity(this.inputEnabled && this.text.trim().length > 0 ? 1 : 0.45)
       .onClick(() => {
         this.onSend();
       })
@@ -115,4 +115,3 @@ export struct FloatChatInputBar {
     }
   }
 }
-
