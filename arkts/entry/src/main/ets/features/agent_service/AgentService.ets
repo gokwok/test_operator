@@ -36,6 +36,7 @@ const CAPSULE_STOPPED: string = '任务已停止';
 const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
+const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 2000;
 
 export class AgentService {
   private static instance: AgentService | null = null;
@@ -53,6 +54,7 @@ export class AgentService {
   private liveViewTaskText: string = '';
   private liveViewIcon: image.PixelMap | null = null;
   private liveViewAppName: string = '';
+  private liveViewStopTimerId: number = -1;
   private listenerBound: boolean = false;
 
   static getInstance(): AgentService {
@@ -85,6 +87,7 @@ export class AgentService {
 
   startTask(request: TaskStartRequest): void {
     this.ensureListenerBound();
+    this.clearLiveViewAutoStop();
     const normalized = this.normalizeStartRequest(request);
     const executor = this.getDeviceExecutor();
     const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
@@ -326,6 +329,9 @@ export class AgentService {
     if (status === this.liveViewPhase && status !== 'waiting_user') {
       return;
     }
+    if (status === 'running' || status === 'waiting_user') {
+      this.clearLiveViewAutoStop();
+    }
     this.liveViewPhase = status;
     if (status === 'running') {
       await this.publishRunningLiveView();
@@ -338,14 +344,17 @@ export class AgentService {
     }
     if (status === 'finished') {
       await this.publishFinishedLiveView();
+      this.scheduleLiveViewAutoStop(LIVE_VIEW_AUTO_STOP_DELAY_MS);
       return;
     }
     if (status === 'failed') {
       await this.publishFailedLiveView(snapshot.lastError);
+      this.scheduleLiveViewAutoStop(LIVE_VIEW_AUTO_STOP_DELAY_MS);
       return;
     }
     if (status === 'stopping') {
       await this.publishStoppedLiveView(snapshot.lastError);
+      this.scheduleLiveViewAutoStop(LIVE_VIEW_AUTO_STOP_DELAY_MS);
     }
   }
 
@@ -499,6 +508,49 @@ export class AgentService {
       }
     } catch (e) {
       console.warn(`[AgentService] LiveView update failed: ${String(e)}`);
+    }
+  }
+
+  private scheduleLiveViewAutoStop(delayMs: number): void {
+    if (!this.liveViewEnabled || !this.liveViewStarted) {
+      return;
+    }
+    this.clearLiveViewAutoStop();
+    const delay = Math.max(0, Math.floor(delayMs));
+    this.liveViewStopTimerId = setTimeout(() => {
+      this.liveViewStopTimerId = -1;
+      void this.stopLiveView();
+    }, delay) as number;
+  }
+
+  private clearLiveViewAutoStop(): void {
+    if (this.liveViewStopTimerId === -1) {
+      return;
+    }
+    clearTimeout(this.liveViewStopTimerId);
+    this.liveViewStopTimerId = -1;
+  }
+
+  private async stopLiveView(): Promise<void> {
+    if (!this.liveViewEnabled || !this.liveViewStarted) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const payload: LiveViewContents = {
+      type: LiveViewType.VIEWER,
+      stopTimeoutMs: 100,
+      primary: { title: '', content: '' },
+      capsule: { title: '' },
+    };
+    try {
+      await this.liveViewController.stop(ctx, payload);
+    } catch (e) {
+      console.warn(`[AgentService] LiveView stop failed: ${String(e)}`);
+    } finally {
+      this.liveViewStarted = false;
     }
   }
 
