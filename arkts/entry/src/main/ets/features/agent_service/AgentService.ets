@@ -269,19 +269,12 @@ export class AgentService {
     if (this.listenerBound) {
       return;
     }
-    const listener: TaskManagerListener = {
-      onStatusChanged: (snapshot: TaskSnapshot): void => {
-        void this.handleTaskStatusChanged(snapshot);
-      },
-      onAction: (action: AgentAction, description: string): void => {
-        void this.handleTaskAction(action, description);
-      },
-    };
+    const listener: TaskManagerListener = new AgentServiceTaskListener(this);
     this.taskManager.setListener(listener);
     this.listenerBound = true;
   }
 
-  private async handleTaskStatusChanged(snapshot: TaskSnapshot): Promise<void> {
+  async handleTaskStatusChanged(snapshot: TaskSnapshot): Promise<void> {
     if (!this.liveViewEnabled) {
       return;
     }
@@ -312,7 +305,7 @@ export class AgentService {
     }
   }
 
-  private async handleTaskAction(action: AgentAction, description: string): Promise<void> {
+  async handleTaskAction(action: AgentAction, description: string): Promise<void> {
     if (!this.liveViewEnabled) {
       return;
     }
@@ -567,5 +560,21 @@ export class AgentService {
       this.cloudClient = new CloudAgentClient(DEFAULT_CLOUD_ENDPOINT);
     }
     return this.cloudClient;
+  }
+}
+
+class AgentServiceTaskListener implements TaskManagerListener {
+  private readonly owner: AgentService;
+
+  constructor(owner: AgentService) {
+    this.owner = owner;
+  }
+
+  onStatusChanged(snapshot: TaskSnapshot): void {
+    void this.owner.handleTaskStatusChanged(snapshot);
+  }
+
+  onAction(action: AgentAction, description: string): void {
+    void this.owner.handleTaskAction(action, description);
   }
 }
