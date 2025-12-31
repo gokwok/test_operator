@@ -2,7 +2,6 @@ import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
-import type { common } from '@kit.AbilityKit';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 
 const DOMAIN = 0x0000;
@@ -72,8 +71,7 @@ export default class AgentSpaceViewerAbility extends UIAbility {
 
   private async updateViewerActive(active: boolean): Promise<void> {
     try {
-      const ctx = this.context as common.UIAbilityContext;
-      await this.getServiceClient().connect(ctx);
+      await this.getServiceClient().connect(this.context);
       await this.getServiceClient().setViewerActive(active);
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'updateViewerActive failed: %{public}s', String(e));

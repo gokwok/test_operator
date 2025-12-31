@@ -1,4 +1,7 @@
-import type { common, Want } from '@kit.AbilityKit';
+import type { common } from '@kit.AbilityKit';
+import type Want from '@ohos.app.ability.Want';
+import type UIAbilityContext from '@ohos.app.ability.UIAbilityContext';
+import type UIExtensionContext from '@ohos.app.ability.UIExtensionContext';
 import bundleManager from '@ohos.bundle.bundleManager';
 import rpc from '@ohos.rpc';
 
@@ -18,15 +21,15 @@ export class AgentServiceClient {
   private connectionId: number = -1;
   private connectPromise: Promise<void> | null = null;
 
-  async connect(ctx: common.UIAbilityContext): Promise<void> {
+  async connect(ctx: UIAbilityContext): Promise<void> {
     await this.connectInternal(ctx);
   }
 
-  async connectFromExtension(ctx: common.UIExtensionContext): Promise<void> {
+  async connectFromExtension(ctx: UIExtensionContext): Promise<void> {
     await this.connectInternal(ctx);
   }
 
-  private async connectInternal(ctx: common.UIAbilityContext | common.UIExtensionContext): Promise<void> {
+  private async connectInternal(ctx: UIAbilityContext | UIExtensionContext): Promise<void> {
     if (this.remote) {
       return;
     }
@@ -66,15 +69,15 @@ export class AgentServiceClient {
     });
   }
 
-  async disconnect(ctx: common.UIAbilityContext): Promise<void> {
+  async disconnect(ctx: UIAbilityContext): Promise<void> {
     await this.disconnectInternal(ctx);
   }
 
-  async disconnectFromExtension(ctx: common.UIExtensionContext): Promise<void> {
+  async disconnectFromExtension(ctx: UIExtensionContext): Promise<void> {
     await this.disconnectInternal(ctx);
   }
 
-  private async disconnectInternal(ctx: common.UIAbilityContext | common.UIExtensionContext): Promise<void> {
+  private async disconnectInternal(ctx: UIAbilityContext | UIExtensionContext): Promise<void> {
     if (this.connectionId === -1) {
       return;
     }

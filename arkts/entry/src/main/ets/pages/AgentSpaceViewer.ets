@@ -1,6 +1,6 @@
 import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
-import type { common } from '@kit.AbilityKit';
+import type UIAbilityContext from '@ohos.app.ability.UIAbilityContext';
 import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import type { TaskSnapshot, UserReply } from '../features/agent_service/types';
@@ -192,7 +192,7 @@ struct AgentSpaceViewer {
   }
 
   private async ensureServiceConnected(): Promise<void> {
-    const ctx = getContext(this) as common.UIAbilityContext;
+    const ctx = getContext(this) as UIAbilityContext;
     await this.getServiceClient().connect(ctx);
   }
 
@@ -581,7 +581,7 @@ struct AgentSpaceViewer {
 
   private terminateViewer(): void {
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = getContext(this) as UIAbilityContext;
       ctx.terminateSelf((err: BusinessError) => {
         if (err?.code) {
           console.error(`[AgentSpaceViewer] terminateSelf failed. Code:${err.code}, message:${err.message}`);
