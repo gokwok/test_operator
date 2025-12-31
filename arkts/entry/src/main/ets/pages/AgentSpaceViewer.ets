@@ -131,7 +131,7 @@ struct AgentSpaceViewer {
   }
 
   onBackPress(): boolean | void {
-    router.back();
+    void this.onCollapseRequested();
     return true;
   }
 
@@ -537,13 +537,30 @@ struct AgentSpaceViewer {
 
   private async onCollapseRequested(): Promise<void> {
     this.hideOverlays();
+    this.stopEffectPolling();
+    this.stopStatusPolling();
     try {
       await this.ensureServiceConnected();
       await this.getServiceClient().transferToMain();
     } catch (e) {
       console.error(`[AgentSpaceViewer] transfer to main failed: ${String(e)}`);
     }
-    router.back();
+    this.terminateViewer();
+  }
+
+  private terminateViewer(): void {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      ctx.terminateSelf((err: BusinessError) => {
+        if (err?.code) {
+          console.error(`[AgentSpaceViewer] terminateSelf failed. Code:${err.code}, message:${err.message}`);
+          router.back();
+        }
+      });
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] terminateSelf exception: ${String(e)}`);
+      router.back();
+    }
   }
 
   private enterCallUserWait(): void {
