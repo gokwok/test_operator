@@ -47,6 +47,7 @@ struct AgentSpaceViewer {
   @State private showGlow: boolean = true;
   @State private showStatus: boolean = true;
   @State private showOrb: boolean = false;
+  @State private manualControlActive: boolean = false;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
     'Viewer active',
     () => {},
@@ -75,7 +76,6 @@ struct AgentSpaceViewer {
   private callUserActive: boolean = false;
   private callUserContent: string = '';
   private callUserKind: 'call_user' | 'interact' | 'take_over' = 'call_user';
-  private manualControlActive: boolean = false;
   private takeOverIdleTimerId: number = -1;
   private takeOverCountdownTimerId: number = -1;
   private takeOverCountdownValue: number = 0;
@@ -101,12 +101,14 @@ struct AgentSpaceViewer {
         GlowOverlay({ paletteName: this.glowPaletteName, visible: this.showGlow })
           .width('100%')
           .height('100%')
+          .hitTestBehavior(HitTestMode.Transparent)
       }
 
       if (!this.manualControlActive) {
         InteractionEffectOverlay({ controller: this.interactionController })
           .width('100%')
           .height('100%')
+          .hitTestBehavior(HitTestMode.Transparent)
       }
 
       if (this.showStatus) {

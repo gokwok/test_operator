@@ -70,8 +70,11 @@ export struct FloatingOrb {
   @Prop @Watch('onVisibleChange') visible: boolean = true;
   @Prop edgePadding: number = 12;
   @Prop compactSize: number = 52;
-  @Prop expandedWidth: number = 220;
+  @Prop expandedWidth: number = 176;
   @Prop expandedHeight: number = 52;
+  @Prop expandedIconSlot: number = 28;
+  @Prop expandedTextPaddingRight: number = 8;
+  @Prop expandedTextSpacing: number = 6;
   @Prop animationDurationMs: number = 220;
 
   @State private animX: number = 0;
@@ -411,6 +414,14 @@ export struct FloatingOrb {
       .fontColor(['#FF7A45'])
   }
 
+  private resolveOrbTextSize(): number {
+    const length = this.controller.text.length;
+    if (length > 10) {
+      return 12;
+    }
+    return 13;
+  }
+
   @Builder
   private compactBall() {
     Row() {
@@ -428,17 +439,17 @@ export struct FloatingOrb {
   @Builder
   private expandedBall() {
     Stack() {
-      Row({ space: 8 }) {
+      Row({ space: this.expandedTextSpacing }) {
         Row() {
           this.playIcon();
         }
-        .width(this.expandedHeight)
-        .height(this.expandedHeight)
+        .width(this.expandedIconSlot)
+        .height(this.expandedIconSlot)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
 
       Text(this.controller.text)
-        .fontSize(13)
+        .fontSize(this.resolveOrbTextSize())
         .fontColor('#2B2D35')
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
@@ -447,7 +458,7 @@ export struct FloatingOrb {
       }
       .width('100%')
       .height('100%')
-      .padding({ right: 14 })
+      .padding({ right: this.expandedTextPaddingRight })
       .alignItems(VerticalAlign.Center)
     }
     .width(this.expandedWidth)
