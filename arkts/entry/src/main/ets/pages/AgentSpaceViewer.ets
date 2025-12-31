@@ -51,9 +51,11 @@ struct AgentSpaceViewer {
     'Viewer active',
     () => {},
     () => {},
-    () => {},
     () => {
-      this.hideOverlays();
+      void this.onStopRequested();
+    },
+    () => {
+      void this.onCollapseRequested();
     }
   );
   @State private orbController: FloatingOrbController = FloatingOrbController.create(
@@ -73,7 +75,8 @@ struct AgentSpaceViewer {
   private callUserActive: boolean = false;
   private callUserContent: string = '';
   private callUserKind: 'call_user' | 'interact' = 'call_user';
-  private readonly glowPaletteName: string = GLOW_PALETTES[0].name;
+  private readonly defaultGlowPaletteName: string = GLOW_PALETTES[0].name;
+  @State private glowPaletteName: string = GLOW_PALETTES[0].name;
 
   build() {
     Stack() {
@@ -270,6 +273,16 @@ struct AgentSpaceViewer {
           return;
         }
       }
+
+      if (snapshot.status === 'finished') {
+        this.enterTaskFinished(snapshot);
+        return;
+      }
+
+      if (this.glowPaletteName !== this.defaultGlowPaletteName) {
+        this.glowPaletteName = this.defaultGlowPaletteName;
+      }
+
       const description = snapshot.lastDescription.trim();
       const resolved = description.length > 0 ? description : '正在分析用户需求...';
       if (this.isUserReplyStatusLocked(snapshot)) {
@@ -470,6 +483,67 @@ struct AgentSpaceViewer {
     this.statusController.clearCallUserInput();
     this.statusController.setCallUserOptions([]);
     this.statusController.setMode('default');
+  }
+
+  private enterTaskFinished(snapshot: TaskSnapshot): void {
+    if (this.callUserActive) {
+      this.exitCallUser();
+    }
+    const content = this.extractFinishContent(snapshot);
+    this.statusController.setMode('default');
+    this.statusController.setTerminal('finished', content);
+    this.lastStatusText = content;
+    this.statusController.setStatus(content);
+    this.showFloatWindow();
+    this.showGlow = true;
+    this.glowPaletteName = 'Lagoon';
+  }
+
+  private extractFinishContent(snapshot: TaskSnapshot): string {
+    const actionJson = snapshot.lastActionJson ?? '';
+    if (actionJson.length > 0) {
+      try {
+        const action = JSON.parse(actionJson) as ParsedInteractionAction;
+        const name = action?.name?.toLowerCase() ?? '';
+        if (name === 'finish') {
+          const content = action?.parameters?.content ?? '';
+          const normalized = typeof content === 'string' ? content.trim() : '';
+          if (normalized.length > 0) {
+            return normalized;
+          }
+        }
+      } catch (_e) {
+        // ignore
+      }
+    }
+    const description = snapshot.lastDescription.trim();
+    if (description.length > 0) {
+      return description;
+    }
+    return '任务已完成';
+  }
+
+  private async onStopRequested(): Promise<void> {
+    if (this.callUserActive) {
+      this.exitCallUser();
+    }
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().stopTask('user_stop');
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] stop task failed: ${String(e)}`);
+    }
+  }
+
+  private async onCollapseRequested(): Promise<void> {
+    this.hideOverlays();
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().transferToMain();
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] transfer to main failed: ${String(e)}`);
+    }
+    router.back();
   }
 
   private enterCallUserWait(): void {

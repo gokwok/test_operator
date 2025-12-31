@@ -2,12 +2,15 @@ import { FadeVisibility } from './FadeVisibility';
 
 type ActionType = 'supplement' | 'takeover' | 'stop';
 export type StatusFloatMode = 'default' | 'call_user_wait' | 'call_user_input';
+export type StatusFloatTerminalKind = 'stopped' | 'finished';
 type SystemSymbolName = 'chevron_down' | 'chevron_up_circle' | 'mic_fill';
 
 @Observed
 export class StatusFloatWindowController {
   statusText: string = '';
   stopped: boolean = false;
+  terminalKind: StatusFloatTerminalKind = 'stopped';
+  terminalContent: string = '';
   mode: StatusFloatMode = 'default';
   callUserContent: string = '';
   callUserInput: string = '';
@@ -59,6 +62,16 @@ export class StatusFloatWindowController {
 
   setStopped(stopped: boolean): void {
     this.stopped = stopped;
+    if (!stopped) {
+      this.terminalKind = 'stopped';
+      this.terminalContent = '';
+    }
+  }
+
+  setTerminal(kind: StatusFloatTerminalKind, content: string): void {
+    this.terminalKind = kind;
+    this.terminalContent = content;
+    this.stopped = true;
   }
 
   setSupplementHandler(handler: () => void): void {
@@ -124,6 +137,8 @@ export class StatusFloatWindowController {
   triggerStop(): void {
     this.stopHandler();
     this.stopped = true;
+    this.terminalKind = 'stopped';
+    this.terminalContent = '';
   }
 
   triggerDestroy(): void {
@@ -159,6 +174,7 @@ export struct StatusFloatWindow {
 
   private readonly stopTitle: string = '用户已停止任务执行';
   private readonly stopDescription: string = '用户主动停止了当前任务的执行。';
+  private readonly finishTitle: string = '任务已完成';
   private readonly collapseLabel: string = '收起';
   private readonly callUserTitle: string = '等待答复';
   private readonly callUserHeader: string = '操作智能体';
@@ -232,13 +248,18 @@ export struct StatusFloatWindow {
 
   @Builder
   private stoppedContent() {
+    const isFinished: boolean = this.controller.terminalKind === 'finished';
+    const title: string = isFinished ? this.finishTitle : this.stopTitle;
+    const titleColor: string = isFinished ? '#22C55E' : '#FF4D5B';
+    const override = this.controller.terminalContent.trim();
+    const content: string = override.length > 0 ? override : isFinished ? '' : this.stopDescription;
     Column({ space: 10 }) {
       Column({ space: 6 }) {
-        Text(this.stopTitle)
+        Text(title)
           .fontSize(14)
-          .fontColor('#FF4D5B')
+          .fontColor(titleColor)
           .fontWeight(FontWeight.Bold)
-        Text(this.stopDescription)
+        Text(content)
           .fontSize(12)
           .fontColor('#8D9098')
       }
@@ -297,7 +318,7 @@ export struct StatusFloatWindow {
         .textAlign(TextAlign.Start)
         .width('100%')
 
-      Column({ space: 10 }) {
+      Column({ space: 6 }) {
         ForEach(this.resolveCallUserOptions(), (label: string) => {
           Button(label)
             .fontSize(15)
