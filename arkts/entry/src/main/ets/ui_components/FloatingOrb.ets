@@ -70,7 +70,7 @@ export struct FloatingOrb {
   @Prop @Watch('onVisibleChange') visible: boolean = true;
   @Prop edgePadding: number = 12;
   @Prop compactSize: number = 52;
-  @Prop expandedWidth: number = 176;
+  @Prop expandedWidth: number = 220;
   @Prop expandedHeight: number = 52;
   @Prop animationDurationMs: number = 220;
 
@@ -443,6 +443,7 @@ export struct FloatingOrb {
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
         .layoutWeight(1)
+        .textOverflow({ overflow: TextOverflow.Clip })
       }
       .width('100%')
       .height('100%')

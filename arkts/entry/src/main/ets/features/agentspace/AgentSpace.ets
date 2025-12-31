@@ -432,9 +432,6 @@ export class AgentSpace {
     if (!event) {
       return;
     }
-    if (this.viewerMode !== 'control') {
-      return;
-    }
     const action = event.action;
     if (action !== 'down' && action !== 'move' && action !== 'up' && action !== 'cancel') {
       return;

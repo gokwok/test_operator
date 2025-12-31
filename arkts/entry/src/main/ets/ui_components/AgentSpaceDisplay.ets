@@ -59,6 +59,8 @@ export struct AgentSpaceDisplay {
           offsetX: 0,
         };
         this.xComponentController.setXComponentSurfaceRect(rect);
+        this.viewWidth = size.width;
+        this.viewHeight = size.height;
 
         const info: AgentSpaceDisplaySurfaceInfo = {
           surfaceId: this.xComponentController.getXComponentSurfaceId(),
@@ -84,8 +86,8 @@ export struct AgentSpaceDisplay {
         if (!action) {
           return;
         }
-        const xNorm = this.normalize(touch.windowX, this.viewWidth);
-        const yNorm = this.normalize(touch.windowY, this.viewHeight);
+        const xNorm = this.normalize(touch.windowX, this.resolveViewWidth());
+        const yNorm = this.normalize(touch.windowY, this.resolveViewHeight());
         const payload: AgentSpacePointerEvent = {
           action,
           xNorm,
@@ -118,6 +120,26 @@ export struct AgentSpaceDisplay {
   private bumpSequence(): void {
     const current = Number.isFinite(this.eventSequence) ? this.eventSequence : 0;
     this.eventSequence = current + 1;
+  }
+
+  private resolveViewWidth(): number {
+    if (this.viewWidth > 0) {
+      return this.viewWidth;
+    }
+    if (this.surfaceWidth > 0) {
+      return this.surfaceWidth;
+    }
+    return 0;
+  }
+
+  private resolveViewHeight(): number {
+    if (this.viewHeight > 0) {
+      return this.viewHeight;
+    }
+    if (this.surfaceHeight > 0) {
+      return this.surfaceHeight;
+    }
+    return 0;
   }
 
   private mapAction(action: TouchType): AgentSpacePointerAction | null {
