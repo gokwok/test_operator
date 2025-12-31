@@ -755,7 +755,7 @@ struct AgentSpaceViewer {
 
   private formatTakeOverCountdownText(value: number): string {
     const safeValue = Math.max(0, Math.floor(value));
-    return `任务即将恢复（${safeValue}）`;
+    return `任务即将恢复(${safeValue})`;
   }
 
   private async completeTakeOver(): Promise<void> {
