@@ -18,6 +18,11 @@ interface NeedUserPayload {
   action: AgentAction;
 }
 
+export interface TaskManagerListener {
+  onStatusChanged(snapshot: TaskSnapshot): void;
+  onAction(action: AgentAction, description: string): void;
+}
+
 export class TaskManager {
   private snapshot: TaskSnapshot = {
     sessionId: '',
@@ -41,6 +46,7 @@ export class TaskManager {
   private installedApps: Array<string> = [];
   private installedAppsSent: boolean = false;
   private pendingActionResult: ActionResult | null = null;
+  private listener: TaskManagerListener | null = null;
 
   startTask(request: TaskStartRequest, cloudClient: CloudAgentClient, deviceExecutor: DeviceExecutor): void {
     const taskText = request.taskText.trim();
@@ -73,6 +79,7 @@ export class TaskManager {
       installedAppsSent: false,
     };
     this.pushEvent('status', 'running');
+    this.notifyStatus();
     void this.runLoop(token);
   }
 
@@ -93,6 +100,7 @@ export class TaskManager {
     this.pushEvent('result', result.status, JSON.stringify(result));
     this.snapshot.status = 'running';
     this.pushEvent('status', 'running');
+    this.notifyStatus();
     this.stopRequested = false;
     this.runToken += 1;
     const token = this.runToken;
@@ -114,6 +122,7 @@ export class TaskManager {
     this.snapshot.lastActionJson = JSON.stringify(action);
     this.pushEvent('need_user', 'call_user', this.snapshot.lastActionJson);
     this.pushEvent('status', 'waiting_user');
+    this.notifyStatus();
   }
 
   debugTakeOver(content: string): void {
@@ -131,6 +140,7 @@ export class TaskManager {
     this.snapshot.lastActionJson = JSON.stringify(action);
     this.pushEvent('need_user', 'take_over', this.snapshot.lastActionJson);
     this.pushEvent('status', 'waiting_user');
+    this.notifyStatus();
   }
 
   debugInteract(content: string, options: Array<string>): void {
@@ -153,6 +163,7 @@ export class TaskManager {
     this.snapshot.lastActionJson = JSON.stringify(action);
     this.pushEvent('need_user', 'interact', this.snapshot.lastActionJson);
     this.pushEvent('status', 'waiting_user');
+    this.notifyStatus();
   }
 
   stopTask(reason: string): void {
@@ -163,6 +174,11 @@ export class TaskManager {
     this.snapshot.status = 'stopping';
     this.snapshot.lastError = reason;
     this.pushEvent('status', `stopping:${reason}`);
+    this.notifyStatus();
+  }
+
+  setListener(listener: TaskManagerListener | null): void {
+    this.listener = listener;
   }
 
   getSnapshot(): TaskSnapshot {
@@ -267,6 +283,7 @@ export class TaskManager {
     if (this.stopRequested && (this.snapshot.status === 'stopping' || this.snapshot.status === 'running')) {
       this.snapshot.status = 'idle';
       this.pushEvent('status', 'idle');
+      this.notifyStatus();
     }
   }
 
@@ -326,11 +343,13 @@ export class TaskManager {
     this.snapshot.lastActionName = name;
     this.snapshot.lastActionJson = JSON.stringify(action);
     this.pushEvent('action', name, this.snapshot.lastActionJson);
+    this.notifyAction(action, description);
 
     const lower = name.toLowerCase();
     if (lower === 'finish') {
       this.snapshot.status = 'finished';
       this.pushEvent('status', 'finished');
+      this.notifyStatus();
       return 'finish';
     }
     if (lower === 'call_user' || lower === 'interact' || lower === 'task_over' || lower === 'take_over') {
@@ -338,6 +357,7 @@ export class TaskManager {
       const payload: NeedUserPayload = { description, action };
       this.pushEvent('need_user', lower, JSON.stringify(payload));
       this.pushEvent('status', 'waiting_user');
+      this.notifyStatus();
       return 'wait_user';
     }
     return 'continue';
@@ -441,6 +461,21 @@ export class TaskManager {
     this.snapshot.lastError = reason;
     this.pushEvent('error', reason);
     this.pushEvent('status', 'failed');
+    this.notifyStatus();
+  }
+
+  private notifyStatus(): void {
+    if (!this.listener) {
+      return;
+    }
+    this.listener.onStatusChanged(this.getSnapshot());
+  }
+
+  private notifyAction(action: AgentAction, description: string): void {
+    if (!this.listener) {
+      return;
+    }
+    this.listener.onAction(action, description);
   }
 
   private pushEvent(type: TaskEventType, message: string, payloadJson?: string): void {

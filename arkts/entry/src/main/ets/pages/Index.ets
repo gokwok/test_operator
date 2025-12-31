@@ -10,9 +10,11 @@ import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components
 import type { common, Want } from '@kit.AbilityKit';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
-import type { AppTargetDescriptor, TaskStartRequest } from '../features/agent_service/types';
+import type { AppTargetDescriptor, TaskSnapshot, TaskStartRequest } from '../features/agent_service/types';
 import { AppState } from '../features/state/app_state';
 import { LiveViewController } from '../features/live_view/LiveViewController';
+import { AgentSettings } from '../features/settings/AgentSettings';
+import type { AgentSettingsPatch } from '../features/settings/AgentSettings';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
@@ -107,6 +109,7 @@ struct Index {
     this.showGlow = false;
     this.showStatus = false;
     this.orbController.hide();
+    void this.loadAgentSettings();
   }
 
   private getActivePalette(): GlowPalette {
@@ -1121,7 +1124,7 @@ struct Index {
     const want: Want = {
       bundleName: VIEWER_BUNDLE_NAME,
       abilityName: FLOAT_WINDOW_ABILITY_NAME,
-      parameters: { action },
+      action,
     };
     const starter = (ctx as ServiceExtensionStarter).startServiceExtensionAbility;
     if (typeof starter === 'function') {
@@ -1168,11 +1171,32 @@ struct Index {
   private async onLiveViewStop(): Promise<void> {
     this.liveViewInfo = 'Stopping...';
     try {
+      await this.ensureServiceConnected();
+      const snapshotText = await this.getServiceClient().getSnapshot();
+      const snapshot = this.parseTaskSnapshot(snapshotText);
+      if (snapshot && (snapshot.status === 'running' || snapshot.status === 'waiting_user')) {
+        await this.getServiceClient().stopTask('live_view_closed');
+      }
       const ctx = getContext(this) as common.UIAbilityContext;
       await LiveViewController.getInstance().stopDefault(ctx);
       this.liveViewInfo = 'LiveView stopped.';
     } catch (e) {
       this.liveViewInfo = `LiveView stop failed: ${String(e)}`;
+    }
+  }
+
+  private parseTaskSnapshot(payload: string): TaskSnapshot | null {
+    if (payload.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(payload) as TaskSnapshot;
+      if (!parsed || typeof parsed.status !== 'string') {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
     }
   }
 
@@ -1322,6 +1346,7 @@ struct Index {
       await this.ensureServiceConnected();
       await this.getServiceClient().setCloudEndpoint(endpoint);
       this.serviceStatus = `cloud: ${endpoint}`;
+      await this.saveAgentSettings({ cloudEndpoint: endpoint, waitMs: this.readWaitMs() });
     } catch (e) {
       this.serviceError = `Cloud endpoint failed: ${String(e)}`;
     }
@@ -1342,6 +1367,7 @@ struct Index {
       }
       const waitMsRaw = parseInt(this.cloudWaitMs, 10);
       const waitMs = Number.isFinite(waitMsRaw) ? Math.max(0, waitMsRaw) : DEFAULT_WAIT_MS;
+      await this.saveAgentSettings({ cloudEndpoint: endpoint, waitMs });
       const request: TaskStartRequest = {
         sessionId: this.cloudSessionId.trim(),
         taskText,
@@ -1364,6 +1390,34 @@ struct Index {
       this.serviceStatus = 'stopped';
     } catch (e) {
       this.serviceError = `Service stop failed: ${String(e)}`;
+    }
+  }
+
+  private async loadAgentSettings(): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const settings = await AgentSettings.load(ctx);
+      this.cloudEndpoint = settings.cloudEndpoint;
+      this.cloudWaitMs = String(settings.waitMs);
+    } catch (e) {
+      console.warn(`[Index] load settings failed: ${String(e)}`);
+    }
+  }
+
+  private readWaitMs(): number {
+    const waitMsRaw = parseInt(this.cloudWaitMs, 10);
+    if (!Number.isFinite(waitMsRaw)) {
+      return DEFAULT_WAIT_MS;
+    }
+    return Math.max(0, waitMsRaw);
+  }
+
+  private async saveAgentSettings(patch: AgentSettingsPatch): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await AgentSettings.update(ctx, patch);
+    } catch (e) {
+      console.warn(`[Index] save settings failed: ${String(e)}`);
     }
   }
 

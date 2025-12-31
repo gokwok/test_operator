@@ -7,6 +7,7 @@ import image from '@ohos.multimedia.image';
 import { AppState } from '../state/app_state';
 
 const LOG_TAG: string = '[LiveView]';
+const DEFAULT_APP_NAME: string = 'com.huawei.aios.agent.operation';
 
 export enum LiveViewType {
   VIEWER = 0,
@@ -25,7 +26,6 @@ export interface LiveViewTapTarget {
   bundleName: string;
   abilityName: string;
   action?: string;
-  parameters?: Record<string, Object>;
 }
 
 export interface LiveViewContents {
@@ -53,33 +53,33 @@ export class LiveViewController {
     return LiveViewController.instance;
   }
 
-  async startDefault(ctx: common.UIAbilityContext, taskText: string): Promise<void> {
+  async startDefault(ctx: common.Context, taskText: string): Promise<void> {
     const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
     const icon = await this.resolveDefaultIcon(ctx);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
       primary: { title: '任务执行中', content },
-      capsule: { title: '应用操作' },
+      capsule: { title: '操作应用' },
       capsuleIcon: icon ?? undefined,
       tapTarget: LiveViewController.buildViewerTapTarget(),
     };
     await this.start(ctx, params);
   }
 
-  async updateDefault(ctx: common.UIAbilityContext, taskText: string): Promise<void> {
+  async updateDefault(ctx: common.Context, taskText: string): Promise<void> {
     const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
     const icon = await this.resolveDefaultIcon(ctx);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
       primary: { title: '任务执行中', content },
-      capsule: { title: '应用操作' },
+      capsule: { title: '操作应用' },
       capsuleIcon: icon ?? undefined,
       tapTarget: LiveViewController.buildViewerTapTarget(),
     };
     await this.update(ctx, params);
   }
 
-  async stopDefault(ctx: common.UIAbilityContext, timeoutMs?: number): Promise<void> {
+  async stopDefault(ctx: common.Context, timeoutMs?: number): Promise<void> {
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
       stopTimeoutMs: timeoutMs,
@@ -90,21 +90,21 @@ export class LiveViewController {
     await this.stop(ctx, params);
   }
 
-  async start(ctx: common.UIAbilityContext, param: LiveViewContents): Promise<void> {
+  async start(ctx: common.Context, param: LiveViewContents): Promise<void> {
     const request = await this.buildNotificationRequest(param);
     await this.ensureSubscribed();
     await this.publishOnce(request);
     void ctx;
   }
 
-  async update(ctx: common.UIAbilityContext, param: LiveViewContents): Promise<void> {
+  async update(ctx: common.Context, param: LiveViewContents): Promise<void> {
     const request = await this.buildNotificationRequest(param);
     await this.ensureSubscribed();
     await this.publishOnce(request);
     void ctx;
   }
 
-  async stop(ctx: common.UIAbilityContext, param: LiveViewContents): Promise<void> {
+  async stop(ctx: common.Context, param: LiveViewContents): Promise<void> {
     const request = await this.buildNotificationRequest(param);
     const timeout = typeof param.stopTimeoutMs === 'number' ? param.stopTimeoutMs : 100;
 
@@ -138,14 +138,14 @@ export class LiveViewController {
     return target;
   }
 
-  private async resolveDefaultIcon(ctx: common.UIAbilityContext): Promise<image.PixelMap | null> {
+  private async resolveDefaultIcon(ctx: common.Context): Promise<image.PixelMap | null> {
     if (this.defaultIcon) {
       return this.defaultIcon;
     }
     if (this.defaultIconInFlight) {
       return await this.defaultIconInFlight;
     }
-    const task = this.loadWeiboIcon(ctx);
+    const task = this.loadDefaultAppIcon(ctx);
     this.defaultIconInFlight = task;
     try {
       this.defaultIcon = await task;
@@ -155,12 +155,12 @@ export class LiveViewController {
     return this.defaultIcon;
   }
 
-  private async loadWeiboIcon(ctx: common.UIAbilityContext): Promise<image.PixelMap | null> {
+  private async loadDefaultAppIcon(ctx: common.Context): Promise<image.PixelMap | null> {
     try {
-      const icon = await AppState.getIconByAppName('微博', ctx);
+      const icon = await AppState.getIconByAppName(DEFAULT_APP_NAME, ctx);
       return icon;
     } catch (e) {
-      console.warn(`${LOG_TAG} loadWeiboIcon failed: ${String(e)}`);
+      console.warn(`${LOG_TAG} loadDefaultAppIcon failed: ${String(e)}`);
       return null;
     }
   }
@@ -220,9 +220,6 @@ export class LiveViewController {
     };
     if (typeof target.action === 'string' && target.action.length > 0) {
       wantObj.action = target.action;
-    }
-    if (target.parameters) {
-      wantObj.parameters = target.parameters;
     }
     return wantObj;
   }

@@ -1,4 +1,5 @@
-import type { common } from '@kit.AbilityKit';
+import type { common, Want } from '@kit.AbilityKit';
+import image from '@ohos.multimedia.image';
 
 import { AgentSpace } from '../agentspace/AgentSpace';
 import type {
@@ -12,10 +13,29 @@ import type {
 import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
 import { CloudAgentClient } from './CloudAgentClient';
 import { DeviceExecutor } from './DeviceExecutor';
-import type { TaskEventBatch, TaskSnapshot, TaskStartRequest, UserReply } from './types';
-import { TaskManager } from './TaskManager';
+import type { TaskEventBatch, TaskSnapshot, TaskStartRequest, TaskStatus, UserReply } from './types';
+import { TaskManager, TaskManagerListener } from './TaskManager';
+import { LiveViewController, LiveViewContents, LiveViewType } from '../live_view/LiveViewController';
+import type { AgentSettingsData } from '../settings/AgentSettings';
+import { AppState } from '../state/app_state';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
+const DEFAULT_TASK_PLACEHOLDER: string = '正在分析用户需求...';
+const CAPSULE_RUNNING: string = '操作应用';
+const CAPSULE_INTERACTION: string = '需要交互';
+const CAPSULE_FINISHED: string = '任务完成';
+const CAPSULE_STOPPED: string = '任务已停止';
+const CAPSULE_FAILED: string = '任务异常';
+const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
+const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
+
+interface ServiceExtensionStarter {
+  startServiceExtensionAbility?: (w: Want) => Promise<void> | void;
+}
+
+interface AbilityStarter {
+  startAbility?: (w: Want) => Promise<void> | void;
+}
 
 export class AgentService {
   private static instance: AgentService | null = null;
@@ -26,6 +46,14 @@ export class AgentService {
   private deviceExecutor: DeviceExecutor | null = null;
   private cloudClient: CloudAgentClient | null = null;
   private lastScreenshotBase64: string = '';
+  private liveViewController: LiveViewController = LiveViewController.getInstance();
+  private liveViewEnabled: boolean = true;
+  private liveViewStarted: boolean = false;
+  private liveViewPhase: TaskStatus = 'idle';
+  private liveViewTaskText: string = '';
+  private liveViewIcon: image.PixelMap | null = null;
+  private liveViewAppName: string = '';
+  private listenerBound: boolean = false;
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -37,6 +65,10 @@ export class AgentService {
   init(ctx: common.Context, startAbilityInvoker: StartAbilityInvoker): void {
     this.ctx = ctx;
     this.startAbilityInvoker = startAbilityInvoker;
+  }
+
+  applySettings(settings: AgentSettingsData): void {
+    this.liveViewEnabled = settings.liveViewEnabled;
   }
 
   ping(): string {
@@ -52,15 +84,44 @@ export class AgentService {
   }
 
   startTask(request: TaskStartRequest): void {
+    this.ensureListenerBound();
+    const normalized = this.normalizeStartRequest(request);
     const executor = this.getDeviceExecutor();
-    const targets = Array.isArray(request.appTargets) ? request.appTargets : [];
+    const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
     executor.setAppTargets(targets);
     const cloud = this.getCloudClient();
-    this.taskManager.startTask(request, cloud, executor);
+    this.liveViewTaskText = normalized.taskText;
+    this.liveViewPhase = 'running';
+    this.liveViewStarted = false;
+    this.liveViewAppName = '';
+    this.liveViewIcon = null;
+    this.taskManager.startTask(normalized, cloud, executor);
+    void this.publishRunningLiveView();
   }
 
   stopTask(reason: string): void {
     this.taskManager.stopTask(reason);
+  }
+
+  async hideFloatWindow(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const want: Want = {
+      bundleName: SELF_BUNDLE_NAME,
+      abilityName: FLOAT_WINDOW_ABILITY_NAME,
+      action: 'hide',
+    };
+    const starter = (ctx as ServiceExtensionStarter).startServiceExtensionAbility;
+    if (typeof starter === 'function') {
+      await (ctx as ServiceExtensionStarter).startServiceExtensionAbility!(want);
+      return;
+    }
+    const abilityStarter = (ctx as AbilityStarter).startAbility;
+    if (typeof abilityStarter === 'function') {
+      await (ctx as AbilityStarter).startAbility!(want);
+    }
   }
 
   pullEventsJson(lastSequence: number): string {
@@ -202,6 +263,262 @@ export class AgentService {
 
   async attachViewerSurface(surfaceId: string): Promise<void> {
     await this.ensureAgentSpace().attachViewerSurface(surfaceId);
+  }
+
+  private ensureListenerBound(): void {
+    if (this.listenerBound) {
+      return;
+    }
+    const listener: TaskManagerListener = {
+      onStatusChanged: (snapshot: TaskSnapshot): void => {
+        void this.handleTaskStatusChanged(snapshot);
+      },
+      onAction: (action: AgentAction, description: string): void => {
+        void this.handleTaskAction(action, description);
+      },
+    };
+    this.taskManager.setListener(listener);
+    this.listenerBound = true;
+  }
+
+  private async handleTaskStatusChanged(snapshot: TaskSnapshot): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const status = snapshot.status;
+    if (status === this.liveViewPhase && status !== 'waiting_user') {
+      return;
+    }
+    this.liveViewPhase = status;
+    if (status === 'running') {
+      await this.publishRunningLiveView();
+      return;
+    }
+    if (status === 'waiting_user') {
+      const content = this.resolveInteractionContent(snapshot);
+      await this.publishInteractionLiveView(content);
+      return;
+    }
+    if (status === 'finished') {
+      await this.publishFinishedLiveView();
+      return;
+    }
+    if (status === 'failed') {
+      await this.publishFailedLiveView(snapshot.lastError);
+      return;
+    }
+    if (status === 'stopping') {
+      await this.publishStoppedLiveView(snapshot.lastError);
+    }
+  }
+
+  private async handleTaskAction(action: AgentAction, description: string): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const name = action.name.trim().toLowerCase();
+    if (name === 'launch_app') {
+      const appName = this.resolveAppName(action);
+      if (appName.length > 0) {
+        await this.updateLiveViewIcon(appName);
+      }
+      return;
+    }
+    if (name === 'call_user' || name === 'interact' || name === 'take_over' || name === 'task_over') {
+      const content = this.resolveActionContent(action, description);
+      await this.publishInteractionLiveView(content);
+    }
+  }
+
+  private resolveActionContent(action: AgentAction, fallback: string): string {
+    const content = action.parameters?.content ?? '';
+    if (typeof content === 'string' && content.trim().length > 0) {
+      return content.trim();
+    }
+    const trimmed = fallback.trim();
+    return trimmed.length > 0 ? trimmed : DEFAULT_TASK_PLACEHOLDER;
+  }
+
+  private resolveInteractionContent(snapshot: TaskSnapshot): string {
+    const json = snapshot.lastActionJson.trim();
+    if (json.length > 0) {
+      try {
+        const parsed = JSON.parse(json) as AgentAction;
+        return this.resolveActionContent(parsed, snapshot.lastDescription);
+      } catch (_e) {
+        // ignore
+      }
+    }
+    return snapshot.lastDescription.trim().length > 0 ? snapshot.lastDescription.trim() : DEFAULT_TASK_PLACEHOLDER;
+  }
+
+  private resolveAppName(action: AgentAction): string {
+    const name = action.parameters?.app ?? '';
+    if (typeof name !== 'string') {
+      return '';
+    }
+    return name.trim();
+  }
+
+  private async publishRunningLiveView(): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const icon = await this.resolveLiveViewIcon();
+    const content = this.liveViewTaskText.trim().length > 0 ? this.liveViewTaskText.trim() : DEFAULT_TASK_PLACEHOLDER;
+    const payload = this.buildLiveViewPayload('任务执行中', content, CAPSULE_RUNNING, icon);
+    await this.publishLiveView(payload);
+  }
+
+  private async publishInteractionLiveView(content: string): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const icon = await this.resolveLiveViewIcon();
+    const payload = this.buildLiveViewPayload('等待答复', content, CAPSULE_INTERACTION, icon);
+    await this.publishLiveView(payload);
+  }
+
+  private async publishFinishedLiveView(): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const icon = await this.resolveLiveViewIcon();
+    const payload = this.buildLiveViewPayload('任务完成', '', CAPSULE_FINISHED, icon);
+    await this.publishLiveView(payload);
+  }
+
+  private async publishStoppedLiveView(reason: string): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const icon = await this.resolveLiveViewIcon();
+    const content = reason.trim().length > 0 ? reason.trim() : '';
+    const payload = this.buildLiveViewPayload('任务已停止', content, CAPSULE_STOPPED, icon);
+    await this.publishLiveView(payload);
+  }
+
+  private async publishFailedLiveView(reason: string): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    const icon = await this.resolveLiveViewIcon();
+    const content = reason.trim().length > 0 ? reason.trim() : '';
+    const payload = this.buildLiveViewPayload('任务异常', content, CAPSULE_FAILED, icon);
+    await this.publishLiveView(payload);
+  }
+
+  private buildLiveViewPayload(
+    title: string,
+    content: string,
+    capsuleTitle: string,
+    icon: image.PixelMap | null
+  ): LiveViewContents {
+    const payload: LiveViewContents = {
+      type: LiveViewType.VIEWER,
+      primary: { title, content },
+      capsule: { title: capsuleTitle },
+    };
+    if (icon) {
+      payload.capsuleIcon = icon;
+    }
+    return payload;
+  }
+
+  private async publishLiveView(payload: LiveViewContents): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    try {
+      if (!this.liveViewStarted) {
+        await this.liveViewController.start(ctx, payload);
+        this.liveViewStarted = true;
+      } else {
+        await this.liveViewController.update(ctx, payload);
+      }
+    } catch (e) {
+      console.warn(`[AgentService] LiveView update failed: ${String(e)}`);
+    }
+  }
+
+  private async resolveLiveViewIcon(): Promise<image.PixelMap | null> {
+    if (this.liveViewIcon) {
+      return this.liveViewIcon;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return null;
+    }
+    try {
+      const icon = await AppState.getIconByAppName(SELF_BUNDLE_NAME, ctx);
+      this.liveViewIcon = icon;
+      return icon;
+    } catch (e) {
+      console.warn(`[AgentService] load default icon failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  private async updateLiveViewIcon(appName: string): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    if (appName === this.liveViewAppName && this.liveViewIcon) {
+      return;
+    }
+    try {
+      const icon = await AppState.getIconByAppName(appName, ctx);
+      this.liveViewAppName = appName;
+      this.liveViewIcon = icon;
+    } catch (e) {
+      console.warn(`[AgentService] load app icon failed: ${String(e)}`);
+      return;
+    }
+    if (this.liveViewPhase === 'running') {
+      await this.publishRunningLiveView();
+    }
+  }
+
+  private normalizeStartRequest(request: TaskStartRequest): TaskStartRequest {
+    const sessionId = request.sessionId.trim().length > 0 ? request.sessionId.trim() : this.generateSessionId();
+    const normalized: TaskStartRequest = {
+      sessionId,
+      taskText: request.taskText,
+      installedApps: request.installedApps,
+      appTargets: request.appTargets,
+      waitMs: request.waitMs,
+    };
+    return normalized;
+  }
+
+  private generateSessionId(): string {
+    const rand = Math.floor(Math.random() * 1000);
+    return `local_${Date.now()}_${rand}`;
   }
 
   async sendViewerEvent(event: AgentSpacePointerEvent): Promise<void> {

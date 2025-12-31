@@ -206,12 +206,12 @@ export class AppState {
   private static readonly prefsName: string = 'app_state_cache';
   private static readonly prefsKey: string = 'cache_v1';
 
-  static async listAppNames(ctx: common.UIAbilityContext): Promise<string[]> {
+  static async listAppNames(ctx: common.Context): Promise<string[]> {
     await AppState.ensureAppCache(ctx);
     return AppState.filterAppNamesByWhitelist(AppState.cachedAppNames);
   }
 
-  static async getLaunchTargetByAppName(appName: string, ctx: common.UIAbilityContext): Promise<AppLaunchTarget> {
+  static async getLaunchTargetByAppName(appName: string, ctx: common.Context): Promise<AppLaunchTarget> {
     const bundleName = await AppState.resolveAppIdByName(appName, ctx);
     const want = await bundleManager.getLaunchWantForBundle(bundleName);
     const abilityName = want.abilityName?.trim() ?? '';
@@ -222,7 +222,7 @@ export class AppState {
     return { bundleName, abilityName };
   }
 
-  static async listAppTargets(ctx: common.UIAbilityContext): Promise<Array<AppTargetDescriptor>> {
+  static async listAppTargets(ctx: common.Context): Promise<Array<AppTargetDescriptor>> {
     await AppState.ensureAppCache(ctx);
     const names = AppState.cachedAppNames.slice();
     const targets: Array<AppTargetDescriptor> = [];
@@ -249,7 +249,7 @@ export class AppState {
     return targets;
   }
 
-  static async getIconByAppName(appName: string, ctx: common.UIAbilityContext): Promise<image.PixelMap> {
+  static async getIconByAppName(appName: string, ctx: common.Context): Promise<image.PixelMap> {
     const appId = await AppState.resolveAppIdByName(appName, ctx);
     await AppState.ensureAppCache(ctx);
 
@@ -276,7 +276,7 @@ export class AppState {
     return pixelMap;
   }
 
-  private static async ensureAppCache(ctx: common.UIAbilityContext): Promise<void> {
+  private static async ensureAppCache(ctx: common.Context): Promise<void> {
     const now = Date.now();
     if (AppState.cachedAppNames.length > 0 && now - AppState.cacheUpdatedAtMs < AppState.cacheTtlMs) {
       return;
@@ -293,7 +293,7 @@ export class AppState {
     await AppState.refreshAppCache(ctx);
   }
 
-  private static async refreshAppCache(ctx: common.UIAbilityContext): Promise<void> {
+  private static async refreshAppCache(ctx: common.Context): Promise<void> {
     if (AppState.refreshInFlight) {
       await AppState.refreshInFlight;
       return;
@@ -307,7 +307,7 @@ export class AppState {
     }
   }
 
-  private static async refreshAppCacheOnce(ctx: common.UIAbilityContext): Promise<void> {
+  private static async refreshAppCacheOnce(ctx: common.Context): Promise<void> {
     const flags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
     const bundles = await bundleManager.getAllBundleInfo(flags);
 
@@ -384,7 +384,7 @@ export class AppState {
     return AppState.isResourceLikeLabel(normalized) ? '' : normalized;
   }
 
-  private static async resolveAppIdByName(appName: string, ctx: common.UIAbilityContext): Promise<string> {
+  private static async resolveAppIdByName(appName: string, ctx: common.Context): Promise<string> {
     const normalized = appName.trim();
     if (normalized.length === 0) {
       throw new Error('appName is empty');
@@ -478,7 +478,7 @@ export class AppState {
     return out;
   }
 
-  private static async loadDiskCache(ctx: common.UIAbilityContext): Promise<boolean> {
+  private static async loadDiskCache(ctx: common.Context): Promise<boolean> {
     try {
       const prefs = await preferences.getPreferences(ctx, AppState.prefsName);
       const raw = String(await prefs.get(AppState.prefsKey, '')).trim();
@@ -548,7 +548,7 @@ export class AppState {
     AppState.cachedAppNames = AppState.uniqueStrings(names);
   }
 
-  private static async saveDiskCache(ctx: common.UIAbilityContext): Promise<void> {
+  private static async saveDiskCache(ctx: common.Context): Promise<void> {
     try {
       const entries: PersistedAppEntry[] = [];
       for (let i = 0; i < AppState.cachedAppNames.length; i++) {

@@ -7,6 +7,10 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 const TAG = 'FloatWindowAbility';
 const DOMAIN = 0x0000;
 
+interface FloatWindowParams {
+  action?: string;
+}
+
 export default class FloatWindowAbility extends ServiceExtensionAbility {
   private floatWindow: window.Window | null = null;
   private windowName: string = 'agent_float_window';
@@ -19,7 +23,10 @@ export default class FloatWindowAbility extends ServiceExtensionAbility {
 
   async onRequest(want: Want, startId: number): Promise<void> {
     hilog.info(DOMAIN, TAG, 'FloatWindowAbility onRequest, startId: %{public}d', startId);
-    const action = want.parameters?.['action'] as string;
+    const params = want.parameters as FloatWindowParams;
+    const action = typeof want.action === 'string' && want.action.length > 0
+      ? want.action
+      : (typeof params?.action === 'string' ? params.action : '');
     switch (action) {
       case 'show':
         await this.showFloatWindow();
@@ -107,6 +114,7 @@ export default class FloatWindowAbility extends ServiceExtensionAbility {
     }
 
     AppStorage.setOrCreate('FloatWindow_IsClosing', true);
+    AppStorage.setOrCreate('FloatWindow_IsWaiting', false);
 
     setTimeout(async () => {
       if (!this.floatWindow) {
@@ -138,4 +146,3 @@ export default class FloatWindowAbility extends ServiceExtensionAbility {
     }
   }
 }
-
