@@ -89,6 +89,7 @@ struct FloatChatPage {
     AppStorage.setOrCreate('FloatWindow_IsWaiting', true);
     try {
       const ctx = getContext(this) as common.UIExtensionContext;
+      await this.ensureServiceStarted(ctx);
       await this.connectService(ctx);
       await this.serviceClient.startTaskText(taskText);
       this.inputText = '';
@@ -102,6 +103,19 @@ struct FloatChatPage {
 
   private async connectService(ctx: common.UIExtensionContext): Promise<void> {
     await this.serviceClient.connectFromExtension(ctx);
+  }
+
+  private async ensureServiceStarted(ctx: common.UIExtensionContext): Promise<void> {
+    const want: Want = {
+      bundleName: SERVICE_BUNDLE_NAME,
+      abilityName: SERVICE_ABILITY_NAME,
+      action: 'keep_alive',
+    };
+    try {
+      await ctx.startServiceExtensionAbility(want);
+    } catch (e) {
+      console.warn(`[FloatChatPage] keep_alive start failed: ${String(e)}`);
+    }
   }
 
   private async dispatchTaskFallback(taskText: string): Promise<void> {

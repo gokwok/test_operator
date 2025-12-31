@@ -32,6 +32,9 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
       ? want.action
       : (typeof params?.action === 'string' ? params.action : '');
     if (action !== ACTION_START_TASK) {
+      if (action === 'keep_alive') {
+        hilog.info(DOMAIN, LOG_TAG, 'keep_alive received');
+      }
       return;
     }
     const taskText = this.resolveTaskText(want, params);
