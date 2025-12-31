@@ -23,6 +23,9 @@
         "name": "ohos.permission.CAPTURE_SCREEN"
       },
       {
+        "name": "ohos.permission.SYSTEM_FLOAT_WINDOW"
+      },
+      {
         "name": "ohos.permission.GET_BUNDLE_INFO_PRIVILEGED"
       },
       {
@@ -101,6 +104,12 @@
         "srcEntry": "./ets/serviceextability/AgentServiceExtAbility.ets",
         "type": "service",
         "exported": false
+      },
+      {
+        "name": "FloatWindowAbility",
+        "srcEntry": "./ets/abilities/FloatWindowAbility.ets",
+        "type": "service",
+        "exported": true
       }
     ]
   }

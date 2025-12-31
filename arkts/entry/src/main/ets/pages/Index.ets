@@ -19,9 +19,14 @@ import util from '@ohos.util';
 
 const VIEWER_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
+const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const VIEWER_CLOSE_ACTION: string = 'closeViewer';
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const DEFAULT_WAIT_MS: number = 500;
+
+interface ServiceExtensionStarter {
+  startServiceExtensionAbility?: (w: Want) => Promise<void> | void;
+}
 
 @Entry
 @Component
@@ -40,6 +45,7 @@ struct Index {
   @State appResolveInfo: string = '';
   @State appIconInfo: string = '';
   @State appIconPixelMap: image.PixelMap | null = null;
+  @State floatWindowInfo: string = '';
   @State serviceStatus: string = '';
   @State serviceSnapshot: string = '';
   @State serviceError: string = '';
@@ -152,6 +158,58 @@ struct Index {
           Text(this.vtsError)
             .fontSize(11)
             .fontColor('#F8B4B4')
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
+  @Builder
+  private floatWindowTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('System Float Window')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          Button('Show')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onFloatWindowAction('show');
+            })
+
+          Button('Hide')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onFloatWindowAction('hide');
+            })
+
+          Button('Toggle')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onFloatWindowAction('toggle');
+            })
+        }
+
+        if (this.floatWindowInfo.length > 0) {
+          Text(this.floatWindowInfo)
+            .fontSize(11)
+            .fontColor('#E5E7EB')
         }
       }
       .width('100%')
@@ -921,6 +979,11 @@ struct Index {
           .tabBar('Viewer')
 
           TabContent() {
+            this.floatWindowTab();
+          }
+          .tabBar('Float')
+
+          TabContent() {
             this.vtsTab();
           }
           .tabBar('Service VTS')
@@ -970,6 +1033,26 @@ struct Index {
       this.serviceClient = new AgentServiceClient();
     }
     return this.serviceClient;
+  }
+
+  private async onFloatWindowAction(action: string): Promise<void> {
+    this.floatWindowInfo = '';
+    const ctx = getContext(this) as common.UIAbilityContext;
+    const want: Want = {
+      bundleName: VIEWER_BUNDLE_NAME,
+      abilityName: FLOAT_WINDOW_ABILITY_NAME,
+      parameters: { action },
+    };
+    const starter = (ctx as ServiceExtensionStarter).startServiceExtensionAbility;
+    if (typeof starter === 'function') {
+      await (ctx as ServiceExtensionStarter).startServiceExtensionAbility!(want);
+      return;
+    }
+    try {
+      await ctx.startAbility(want);
+    } catch (e) {
+      this.floatWindowInfo = `start float window failed: ${String(e)}`;
+    }
   }
 
   private async onVtsCreate(): Promise<void> {
