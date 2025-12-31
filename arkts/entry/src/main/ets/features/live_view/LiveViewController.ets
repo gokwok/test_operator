@@ -1,0 +1,253 @@
+import { notificationManager } from '@kit.NotificationKit';
+import { wantAgent } from '@kit.AbilityKit';
+import type { common, Want, WantAgent } from '@kit.AbilityKit';
+import type { BusinessError } from '@kit.BasicServicesKit';
+import image from '@ohos.multimedia.image';
+
+import { AppState } from '../state/app_state';
+
+const LOG_TAG: string = '[LiveView]';
+
+export enum LiveViewType {
+  VIEWER = 0,
+}
+
+export interface LiveViewPrimaryData {
+  title: string;
+  content: string;
+}
+
+export interface LiveViewCapsuleData {
+  title: string;
+}
+
+export interface LiveViewWantParams {
+  [key: string]: Object;
+}
+
+export interface LiveViewTapTarget {
+  bundleName: string;
+  abilityName: string;
+  action?: string;
+  parameters?: LiveViewWantParams;
+}
+
+export interface LiveViewContents {
+  type: LiveViewType;
+  id?: number;
+  stopTimeoutMs?: number;
+  typeCode?: number;
+  primary: LiveViewPrimaryData;
+  capsule: LiveViewCapsuleData;
+  capsuleIcon?: image.PixelMap;
+  tapTarget?: LiveViewTapTarget;
+}
+
+export class LiveViewController {
+  private static instance: LiveViewController | null = null;
+
+  private subscribed: boolean = false;
+  private defaultIcon: image.PixelMap | null = null;
+  private defaultIconInFlight: Promise<image.PixelMap | null> | null = null;
+
+  static getInstance(): LiveViewController {
+    if (!LiveViewController.instance) {
+      LiveViewController.instance = new LiveViewController();
+    }
+    return LiveViewController.instance;
+  }
+
+  async startDefault(ctx: common.UIAbilityContext, taskText: string): Promise<void> {
+    const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
+    const icon = await this.resolveDefaultIcon(ctx);
+    const params: LiveViewContents = {
+      type: LiveViewType.VIEWER,
+      primary: { title: '任务执行中', content },
+      capsule: { title: '应用操作' },
+      capsuleIcon: icon ?? undefined,
+      tapTarget: LiveViewController.buildViewerTapTarget(),
+    };
+    await this.start(ctx, params);
+  }
+
+  async updateDefault(ctx: common.UIAbilityContext, taskText: string): Promise<void> {
+    const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
+    const icon = await this.resolveDefaultIcon(ctx);
+    const params: LiveViewContents = {
+      type: LiveViewType.VIEWER,
+      primary: { title: '任务执行中', content },
+      capsule: { title: '应用操作' },
+      capsuleIcon: icon ?? undefined,
+      tapTarget: LiveViewController.buildViewerTapTarget(),
+    };
+    await this.update(ctx, params);
+  }
+
+  async stopDefault(ctx: common.UIAbilityContext, timeoutMs?: number): Promise<void> {
+    const params: LiveViewContents = {
+      type: LiveViewType.VIEWER,
+      stopTimeoutMs: timeoutMs,
+      primary: { title: '', content: '' },
+      capsule: { title: '' },
+      tapTarget: LiveViewController.buildViewerTapTarget(),
+    };
+    await this.stop(ctx, params);
+  }
+
+  async start(ctx: common.UIAbilityContext, param: LiveViewContents): Promise<void> {
+    const request = await this.buildNotificationRequest(param);
+    await this.ensureSubscribed();
+    await this.publishOnce(request);
+    void ctx;
+  }
+
+  async update(ctx: common.UIAbilityContext, param: LiveViewContents): Promise<void> {
+    const request = await this.buildNotificationRequest(param);
+    await this.ensureSubscribed();
+    await this.publishOnce(request);
+    void ctx;
+  }
+
+  async stop(ctx: common.UIAbilityContext, param: LiveViewContents): Promise<void> {
+    const request = await this.buildNotificationRequest(param);
+    const timeout = typeof param.stopTimeoutMs === 'number' ? param.stopTimeoutMs : 100;
+
+    try {
+      await this.publishOnce(request);
+    } catch (e) {
+      console.warn(`${LOG_TAG} stop publish failed: ${String(e)}`);
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const cancelCallback = (err?: BusinessError): void => {
+          if (err && err.code) {
+            console.error(`${LOG_TAG} cancel failed. Code=${err.code}, message=${err.message}`);
+          } else {
+            console.info(`${LOG_TAG} stopped live view. id=${request.id}`);
+          }
+          resolve();
+        };
+        notificationManager.cancel(request.id, cancelCallback);
+      }, timeout);
+    });
+    void ctx;
+  }
+
+  private static buildViewerTapTarget(): LiveViewTapTarget {
+    const target: LiveViewTapTarget = {
+      bundleName: 'com.huawei.aios.agent.operation',
+      abilityName: 'AgentSpaceViewerAbility',
+    };
+    return target;
+  }
+
+  private async resolveDefaultIcon(ctx: common.UIAbilityContext): Promise<image.PixelMap | null> {
+    if (this.defaultIcon) {
+      return this.defaultIcon;
+    }
+    if (this.defaultIconInFlight) {
+      return await this.defaultIconInFlight;
+    }
+    const task = this.loadWeiboIcon(ctx);
+    this.defaultIconInFlight = task;
+    try {
+      this.defaultIcon = await task;
+    } finally {
+      this.defaultIconInFlight = null;
+    }
+    return this.defaultIcon;
+  }
+
+  private async loadWeiboIcon(ctx: common.UIAbilityContext): Promise<image.PixelMap | null> {
+    try {
+      const icon = await AppState.getIconByAppName('微博', ctx);
+      return icon;
+    } catch (e) {
+      console.warn(`${LOG_TAG} loadWeiboIcon failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  private async ensureSubscribed(): Promise<void> {
+    if (this.subscribed) {
+      return;
+    }
+    const subscriber: notificationManager.SystemLiveViewSubscriber = {};
+    try {
+      await notificationManager.subscribeSystemLiveView(subscriber);
+      this.subscribed = true;
+    } catch (e) {
+      console.warn(`${LOG_TAG} subscribeSystemLiveView failed: ${String(e)}`);
+    }
+  }
+
+  private async buildNotificationRequest(param: LiveViewContents): Promise<notificationManager.NotificationRequest> {
+    const id = typeof param.id === 'number' ? param.id : LiveViewController.defaultNotificationId(param.type);
+    const typeCode = typeof param.typeCode === 'number' ? param.typeCode : 3;
+    const tapTarget = param.tapTarget ?? LiveViewController.buildViewerTapTarget();
+    const wantAgentObj = await LiveViewController.buildWantAgent(tapTarget);
+    const capsuleIcon = param.capsuleIcon;
+
+    const request: notificationManager.NotificationRequest = {
+      notificationSlotType: notificationManager.SlotType.LIVE_VIEW,
+      id,
+      wantAgent: wantAgentObj,
+      content: {
+        notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_SYSTEM_LIVE_VIEW,
+        systemLiveView: {
+          title: param.primary.title,
+          text: param.primary.content,
+          typeCode,
+          capsule: capsuleIcon ? { title: param.capsule.title, icon: capsuleIcon } : { title: param.capsule.title }
+        }
+      }
+    };
+    return request;
+  }
+
+  private static async buildWantAgent(target: LiveViewTapTarget): Promise<WantAgent> {
+    const wantObj = LiveViewController.buildWant(target);
+    const wantAgentInfo: wantAgent.WantAgentInfo = {
+      wants: [wantObj],
+      actionType: wantAgent.OperationType.START_ABILITIES,
+      requestCode: 0,
+      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+    };
+    return await wantAgent.getWantAgent(wantAgentInfo);
+  }
+
+  private static buildWant(target: LiveViewTapTarget): Want {
+    const wantObj: Want = {
+      bundleName: target.bundleName,
+      abilityName: target.abilityName,
+    };
+    if (typeof target.action === 'string' && target.action.length > 0) {
+      wantObj.action = target.action;
+    }
+    if (target.parameters) {
+      wantObj.parameters = target.parameters;
+    }
+    return wantObj;
+  }
+
+  private async publishOnce(request: notificationManager.NotificationRequest): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const callback = (err?: BusinessError): void => {
+        if (err && err.code) {
+          const message = `${LOG_TAG} publish failed. Code=${err.code}, message=${err.message}, id=${request.id}`;
+          console.error(message);
+          reject(new Error(message));
+          return;
+        }
+        console.info(`${LOG_TAG} publish ok. id=${request.id}`);
+        resolve();
+      };
+      notificationManager.publish(request, callback);
+    });
+  }
+
+  private static defaultNotificationId(type: number): number {
+    return 10_000 + type;
+  }
+}

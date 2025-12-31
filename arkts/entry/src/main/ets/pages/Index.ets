@@ -12,6 +12,7 @@ import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import type { AppTargetDescriptor, TaskStartRequest } from '../features/agent_service/types';
 import { AppState } from '../features/state/app_state';
+import { LiveViewController } from '../features/live_view/LiveViewController';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
@@ -46,6 +47,8 @@ struct Index {
   @State appIconInfo: string = '';
   @State appIconPixelMap: image.PixelMap | null = null;
   @State floatWindowInfo: string = '';
+  @State liveViewInfo: string = '';
+  @State liveViewTaskText: string = 'xxxxxxx';
   @State serviceStatus: string = '';
   @State serviceSnapshot: string = '';
   @State serviceError: string = '';
@@ -208,6 +211,78 @@ struct Index {
 
         if (this.floatWindowInfo.length > 0) {
           Text(this.floatWindowInfo)
+            .fontSize(11)
+            .fontColor('#E5E7EB')
+        }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
+
+  @Builder
+  private liveViewTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('LiveView')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Text('primary.title: 任务执行中')
+          .fontSize(11)
+          .fontColor('#9CA3AF')
+
+        TextInput({ placeholder: 'primary.content', text: this.liveViewTaskText })
+          .width('100%')
+          .height(40)
+          .backgroundColor('#111217')
+          .fontColor(Color.White)
+          .placeholderColor('#6B7280')
+          .borderRadius(10)
+          .padding({ left: 12, right: 12 })
+          .onChange((v: string) => {
+            this.liveViewTaskText = v;
+          })
+
+        Text('capsule.title: 应用操作')
+          .fontSize(11)
+          .fontColor('#9CA3AF')
+
+        Row({ space: 8 }) {
+          Button('Start')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onLiveViewStart();
+            })
+
+          Button('Update')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onLiveViewUpdate();
+            })
+
+          Button('Stop')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onLiveViewStop();
+            })
+        }
+
+        if (this.liveViewInfo.length > 0) {
+          Text(this.liveViewInfo)
             .fontSize(11)
             .fontColor('#E5E7EB')
         }
@@ -984,6 +1059,11 @@ struct Index {
           .tabBar('Float')
 
           TabContent() {
+            this.liveViewTab();
+          }
+          .tabBar('LiveView')
+
+          TabContent() {
             this.vtsTab();
           }
           .tabBar('Service VTS')
@@ -1052,6 +1132,47 @@ struct Index {
       await ctx.startAbility(want);
     } catch (e) {
       this.floatWindowInfo = `start float window failed: ${String(e)}`;
+    }
+  }
+
+  private async onLiveViewStart(): Promise<void> {
+    this.liveViewInfo = 'Starting...';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const granted = await this.ensureBundleListPermission(ctx);
+      if (!granted) {
+        this.liveViewInfo = 'Bundle list permission not granted (icon may be missing).';
+      }
+      await LiveViewController.getInstance().startDefault(ctx, this.liveViewTaskText);
+      this.liveViewInfo = 'LiveView started. Tap it to open Viewer.';
+    } catch (e) {
+      this.liveViewInfo = `LiveView start failed: ${String(e)}`;
+    }
+  }
+
+  private async onLiveViewUpdate(): Promise<void> {
+    this.liveViewInfo = 'Updating...';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const granted = await this.ensureBundleListPermission(ctx);
+      if (!granted) {
+        this.liveViewInfo = 'Bundle list permission not granted (icon may be missing).';
+      }
+      await LiveViewController.getInstance().updateDefault(ctx, this.liveViewTaskText);
+      this.liveViewInfo = 'LiveView updated.';
+    } catch (e) {
+      this.liveViewInfo = `LiveView update failed: ${String(e)}`;
+    }
+  }
+
+  private async onLiveViewStop(): Promise<void> {
+    this.liveViewInfo = 'Stopping...';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await LiveViewController.getInstance().stopDefault(ctx);
+      this.liveViewInfo = 'LiveView stopped.';
+    } catch (e) {
+      this.liveViewInfo = `LiveView stop failed: ${String(e)}`;
     }
   }
 
