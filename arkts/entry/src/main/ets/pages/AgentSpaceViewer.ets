@@ -31,7 +31,7 @@ interface ParsedInteractionAction {
 }
 
 interface InteractionPayload {
-  kind: 'call_user' | 'interact';
+  kind: 'call_user' | 'interact' | 'take_over';
   content: string;
   options: Array<string>;
 }
@@ -74,7 +74,15 @@ struct AgentSpaceViewer {
   private lastStatusText: string = '';
   private callUserActive: boolean = false;
   private callUserContent: string = '';
-  private callUserKind: 'call_user' | 'interact' = 'call_user';
+  private callUserKind: 'call_user' | 'interact' | 'take_over' = 'call_user';
+  private manualControlActive: boolean = false;
+  private takeOverIdleTimerId: number = -1;
+  private takeOverCountdownTimerId: number = -1;
+  private takeOverCountdownValue: number = 0;
+  private takeOverPreviousMode: AgentSpaceDisplayMode = 'display';
+  private readonly takeOverIdleMs: number = 5000;
+  private readonly takeOverCountdownStart: number = 5;
+  private readonly orbDefaultText: string = 'AgentSpace';
   private readonly defaultGlowPaletteName: string = GLOW_PALETTES[0].name;
   @State private glowPaletteName: string = GLOW_PALETTES[0].name;
 
@@ -139,6 +147,7 @@ struct AgentSpaceViewer {
     void this.updateViewerActive(false);
     this.displaySurfaceInfo = null;
     this.displayPointerEvent = null;
+    this.stopManualControl();
     this.stopEffectPolling();
     this.stopStatusPolling();
   }
@@ -152,6 +161,9 @@ struct AgentSpaceViewer {
     const pointerEvent = this.displayPointerEvent;
     if (pointerEvent) {
       this.displayPointerEvent = null;
+      if (this.manualControlActive) {
+        this.recordManualControlActivity();
+      }
       void this.sendPointerEvent(pointerEvent);
     }
   }
@@ -398,17 +410,20 @@ struct AgentSpaceViewer {
     try {
       const action = JSON.parse(actionJson) as ParsedInteractionAction;
       const name = action?.name?.toLowerCase() ?? '';
-      if (name !== 'call_user' && name !== 'interact') {
+      if (name !== 'call_user' && name !== 'interact' && name !== 'take_over') {
         return null;
       }
       const content = action?.parameters?.content ?? '';
-      const normalizedContent = typeof content === 'string' ? content.trim() : '';
+      let normalizedContent = typeof content === 'string' ? content.trim() : '';
+      if (normalizedContent.length === 0) {
+        normalizedContent = snapshot.lastDescription.trim();
+      }
       if (normalizedContent.length === 0) {
         return null;
       }
-      const options = this.normalizeOptions(action?.parameters?.options);
+      const options = name === 'interact' ? this.normalizeOptions(action?.parameters?.options) : [];
       const payload: InteractionPayload = {
-        kind: name === 'interact' ? 'interact' : 'call_user',
+        kind: name === 'interact' ? 'interact' : name === 'take_over' ? 'take_over' : 'call_user',
         content: normalizedContent,
         options,
       };
@@ -472,7 +487,13 @@ struct AgentSpaceViewer {
     } else {
       this.statusController.setCallUserOptions([]);
     }
-    this.statusController.setMode('call_user_wait');
+    if (payload.kind === 'take_over') {
+      this.statusController.setCallUserActionLabel('手动操作');
+      this.statusController.setMode('take_over_wait');
+    } else {
+      this.statusController.setCallUserActionLabel('告诉AIOS');
+      this.statusController.setMode('call_user_wait');
+    }
     this.showFloatWindow();
   }
 
@@ -483,6 +504,7 @@ struct AgentSpaceViewer {
     this.statusController.clearCallUserInput();
     this.statusController.setCallUserOptions([]);
     this.statusController.setMode('default');
+    this.stopManualControl();
   }
 
   private enterTaskFinished(snapshot: TaskSnapshot): void {
@@ -567,7 +589,11 @@ struct AgentSpaceViewer {
     if (!this.callUserActive) {
       return;
     }
-    this.statusController.setMode('call_user_wait');
+    if (this.callUserKind === 'take_over') {
+      this.statusController.setMode('take_over_wait');
+    } else {
+      this.statusController.setMode('call_user_wait');
+    }
   }
 
   private enterCallUserInput(): void {
@@ -586,10 +612,18 @@ struct AgentSpaceViewer {
       this.enterCallUserInput();
       return;
     }
+    if (this.callUserKind === 'take_over') {
+      this.startManualControl();
+      return;
+    }
     void this.submitUserReply('interact', label);
   }
 
-  private async submitUserReply(kind: 'call_user' | 'interact', text: string): Promise<void> {
+  private async submitUserReply(
+    kind: 'call_user' | 'interact',
+    text: string,
+    displayOverride?: string
+  ): Promise<void> {
     const trimmed = text.trim();
     if (trimmed.length === 0) {
       return;
@@ -604,12 +638,137 @@ struct AgentSpaceViewer {
       this.statusController.clearCallUserInput();
       this.statusController.setCallUserOptions([]);
       this.statusController.setMode('default');
-      const message = `已收到你的输入信息：\n「${trimmed}」`;
+      const message = displayOverride ?? `已收到你的输入信息：\n「${trimmed}」`;
       this.lastStatusText = message;
       this.statusController.setStatus(message);
       this.showFloatWindow();
     } catch (e) {
       console.error(`[AgentSpaceViewer] submit user reply failed: ${String(e)}`);
+    }
+  }
+
+  private startManualControl(): void {
+    if (!this.callUserActive || this.callUserKind !== 'take_over') {
+      return;
+    }
+    this.manualControlActive = true;
+    this.takeOverPreviousMode = this.viewerMode;
+    void this.updateViewerMode('control');
+    this.showStatus = false;
+    this.showOrb = true;
+    this.showGlow = true;
+    this.orbController.setMode('compact');
+    this.orbController.setText(this.orbDefaultText);
+    this.orbController.show();
+    this.resetTakeOverIdleTimer();
+  }
+
+  private stopManualControl(): void {
+    this.clearTakeOverIdleTimer();
+    this.stopTakeOverCountdown();
+    if (!this.manualControlActive) {
+      return;
+    }
+    this.manualControlActive = false;
+    this.orbController.setMode('compact');
+    this.orbController.setText(this.orbDefaultText);
+    void this.updateViewerMode(this.takeOverPreviousMode);
+  }
+
+  private recordManualControlActivity(): void {
+    if (!this.manualControlActive) {
+      return;
+    }
+    this.resetTakeOverIdleTimer();
+    if (this.takeOverCountdownTimerId !== -1) {
+      this.stopTakeOverCountdown();
+      this.orbController.setMode('compact');
+      this.orbController.setText(this.orbDefaultText);
+    }
+  }
+
+  private resetTakeOverIdleTimer(): void {
+    this.clearTakeOverIdleTimer();
+    if (!this.manualControlActive) {
+      return;
+    }
+    this.takeOverIdleTimerId = setTimeout(() => {
+      this.takeOverIdleTimerId = -1;
+      this.handleTakeOverIdle();
+    }, this.takeOverIdleMs);
+  }
+
+  private clearTakeOverIdleTimer(): void {
+    if (this.takeOverIdleTimerId === -1) {
+      return;
+    }
+    clearTimeout(this.takeOverIdleTimerId);
+    this.takeOverIdleTimerId = -1;
+  }
+
+  private handleTakeOverIdle(): void {
+    if (!this.manualControlActive) {
+      return;
+    }
+    this.startTakeOverCountdown();
+  }
+
+  private startTakeOverCountdown(): void {
+    if (!this.manualControlActive) {
+      return;
+    }
+    this.stopTakeOverCountdown();
+    this.takeOverCountdownValue = this.takeOverCountdownStart;
+    this.orbController.setMode('expanded');
+    this.orbController.setText(this.formatTakeOverCountdownText(this.takeOverCountdownValue));
+    this.takeOverCountdownTimerId = setInterval(() => {
+      if (!this.manualControlActive) {
+        this.stopTakeOverCountdown();
+        return;
+      }
+      this.takeOverCountdownValue -= 1;
+      if (this.takeOverCountdownValue <= 0) {
+        this.stopTakeOverCountdown();
+        void this.completeTakeOver();
+        return;
+      }
+      this.orbController.setText(this.formatTakeOverCountdownText(this.takeOverCountdownValue));
+    }, 1000);
+  }
+
+  private stopTakeOverCountdown(): void {
+    if (this.takeOverCountdownTimerId === -1) {
+      return;
+    }
+    clearInterval(this.takeOverCountdownTimerId);
+    this.takeOverCountdownTimerId = -1;
+  }
+
+  private formatTakeOverCountdownText(value: number): string {
+    const safeValue = Math.max(0, Math.floor(value));
+    return `任务即将恢复（${safeValue}）`;
+  }
+
+  private async completeTakeOver(): Promise<void> {
+    if (!this.manualControlActive) {
+      return;
+    }
+    this.stopManualControl();
+    const reply = '用户已完成了操作，现在将继续由我为用户执行任务。';
+    const message = `任务恢复执行\n${reply}`;
+    await this.submitUserReply('interact', reply, message);
+  }
+
+  private async updateViewerMode(mode: AgentSpaceDisplayMode): Promise<void> {
+    if (this.viewerMode === mode) {
+      return;
+    }
+    this.viewerMode = mode;
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().setViewerMode(mode);
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] set viewer mode failed: ${String(e)}`);
     }
   }
 

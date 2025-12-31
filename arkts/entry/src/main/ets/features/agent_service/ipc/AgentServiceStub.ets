@@ -221,6 +221,12 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
+      if (code === AgentServiceRequestCode.DEBUG_TAKE_OVER) {
+        const content = data.readString();
+        this.service.debugTakeOver(content);
+        reply.writeString('ok');
+        return true;
+      }
       if (code === AgentServiceRequestCode.DEBUG_INTERACT) {
         const payload = data.readString();
         const parsed = JSON.parse(payload) as DebugInteractPayload;

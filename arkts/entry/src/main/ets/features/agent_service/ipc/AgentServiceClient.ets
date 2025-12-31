@@ -219,6 +219,10 @@ export class AgentServiceClient {
     await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_CALL_USER, content);
   }
 
+  async debugTakeOver(content: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_TAKE_OVER, content);
+  }
+
   async debugInteract(content: string, options: Array<string>): Promise<void> {
     const payload: DebugInteractPayload = { content, options };
     const text = JSON.stringify(payload);

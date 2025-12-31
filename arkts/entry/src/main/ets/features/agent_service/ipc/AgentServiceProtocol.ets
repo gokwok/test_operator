@@ -31,4 +31,5 @@ export enum AgentServiceRequestCode {
   SET_CLOUD_ENDPOINT = 40,
   DEBUG_CALL_USER = 41,
   DEBUG_INTERACT = 42,
+  DEBUG_TAKE_OVER = 43,
 }

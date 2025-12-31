@@ -116,6 +116,23 @@ export class TaskManager {
     this.pushEvent('status', 'waiting_user');
   }
 
+  debugTakeOver(content: string): void {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      this.pushEvent('error', 'debug_take_over_empty');
+      return;
+    }
+    this.stopRequested = true;
+    this.snapshot.status = 'waiting_user';
+    this.snapshot.lastDescription = 'take_over';
+    this.snapshot.lastActionName = 'take_over';
+    const params: ActionParameters = { content: trimmed };
+    const action: AgentAction = { name: 'take_over', parameters: params };
+    this.snapshot.lastActionJson = JSON.stringify(action);
+    this.pushEvent('need_user', 'take_over', this.snapshot.lastActionJson);
+    this.pushEvent('status', 'waiting_user');
+  }
+
   debugInteract(content: string, options: Array<string>): void {
     const trimmed = content.trim();
     if (trimmed.length === 0) {
@@ -316,7 +333,7 @@ export class TaskManager {
       this.pushEvent('status', 'finished');
       return 'finish';
     }
-    if (lower === 'call_user' || lower === 'interact' || lower === 'task_over') {
+    if (lower === 'call_user' || lower === 'interact' || lower === 'task_over' || lower === 'take_over') {
       this.snapshot.status = 'waiting_user';
       const payload: NeedUserPayload = { description, action };
       this.pushEvent('need_user', lower, JSON.stringify(payload));

@@ -79,6 +79,10 @@ export class AgentService {
     this.taskManager.debugCallUser(content);
   }
 
+  debugTakeOver(content: string): void {
+    this.taskManager.debugTakeOver(content);
+  }
+
   debugInteract(content: string, options: Array<string>): void {
     this.taskManager.debugInteract(content, options);
   }

@@ -1,7 +1,7 @@
 import { FadeVisibility } from './FadeVisibility';
 
 type ActionType = 'supplement' | 'takeover' | 'stop';
-export type StatusFloatMode = 'default' | 'call_user_wait' | 'call_user_input';
+export type StatusFloatMode = 'default' | 'call_user_wait' | 'call_user_input' | 'take_over_wait';
 export type StatusFloatTerminalKind = 'stopped' | 'finished';
 type SystemSymbolName = 'chevron_down' | 'chevron_up_circle' | 'mic_fill';
 
@@ -177,6 +177,7 @@ export struct StatusFloatWindow {
   private readonly finishTitle: string = '任务已完成';
   private readonly collapseLabel: string = '收起';
   private readonly callUserTitle: string = '等待答复';
+  private readonly takeOverTitle: string = '请手动操作';
   private readonly callUserHeader: string = '操作智能体';
   private readonly callUserPlaceholder: string = '发消息或按住说话…';
 
@@ -296,10 +297,11 @@ export struct StatusFloatWindow {
 
   @Builder
   private callUserWaitContent() {
+    const title = this.resolveWaitTitle();
     Column({ space: 16 }) {
       Column({ space: 8 }) {
         this.callUserBubble();
-        Text(this.callUserTitle)
+        Text(title)
           .fontSize(13)
           .fontColor('#3A3D45')
           .textAlign(TextAlign.Center)
@@ -421,6 +423,13 @@ export struct StatusFloatWindow {
     return [];
   }
 
+  private resolveWaitTitle(): string {
+    if (this.controller.mode === 'take_over_wait') {
+      return this.takeOverTitle;
+    }
+    return this.callUserTitle;
+  }
+
   @Builder
   private iconButton(symbolName: SystemSymbolName, onTap: () => void) {
     Row() {
@@ -507,7 +516,7 @@ export struct StatusFloatWindow {
         .shadow({ radius: 18, color: '#26000000', offsetX: 0, offsetY: 8 })
 
         this.collapseButton();
-      } else if (this.controller.mode === 'call_user_wait') {
+      } else if (this.controller.mode === 'call_user_wait' || this.controller.mode === 'take_over_wait') {
         this.callUserWaitContent();
       } else if (this.controller.mode === 'call_user_input') {
         this.callUserInputContent();

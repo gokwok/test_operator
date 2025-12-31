@@ -706,6 +706,16 @@ struct Index {
               void this.onActionDebugCallUser();
             })
 
+          Button('TakeOver Debug')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.onActionDebugTakeOver();
+            })
+
           Button('Interact Debug')
             .fontSize(12)
             .fontColor(Color.White)
@@ -1586,6 +1596,22 @@ struct Index {
       this.actionResult = 'call_user dispatched';
     } catch (e) {
       this.vtsError = `Debug call_user failed: ${String(e)}`;
+    }
+  }
+
+  private async onActionDebugTakeOver(): Promise<void> {
+    const content = this.actionInput.trim();
+    if (content.length === 0) {
+      this.vtsError = 'TakeOver content is empty';
+      return;
+    }
+    this.vtsError = '';
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().debugTakeOver(content);
+      this.actionResult = 'take_over dispatched';
+    } catch (e) {
+      this.vtsError = `Debug take_over failed: ${String(e)}`;
     }
   }
 
