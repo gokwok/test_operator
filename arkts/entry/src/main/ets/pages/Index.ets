@@ -7,8 +7,7 @@ import {
 } from '../ui_components/InteractionEffectOverlay';
 import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_components/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
-import type Want from '@ohos.app.ability.Want';
-import type UIAbilityContext from '@ohos.app.ability.UIAbilityContext';
+import type { common, Want } from '@kit.AbilityKit';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import type { AppTargetDescriptor, TaskSnapshot, TaskStartRequest } from '../features/agent_service/types';
@@ -1117,7 +1116,7 @@ struct Index {
 
   private async onFloatWindowAction(action: string): Promise<void> {
     this.floatWindowInfo = '';
-    const ctx = getContext(this) as UIAbilityContext;
+    const ctx = getContext(this) as common.UIAbilityContext;
     const want: Want = {
       bundleName: VIEWER_BUNDLE_NAME,
       abilityName: FLOAT_WINDOW_ABILITY_NAME,
@@ -1139,7 +1138,7 @@ struct Index {
   private async onLiveViewStart(): Promise<void> {
     this.liveViewInfo = 'Starting...';
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
       if (!granted) {
         this.liveViewInfo = 'Bundle list permission not granted (icon may be missing).';
@@ -1154,7 +1153,7 @@ struct Index {
   private async onLiveViewUpdate(): Promise<void> {
     this.liveViewInfo = 'Updating...';
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
       if (!granted) {
         this.liveViewInfo = 'Bundle list permission not granted (icon may be missing).';
@@ -1175,7 +1174,7 @@ struct Index {
       if (snapshot && (snapshot.status === 'running' || snapshot.status === 'waiting_user')) {
         await this.getServiceClient().stopTask('live_view_closed');
       }
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       await LiveViewController.getInstance().stopDefault(ctx);
       this.liveViewInfo = 'LiveView stopped.';
     } catch (e) {
@@ -1227,7 +1226,7 @@ struct Index {
     this.appIconInfo = '';
     this.appIconPixelMap = null;
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
       if (!granted) {
         this.appListInfo = '';
@@ -1257,7 +1256,7 @@ struct Index {
     this.appIconInfo = '';
     this.appIconPixelMap = null;
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
       if (!granted) {
         this.appResolveInfo = '';
@@ -1282,7 +1281,7 @@ struct Index {
     this.appIconInfo = 'Loading app icon...';
     this.appIconPixelMap = null;
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureBundleListPermission(ctx);
       if (!granted) {
         this.appIconInfo = '';
@@ -1304,7 +1303,7 @@ struct Index {
   private async onServiceConnect(): Promise<void> {
     this.serviceError = '';
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       await this.getServiceClient().connect(ctx);
       this.serviceStatus = 'connected';
     } catch (e) {
@@ -1393,7 +1392,7 @@ struct Index {
 
   private async loadAgentSettings(): Promise<void> {
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const settings = await AgentSettings.load(ctx);
       this.cloudEndpoint = settings.cloudEndpoint;
       this.cloudWaitMs = String(settings.waitMs);
@@ -1412,7 +1411,7 @@ struct Index {
 
   private async saveAgentSettings(patch: AgentSettingsPatch): Promise<void> {
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       await AgentSettings.update(ctx, patch);
     } catch (e) {
       console.warn(`[Index] save settings failed: ${String(e)}`);
@@ -1636,7 +1635,7 @@ struct Index {
     }
     this.vtsError = '';
     try {
-      const ctx = getContext(this) as UIAbilityContext;
+      const ctx = getContext(this) as common.UIAbilityContext;
       const granted = await this.ensureWriteImagePermission(ctx);
       if (!granted) {
         this.vtsError = 'Permission denied for album save';
@@ -1659,9 +1658,9 @@ struct Index {
     }
   }
 
-  private async ensureBundleListPermission(ctx: UIAbilityContext): Promise<boolean> {
+  private async ensureBundleListPermission(ctx: common.UIAbilityContext): Promise<boolean> {
     const atManager = abilityAccessCtrl.createAtManager();
-    const tokenId = ctx.applicationInfo.accessTokenId;
+    const tokenId: number = Number(ctx.applicationInfo.accessTokenId);
     const permission = 'ohos.permission.GET_INSTALLED_BUNDLE_LIST';
     try {
       const status = await atManager.checkAccessToken(tokenId, permission);
@@ -1682,9 +1681,9 @@ struct Index {
     }
   }
 
-  private async ensureWriteImagePermission(ctx: UIAbilityContext): Promise<boolean> {
+  private async ensureWriteImagePermission(ctx: common.UIAbilityContext): Promise<boolean> {
     const atManager = abilityAccessCtrl.createAtManager();
-    const tokenId = ctx.applicationInfo.accessTokenId;
+    const tokenId: number = Number(ctx.applicationInfo.accessTokenId);
     try {
       const status = await atManager.checkAccessToken(tokenId, 'ohos.permission.WRITE_IMAGEVIDEO');
       if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
@@ -1752,12 +1751,12 @@ struct Index {
   }
 
   private async ensureServiceConnected(): Promise<void> {
-    const ctx = getContext(this) as UIAbilityContext;
+    const ctx = getContext(this) as common.UIAbilityContext;
     await this.getServiceClient().connect(ctx);
   }
 
   private async startViewerAbility(action?: string): Promise<void> {
-    const ctx = getContext(this) as UIAbilityContext;
+    const ctx = getContext(this) as common.UIAbilityContext;
     const want: Want = {
       bundleName: VIEWER_BUNDLE_NAME,
       abilityName: VIEWER_ABILITY_NAME,

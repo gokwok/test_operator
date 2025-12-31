@@ -1,5 +1,4 @@
-import type Want from '@ohos.app.ability.Want';
-import type UIExtensionContext from '@ohos.app.ability.UIExtensionContext';
+import type { common, Want } from '@kit.AbilityKit';
 import { FloatChatInputBar } from '../ui_components/FloatChatInputBar';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 
@@ -89,7 +88,7 @@ struct FloatChatPage {
     }
     AppStorage.setOrCreate('FloatWindow_IsWaiting', true);
     try {
-      const ctx = getContext(this) as UIExtensionContext;
+      const ctx = getContext(this) as common.UIExtensionContext;
       await this.connectService(ctx);
       await this.serviceClient.startTaskText(taskText);
       this.inputText = '';
@@ -101,13 +100,13 @@ struct FloatChatPage {
     }
   }
 
-  private async connectService(ctx: UIExtensionContext): Promise<void> {
+  private async connectService(ctx: common.UIExtensionContext): Promise<void> {
     await this.serviceClient.connectFromExtension(ctx);
   }
 
   private async dispatchTaskFallback(taskText: string): Promise<void> {
     try {
-      const ctx = getContext(this) as UIExtensionContext;
+      const ctx = getContext(this) as common.UIExtensionContext;
       const encodedTask = encodeURIComponent(taskText);
       const want: Want = {
         bundleName: SERVICE_BUNDLE_NAME,
