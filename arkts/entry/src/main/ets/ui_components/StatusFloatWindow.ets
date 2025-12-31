@@ -248,18 +248,15 @@ export struct StatusFloatWindow {
 
   @Builder
   private stoppedContent() {
-    const isFinished: boolean = this.controller.terminalKind === 'finished';
-    const title: string = isFinished ? this.finishTitle : this.stopTitle;
-    const titleColor: string = isFinished ? '#22C55E' : '#FF4D5B';
-    const override = this.controller.terminalContent.trim();
-    const content: string = override.length > 0 ? override : isFinished ? '' : this.stopDescription;
     Column({ space: 10 }) {
       Column({ space: 6 }) {
-        Text(title)
+        Text(this.controller.terminalKind === 'finished' ? this.finishTitle : this.stopTitle)
           .fontSize(14)
-          .fontColor(titleColor)
+          .fontColor(this.controller.terminalKind === 'finished' ? '#22C55E' : '#FF4D5B')
           .fontWeight(FontWeight.Bold)
-        Text(content)
+        Text(this.controller.terminalContent.trim().length > 0
+          ? this.controller.terminalContent.trim()
+          : (this.controller.terminalKind === 'finished' ? '' : this.stopDescription))
           .fontSize(12)
           .fontColor('#8D9098')
       }
