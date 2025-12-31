@@ -97,13 +97,17 @@ struct AgentSpaceViewer {
         .width('100%')
         .height('100%')
 
-      GlowOverlay({ paletteName: this.glowPaletteName, visible: this.showGlow })
-        .width('100%')
-        .height('100%')
+      if (!this.manualControlActive && this.showGlow) {
+        GlowOverlay({ paletteName: this.glowPaletteName, visible: this.showGlow })
+          .width('100%')
+          .height('100%')
+      }
 
-      InteractionEffectOverlay({ controller: this.interactionController })
-        .width('100%')
-        .height('100%')
+      if (!this.manualControlActive) {
+        InteractionEffectOverlay({ controller: this.interactionController })
+          .width('100%')
+          .height('100%')
+      }
 
       if (this.showStatus) {
         Column() {
@@ -453,10 +457,13 @@ struct AgentSpaceViewer {
   }
 
   private isUserReplyStatusLocked(snapshot: TaskSnapshot): boolean {
-    if (!this.lastStatusText.startsWith('已收到你的输入信息')) {
+    if (!this.lastStatusText.startsWith('已收到你的输入信息') &&
+      !this.lastStatusText.startsWith('任务恢复执行')) {
       return false;
     }
-    return snapshot.lastActionName === 'call_user' || snapshot.lastActionName === 'interact';
+    return snapshot.lastActionName === 'call_user' ||
+      snapshot.lastActionName === 'interact' ||
+      snapshot.lastActionName === 'take_over';
   }
 
   private configureStatusController(): void {

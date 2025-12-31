@@ -442,8 +442,7 @@ export struct FloatingOrb {
         .fontColor('#2B2D35')
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
+        .layoutWeight(1)
       }
       .width('100%')
       .height('100%')
