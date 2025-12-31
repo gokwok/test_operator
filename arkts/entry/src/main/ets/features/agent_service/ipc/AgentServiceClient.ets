@@ -10,11 +10,6 @@ interface DebugInteractPayload {
   options: Array<string>;
 }
 
-interface ServiceConnectContext {
-  connectServiceExtensionAbility(want: Want, options: common.ConnectOptions): number;
-  disconnectServiceExtensionAbility(connection: number): Promise<void>;
-}
-
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
 
@@ -23,7 +18,7 @@ export class AgentServiceClient {
   private connectionId: number = -1;
   private connectPromise: Promise<void> | null = null;
 
-  async connect(ctx: ServiceConnectContext): Promise<void> {
+  async connect(ctx: common.UIAbilityContext): Promise<void> {
     if (this.remote) {
       return;
     }
@@ -63,14 +58,19 @@ export class AgentServiceClient {
     });
   }
 
-  async disconnect(ctx: ServiceConnectContext): Promise<void> {
+  async disconnect(ctx: common.UIAbilityContext): Promise<void> {
     if (this.connectionId === -1) {
       return;
     }
     const id = this.connectionId;
     this.connectionId = -1;
     this.remote = null;
-    await ctx.disconnectServiceExtensionAbility(id);
+    try {
+      // disconnectServiceExtensionAbility may be sync in some SDKs.
+      void ctx.disconnectServiceExtensionAbility(id);
+    } catch (e) {
+      throw new Error(`Service disconnect failed: ${String(e)}`);
+    }
   }
 
   async ping(): Promise<string> {
