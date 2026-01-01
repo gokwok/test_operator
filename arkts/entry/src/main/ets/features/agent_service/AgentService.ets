@@ -1,5 +1,4 @@
-import { wantAgent } from '@kit.AbilityKit';
-import type { common, Want, WantAgent } from '@kit.AbilityKit';
+import type { common, Want } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
 import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
@@ -40,8 +39,9 @@ const CAPSULE_STOPPED: string = '任务已停止';
 const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
-const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 2000;
+const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
+const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
 const HILOG_TAG: string = 'AgentService';
 
@@ -64,10 +64,7 @@ export class AgentService {
   private liveViewNotificationId: number = 0;
   private liveViewSeq: number = 0;
   private listenerBound: boolean = false;
-  private backgroundRunning: boolean = false;
-  private backgroundWantAgent: WantAgent | null = null;
-  private backgroundStartInFlight: Promise<void> | null = null;
-  private backgroundContinuousTaskId: number = -1;
+  private efficiencyApplied: boolean = false;
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -137,7 +134,7 @@ export class AgentService {
     if (settings.cloudEndpoint.length > 0) {
       this.setCloudEndpoint(settings.cloudEndpoint);
     }
-    await this.startBackgroundRunningBestEffort();
+    this.applyEfficiencyResourcesBestEffort();
     this.startTask(request);
     await this.hideFloatWindow();
   }
@@ -337,7 +334,7 @@ export class AgentService {
   async handleTaskStatusChanged(snapshot: TaskSnapshot): Promise<void> {
     const status = snapshot.status;
     if (status === 'finished' || status === 'failed' || status === 'stopping' || status === 'idle') {
-      await this.stopBackgroundRunningBestEffort();
+      this.releaseEfficiencyResourcesBestEffort();
     }
     if (!this.liveViewEnabled) {
       return;
@@ -585,132 +582,70 @@ export class AgentService {
     }
   }
 
-  private async startBackgroundRunningBestEffort(): Promise<void> {
-    if (this.backgroundRunning) {
+  private applyEfficiencyResourcesBestEffort(): void {
+    if (this.efficiencyApplied) {
       return;
     }
-    if (this.backgroundStartInFlight) {
-      return await this.backgroundStartInFlight;
-    }
-    const ctx = this.ctx;
-    if (!ctx) {
-      return;
-    }
-    const task = this.startBackgroundRunningInternal(ctx);
-    this.backgroundStartInFlight = task;
+    const request: backgroundTaskManager.EfficiencyResourcesRequest = {
+      resourceTypes: backgroundTaskManager.ResourceType.CPU,
+      isApply: true,
+      timeOut: EFFICIENCY_RESOURCE_TIMEOUT_MS,
+      isPersist: true,
+      isProcess: true,
+      reason: EFFICIENCY_RESOURCE_REASON,
+    };
     try {
-      await task;
-    } finally {
-      this.backgroundStartInFlight = null;
-    }
-  }
-
-  private async startBackgroundRunningInternal(ctx: common.Context): Promise<void> {
-    try {
-      const agent = await this.getBackgroundWantAgent();
-      try {
-        await backgroundTaskManager.startBackgroundRunning(ctx, backgroundTaskManager.BackgroundMode.DATA_TRANSFER, agent);
-        this.backgroundContinuousTaskId = -1;
-        this.backgroundRunning = true;
-        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running started (service mode).');
-        return;
-      } catch (e) {
-        const err = e as BusinessError;
-        hilog.warn(
-          HILOG_DOMAIN,
-          HILOG_TAG,
-          'startBackgroundRunning(service) failed. Code:%{public}d, msg:%{public}s',
-          err.code ?? -1,
-          err.message ?? String(e)
-        );
-      }
-
-      try {
-        const note = await backgroundTaskManager.startBackgroundRunning(ctx, ['dataTransfer'], agent);
-        const taskId = typeof note.continuousTaskId === 'number' ? note.continuousTaskId : -1;
-        this.backgroundContinuousTaskId = taskId;
-        this.backgroundRunning = true;
-        hilog.info(
-          HILOG_DOMAIN,
-          HILOG_TAG,
-          'Background running started (ui mode). taskId=%{public}d, notificationId=%{public}d',
-          taskId,
-          note.notificationId
-        );
-      } catch (e) {
-        const err = e as BusinessError;
-        hilog.warn(
-          HILOG_DOMAIN,
-          HILOG_TAG,
-          'startBackgroundRunning(ui) failed. Code:%{public}d, msg:%{public}s',
-          err.code ?? -1,
-          err.message ?? String(e)
-        );
-      }
+      backgroundTaskManager.applyEfficiencyResources(request);
+      this.efficiencyApplied = true;
+      hilog.info(
+        HILOG_DOMAIN,
+        HILOG_TAG,
+        'Efficiency resources applied. type=CPU persist=true timeout=%{public}d',
+        EFFICIENCY_RESOURCE_TIMEOUT_MS
+      );
     } catch (e) {
       const err = e as BusinessError;
       hilog.warn(
         HILOG_DOMAIN,
         HILOG_TAG,
-        'startBackgroundRunning internal failed. Code:%{public}d, msg:%{public}s',
-        err.code ?? -1,
+        'applyEfficiencyResources failed. code=%{public}s msg=%{public}s',
+        String(err.code),
         err.message ?? String(e)
       );
     }
   }
 
-  private async stopBackgroundRunningBestEffort(): Promise<void> {
-    if (!this.backgroundRunning) {
+  private releaseEfficiencyResourcesBestEffort(): void {
+    if (!this.efficiencyApplied) {
       return;
     }
-    const ctx = this.ctx;
-    if (!ctx) {
-      return;
-    }
+    const request: backgroundTaskManager.EfficiencyResourcesRequest = {
+      resourceTypes: backgroundTaskManager.ResourceType.CPU,
+      isApply: false,
+      timeOut: EFFICIENCY_RESOURCE_TIMEOUT_MS,
+      isPersist: true,
+      isProcess: true,
+      reason: EFFICIENCY_RESOURCE_REASON,
+    };
     try {
-      const taskId = this.backgroundContinuousTaskId;
-      if (taskId > 0) {
-        try {
-          await backgroundTaskManager.stopBackgroundRunning(ctx, taskId);
-        } catch (_e) {
-          await backgroundTaskManager.stopBackgroundRunning(ctx);
-        }
-      } else {
-        await backgroundTaskManager.stopBackgroundRunning(ctx);
-      }
-      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running stopped. taskId=%{public}d', taskId);
+      backgroundTaskManager.applyEfficiencyResources(request);
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Efficiency resources released. type=CPU');
     } catch (e) {
       const err = e as BusinessError;
       hilog.warn(
         HILOG_DOMAIN,
         HILOG_TAG,
-        'stopBackgroundRunning failed. Code:%{public}d, msg:%{public}s',
-        err.code ?? -1,
+        'releaseEfficiencyResources failed. code=%{public}s msg=%{public}s',
+        String(err.code),
         err.message ?? String(e)
       );
     } finally {
-      this.backgroundRunning = false;
-      this.backgroundContinuousTaskId = -1;
+      this.efficiencyApplied = false;
     }
   }
 
-  private async getBackgroundWantAgent(): Promise<WantAgent> {
-    if (this.backgroundWantAgent) {
-      return this.backgroundWantAgent;
-    }
-    const wantObj: Want = {
-      bundleName: SELF_BUNDLE_NAME,
-      abilityName: VIEWER_ABILITY_NAME,
-    };
-    const info: wantAgent.WantAgentInfo = {
-      wants: [wantObj],
-      actionType: wantAgent.OperationType.START_ABILITIES,
-      requestCode: 0,
-      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG],
-    };
-    const agent = await wantAgent.getWantAgent(info);
-    this.backgroundWantAgent = agent;
-    return agent;
+  releaseEfficiencyResourcesOnExit(): void {
+    this.releaseEfficiencyResourcesBestEffort();
   }
 
   private normalizeStartRequest(request: TaskStartRequest): TaskStartRequest {

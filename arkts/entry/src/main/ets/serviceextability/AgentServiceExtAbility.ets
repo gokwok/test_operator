@@ -63,6 +63,7 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
   }
 
   onDestroy(): void {
+    AgentService.getInstance().releaseEfficiencyResourcesOnExit();
     this.stub = null;
   }
 

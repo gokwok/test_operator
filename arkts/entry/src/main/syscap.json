@@ -9,7 +9,7 @@
   "development": {
     "addedSysCaps": [
       "SystemCapability.AI.AppController",
-      "SystemCapability.ResourceSchedule.BackgroundTaskManager.ContinuousTask",
+      "SystemCapability.ResourceSchedule.BackgroundTaskManager.EfficiencyResourcesApply",
       "SystemCapability.FileManagement.PhotoAccessHelper.Core"
     ]
   }
