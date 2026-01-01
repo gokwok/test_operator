@@ -1,7 +1,9 @@
 import { wantAgent } from '@kit.AbilityKit';
 import type { common, Want, WantAgent } from '@kit.AbilityKit';
+import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
-import backgroundTaskManager from '@ohos.backgroundTaskManager';
+import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 import { AgentSpace } from '../agentspace/AgentSpace';
 import type {
@@ -41,6 +43,8 @@ const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
 const BACKGROUND_MODE: number = backgroundTaskManager.BackgroundMode.DATA_TRANSFER;
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 2000;
+const HILOG_DOMAIN: number = 0x0000;
+const HILOG_TAG: string = 'AgentService';
 
 export class AgentService {
   private static instance: AgentService | null = null;
@@ -592,8 +596,16 @@ export class AgentService {
       const agent = await this.getBackgroundWantAgent();
       await backgroundTaskManager.startBackgroundRunning(ctx, BACKGROUND_MODE, agent);
       this.backgroundRunning = true;
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running started. mode=%{public}d', BACKGROUND_MODE);
     } catch (e) {
-      console.warn(`[AgentService] startBackgroundRunning failed: ${String(e)}`);
+      const err = e as BusinessError;
+      hilog.warn(
+        HILOG_DOMAIN,
+        HILOG_TAG,
+        'startBackgroundRunning failed. Code:%{public}d, msg:%{public}s',
+        err.code ?? -1,
+        err.message ?? String(e)
+      );
     }
   }
 
@@ -607,8 +619,16 @@ export class AgentService {
     }
     try {
       await backgroundTaskManager.stopBackgroundRunning(ctx);
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running stopped.');
     } catch (e) {
-      console.warn(`[AgentService] stopBackgroundRunning failed: ${String(e)}`);
+      const err = e as BusinessError;
+      hilog.warn(
+        HILOG_DOMAIN,
+        HILOG_TAG,
+        'stopBackgroundRunning failed. Code:%{public}d, msg:%{public}s',
+        err.code ?? -1,
+        err.message ?? String(e)
+      );
     } finally {
       this.backgroundRunning = false;
     }

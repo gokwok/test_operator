@@ -32,6 +32,9 @@
         "name": "ohos.permission.START_INVISIBLE_ABILITY"
       },
       {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
+      },
+      {
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING_SYSTEM"
       },
       {
