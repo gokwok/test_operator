@@ -138,6 +138,7 @@ export class AgentService {
       this.setCloudEndpoint(settings.cloudEndpoint);
     }
     this.startTask(request);
+    await this.startBackgroundRunningBestEffort();
     await this.hideFloatWindow();
   }
 

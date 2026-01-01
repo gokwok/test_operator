@@ -9,9 +9,12 @@ import {
 } from './CloudAgentClient';
 import { DeviceExecutor } from './DeviceExecutor';
 import type { TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
+const HILOG_DOMAIN: number = 0x0000;
+const HILOG_TAG: string = 'TaskManager';
 
 interface NeedUserPayload {
   description: string;
@@ -220,14 +223,19 @@ export class TaskManager {
     let pendingResult: ActionResult | null = this.pendingActionResult;
     this.pendingActionResult = null;
     let pendingDescription: string = '';
+    hilog.info(HILOG_DOMAIN, HILOG_TAG, 'runLoop start token=%{public}d', token);
     while (!this.stopRequested && token === this.runToken) {
       if (!pendingAction) {
         try {
+          hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) begin', token, this.snapshot.stepIndex);
           const screenshot = await device.screenshotBase64();
+          hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
           const payload = pendingResult
             ? this.buildFollowupPayload(screenshot, pendingResult)
             : this.buildInitialPayload(screenshot);
+          hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(initial) begin', token, this.snapshot.stepIndex);
           const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+          hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(initial) done', token, this.snapshot.stepIndex);
           pendingResult = null;
           sessionId = this.applySessionId(response, sessionId);
           const output = response.output;
@@ -251,12 +259,20 @@ export class TaskManager {
       }
 
       try {
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d executeAction begin name=%{public}s', token, this.snapshot.stepIndex, pendingAction.name);
         const result = await this.executeAction(device, pendingAction);
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d executeAction done status=%{public}s', token, this.snapshot.stepIndex, result.status);
         this.recordActionResult(result);
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d waitAfterAction begin ms=%{public}d', token, this.snapshot.stepIndex, this.waitAfterActionMs);
         await this.waitAfterAction(token);
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d waitAfterAction done', token, this.snapshot.stepIndex);
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) begin', token, this.snapshot.stepIndex);
         const screenshot = await device.screenshotBase64();
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
         const payload = this.buildFollowupPayload(screenshot, result);
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) begin', token, this.snapshot.stepIndex);
         const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) done', token, this.snapshot.stepIndex);
         sessionId = this.applySessionId(response, sessionId);
         const output = response.output;
         const action = this.extractAction(cloud, output);
@@ -285,6 +301,7 @@ export class TaskManager {
       this.pushEvent('status', 'idle');
       this.notifyStatus();
     }
+    hilog.info(HILOG_DOMAIN, HILOG_TAG, 'runLoop end token=%{public}d status=%{public}s', token, this.snapshot.status);
   }
 
   private buildInitialPayload(screenshot: string): CloudInvokePayload {
