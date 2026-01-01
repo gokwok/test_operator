@@ -41,7 +41,6 @@ const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
-const BACKGROUND_MODE: number = backgroundTaskManager.BackgroundMode.DATA_TRANSFER;
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 2000;
 const HILOG_DOMAIN: number = 0x0000;
 const HILOG_TAG: string = 'AgentService';
@@ -67,6 +66,8 @@ export class AgentService {
   private listenerBound: boolean = false;
   private backgroundRunning: boolean = false;
   private backgroundWantAgent: WantAgent | null = null;
+  private backgroundStartInFlight: Promise<void> | null = null;
+  private backgroundContinuousTaskId: number = -1;
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -111,7 +112,6 @@ export class AgentService {
     this.liveViewNotificationId = this.allocateLiveViewId();
     this.taskManager.startTask(normalized, cloud, executor);
     void this.publishRunningLiveView();
-    void this.startBackgroundRunningBestEffort();
   }
 
   async startTaskWithDefaults(taskText: string): Promise<void> {
@@ -137,8 +137,8 @@ export class AgentService {
     if (settings.cloudEndpoint.length > 0) {
       this.setCloudEndpoint(settings.cloudEndpoint);
     }
-    this.startTask(request);
     await this.startBackgroundRunningBestEffort();
+    this.startTask(request);
     await this.hideFloatWindow();
   }
 
@@ -589,21 +589,70 @@ export class AgentService {
     if (this.backgroundRunning) {
       return;
     }
+    if (this.backgroundStartInFlight) {
+      return await this.backgroundStartInFlight;
+    }
     const ctx = this.ctx;
     if (!ctx) {
       return;
     }
+    const task = this.startBackgroundRunningInternal(ctx);
+    this.backgroundStartInFlight = task;
+    try {
+      await task;
+    } finally {
+      this.backgroundStartInFlight = null;
+    }
+  }
+
+  private async startBackgroundRunningInternal(ctx: common.Context): Promise<void> {
     try {
       const agent = await this.getBackgroundWantAgent();
-      await backgroundTaskManager.startBackgroundRunning(ctx, BACKGROUND_MODE, agent);
-      this.backgroundRunning = true;
-      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running started. mode=%{public}d', BACKGROUND_MODE);
+      try {
+        await backgroundTaskManager.startBackgroundRunning(ctx, backgroundTaskManager.BackgroundMode.DATA_TRANSFER, agent);
+        this.backgroundContinuousTaskId = -1;
+        this.backgroundRunning = true;
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running started (service mode).');
+        return;
+      } catch (e) {
+        const err = e as BusinessError;
+        hilog.warn(
+          HILOG_DOMAIN,
+          HILOG_TAG,
+          'startBackgroundRunning(service) failed. Code:%{public}d, msg:%{public}s',
+          err.code ?? -1,
+          err.message ?? String(e)
+        );
+      }
+
+      try {
+        const note = await backgroundTaskManager.startBackgroundRunning(ctx, ['dataTransfer'], agent);
+        const taskId = typeof note.continuousTaskId === 'number' ? note.continuousTaskId : -1;
+        this.backgroundContinuousTaskId = taskId;
+        this.backgroundRunning = true;
+        hilog.info(
+          HILOG_DOMAIN,
+          HILOG_TAG,
+          'Background running started (ui mode). taskId=%{public}d, notificationId=%{public}d',
+          taskId,
+          note.notificationId
+        );
+      } catch (e) {
+        const err = e as BusinessError;
+        hilog.warn(
+          HILOG_DOMAIN,
+          HILOG_TAG,
+          'startBackgroundRunning(ui) failed. Code:%{public}d, msg:%{public}s',
+          err.code ?? -1,
+          err.message ?? String(e)
+        );
+      }
     } catch (e) {
       const err = e as BusinessError;
       hilog.warn(
         HILOG_DOMAIN,
         HILOG_TAG,
-        'startBackgroundRunning failed. Code:%{public}d, msg:%{public}s',
+        'startBackgroundRunning internal failed. Code:%{public}d, msg:%{public}s',
         err.code ?? -1,
         err.message ?? String(e)
       );
@@ -619,8 +668,17 @@ export class AgentService {
       return;
     }
     try {
-      await backgroundTaskManager.stopBackgroundRunning(ctx);
-      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running stopped.');
+      const taskId = this.backgroundContinuousTaskId;
+      if (taskId > 0) {
+        try {
+          await backgroundTaskManager.stopBackgroundRunning(ctx, taskId);
+        } catch (_e) {
+          await backgroundTaskManager.stopBackgroundRunning(ctx);
+        }
+      } else {
+        await backgroundTaskManager.stopBackgroundRunning(ctx);
+      }
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'Background running stopped. taskId=%{public}d', taskId);
     } catch (e) {
       const err = e as BusinessError;
       hilog.warn(
@@ -632,6 +690,7 @@ export class AgentService {
       );
     } finally {
       this.backgroundRunning = false;
+      this.backgroundContinuousTaskId = -1;
     }
   }
 
