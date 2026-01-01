@@ -1,5 +1,7 @@
-import type { common, Want } from '@kit.AbilityKit';
+import { wantAgent } from '@kit.AbilityKit';
+import type { common, Want, WantAgent } from '@kit.AbilityKit';
 import image from '@ohos.multimedia.image';
+import backgroundTaskManager from '@ohos.backgroundTaskManager';
 
 import { AgentSpace } from '../agentspace/AgentSpace';
 import type {
@@ -36,6 +38,8 @@ const CAPSULE_STOPPED: string = '任务已停止';
 const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
+const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
+const BACKGROUND_MODE: number = backgroundTaskManager.BackgroundMode.DATA_TRANSFER;
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 2000;
 
 export class AgentService {
@@ -57,6 +61,8 @@ export class AgentService {
   private liveViewNotificationId: number = 0;
   private liveViewSeq: number = 0;
   private listenerBound: boolean = false;
+  private backgroundRunning: boolean = false;
+  private backgroundWantAgent: WantAgent | null = null;
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -101,6 +107,7 @@ export class AgentService {
     this.liveViewNotificationId = this.allocateLiveViewId();
     this.taskManager.startTask(normalized, cloud, executor);
     void this.publishRunningLiveView();
+    void this.startBackgroundRunningBestEffort();
   }
 
   async startTaskWithDefaults(taskText: string): Promise<void> {
@@ -323,10 +330,13 @@ export class AgentService {
   }
 
   async handleTaskStatusChanged(snapshot: TaskSnapshot): Promise<void> {
+    const status = snapshot.status;
+    if (status === 'finished' || status === 'failed' || status === 'stopping' || status === 'idle') {
+      await this.stopBackgroundRunningBestEffort();
+    }
     if (!this.liveViewEnabled) {
       return;
     }
-    const status = snapshot.status;
     if (status === this.liveViewPhase && status !== 'waiting_user') {
       return;
     }
@@ -568,6 +578,59 @@ export class AgentService {
     if (this.liveViewPhase === 'running') {
       await this.publishRunningLiveView();
     }
+  }
+
+  private async startBackgroundRunningBestEffort(): Promise<void> {
+    if (this.backgroundRunning) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    try {
+      const agent = await this.getBackgroundWantAgent();
+      await backgroundTaskManager.startBackgroundRunning(ctx, BACKGROUND_MODE, agent);
+      this.backgroundRunning = true;
+    } catch (e) {
+      console.warn(`[AgentService] startBackgroundRunning failed: ${String(e)}`);
+    }
+  }
+
+  private async stopBackgroundRunningBestEffort(): Promise<void> {
+    if (!this.backgroundRunning) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    try {
+      await backgroundTaskManager.stopBackgroundRunning(ctx);
+    } catch (e) {
+      console.warn(`[AgentService] stopBackgroundRunning failed: ${String(e)}`);
+    } finally {
+      this.backgroundRunning = false;
+    }
+  }
+
+  private async getBackgroundWantAgent(): Promise<WantAgent> {
+    if (this.backgroundWantAgent) {
+      return this.backgroundWantAgent;
+    }
+    const wantObj: Want = {
+      bundleName: SELF_BUNDLE_NAME,
+      abilityName: VIEWER_ABILITY_NAME,
+    };
+    const info: wantAgent.WantAgentInfo = {
+      wants: [wantObj],
+      actionType: wantAgent.OperationType.START_ABILITIES,
+      requestCode: 0,
+      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG],
+    };
+    const agent = await wantAgent.getWantAgent(info);
+    this.backgroundWantAgent = agent;
+    return agent;
   }
 
   private normalizeStartRequest(request: TaskStartRequest): TaskStartRequest {
