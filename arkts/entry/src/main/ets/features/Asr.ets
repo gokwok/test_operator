@@ -3,6 +3,14 @@ import { speechRecognizer } from '@kit.CoreSpeechKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 
+export interface AsrCallbacks {
+  onStart?: () => void;
+  onPartialResult?: (text: string) => void;
+  onFinalResult?: (text: string) => void;
+  onComplete?: () => void;
+  onError?: (code: number, message: string) => void;
+}
+
 interface SpeechRecognizerEngineExtraParams extends Record<string, Object> {
   locate: string;
   recognizerMode: string;
@@ -19,50 +27,83 @@ class AsrFeature {
   private speechEngine?: speechRecognizer.SpeechRecognitionEngine;
   private engineCreatePromise?: Promise<speechRecognizer.SpeechRecognitionEngine>;
   private activeSessionId: string = '';
+  private activeCallbacks?: AsrCallbacks;
 
   startTest(context: common.UIAbilityContext): void {
-    this.ensureMicrophonePermission(context)
-      .then((granted: boolean) => {
-        if (!granted) {
-          promptAction.showToast({ message: 'Microphone permission denied', duration: 2000 });
-          return;
-        }
-        return this.ensureEngine().then((engine) => {
-          const sessionId = this.createSessionId();
-          this.activeSessionId = sessionId;
-          const audioInfo: speechRecognizer.AudioInfo = {
-            audioType: 'pcm',
-            sampleRate: 16000,
-            soundChannel: 1,
-            sampleBit: 16
-          };
-          const extraParams: SpeechRecognizerStartExtraParams = {
-            recognitionMode: 0,
-            vadBegin: 10000,
-            vadEnd: 800,
-            maxAudioDuration: 20000
-          };
-          const startParams: speechRecognizer.StartParams = {
-            sessionId,
-            audioInfo,
-            extraParams
-          };
-          engine.startListening(startParams);
-          promptAction.showToast({ message: 'ASR started', duration: 2000 });
-        });
-      })
-      .catch((error: BusinessError) => {
-        console.error(`ASR start failed, code: ${error.code}, message: ${error.message}`);
+    void this.startListening(context, {
+      onStart: () => {
+        promptAction.showToast({ message: 'ASR started', duration: 2000 });
+      },
+      onFinalResult: (text: string) => {
+        promptAction.showToast({ message: `ASR: ${text}`, duration: 2000 });
+      },
+      onError: () => {
         promptAction.showToast({ message: 'ASR start failed', duration: 2000 });
-      });
+      }
+    });
   }
 
   finish(): void {
+    this.stopListening(false);
+  }
+
+  stopListening(silent: boolean = true): void {
     if (!this.speechEngine || !this.activeSessionId) {
-      promptAction.showToast({ message: 'ASR not started', duration: 2000 });
+      if (!silent) {
+        promptAction.showToast({ message: 'ASR not started', duration: 2000 });
+      }
       return;
     }
     this.speechEngine.finish(this.activeSessionId);
+  }
+
+  async startListening(
+    context: common.UIAbilityContext,
+    callbacks?: AsrCallbacks
+  ): Promise<boolean> {
+    if (this.activeSessionId) {
+      console.info('ASR already active, ignore start request');
+      return false;
+    }
+    try {
+      const granted = await this.ensureMicrophonePermission(context);
+      if (!granted) {
+        const message = 'Microphone permission denied';
+        promptAction.showToast({ message, duration: 2000 });
+        callbacks?.onError?.(-1, message);
+        return false;
+      }
+      const engine = await this.ensureEngine();
+      const sessionId = this.createSessionId();
+      this.activeSessionId = sessionId;
+      this.activeCallbacks = callbacks;
+      const audioInfo: speechRecognizer.AudioInfo = {
+        audioType: 'pcm',
+        sampleRate: 16000,
+        soundChannel: 1,
+        sampleBit: 16
+      };
+      const extraParams: SpeechRecognizerStartExtraParams = {
+        recognitionMode: 0,
+        vadBegin: 10000,
+        vadEnd: 800,
+        maxAudioDuration: 20000
+      };
+      const startParams: speechRecognizer.StartParams = {
+        sessionId,
+        audioInfo,
+        extraParams
+      };
+      engine.startListening(startParams);
+      return true;
+    } catch (error) {
+      const err = error as BusinessError;
+      console.error(`ASR start failed, code: ${err.code}, message: ${err.message}`);
+      promptAction.showToast({ message: 'ASR start failed', duration: 2000 });
+      callbacks?.onError?.(err.code, err.message);
+      this.clearActiveSession();
+      return false;
+    }
   }
 
   private createSessionId(): string {
@@ -70,24 +111,44 @@ class AsrFeature {
   }
 
   private setListener(engine: speechRecognizer.SpeechRecognitionEngine): void {
+    const self = this;
     const listener: speechRecognizer.RecognitionListener = {
       onStart(sessionId: string, eventMessage: string) {
         console.info(`asr onStart: ${sessionId}, message: ${eventMessage}`);
+        if (sessionId !== self.activeSessionId) {
+          return;
+        }
+        self.activeCallbacks?.onStart?.();
       },
       onEvent(sessionId: string, eventCode: number, eventMessage: string) {
         console.info(`asr onEvent: ${sessionId}, code: ${eventCode}, message: ${eventMessage}`);
       },
       onResult(sessionId: string, result: speechRecognizer.SpeechRecognitionResult) {
         console.info(`asr onResult: ${sessionId}, result: ${JSON.stringify(result)}`);
+        if (sessionId !== self.activeSessionId) {
+          return;
+        }
         if (result.isFinal || result.isLast) {
-          promptAction.showToast({ message: `ASR: ${result.result}`, duration: 2000 });
+          self.activeCallbacks?.onFinalResult?.(result.result);
+        } else {
+          self.activeCallbacks?.onPartialResult?.(result.result);
         }
       },
       onComplete(sessionId: string, eventMessage: string) {
         console.info(`asr onComplete: ${sessionId}, message: ${eventMessage}`);
+        if (sessionId !== self.activeSessionId) {
+          return;
+        }
+        self.activeCallbacks?.onComplete?.();
+        self.clearActiveSession();
       },
       onError(sessionId: string, errorCode: number, errorMessage: string) {
         console.error(`asr onError: ${sessionId}, code: ${errorCode}, message: ${errorMessage}`);
+        if (sessionId !== self.activeSessionId) {
+          return;
+        }
+        self.activeCallbacks?.onError?.(errorCode, errorMessage);
+        self.clearActiveSession();
       }
     };
     engine.setListener(listener);
@@ -144,6 +205,11 @@ class AsrFeature {
         console.error(`Permission request failed, code: ${error.code}, message: ${error.message}`);
         return false;
       });
+  }
+
+  private clearActiveSession(): void {
+    this.activeSessionId = '';
+    this.activeCallbacks = undefined;
   }
 }
 
