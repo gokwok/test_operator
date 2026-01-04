@@ -80,6 +80,13 @@ export struct FloatingOrb {
   @State private scaleValue: number = 1;
   @State private renderVisible: boolean = true;
 
+  private readonly glassSurfaceColor: string = '#66FFFFFF';
+  private readonly glassSurfaceStrongColor: string = '#80FFFFFF';
+  private readonly glassBorderColor: string = '#80FFFFFF';
+  private readonly glassShadowSoftColor: string = '#14000000';
+  private readonly glassBlurRadius: number = 18;
+  private readonly textPrimaryColor: string = '#2B2D35';
+
   private viewportWidth: number = 0;
   private viewportHeight: number = 0;
   private lastMode: FloatingOrbMode = 'compact';
@@ -419,10 +426,14 @@ export struct FloatingOrb {
     .width(this.compactSize)
     .height(this.compactSize)
     .borderRadius(this.compactSize / 2)
-    .backgroundColor('#FFFFFF')
+    .backdropBlur(this.glassBlurRadius)
+    .backgroundColor(this.glassSurfaceStrongColor)
+    .borderWidth(1)
+    .borderColor(this.glassBorderColor)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .shadow({ radius: 16, color: '#26000000', offsetX: 0, offsetY: 8 })
+    .shadow({ radius: 16, color: this.glassShadowSoftColor, offsetX: 0, offsetY: 8 })
+    .clip(true)
   }
 
   @Builder
@@ -439,7 +450,7 @@ export struct FloatingOrb {
 
       Text(this.controller.text)
         .fontSize(13)
-        .fontColor('#2B2D35')
+        .fontColor(this.textPrimaryColor)
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
         .layoutWeight(1)
@@ -453,8 +464,11 @@ export struct FloatingOrb {
     .width(this.expandedWidth)
     .height(this.expandedHeight)
     .borderRadius(this.expandedHeight / 2 + 1)
-    .backgroundColor('#FFFFFF')
-    .shadow({ radius: 16, color: '#26000000', offsetX: 0, offsetY: 8 })
+    .backdropBlur(this.glassBlurRadius)
+    .backgroundColor(this.glassSurfaceColor)
+    .borderWidth(1)
+    .borderColor(this.glassBorderColor)
+    .shadow({ radius: 16, color: this.glassShadowSoftColor, offsetX: 0, offsetY: 8 })
     .clip(true)
   }
 
