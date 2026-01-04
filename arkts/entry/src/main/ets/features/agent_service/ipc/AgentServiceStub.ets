@@ -227,6 +227,18 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
+      if (code === AgentServiceRequestCode.REQUEST_SUPPLEMENT) {
+        const content = data.readString();
+        this.service.requestSupplement(content);
+        reply.writeString('ok');
+        return true;
+      }
+      if (code === AgentServiceRequestCode.SUBMIT_USER_NOTE) {
+        const content = data.readString();
+        this.service.submitUserNote(content);
+        reply.writeString('ok');
+        return true;
+      }
       if (code === AgentServiceRequestCode.DEBUG_CALL_USER) {
         const content = data.readString();
         this.service.debugCallUser(content);

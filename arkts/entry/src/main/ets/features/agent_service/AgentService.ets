@@ -201,6 +201,14 @@ export class AgentService {
     this.taskManager.requestTaskOver(content);
   }
 
+  requestSupplement(content: string): void {
+    this.taskManager.requestSupplement(content);
+  }
+
+  submitUserNote(content: string): void {
+    this.taskManager.submitUserNote(content);
+  }
+
   debugCallUser(content: string): void {
     this.taskManager.debugCallUser(content);
   }

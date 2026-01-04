@@ -119,6 +119,54 @@ export class TaskManager {
     void this.runLoop(token);
   }
 
+  requestSupplement(content: string): void {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      this.pushEvent('error', 'supplement_empty');
+      return;
+    }
+    if (this.snapshot.status === 'idle') {
+      this.pushEvent('error', 'supplement_idle');
+      return;
+    }
+    this.stopRequested = true;
+    this.snapshot.status = 'waiting_user';
+    this.snapshot.lastDescription = 'supplement';
+    this.snapshot.lastActionName = 'call_user';
+    const params: ActionParameters = { content: trimmed };
+    const action: AgentAction = { name: 'call_user', parameters: params };
+    this.snapshot.lastActionJson = JSON.stringify(action);
+    this.pushEvent('need_user', 'supplement', this.snapshot.lastActionJson);
+    this.pushEvent('status', 'waiting_user');
+    this.notifyStatus();
+  }
+
+  submitUserNote(content: string): void {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      this.pushEvent('error', 'user_note_empty');
+      return;
+    }
+    if (this.snapshot.status === 'idle') {
+      this.pushEvent('error', 'user_note_idle');
+      return;
+    }
+    this.pendingUserNote = trimmed;
+    this.pendingControlOp = '';
+    const result: ActionResult = { status: 'SKIPPED' };
+    this.pendingActionResult = result;
+    this.snapshot.lastResultStatus = result.status;
+    this.snapshot.lastError = '';
+    this.pushEvent('result', result.status, JSON.stringify(result));
+    this.snapshot.status = 'running';
+    this.pushEvent('status', 'running');
+    this.notifyStatus();
+    this.stopRequested = false;
+    this.runToken += 1;
+    const token = this.runToken;
+    void this.runLoop(token);
+  }
+
   debugCallUser(content: string): void {
     const trimmed = content.trim();
     if (trimmed.length === 0) {

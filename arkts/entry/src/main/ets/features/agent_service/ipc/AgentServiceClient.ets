@@ -239,6 +239,14 @@ export class AgentServiceClient {
     await this.sendRequestWithString(AgentServiceRequestCode.REQUEST_TASK_OVER, content);
   }
 
+  async requestSupplement(content: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.REQUEST_SUPPLEMENT, content);
+  }
+
+  async submitUserNote(content: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.SUBMIT_USER_NOTE, content);
+  }
+
   async debugCallUser(content: string): Promise<void> {
     await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_CALL_USER, content);
   }

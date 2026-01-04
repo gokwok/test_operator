@@ -52,7 +52,9 @@ struct AgentSpaceViewer {
   @State private manualControlActive: boolean = false;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
     'Viewer active',
-    () => {},
+    () => {
+      void this.onSupplementRequested();
+    },
     () => {
       void this.onTakeoverRequested();
     },
@@ -80,6 +82,7 @@ struct AgentSpaceViewer {
   private callUserActive: boolean = false;
   private callUserContent: string = '';
   private callUserKind: 'call_user' | 'interact' | 'take_over' | 'task_over' = 'call_user';
+  private supplementActive: boolean = false;
   private takeOverIdleTimerId: number = -1;
   private takeOverCountdownTimerId: number = -1;
   private takeOverCountdownValue: number = 0;
@@ -89,6 +92,7 @@ struct AgentSpaceViewer {
   private readonly orbDefaultText: string = 'AgentSpace';
   private readonly manualTakeOverRequestContent: string = '用户主动接管操作';
   private readonly manualTakeOverReply: string = '用户刚刚进行了操作，现在我将继续为用户执行任务';
+  private readonly supplementRequestContent: string = '请补充必要信息';
   private readonly defaultGlowPaletteName: string = GLOW_PALETTES[0].name;
   private readonly effectBaseColor: string = '#FF4D5B';
   private readonly effectStrength: number = 1.1;
@@ -513,7 +517,7 @@ struct AgentSpaceViewer {
       this.enterCallUserWait();
     });
     this.statusController.setCallUserSendHandler((text: string) => {
-      void this.submitCallUserReply(text);
+      void this.handleCallUserSend(text);
     });
     this.statusController.setCallUserOptionHandler((label: string) => {
       this.onInteractionOption(label);
@@ -524,6 +528,7 @@ struct AgentSpaceViewer {
     this.callUserActive = true;
     this.callUserKind = payload.kind;
     this.callUserContent = payload.content;
+    this.supplementActive = false;
     this.statusController.setStopped(false);
     this.statusController.setCallUserContent(payload.content);
     this.statusController.clearCallUserInput();
@@ -546,6 +551,7 @@ struct AgentSpaceViewer {
     this.callUserActive = false;
     this.callUserContent = '';
     this.callUserKind = 'call_user';
+    this.supplementActive = false;
     this.statusController.clearCallUserInput();
     this.statusController.setCallUserOptions([]);
     this.statusController.setMode('default');
@@ -620,6 +626,37 @@ struct AgentSpaceViewer {
     this.startManualControl();
   }
 
+  private async onSupplementRequested(): Promise<void> {
+    if (this.manualControlActive) {
+      return;
+    }
+    if (this.callUserActive) {
+      if (this.supplementActive) {
+        this.enterCallUserInput();
+      }
+      return;
+    }
+    const content = this.supplementRequestContent;
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().requestSupplement(content);
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] request supplement failed: ${String(e)}`);
+      return;
+    }
+    this.supplementActive = true;
+    this.callUserActive = true;
+    this.callUserKind = 'call_user';
+    this.callUserContent = content;
+    this.statusController.setStopped(false);
+    this.statusController.setCallUserContent(content);
+    this.statusController.clearCallUserInput();
+    this.statusController.setCallUserOptions([]);
+    this.statusController.setCallUserActionLabel('补充');
+    this.statusController.setMode('call_user_input');
+    this.showFloatWindow();
+  }
+
   private async onStopRequested(): Promise<void> {
     if (this.callUserActive) {
       this.exitCallUser();
@@ -682,6 +719,38 @@ struct AgentSpaceViewer {
     await this.submitUserReply('call_user', text);
   }
 
+  private async handleCallUserSend(text: string): Promise<void> {
+    if (this.supplementActive) {
+      await this.submitSupplementNote(text);
+      return;
+    }
+    await this.submitCallUserReply(text);
+  }
+
+  private async submitSupplementNote(text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().submitUserNote(trimmed);
+      this.callUserActive = false;
+      this.callUserContent = '';
+      this.callUserKind = 'call_user';
+      this.supplementActive = false;
+      this.statusController.clearCallUserInput();
+      this.statusController.setCallUserOptions([]);
+      this.statusController.setMode('default');
+      const message = `已收到你的输入信息：\n「${trimmed}」`;
+      this.lastStatusText = message;
+      this.statusController.setStatus(message);
+      this.showFloatWindow();
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] submit supplement failed: ${String(e)}`);
+    }
+  }
+
   private onInteractionOption(label: string): void {
     if (this.callUserKind === 'call_user') {
       this.enterCallUserInput();
@@ -710,6 +779,7 @@ struct AgentSpaceViewer {
       this.callUserActive = false;
       this.callUserContent = '';
       this.callUserKind = 'call_user';
+      this.supplementActive = false;
       this.statusController.clearCallUserInput();
       this.statusController.setCallUserOptions([]);
       this.statusController.setMode('default');
