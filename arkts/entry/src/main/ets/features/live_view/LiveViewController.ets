@@ -4,8 +4,6 @@ import { wantAgent } from '@kit.AbilityKit';
 import type { common, Want, WantAgent } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
-import type { NotificationSubscriber, SubscribeCallbackData } from '@ohos.notificationSubscribe';
-
 import { AppState } from '../state/app_state';
 
 const LOG_TAG: string = '[LiveView]';
@@ -48,7 +46,7 @@ export class LiveViewController {
 
   private subscribed: boolean = false;
   private cancelSubscribed: boolean = false;
-  private cancelSubscriber: NotificationSubscriber | null = null;
+  private cancelSubscriber: notificationSubscribe.NotificationSubscriber | null = null;
   private cancelListener: LiveViewCancelListener | null = null;
   private defaultIcon: image.PixelMap | null = null;
   private defaultIconInFlight: Promise<image.PixelMap | null> | null = null;
@@ -196,11 +194,11 @@ export class LiveViewController {
     if (this.cancelSubscribed) {
       return;
     }
-    const subscriber: NotificationSubscriber = {
-      onCancel: (data: SubscribeCallbackData) => {
+    const subscriber: notificationSubscribe.NotificationSubscriber = {
+      onCancel: (data: notificationSubscribe.SubscribeCallbackData) => {
         this.handleCancel(data);
       },
-      onBatchCancel: (batch: Array<SubscribeCallbackData>) => {
+      onBatchCancel: (batch: Array<notificationSubscribe.SubscribeCallbackData>) => {
         for (let i = 0; i < batch.length; i++) {
           this.handleCancel(batch[i]);
         }
@@ -215,7 +213,7 @@ export class LiveViewController {
     }
   }
 
-  private handleCancel(data: SubscribeCallbackData): void {
+  private handleCancel(data: notificationSubscribe.SubscribeCallbackData): void {
     if (!this.cancelListener) {
       return;
     }

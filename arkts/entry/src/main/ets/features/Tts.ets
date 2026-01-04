@@ -59,11 +59,7 @@ class TtsFeature {
       return;
     }
     try {
-      if (this.lastRequestId.length > 0) {
-        this.ttsEngine.stop(this.lastRequestId);
-      } else {
-        this.ttsEngine.stop();
-      }
+      this.ttsEngine.stop();
     } catch (error) {
       console.warn(`TTS stop failed: ${String(error)}`);
     }
