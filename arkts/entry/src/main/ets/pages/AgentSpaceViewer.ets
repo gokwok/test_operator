@@ -4,21 +4,21 @@ import type { common } from '@kit.AbilityKit';
 import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 import type { TaskSnapshot, UserReply } from '../features/agent_service/types';
-import { GlowOverlay, GLOW_PALETTES } from '../ui_components/GlowOverlay';
-import { FloatingOrb, FloatingOrbController } from '../ui_components/FloatingOrb';
-import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
+import { GlowOverlay, GLOW_PALETTES } from '../view/GlowOverlay';
+import { FloatingOrb, FloatingOrbController } from '../view/FloatingOrb';
+import { StatusFloatWindow, StatusFloatWindowController } from '../view/StatusFloatWindow';
 import {
   InteractionEffectController,
   InteractionEffectOverlay,
   InteractionEffectOptions,
   InteractionPoint
-} from '../ui_components/InteractionEffectOverlay';
-import { AgentSpaceDisplay } from '../ui_components/AgentSpaceDisplay';
+} from '../view/InteractionEffectOverlay';
+import { AgentSpaceDisplay } from '../view/AgentSpaceDisplay';
 import type {
   AgentSpaceDisplayMode,
   AgentSpaceDisplaySurfaceInfo,
   AgentSpacePointerEvent
-} from '../ui_components/AgentSpaceDisplay';
+} from '../view/AgentSpaceDisplay';
 
 interface ParsedInteractionParams {
   content?: string;

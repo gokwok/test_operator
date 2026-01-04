@@ -1,5 +1,5 @@
 import type { common, Want } from '@kit.AbilityKit';
-import { FloatChatInputBar } from '../ui_components/FloatChatInputBar';
+import { FloatChatInputBar } from '../view/FloatChatInputBar';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
 
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';

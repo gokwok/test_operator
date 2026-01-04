@@ -1,12 +1,12 @@
-import { GlowOverlay, GlowPalette, GLOW_PALETTES } from '../ui_components/GlowOverlay';
+import { GlowOverlay, GlowPalette, GLOW_PALETTES } from '../view/GlowOverlay';
 import {
   InteractionEffectController,
   InteractionEffectOptions,
   InteractionEffectOverlay,
   InteractionPoint
-} from '../ui_components/InteractionEffectOverlay';
-import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../ui_components/FloatingOrb';
-import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
+} from '../view/InteractionEffectOverlay';
+import { FloatingOrb, FloatingOrbController, FloatingOrbMode } from '../view/FloatingOrb';
+import { StatusFloatWindow, StatusFloatWindowController } from '../view/StatusFloatWindow';
 import type { common, Want } from '@kit.AbilityKit';
 import type { AppTarget } from '../features/agentspace/VTSBackend';
 import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';

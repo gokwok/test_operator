@@ -1,6 +1,6 @@
 # UI Components Usage
 
-This folder documents the custom ArkTS UI components under `entry/src/main/ets/ui_components`.
+This folder documents the custom ArkTS UI components under `entry/src/main/ets/view`.
 
 ## GlowOverlay
 
@@ -18,7 +18,7 @@ Props:
 
 Example:
 ```ts
-import { GlowOverlay, GLOW_PALETTES } from '../ui_components/GlowOverlay';
+import { GlowOverlay, GLOW_PALETTES } from '../view/GlowOverlay';
 
 @State private paletteIndex: number = 0;
 
@@ -41,7 +41,7 @@ Props:
 
 Example:
 ```ts
-import { FadeVisibility } from '../ui_components/FadeVisibility';
+import { FadeVisibility } from '../view/FadeVisibility';
 
 FadeVisibility({ visible: this.showPanel, durationMs: 200 }) {
   Column() {
@@ -69,7 +69,7 @@ Component props:
 
 Example:
 ```ts
-import { StatusFloatWindow, StatusFloatWindowController } from '../ui_components/StatusFloatWindow';
+import { StatusFloatWindow, StatusFloatWindowController } from '../view/StatusFloatWindow';
 
 @State private statusController = StatusFloatWindowController.create(
   'hello world',
@@ -110,7 +110,7 @@ Example:
 import {
   InteractionEffectController,
   InteractionEffectOverlay
-} from '../ui_components/InteractionEffectOverlay';
+} from '../view/InteractionEffectOverlay';
 
 @State private interactionController = InteractionEffectController.create();
 
@@ -143,7 +143,7 @@ Component props:
 
 Example:
 ```ts
-import { FloatingOrb, FloatingOrbController } from '../ui_components/FloatingOrb';
+import { FloatingOrb, FloatingOrbController } from '../view/FloatingOrb';
 
 @State private orbController = FloatingOrbController.create('Task running', 'expanded', () => {});
 

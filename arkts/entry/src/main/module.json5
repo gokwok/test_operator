@@ -63,7 +63,7 @@
     "abilities": [
       {
         "name": "EntryAbility",
-        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "srcEntry": "./ets/abilities/EntryAbility.ets",
         "description": "$string:EntryAbility_desc",
         "icon": "$media:startIcon",
         "label": "$string:EntryAbility_label",
@@ -97,7 +97,7 @@
     "extensionAbilities": [
       {
         "name": "EntryBackupAbility",
-        "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
+        "srcEntry": "./ets/abilities/EntryBackupAbility.ets",
         "type": "backup",
         "exported": false,
         "metadata": [
@@ -109,7 +109,7 @@
       },
       {
         "name": "AgentServiceExtAbility",
-        "srcEntry": "./ets/serviceextability/AgentServiceExtAbility.ets",
+        "srcEntry": "./ets/abilities/AgentServiceExtAbility.ets",
         "type": "service",
         "exported": false
       },
