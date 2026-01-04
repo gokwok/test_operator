@@ -33,4 +33,5 @@ export enum AgentServiceRequestCode {
   DEBUG_CALL_USER = 41,
   DEBUG_INTERACT = 42,
   DEBUG_TAKE_OVER = 43,
+  REQUEST_TASK_OVER = 44,
 }

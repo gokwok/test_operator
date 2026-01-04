@@ -1,6 +1,7 @@
 import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
 import {
   CloudAgentClient,
+  CloudControl,
   CloudDeviceState,
   CloudInvokeError,
   CloudInvokePayload,
@@ -49,6 +50,8 @@ export class TaskManager {
   private installedApps: Array<string> = [];
   private installedAppsSent: boolean = false;
   private pendingActionResult: ActionResult | null = null;
+  private pendingUserNote: string = '';
+  private pendingControlOp: string = '';
   private listener: TaskManagerListener | null = null;
 
   startTask(request: TaskStartRequest, cloudClient: CloudAgentClient, deviceExecutor: DeviceExecutor): void {
@@ -65,6 +68,8 @@ export class TaskManager {
     this.installedApps = installed.slice();
     this.installedAppsSent = false;
     this.pendingActionResult = null;
+    this.pendingUserNote = '';
+    this.pendingControlOp = '';
     this.stopRequested = false;
     this.runToken += 1;
     const token = this.runToken;
@@ -95,6 +100,10 @@ export class TaskManager {
     if (content.length === 0) {
       this.pushEvent('error', 'empty_user_reply');
       return;
+    }
+    if (reply.kind === 'task_over') {
+      this.pendingUserNote = content;
+      this.pendingControlOp = 'rollback';
     }
     const result: ActionResult = { status: 'SKIPPED', output: content };
     this.pendingActionResult = result;
@@ -142,6 +151,28 @@ export class TaskManager {
     const action: AgentAction = { name: 'take_over', parameters: params };
     this.snapshot.lastActionJson = JSON.stringify(action);
     this.pushEvent('need_user', 'take_over', this.snapshot.lastActionJson);
+    this.pushEvent('status', 'waiting_user');
+    this.notifyStatus();
+  }
+
+  requestTaskOver(content: string): void {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      this.pushEvent('error', 'task_over_empty');
+      return;
+    }
+    if (this.snapshot.status === 'idle') {
+      this.pushEvent('error', 'task_over_idle');
+      return;
+    }
+    this.stopRequested = true;
+    this.snapshot.status = 'waiting_user';
+    this.snapshot.lastDescription = 'task_over';
+    this.snapshot.lastActionName = 'task_over';
+    const params: ActionParameters = { content: trimmed };
+    const action: AgentAction = { name: 'task_over', parameters: params };
+    this.snapshot.lastActionJson = JSON.stringify(action);
+    this.pushEvent('need_user', 'task_over', this.snapshot.lastActionJson);
     this.pushEvent('status', 'waiting_user');
     this.notifyStatus();
   }
@@ -225,16 +256,28 @@ export class TaskManager {
     let pendingDescription: string = '';
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'runLoop start token=%{public}d', token);
     while (!this.stopRequested && token === this.runToken) {
+      if (this.shouldAbortLoop()) {
+        break;
+      }
       if (!pendingAction) {
         try {
+          if (this.shouldAbortLoop()) {
+            break;
+          }
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) begin', token, this.snapshot.stepIndex);
           const screenshot = await device.screenshotBase64();
+          if (this.shouldAbortLoop()) {
+            break;
+          }
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
           const payload = pendingResult
             ? this.buildFollowupPayload(screenshot, pendingResult)
             : this.buildInitialPayload(screenshot);
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(initial) begin', token, this.snapshot.stepIndex);
           const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+          if (this.shouldAbortLoop()) {
+            break;
+          }
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(initial) done', token, this.snapshot.stepIndex);
           pendingResult = null;
           sessionId = this.applySessionId(response, sessionId);
@@ -252,6 +295,9 @@ export class TaskManager {
           pendingAction = action;
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e));
+          if (err.message === 'stopped' && this.shouldAbortLoop()) {
+            break;
+          }
           this.failTask(`invoke_failed:${err.message}`);
           break;
         }
@@ -259,19 +305,34 @@ export class TaskManager {
       }
 
       try {
+        if (this.shouldAbortLoop()) {
+          break;
+        }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d executeAction begin name=%{public}s', token, this.snapshot.stepIndex, pendingAction.name);
         const result = await this.executeAction(device, pendingAction);
+        if (this.shouldAbortLoop()) {
+          break;
+        }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d executeAction done status=%{public}s', token, this.snapshot.stepIndex, result.status);
         this.recordActionResult(result);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d waitAfterAction begin ms=%{public}d', token, this.snapshot.stepIndex, this.waitAfterActionMs);
         await this.waitAfterAction(token);
+        if (this.shouldAbortLoop()) {
+          break;
+        }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d waitAfterAction done', token, this.snapshot.stepIndex);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) begin', token, this.snapshot.stepIndex);
         const screenshot = await device.screenshotBase64();
+        if (this.shouldAbortLoop()) {
+          break;
+        }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
         const payload = this.buildFollowupPayload(screenshot, result);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) begin', token, this.snapshot.stepIndex);
         const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+        if (this.shouldAbortLoop()) {
+          break;
+        }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) done', token, this.snapshot.stepIndex);
         sessionId = this.applySessionId(response, sessionId);
         const output = response.output;
@@ -288,6 +349,9 @@ export class TaskManager {
         pendingAction = action;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
+        if (err.message === 'stopped' && this.shouldAbortLoop()) {
+          break;
+        }
         this.failTask(`action_failed:${err.message}`);
         break;
       }
@@ -310,6 +374,10 @@ export class TaskManager {
       task: this.taskText,
       state,
     };
+    const control = this.consumeControl();
+    if (control) {
+      payload.control = control;
+    }
     return payload;
   }
 
@@ -319,11 +387,19 @@ export class TaskManager {
       state,
       action_result: result,
     };
+    const control = this.consumeControl();
+    if (control) {
+      payload.control = control;
+    }
     return payload;
   }
 
   private buildStatePayload(screenshot: string): CloudDeviceState {
     const state: CloudDeviceState = { screenshot };
+    const note = this.consumeUserNote();
+    if (note.length > 0) {
+      state.user_note = note;
+    }
     if (!this.installedAppsSent && this.installedApps.length > 0) {
       state.installed_apps = this.installedApps;
       this.installedAppsSent = true;
@@ -463,6 +539,26 @@ export class TaskManager {
       result.push(trimmed);
     }
     return result;
+  }
+
+  private shouldAbortLoop(): boolean {
+    return this.stopRequested &&
+      (this.snapshot.status === 'waiting_user' || this.snapshot.status === 'stopping');
+  }
+
+  private consumeUserNote(): string {
+    const note = this.pendingUserNote.trim();
+    this.pendingUserNote = '';
+    return note;
+  }
+
+  private consumeControl(): CloudControl | null {
+    const op = this.pendingControlOp.trim();
+    this.pendingControlOp = '';
+    if (op.length === 0) {
+      return null;
+    }
+    return { op };
   }
 
   private normalizeWaitMs(value: number): number {

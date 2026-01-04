@@ -235,6 +235,10 @@ export class AgentServiceClient {
     await this.sendRequestWithString(AgentServiceRequestCode.SET_CLOUD_ENDPOINT, endpoint);
   }
 
+  async requestTaskOver(content: string): Promise<void> {
+    await this.sendRequestWithString(AgentServiceRequestCode.REQUEST_TASK_OVER, content);
+  }
+
   async debugCallUser(content: string): Promise<void> {
     await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_CALL_USER, content);
   }

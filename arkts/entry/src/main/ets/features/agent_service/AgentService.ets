@@ -197,6 +197,10 @@ export class AgentService {
     this.taskManager.submitUserReply(reply);
   }
 
+  requestTaskOver(content: string): void {
+    this.taskManager.requestTaskOver(content);
+  }
+
   debugCallUser(content: string): void {
     this.taskManager.debugCallUser(content);
   }

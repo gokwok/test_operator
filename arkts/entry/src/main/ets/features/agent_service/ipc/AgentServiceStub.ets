@@ -221,6 +221,12 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
+      if (code === AgentServiceRequestCode.REQUEST_TASK_OVER) {
+        const content = data.readString();
+        this.service.requestTaskOver(content);
+        reply.writeString('ok');
+        return true;
+      }
       if (code === AgentServiceRequestCode.DEBUG_CALL_USER) {
         const content = data.readString();
         this.service.debugCallUser(content);

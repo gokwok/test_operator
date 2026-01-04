@@ -33,7 +33,7 @@ interface ParsedInteractionAction {
 }
 
 interface InteractionPayload {
-  kind: 'call_user' | 'interact' | 'take_over';
+  kind: 'call_user' | 'interact' | 'take_over' | 'task_over';
   content: string;
   options: Array<string>;
 }
@@ -53,7 +53,9 @@ struct AgentSpaceViewer {
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
     'Viewer active',
     () => {},
-    () => {},
+    () => {
+      void this.onTakeoverRequested();
+    },
     () => {
       void this.onStopRequested();
     },
@@ -77,7 +79,7 @@ struct AgentSpaceViewer {
   private lastStatusText: string = '';
   private callUserActive: boolean = false;
   private callUserContent: string = '';
-  private callUserKind: 'call_user' | 'interact' | 'take_over' = 'call_user';
+  private callUserKind: 'call_user' | 'interact' | 'take_over' | 'task_over' = 'call_user';
   private takeOverIdleTimerId: number = -1;
   private takeOverCountdownTimerId: number = -1;
   private takeOverCountdownValue: number = 0;
@@ -85,6 +87,8 @@ struct AgentSpaceViewer {
   private readonly takeOverIdleMs: number = 5000;
   private readonly takeOverCountdownStart: number = 5;
   private readonly orbDefaultText: string = 'AgentSpace';
+  private readonly manualTakeOverRequestContent: string = '用户主动接管操作';
+  private readonly manualTakeOverReply: string = '用户刚刚进行了操作，现在我将继续为用户执行任务';
   private readonly defaultGlowPaletteName: string = GLOW_PALETTES[0].name;
   private readonly effectBaseColor: string = '#FF4D5B';
   private readonly effectStrength: number = 1.1;
@@ -437,7 +441,7 @@ struct AgentSpaceViewer {
     try {
       const action = JSON.parse(actionJson) as ParsedInteractionAction;
       const name = action?.name?.toLowerCase() ?? '';
-      if (name !== 'call_user' && name !== 'interact' && name !== 'take_over') {
+      if (name !== 'call_user' && name !== 'interact' && name !== 'take_over' && name !== 'task_over') {
         return null;
       }
       const content = action?.parameters?.content ?? '';
@@ -450,7 +454,13 @@ struct AgentSpaceViewer {
       }
       const options = name === 'interact' ? this.normalizeOptions(action?.parameters?.options) : [];
       const payload: InteractionPayload = {
-        kind: name === 'interact' ? 'interact' : name === 'take_over' ? 'take_over' : 'call_user',
+        kind: name === 'interact'
+          ? 'interact'
+          : name === 'take_over'
+            ? 'take_over'
+            : name === 'task_over'
+              ? 'task_over'
+              : 'call_user',
         content: normalizedContent,
         options,
       };
@@ -479,6 +489,10 @@ struct AgentSpaceViewer {
     return result;
   }
 
+  private isTakeOverKind(kind: 'call_user' | 'interact' | 'take_over' | 'task_over'): boolean {
+    return kind === 'take_over' || kind === 'task_over';
+  }
+
   private isUserReplyStatusLocked(snapshot: TaskSnapshot): boolean {
     if (!this.lastStatusText.startsWith('已收到你的输入信息') &&
       !this.lastStatusText.startsWith('任务恢复执行')) {
@@ -486,7 +500,8 @@ struct AgentSpaceViewer {
     }
     return snapshot.lastActionName === 'call_user' ||
       snapshot.lastActionName === 'interact' ||
-      snapshot.lastActionName === 'take_over';
+      snapshot.lastActionName === 'take_over' ||
+      snapshot.lastActionName === 'task_over';
   }
 
   private configureStatusController(): void {
@@ -517,7 +532,7 @@ struct AgentSpaceViewer {
     } else {
       this.statusController.setCallUserOptions([]);
     }
-    if (payload.kind === 'take_over') {
+    if (this.isTakeOverKind(payload.kind)) {
       this.statusController.setCallUserActionLabel('手动操作');
       this.statusController.setMode('take_over_wait');
     } else {
@@ -575,6 +590,36 @@ struct AgentSpaceViewer {
     return '任务已完成';
   }
 
+  private async onTakeoverRequested(): Promise<void> {
+    if (this.manualControlActive) {
+      return;
+    }
+    if (this.callUserActive) {
+      if (this.isTakeOverKind(this.callUserKind)) {
+        this.startManualControl();
+      }
+      return;
+    }
+    const content = this.manualTakeOverRequestContent;
+    try {
+      await this.ensureServiceConnected();
+      await this.getServiceClient().requestTaskOver(content);
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] request task_over failed: ${String(e)}`);
+      return;
+    }
+    this.callUserActive = true;
+    this.callUserKind = 'task_over';
+    this.callUserContent = content;
+    this.statusController.setStopped(false);
+    this.statusController.setCallUserContent(content);
+    this.statusController.clearCallUserInput();
+    this.statusController.setCallUserOptions([]);
+    this.statusController.setCallUserActionLabel('手动操作');
+    this.statusController.setMode('take_over_wait');
+    this.startManualControl();
+  }
+
   private async onStopRequested(): Promise<void> {
     if (this.callUserActive) {
       this.exitCallUser();
@@ -619,7 +664,7 @@ struct AgentSpaceViewer {
     if (!this.callUserActive) {
       return;
     }
-    if (this.callUserKind === 'take_over') {
+    if (this.isTakeOverKind(this.callUserKind)) {
       this.statusController.setMode('take_over_wait');
     } else {
       this.statusController.setMode('call_user_wait');
@@ -642,7 +687,7 @@ struct AgentSpaceViewer {
       this.enterCallUserInput();
       return;
     }
-    if (this.callUserKind === 'take_over') {
+    if (this.isTakeOverKind(this.callUserKind)) {
       this.startManualControl();
       return;
     }
@@ -650,7 +695,7 @@ struct AgentSpaceViewer {
   }
 
   private async submitUserReply(
-    kind: 'call_user' | 'interact',
+    kind: 'call_user' | 'interact' | 'task_over',
     text: string,
     displayOverride?: string
   ): Promise<void> {
@@ -678,7 +723,7 @@ struct AgentSpaceViewer {
   }
 
   private startManualControl(): void {
-    if (!this.callUserActive || this.callUserKind !== 'take_over') {
+    if (!this.callUserActive || !this.isTakeOverKind(this.callUserKind)) {
       return;
     }
     this.manualControlActive = true;
@@ -784,9 +829,9 @@ struct AgentSpaceViewer {
       return;
     }
     this.stopManualControl();
-    const reply = '用户已完成了操作，现在将继续由我为用户执行任务。';
+    const reply = this.manualTakeOverReply;
     const message = `任务恢复执行\n${reply}`;
-    await this.submitUserReply('interact', reply, message);
+    await this.submitUserReply('task_over', reply, message);
   }
 
   private async updateViewerMode(mode: AgentSpaceDisplayMode): Promise<void> {
