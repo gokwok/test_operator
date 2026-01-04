@@ -465,7 +465,7 @@ export class AgentService {
     const trimmed = content.trim();
     const body = trimmed.length > 0 ? trimmed : FINISHED_TTS_TEXT;
     const payload = this.buildLiveViewPayload('任务完成', body, CAPSULE_FINISHED, icon);
-    await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
+    void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
   private async publishStoppedLiveView(reason: string): Promise<void> {
@@ -479,7 +479,7 @@ export class AgentService {
     const icon = await this.resolveLiveViewIcon();
     const content = reason.trim().length > 0 ? reason.trim() : '';
     const payload = this.buildLiveViewPayload('任务已停止', content, CAPSULE_STOPPED, icon);
-    await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
+    void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
   private async publishFailedLiveView(reason: string): Promise<void> {
@@ -493,7 +493,7 @@ export class AgentService {
     const icon = await this.resolveLiveViewIcon();
     const content = reason.trim().length > 0 ? reason.trim() : '';
     const payload = this.buildLiveViewPayload('任务异常', content, CAPSULE_FAILED, icon);
-    await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
+    void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
   private buildLiveViewPayload(
