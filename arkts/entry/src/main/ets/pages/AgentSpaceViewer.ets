@@ -86,6 +86,8 @@ struct AgentSpaceViewer {
   private readonly takeOverCountdownStart: number = 5;
   private readonly orbDefaultText: string = 'AgentSpace';
   private readonly defaultGlowPaletteName: string = GLOW_PALETTES[0].name;
+  private readonly effectBaseColor: string = '#FF4D5B';
+  private readonly effectStrength: number = 1.1;
   @State private glowPaletteName: string = GLOW_PALETTES[0].name;
 
   build() {
@@ -107,7 +109,7 @@ struct AgentSpaceViewer {
       }
 
       if (!this.manualControlActive) {
-        InteractionEffectOverlay({ controller: this.interactionController })
+        InteractionEffectOverlay({ controller: this.interactionController, baseColor: this.effectBaseColor })
           .width('100%')
           .height('100%')
           .hitTestBehavior(HitTestMode.Transparent)
@@ -140,7 +142,14 @@ struct AgentSpaceViewer {
 
   aboutToAppear(): void {
     void this.prepareViewer();
-    this.interactionController.configure({ coordScale: 1000 });
+    this.interactionController.configure({
+      coordScale: 1000,
+      defaults: {
+        tap: { color: this.effectBaseColor, strength: this.effectStrength },
+        longPress: { color: this.effectBaseColor, strength: this.effectStrength },
+        swipe: { color: this.effectBaseColor, strength: this.effectStrength },
+      }
+    });
     this.configureStatusController();
     this.startEffectPolling();
     this.startStatusPolling();
