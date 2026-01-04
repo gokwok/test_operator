@@ -67,7 +67,7 @@ struct AgentSpaceViewer {
     'AgentSpace',
     'compact',
     () => {
-      this.showFloatWindow();
+      this.onOrbClick();
     }
   );
   private serviceClient: AgentServiceClient | null = null;
@@ -871,6 +871,13 @@ struct AgentSpaceViewer {
     this.showOrb = true;
     this.orbController.setMode('compact');
     this.orbController.show();
+  }
+
+  private onOrbClick(): void {
+    if (this.manualControlActive) {
+      return;
+    }
+    this.showFloatWindow();
   }
 
   private showFloatWindow(): void {
