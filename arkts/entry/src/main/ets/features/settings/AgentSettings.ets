@@ -5,22 +5,30 @@ export interface AgentSettingsData {
   cloudEndpoint: string;
   waitMs: number;
   liveViewEnabled: boolean;
+  historyEnabled: boolean;
+  historyMaxTasks: number;
 }
 
 export interface AgentSettingsPatch {
   cloudEndpoint?: string;
   waitMs?: number;
   liveViewEnabled?: boolean;
+  historyEnabled?: boolean;
+  historyMaxTasks?: number;
 }
 
 const PREFS_NAME: string = 'agent_settings';
 const KEY_CLOUD_ENDPOINT: string = 'cloud_endpoint';
 const KEY_WAIT_MS: string = 'wait_ms';
 const KEY_LIVE_VIEW: string = 'live_view_enabled';
+const KEY_HISTORY_ENABLED: string = 'history_enabled';
+const KEY_HISTORY_MAX_TASKS: string = 'history_max_tasks';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const DEFAULT_WAIT_MS: number = 1000;
 const DEFAULT_LIVE_VIEW_ENABLED: boolean = true;
+const DEFAULT_HISTORY_ENABLED: boolean = true;
+const DEFAULT_HISTORY_MAX_TASKS: number = 50;
 
 export class AgentSettings {
   static defaults(): AgentSettingsData {
@@ -28,6 +36,8 @@ export class AgentSettings {
       cloudEndpoint: DEFAULT_CLOUD_ENDPOINT,
       waitMs: DEFAULT_WAIT_MS,
       liveViewEnabled: DEFAULT_LIVE_VIEW_ENABLED,
+      historyEnabled: DEFAULT_HISTORY_ENABLED,
+      historyMaxTasks: DEFAULT_HISTORY_MAX_TASKS,
     };
   }
 
@@ -36,16 +46,22 @@ export class AgentSettings {
     const endpointRaw = await prefs.get(KEY_CLOUD_ENDPOINT, DEFAULT_CLOUD_ENDPOINT);
     const waitRaw = await prefs.get(KEY_WAIT_MS, DEFAULT_WAIT_MS);
     const liveViewRaw = await prefs.get(KEY_LIVE_VIEW, DEFAULT_LIVE_VIEW_ENABLED);
+    const historyEnabledRaw = await prefs.get(KEY_HISTORY_ENABLED, DEFAULT_HISTORY_ENABLED);
+    const historyMaxTasksRaw = await prefs.get(KEY_HISTORY_MAX_TASKS, DEFAULT_HISTORY_MAX_TASKS);
 
     const endpoint = typeof endpointRaw === 'string' ? endpointRaw : String(endpointRaw);
     const waitMs = AgentSettings.parseWaitMs(waitRaw, DEFAULT_WAIT_MS);
     const liveViewEnabled = AgentSettings.parseBoolean(liveViewRaw, DEFAULT_LIVE_VIEW_ENABLED);
+    const historyEnabled = AgentSettings.parseBoolean(historyEnabledRaw, DEFAULT_HISTORY_ENABLED);
+    const historyMaxTasks = AgentSettings.parseCount(historyMaxTasksRaw, DEFAULT_HISTORY_MAX_TASKS);
 
     const normalizedEndpoint = endpoint.trim().length > 0 ? endpoint.trim() : DEFAULT_CLOUD_ENDPOINT;
     return {
       cloudEndpoint: normalizedEndpoint,
       waitMs,
       liveViewEnabled,
+      historyEnabled,
+      historyMaxTasks,
     };
   }
 
@@ -54,6 +70,8 @@ export class AgentSettings {
     await prefs.put(KEY_CLOUD_ENDPOINT, data.cloudEndpoint);
     await prefs.put(KEY_WAIT_MS, data.waitMs);
     await prefs.put(KEY_LIVE_VIEW, data.liveViewEnabled);
+    await prefs.put(KEY_HISTORY_ENABLED, data.historyEnabled);
+    await prefs.put(KEY_HISTORY_MAX_TASKS, data.historyMaxTasks);
     await prefs.flush();
   }
 
@@ -63,6 +81,8 @@ export class AgentSettings {
       cloudEndpoint: patch.cloudEndpoint ?? current.cloudEndpoint,
       waitMs: patch.waitMs ?? current.waitMs,
       liveViewEnabled: patch.liveViewEnabled ?? current.liveViewEnabled,
+      historyEnabled: patch.historyEnabled ?? current.historyEnabled,
+      historyMaxTasks: patch.historyMaxTasks ?? current.historyMaxTasks,
     };
     await AgentSettings.save(ctx, next);
     return next;
@@ -91,5 +111,16 @@ export class AgentSettings {
       return false;
     }
     return fallback;
+  }
+
+  private static parseCount(raw: Object, fallback: number): number {
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return Math.max(0, Math.floor(raw));
+    }
+    const parsed = parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.max(0, parsed);
   }
 }

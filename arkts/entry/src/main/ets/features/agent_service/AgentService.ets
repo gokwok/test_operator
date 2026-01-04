@@ -29,6 +29,7 @@ import { LiveViewController, LiveViewContents, LiveViewType } from '../live_view
 import type { AgentSettingsData } from '../settings/AgentSettings';
 import { AgentSettings } from '../settings/AgentSettings';
 import { AppState } from '../state/app_state';
+import { TaskHistoryStore } from '../history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const DEFAULT_TASK_PLACEHOLDER: string = '正在分析用户需求...';
@@ -68,6 +69,7 @@ export class AgentService {
   private efficiencyApplied: boolean = false;
   private liveViewCancelBound: boolean = false;
   private liveViewSelfStopping: boolean = false;
+  private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -79,10 +81,12 @@ export class AgentService {
   init(ctx: common.Context, startAbilityInvoker: StartAbilityInvoker): void {
     this.ctx = ctx;
     this.startAbilityInvoker = startAbilityInvoker;
+    this.historyStore.init(ctx);
   }
 
   applySettings(settings: AgentSettingsData): void {
     this.liveViewEnabled = settings.liveViewEnabled;
+    this.historyStore.configure(settings.historyEnabled, settings.historyMaxTasks);
   }
 
   ping(): string {
