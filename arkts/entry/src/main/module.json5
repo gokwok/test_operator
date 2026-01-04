@@ -58,6 +58,17 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.MICROPHONE",
+        "reason": "$string:permission_microphone_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility",
+            "AgentServiceExtAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "abilities": [

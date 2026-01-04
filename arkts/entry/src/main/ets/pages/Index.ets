@@ -15,6 +15,8 @@ import { AppState } from '../features/state/app_state';
 import { LiveViewController } from '../features/live_view/LiveViewController';
 import { AgentSettings } from '../features/settings/AgentSettings';
 import type { AgentSettingsPatch } from '../features/settings/AgentSettings';
+import { asrFeature } from '../features/Asr';
+import { ttsFeature } from '../features/Tts';
 import image from '@ohos.multimedia.image';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
@@ -856,6 +858,28 @@ struct Index {
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.onActionDebugInteract();
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('TTS Test')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              ttsFeature.startTest();
+            })
+
+          Button('ASR Test')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              asrFeature.startTest(getContext(this) as common.UIAbilityContext);
             })
         }
 

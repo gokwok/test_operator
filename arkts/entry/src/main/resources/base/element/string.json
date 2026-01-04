@@ -19,6 +19,10 @@
     {
       "name": "permission_write_imagevideo_reason",
       "value": "Save screenshots to album."
+    },
+    {
+      "name": "permission_microphone_reason",
+      "value": "Enable speech recognition."
     }
   ]
 }

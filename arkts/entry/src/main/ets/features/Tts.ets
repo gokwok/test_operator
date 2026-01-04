@@ -1,0 +1,109 @@
+import { textToSpeech } from '@kit.CoreSpeechKit';
+import type { BusinessError } from '@kit.BasicServicesKit';
+import { promptAction } from '@kit.ArkUI';
+
+interface TtsEngineExtraParams extends Record<string, Object> {
+  style: string;
+  locate: string;
+  name: string;
+}
+
+interface TtsSpeakExtraParams extends Record<string, Object> {
+  queueMode: number;
+  speed: number;
+  volume: number;
+  pitch: number;
+  languageContext: string;
+  audioType: string;
+  soundChannel: number;
+  playType: number;
+}
+
+class TtsFeature {
+  private readonly sampleText: string = 'Hello, this is a TTS test.';
+  private ttsEngine?: textToSpeech.TextToSpeechEngine;
+  private ttsCreatePromise?: Promise<textToSpeech.TextToSpeechEngine>;
+
+  startTest(text?: string): void {
+    const content = text ?? this.sampleText;
+    this.ensureTtsEngine()
+      .then((engine) => {
+        const extraParam: TtsSpeakExtraParams = {
+          queueMode: 0,
+          speed: 1,
+          volume: 2,
+          pitch: 1,
+          languageContext: 'zh-CN',
+          audioType: 'pcm',
+          soundChannel: 1,
+          playType: 1
+        };
+        const speakParams: textToSpeech.SpeakParams = {
+          requestId: this.createRequestId(),
+          extraParams: extraParam
+        };
+        engine.speak(content, speakParams);
+        promptAction.showToast({ message: 'TTS started', duration: 2000 });
+      })
+      .catch((error: BusinessError) => {
+        console.error(`TTS failed, code: ${error.code}, message: ${error.message}`);
+        promptAction.showToast({ message: 'TTS failed', duration: 2000 });
+      });
+  }
+
+  private createRequestId(): string {
+    return `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+  }
+
+  private setListener(engine: textToSpeech.TextToSpeechEngine): void {
+    const speakListener: textToSpeech.SpeakListener = {
+      onStart(utteranceId: string, response: textToSpeech.StartResponse) {
+        console.info(`tts onStart: ${utteranceId}, response: ${JSON.stringify(response)}`);
+      },
+      onComplete(utteranceId: string, response: textToSpeech.CompleteResponse) {
+        console.info(`tts onComplete: ${utteranceId}, response: ${JSON.stringify(response)}`);
+      },
+      onStop(utteranceId: string, response: textToSpeech.StopResponse) {
+        console.info(`tts onStop: ${utteranceId}, response: ${JSON.stringify(response)}`);
+      },
+      onData(utteranceId: string, audio: ArrayBuffer, response: textToSpeech.SynthesisResponse) {
+        console.info(`tts onData: ${utteranceId}, response: ${JSON.stringify(response)}, audioBytes: ${audio.byteLength}`);
+      },
+      onError(utteranceId: string, errorCode: number, errorMessage: string) {
+        console.error(`tts onError: ${utteranceId}, code: ${errorCode}, message: ${errorMessage}`);
+      }
+    };
+    engine.setListener(speakListener);
+  }
+
+  private ensureTtsEngine(): Promise<textToSpeech.TextToSpeechEngine> {
+    if (this.ttsEngine) {
+      return Promise.resolve(this.ttsEngine);
+    }
+    if (this.ttsCreatePromise) {
+      return this.ttsCreatePromise;
+    }
+    const extraParam: TtsEngineExtraParams = { style: 'interaction-broadcast', locate: 'CN', name: 'AgentOperationTts' };
+    const initParamsInfo: textToSpeech.CreateEngineParams = {
+      language: 'zh-CN',
+      person: 0,
+      online: 1,
+      extraParams: extraParam
+    };
+    this.ttsCreatePromise = Promise.resolve()
+      .then(() => textToSpeech.createEngine(initParamsInfo))
+      .then((engine) => {
+        this.ttsEngine = engine;
+        this.ttsCreatePromise = undefined;
+        this.setListener(engine);
+        return engine;
+      })
+      .catch((error: BusinessError) => {
+        this.ttsCreatePromise = undefined;
+        return Promise.reject(error);
+      });
+    return this.ttsCreatePromise;
+  }
+}
+
+export const ttsFeature = new TtsFeature();
