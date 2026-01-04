@@ -27,6 +27,8 @@ class TtsFeature {
 
   startTest(text?: string): void {
     const content = text ?? this.sampleText;
+    const preview = content.length > 80 ? `${content.slice(0, 80)}...` : content;
+    console.info(`[AS_TTS] speak request len=${content.length} preview="${preview}"`);
     this.ensureTtsEngine()
       .then((engine) => {
         const requestId = this.createRequestId();
@@ -46,6 +48,7 @@ class TtsFeature {
           extraParams: extraParam
         };
         engine.speak(content, speakParams);
+        console.info(`[AS_TTS] speak start requestId=${requestId}`);
         promptAction.showToast({ message: 'TTS started', duration: 2000 });
       })
       .catch((error: BusinessError) => {
@@ -59,6 +62,7 @@ class TtsFeature {
       return;
     }
     try {
+      console.info('[AS_TTS] speak stop requested');
       this.ttsEngine.stop();
     } catch (error) {
       console.warn(`TTS stop failed: ${String(error)}`);

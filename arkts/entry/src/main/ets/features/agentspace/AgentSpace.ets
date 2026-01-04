@@ -174,6 +174,7 @@ export class AgentSpace {
       this.surfaceId = '';
       this.surfaceAttached = false;
     }
+    console.info(`[AS_TTS] viewerActive set ${active ? 'true' : 'false'}`);
   }
 
   async setViewerMode(mode: AgentSpaceViewerMode): Promise<void> {

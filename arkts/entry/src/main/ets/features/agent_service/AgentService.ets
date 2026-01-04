@@ -46,6 +46,7 @@ const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
 const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
 const HILOG_TAG: string = 'AgentService';
+const TTS_LOG_TAG: string = '[AS_TTS]';
 
 export class AgentService {
   private static instance: AgentService | null = null;
@@ -544,10 +545,18 @@ export class AgentService {
     payload.stopTimeoutMs = Math.max(0, Math.floor(delayMs));
     try {
       this.liveViewSelfStopping = true;
+      hilog.info(
+        HILOG_DOMAIN,
+        HILOG_TAG,
+        '%{public}s liveview self stop begin delayMs=%{public}d',
+        TTS_LOG_TAG,
+        payload.stopTimeoutMs ?? 0
+      );
       await this.liveViewController.stop(ctx, payload);
     } catch (e) {
       console.warn(`[AgentService] LiveView stop failed: ${String(e)}`);
     } finally {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s liveview self stop end', TTS_LOG_TAG);
       this.liveViewSelfStopping = false;
       this.liveViewStarted = false;
     }
@@ -613,9 +622,17 @@ export class AgentService {
       return;
     }
     if (this.liveViewSelfStopping) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s liveview cancel ignored (self stop)', TTS_LOG_TAG);
       return;
     }
     const snapshot = this.taskManager.getSnapshot();
+    hilog.info(
+      HILOG_DOMAIN,
+      HILOG_TAG,
+      '%{public}s liveview canceled status=%{public}s',
+      TTS_LOG_TAG,
+      snapshot.status
+    );
     if (snapshot.status === 'running' || snapshot.status === 'waiting_user') {
       this.stopTask('liveview_closed');
     }
@@ -625,9 +642,20 @@ export class AgentService {
   private async shouldSpeakWhenViewerInactive(): Promise<boolean> {
     try {
       const runtime = await this.ensureAgentSpace().getRuntimeInfo();
-      return !runtime.viewerActive;
+      const canSpeak = !runtime.viewerActive;
+      hilog.info(
+        HILOG_DOMAIN,
+        HILOG_TAG,
+        '%{public}s viewerActive=%{public}s surfaceAttached=%{public}s canSpeak=%{public}s',
+        TTS_LOG_TAG,
+        String(runtime.viewerActive),
+        String(runtime.surfaceAttached),
+        String(canSpeak)
+      );
+      return canSpeak;
     } catch (e) {
       console.warn(`[AgentService] viewer state check failed: ${String(e)}`);
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, '%{public}s viewer state check failed', TTS_LOG_TAG);
       return false;
     }
   }
@@ -642,32 +670,58 @@ export class AgentService {
   }
 
   private async maybeSpeakInteraction(content: string): Promise<void> {
-    if (!await this.shouldSpeakWhenViewerInactive()) {
+    const canSpeak = await this.shouldSpeakWhenViewerInactive();
+    if (!canSpeak) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s skip waiting_user (viewer active)', TTS_LOG_TAG);
       return;
     }
     const trimmed = content.trim();
     if (trimmed.length === 0) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s skip waiting_user (empty content)', TTS_LOG_TAG);
       return;
     }
     if (!this.shouldSpeakOnce('waiting_user', trimmed)) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s skip waiting_user (duplicate)', TTS_LOG_TAG);
       return;
     }
+    const preview = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+    hilog.info(
+      HILOG_DOMAIN,
+      HILOG_TAG,
+      '%{public}s speak waiting_user len=%{public}d preview="%{public}s"',
+      TTS_LOG_TAG,
+      trimmed.length,
+      preview
+    );
     ttsFeature.startTest(trimmed);
   }
 
   private async maybeSpeakFinished(content: string): Promise<void> {
-    if (!await this.shouldSpeakWhenViewerInactive()) {
+    const canSpeak = await this.shouldSpeakWhenViewerInactive();
+    if (!canSpeak) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s skip finished (viewer active)', TTS_LOG_TAG);
       return;
     }
     const trimmed = content.trim();
     const speakText = trimmed.length > 0 ? `${FINISHED_TTS_TEXT}，${trimmed}` : FINISHED_TTS_TEXT;
     if (!this.shouldSpeakOnce('finished', speakText)) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s skip finished (duplicate)', TTS_LOG_TAG);
       return;
     }
+    const preview = speakText.length > 80 ? `${speakText.slice(0, 80)}...` : speakText;
+    hilog.info(
+      HILOG_DOMAIN,
+      HILOG_TAG,
+      '%{public}s speak finished len=%{public}d preview="%{public}s"',
+      TTS_LOG_TAG,
+      speakText.length,
+      preview
+    );
     ttsFeature.startTest(speakText);
   }
 
   private stopTts(): void {
+    hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s stop tts', TTS_LOG_TAG);
     ttsFeature.stop();
   }
 
