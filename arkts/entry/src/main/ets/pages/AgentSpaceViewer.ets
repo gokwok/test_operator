@@ -20,6 +20,8 @@ import type {
   AgentSpacePointerEvent
 } from '../view/AgentSpaceDisplay';
 
+const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
+
 interface ParsedInteractionParams {
   content?: string;
   options?: Array<string>;
@@ -200,6 +202,7 @@ struct AgentSpaceViewer {
     try {
       await this.ensureServiceConnected();
       await this.getServiceClient().setViewerActive(true);
+      console.info(`${EFFECT_LOG_TAG} viewer active set true`);
       const mode = await this.getServiceClient().getViewerMode();
       this.viewerMode = this.normalizeViewerMode(mode);
     } catch (e) {
@@ -233,6 +236,7 @@ struct AgentSpaceViewer {
       return;
     }
     this.effectSequence = 0;
+    console.info(`${EFFECT_LOG_TAG} start effect polling`);
     this.effectPollTimerId = setInterval(() => {
       void this.flushViewerEffects();
     }, 80);
@@ -244,6 +248,7 @@ struct AgentSpaceViewer {
     }
     clearInterval(this.effectPollTimerId);
     this.effectPollTimerId = -1;
+    console.info(`${EFFECT_LOG_TAG} stop effect polling`);
   }
 
   private startStatusPolling(): void {
@@ -325,10 +330,14 @@ struct AgentSpaceViewer {
     try {
       await this.ensureServiceConnected();
       const payload = await this.getServiceClient().pullViewerEffects(this.effectSequence);
+      if (payload.length > 0) {
+        console.info(`${EFFECT_LOG_TAG} pull effects seq=${this.effectSequence} payloadLen=${payload.length}`);
+      }
       const batch = this.parseEffectBatch(payload);
       if (!batch) {
         return;
       }
+      console.info(`${EFFECT_LOG_TAG} apply effects seq=${batch.sequence} count=${batch.effects.length} manual=${this.manualControlActive}`);
       this.effectSequence = batch.sequence;
       for (let i = 0; i < batch.effects.length; i++) {
         this.playEffect(batch.effects[i]);
@@ -341,12 +350,14 @@ struct AgentSpaceViewer {
   private playEffect(effect: AgentSpaceViewerEffect): void {
     if (effect.kind === 'tap') {
       const point: InteractionPoint = { x: effect.xNorm, y: effect.yNorm };
+      console.info(`${EFFECT_LOG_TAG} play tap x=${point.x} y=${point.y}`);
       this.interactionController.tap(point);
       return;
     }
     if (effect.kind === 'long_press') {
       const point: InteractionPoint = { x: effect.xNorm, y: effect.yNorm };
       const options = this.resolveEffectOptions(effect.durationMs);
+      console.info(`${EFFECT_LOG_TAG} play long_press x=${point.x} y=${point.y} duration=${effect.durationMs ?? 0}`);
       this.interactionController.longPress(point, options);
       return;
     }
@@ -354,6 +365,7 @@ struct AgentSpaceViewer {
       const start: InteractionPoint = { x: effect.startXNorm, y: effect.startYNorm };
       const end: InteractionPoint = { x: effect.endXNorm, y: effect.endYNorm };
       const options = this.resolveEffectOptions(effect.durationMs);
+      console.info(`${EFFECT_LOG_TAG} play swipe sx=${start.x} sy=${start.y} ex=${end.x} ey=${end.y} duration=${effect.durationMs ?? 0}`);
       this.interactionController.swipe(start, end, options);
     }
   }

@@ -4,6 +4,8 @@ export interface InteractionEffectOptions {
   color?: string;
 }
 
+const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
+
 export interface InteractionPoint {
   x: number;
   y: number;
@@ -232,6 +234,7 @@ export struct InteractionEffectOverlay {
   private viewportHeight: number = 0;
   private animationTimerId: number = -1;
   private lastVisible: boolean = true;
+  private warnedViewportZero: boolean = false;
 
   @ObjectLink controller: InteractionEffectController;
   @Prop visible: boolean = true;
@@ -281,7 +284,14 @@ export struct InteractionEffectOverlay {
 
   private tick(): void {
     if (!this.visible || this.viewportWidth <= 0 || this.viewportHeight <= 0) {
+      if (this.visible && this.controller.effects.length > 0 && !this.warnedViewportZero) {
+        console.warn(`${EFFECT_LOG_TAG} skip draw: viewport=${this.viewportWidth}x${this.viewportHeight} effects=${this.controller.effects.length}`);
+        this.warnedViewportZero = true;
+      }
       return;
+    }
+    if (this.warnedViewportZero) {
+      this.warnedViewportZero = false;
     }
     const now = Date.now();
     this.controller.prune(now);
@@ -499,6 +509,7 @@ export struct InteractionEffectOverlay {
       if (!this.visible) {
         return;
       }
+      console.info(`${EFFECT_LOG_TAG} overlay emit effects=${this.controller.effects.length}`);
       this.ensureStarted();
     });
   }
@@ -522,6 +533,8 @@ export struct InteractionEffectOverlay {
     .onAreaChange((_oldValue, newValue): void => {
       this.viewportWidth = Number(newValue.width);
       this.viewportHeight = Number(newValue.height);
+      this.warnedViewportZero = false;
+      console.info(`${EFFECT_LOG_TAG} overlay size ${this.viewportWidth}x${this.viewportHeight}`);
     })
   }
 }

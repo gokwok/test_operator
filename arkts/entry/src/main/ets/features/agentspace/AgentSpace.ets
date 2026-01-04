@@ -1,6 +1,8 @@
 import { VTSBackend } from './VTSBackend';
 import type { AppTarget, StartAbilityInvoker, VTSBackendPort } from './VTSBackend';
 
+const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
+
 export enum AgentSpaceState {
   IDLE = 'IDLE',
   READY = 'READY',
@@ -196,6 +198,7 @@ export class AgentSpace {
       sequence: this.viewerEffectSequence,
       effects,
     };
+    console.info(`${EFFECT_LOG_TAG} flush effects last=${lastSequence} new=${batch.sequence} count=${effects.length}`);
     return batch;
   }
 
@@ -445,10 +448,12 @@ export class AgentSpace {
 
   private pushViewerEffect(effect: AgentSpaceViewerEffect): void {
     if (!this.viewerActive) {
+      console.warn(`${EFFECT_LOG_TAG} drop effect: viewer inactive payload=${JSON.stringify(effect)}`);
       return;
     }
     this.viewerEffectSequence += 1;
     this.viewerEffects = [...this.viewerEffects, effect];
+    console.info(`${EFFECT_LOG_TAG} queued effect seq=${this.viewerEffectSequence} payload=${JSON.stringify(effect)}`);
   }
 
   private emitViewerTapNorm(xNorm: number, yNorm: number): void {
