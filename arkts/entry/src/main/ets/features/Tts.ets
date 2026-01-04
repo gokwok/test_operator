@@ -74,21 +74,27 @@ class TtsFeature {
   }
 
   private setListener(engine: textToSpeech.TextToSpeechEngine): void {
+    const dataLogged: Set<string> = new Set();
     const speakListener: textToSpeech.SpeakListener = {
       onStart(utteranceId: string, response: textToSpeech.StartResponse) {
-        console.info(`tts onStart: ${utteranceId}, response: ${JSON.stringify(response)}`);
+        console.info(`[AS_TTS] onStart id=${utteranceId} response=${JSON.stringify(response)}`);
       },
       onComplete(utteranceId: string, response: textToSpeech.CompleteResponse) {
-        console.info(`tts onComplete: ${utteranceId}, response: ${JSON.stringify(response)}`);
+        console.info(`[AS_TTS] onComplete id=${utteranceId} response=${JSON.stringify(response)}`);
       },
       onStop(utteranceId: string, response: textToSpeech.StopResponse) {
-        console.info(`tts onStop: ${utteranceId}, response: ${JSON.stringify(response)}`);
+        console.info(`[AS_TTS] onStop id=${utteranceId} response=${JSON.stringify(response)}`);
       },
       onData(utteranceId: string, audio: ArrayBuffer, response: textToSpeech.SynthesisResponse) {
-        console.info(`tts onData: ${utteranceId}, response: ${JSON.stringify(response)}, audioBytes: ${audio.byteLength}`);
+        if (!dataLogged.has(utteranceId)) {
+          dataLogged.add(utteranceId);
+          console.info(
+            `[AS_TTS] onData id=${utteranceId} bytes=${audio.byteLength} response=${JSON.stringify(response)}`
+          );
+        }
       },
       onError(utteranceId: string, errorCode: number, errorMessage: string) {
-        console.error(`tts onError: ${utteranceId}, code: ${errorCode}, message: ${errorMessage}`);
+        console.error(`[AS_TTS] onError id=${utteranceId} code=${errorCode} message=${errorMessage}`);
       }
     };
     engine.setListener(speakListener);
