@@ -23,11 +23,14 @@ class TtsFeature {
   private readonly sampleText: string = 'Hello, this is a TTS test.';
   private ttsEngine?: textToSpeech.TextToSpeechEngine;
   private ttsCreatePromise?: Promise<textToSpeech.TextToSpeechEngine>;
+  private lastRequestId: string = '';
 
   startTest(text?: string): void {
     const content = text ?? this.sampleText;
     this.ensureTtsEngine()
       .then((engine) => {
+        const requestId = this.createRequestId();
+        this.lastRequestId = requestId;
         const extraParam: TtsSpeakExtraParams = {
           queueMode: 0,
           speed: 1,
@@ -39,7 +42,7 @@ class TtsFeature {
           playType: 1
         };
         const speakParams: textToSpeech.SpeakParams = {
-          requestId: this.createRequestId(),
+          requestId,
           extraParams: extraParam
         };
         engine.speak(content, speakParams);
@@ -49,6 +52,21 @@ class TtsFeature {
         console.error(`TTS failed, code: ${error.code}, message: ${error.message}`);
         promptAction.showToast({ message: 'TTS failed', duration: 2000 });
       });
+  }
+
+  stop(): void {
+    if (!this.ttsEngine) {
+      return;
+    }
+    try {
+      if (this.lastRequestId.length > 0) {
+        this.ttsEngine.stop(this.lastRequestId);
+      } else {
+        this.ttsEngine.stop();
+      }
+    } catch (error) {
+      console.warn(`TTS stop failed: ${String(error)}`);
+    }
   }
 
   private createRequestId(): string {

@@ -29,6 +29,7 @@ import { LiveViewController, LiveViewContents, LiveViewType } from '../live_view
 import type { AgentSettingsData } from '../settings/AgentSettings';
 import { AgentSettings } from '../settings/AgentSettings';
 import { AppState } from '../state/app_state';
+import { ttsFeature } from '../Tts';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const DEFAULT_TASK_PLACEHOLDER: string = '正在分析用户需求...';
@@ -39,7 +40,8 @@ const CAPSULE_STOPPED: string = '任务已停止';
 const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
-const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 2000;
+const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 30000;
+const FINISHED_TTS_TEXT: string = '任务已完成';
 const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
 const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
@@ -65,6 +67,10 @@ export class AgentService {
   private liveViewSeq: number = 0;
   private listenerBound: boolean = false;
   private efficiencyApplied: boolean = false;
+  private liveViewCancelBound: boolean = false;
+  private liveViewSelfStopping: boolean = false;
+  private lastSpokenStatus: TaskStatus = 'idle';
+  private lastSpokenText: string = '';
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -96,6 +102,7 @@ export class AgentService {
 
   startTask(request: TaskStartRequest): void {
     this.ensureListenerBound();
+    this.bindLiveViewCancelListener();
     const normalized = this.normalizeStartRequest(request);
     const executor = this.getDeviceExecutor();
     const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
@@ -107,6 +114,8 @@ export class AgentService {
     this.liveViewAppName = '';
     this.liveViewIcon = null;
     this.liveViewNotificationId = this.allocateLiveViewId();
+    this.lastSpokenStatus = 'idle';
+    this.lastSpokenText = '';
     this.taskManager.startTask(normalized, cloud, executor);
     void this.publishRunningLiveView();
   }
@@ -350,10 +359,13 @@ export class AgentService {
     if (status === 'waiting_user') {
       const content = this.resolveInteractionContent(snapshot);
       await this.publishInteractionLiveView(content);
+      await this.maybeSpeakInteraction(content);
       return;
     }
     if (status === 'finished') {
-      await this.publishFinishedLiveView();
+      const content = this.resolveFinishContent(snapshot);
+      await this.publishFinishedLiveView(content);
+      await this.maybeSpeakFinished(content);
       return;
     }
     if (status === 'failed') {
@@ -440,7 +452,7 @@ export class AgentService {
     await this.publishLiveView(payload);
   }
 
-  private async publishFinishedLiveView(): Promise<void> {
+  private async publishFinishedLiveView(content: string): Promise<void> {
     if (!this.liveViewEnabled) {
       return;
     }
@@ -449,7 +461,9 @@ export class AgentService {
       return;
     }
     const icon = await this.resolveLiveViewIcon();
-    const payload = this.buildLiveViewPayload('任务完成', '', CAPSULE_FINISHED, icon);
+    const trimmed = content.trim();
+    const body = trimmed.length > 0 ? trimmed : FINISHED_TTS_TEXT;
+    const payload = this.buildLiveViewPayload('任务完成', body, CAPSULE_FINISHED, icon);
     await this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
@@ -529,10 +543,12 @@ export class AgentService {
     }
     payload.stopTimeoutMs = Math.max(0, Math.floor(delayMs));
     try {
+      this.liveViewSelfStopping = true;
       await this.liveViewController.stop(ctx, payload);
     } catch (e) {
       console.warn(`[AgentService] LiveView stop failed: ${String(e)}`);
     } finally {
+      this.liveViewSelfStopping = false;
       this.liveViewStarted = false;
     }
   }
@@ -580,6 +596,99 @@ export class AgentService {
     if (this.liveViewPhase === 'running') {
       await this.publishRunningLiveView();
     }
+  }
+
+  private bindLiveViewCancelListener(): void {
+    if (this.liveViewCancelBound) {
+      return;
+    }
+    this.liveViewController.setCancelListener((notificationId: number, reason?: number) => {
+      this.handleLiveViewCanceled(notificationId, reason);
+    });
+    this.liveViewCancelBound = true;
+  }
+
+  private handleLiveViewCanceled(notificationId: number, _reason?: number): void {
+    if (notificationId !== this.liveViewNotificationId) {
+      return;
+    }
+    if (this.liveViewSelfStopping) {
+      return;
+    }
+    const snapshot = this.taskManager.getSnapshot();
+    if (snapshot.status === 'running' || snapshot.status === 'waiting_user') {
+      this.stopTask('liveview_closed');
+    }
+    this.stopTts();
+  }
+
+  private async shouldSpeakWhenViewerInactive(): Promise<boolean> {
+    try {
+      const runtime = await this.ensureAgentSpace().getRuntimeInfo();
+      return !runtime.viewerActive;
+    } catch (e) {
+      console.warn(`[AgentService] viewer state check failed: ${String(e)}`);
+      return false;
+    }
+  }
+
+  private shouldSpeakOnce(status: TaskStatus, content: string): boolean {
+    if (this.lastSpokenStatus === status && this.lastSpokenText === content) {
+      return false;
+    }
+    this.lastSpokenStatus = status;
+    this.lastSpokenText = content;
+    return true;
+  }
+
+  private async maybeSpeakInteraction(content: string): Promise<void> {
+    if (!await this.shouldSpeakWhenViewerInactive()) {
+      return;
+    }
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    if (!this.shouldSpeakOnce('waiting_user', trimmed)) {
+      return;
+    }
+    ttsFeature.startTest(trimmed);
+  }
+
+  private async maybeSpeakFinished(content: string): Promise<void> {
+    if (!await this.shouldSpeakWhenViewerInactive()) {
+      return;
+    }
+    const trimmed = content.trim();
+    const speakText = trimmed.length > 0 ? `${FINISHED_TTS_TEXT}，${trimmed}` : FINISHED_TTS_TEXT;
+    if (!this.shouldSpeakOnce('finished', speakText)) {
+      return;
+    }
+    ttsFeature.startTest(speakText);
+  }
+
+  private stopTts(): void {
+    ttsFeature.stop();
+  }
+
+  private resolveFinishContent(snapshot: TaskSnapshot): string {
+    const actionName = snapshot.lastActionName.trim().toLowerCase();
+    if (actionName === 'finish') {
+      const json = snapshot.lastActionJson.trim();
+      if (json.length > 0) {
+        try {
+          const parsed = JSON.parse(json) as AgentAction;
+          const content = parsed.parameters?.content ?? '';
+          if (typeof content === 'string' && content.trim().length > 0) {
+            return content.trim();
+          }
+        } catch (_e) {
+          // ignore
+        }
+      }
+    }
+    const fallback = snapshot.lastDescription.trim();
+    return fallback.length > 0 ? fallback : '';
   }
 
   private applyEfficiencyResourcesBestEffort(): void {

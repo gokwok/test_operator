@@ -1,8 +1,10 @@
 import { notificationManager } from '@kit.NotificationKit';
+import notificationSubscribe from '@ohos.notificationSubscribe';
 import { wantAgent } from '@kit.AbilityKit';
 import type { common, Want, WantAgent } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
+import type { NotificationSubscriber, SubscribeCallbackData } from '@ohos.notificationSubscribe';
 
 import { AppState } from '../state/app_state';
 
@@ -39,10 +41,15 @@ export interface LiveViewContents {
   tapTarget?: LiveViewTapTarget;
 }
 
+export type LiveViewCancelListener = (notificationId: number, reason?: number) => void;
+
 export class LiveViewController {
   private static instance: LiveViewController | null = null;
 
   private subscribed: boolean = false;
+  private cancelSubscribed: boolean = false;
+  private cancelSubscriber: NotificationSubscriber | null = null;
+  private cancelListener: LiveViewCancelListener | null = null;
   private defaultIcon: image.PixelMap | null = null;
   private defaultIconInFlight: Promise<image.PixelMap | null> | null = null;
 
@@ -51,6 +58,13 @@ export class LiveViewController {
       LiveViewController.instance = new LiveViewController();
     }
     return LiveViewController.instance;
+  }
+
+  setCancelListener(listener?: LiveViewCancelListener): void {
+    this.cancelListener = listener ?? null;
+    if (this.cancelListener) {
+      void this.ensureCancelSubscribed();
+    }
   }
 
   async startDefault(ctx: common.Context, taskText: string): Promise<void> {
@@ -176,6 +190,41 @@ export class LiveViewController {
     } catch (e) {
       console.warn(`${LOG_TAG} subscribeSystemLiveView failed: ${String(e)}`);
     }
+  }
+
+  private async ensureCancelSubscribed(): Promise<void> {
+    if (this.cancelSubscribed) {
+      return;
+    }
+    const subscriber: NotificationSubscriber = {
+      onCancel: (data: SubscribeCallbackData) => {
+        this.handleCancel(data);
+      },
+      onBatchCancel: (batch: Array<SubscribeCallbackData>) => {
+        for (let i = 0; i < batch.length; i++) {
+          this.handleCancel(batch[i]);
+        }
+      }
+    };
+    try {
+      await notificationSubscribe.subscribeSelf(subscriber);
+      this.cancelSubscriber = subscriber;
+      this.cancelSubscribed = true;
+    } catch (e) {
+      console.warn(`${LOG_TAG} subscribeSelf failed: ${String(e)}`);
+    }
+  }
+
+  private handleCancel(data: SubscribeCallbackData): void {
+    if (!this.cancelListener) {
+      return;
+    }
+    const request = data.request;
+    const id = request?.id;
+    if (typeof id !== 'number') {
+      return;
+    }
+    this.cancelListener(id, data.reason);
   }
 
   private async buildNotificationRequest(param: LiveViewContents): Promise<notificationManager.NotificationRequest> {
