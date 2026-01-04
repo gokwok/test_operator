@@ -42,6 +42,7 @@ struct FloatChatPage {
       clearTimeout(this.enterTimerId);
       this.enterTimerId = -1;
     }
+    this.inputText = '';
   }
 
   private onClosingChange(): void {
@@ -92,7 +93,6 @@ struct FloatChatPage {
       await this.ensureServiceStarted(ctx);
       await this.connectService(ctx);
       await this.serviceClient.startTaskText(taskText);
-      this.inputText = '';
     } catch (e) {
       console.error(`[FloatChatPage] dispatch task failed: ${String(e)}`);
       await this.dispatchTaskFallback(taskText);
