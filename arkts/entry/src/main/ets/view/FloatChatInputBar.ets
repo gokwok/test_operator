@@ -17,19 +17,13 @@ export struct FloatChatInputBar {
   private readonly MUTED_COLOR: ResourceColor = '#6B8E94';
 
   build() {
-    const trimmedText = this.text.trim();
-    const micColor = this.isListening ? this.ACTIVE_COLOR : this.INACTIVE_COLOR;
-    const micBgColor = this.isListening ? '#D7F2EE' : Color.Transparent;
-    const textInputEnabled = this.inputEnabled && !this.isListening;
-    const sendEnabled = this.inputEnabled && !this.isListening && trimmedText.length > 0;
-
     Row({ space: 4 }) {
       Button() {
-        this.SystemSymbol('mic', 24, micColor, 'mic');
+        this.SystemSymbol('mic', 24, this.resolveMicColor(), 'mic');
       }
       .width(this.ICON_BTN_SIZE)
       .height(this.ICON_BTN_SIZE)
-      .backgroundColor(micBgColor)
+      .backgroundColor(this.resolveMicBgColor())
       .borderRadius(this.ICON_BTN_SIZE / 2)
       .enabled(this.inputEnabled)
       .opacity(this.inputEnabled ? 1 : 0.45)
@@ -50,7 +44,7 @@ export struct FloatChatInputBar {
           .caretColor(this.INACTIVE_COLOR)
           .fontSize(16)
           .padding({ left: 8 })
-          .enabled(textInputEnabled)
+          .enabled(this.isTextInputEnabled())
           .onChange((value: string) => {
             this.text = value;
           })
@@ -61,7 +55,7 @@ export struct FloatChatInputBar {
             this.inputFocused = false;
           })
 
-        if (trimmedText.length === 0 && this.isListening) {
+        if (this.shouldShowListeningHint()) {
           Text(this.listeningHint)
             .fontSize(16)
             .fontColor(this.ACTIVE_COLOR)
@@ -71,7 +65,7 @@ export struct FloatChatInputBar {
             .hitTestBehavior(HitTestMode.None)
         }
 
-        if (trimmedText.length === 0 && !this.inputFocused && !this.isListening) {
+        if (this.shouldShowPlaceholder()) {
           Text(this.placeholder)
             .fontSize(16)
             .fontColor(this.MUTED_COLOR)
@@ -87,7 +81,7 @@ export struct FloatChatInputBar {
         this.SystemSymbol(
           'paperplane_right_fill',
           24,
-          sendEnabled ? '#1D2129' : this.MUTED_COLOR,
+          this.isSendEnabled() ? '#1D2129' : this.MUTED_COLOR,
           'paperplane_right_fill'
         );
       }
@@ -95,13 +89,13 @@ export struct FloatChatInputBar {
       .height(this.ICON_BTN_SIZE)
       .backgroundColor(Color.Transparent)
       .borderRadius(this.ICON_BTN_SIZE / 2)
-      .enabled(sendEnabled)
-      .opacity(sendEnabled ? 1 : 0.45)
+      .enabled(this.isSendEnabled())
+      .opacity(this.isSendEnabled() ? 1 : 0.45)
       .onClick(() => {
         if (!this.inputEnabled) {
           return;
         }
-        if (this.isListening || trimmedText.length === 0) {
+        if (this.isListening || this.getTrimmedText().length === 0) {
           return;
         }
         this.sendSequence += 1;
@@ -117,6 +111,34 @@ export struct FloatChatInputBar {
     .borderRadius(36)
     .shadow({ radius: 20, color: 'rgba(0, 77, 64, 0.15)', offsetX: 0, offsetY: 8 })
     .hitTestBehavior(HitTestMode.Default)
+  }
+
+  private getTrimmedText(): string {
+    return this.text.trim();
+  }
+
+  private resolveMicColor(): ResourceColor {
+    return this.isListening ? this.ACTIVE_COLOR : this.INACTIVE_COLOR;
+  }
+
+  private resolveMicBgColor(): ResourceColor {
+    return this.isListening ? '#D7F2EE' : Color.Transparent;
+  }
+
+  private isTextInputEnabled(): boolean {
+    return this.inputEnabled && !this.isListening;
+  }
+
+  private isSendEnabled(): boolean {
+    return this.inputEnabled && !this.isListening && this.getTrimmedText().length > 0;
+  }
+
+  private shouldShowListeningHint(): boolean {
+    return this.getTrimmedText().length === 0 && this.isListening;
+  }
+
+  private shouldShowPlaceholder(): boolean {
+    return this.getTrimmedText().length === 0 && !this.inputFocused && !this.isListening;
   }
 
   @Builder
