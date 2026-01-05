@@ -57,6 +57,8 @@ export class AgentController {
   private agentSpace: AgentSpace | null = null;
   private toolKit: ToolKit | null = null;
   private agentProxy: AgentProxy | null = null;
+  private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
+  private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
   private liveViewController: LiveViewController = LiveViewController.getInstance();
   private liveViewEnabled: boolean = true;
@@ -112,6 +114,8 @@ export class AgentController {
     const toolKit = this.requireToolKit();
     const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
     toolKit.setAppTargets(targets);
+    this.appTargetMap = this.buildAppTargetMap(targets);
+    this.lastLaunchTarget = null;
     const agentProxy = this.getAgentProxy();
     this.liveViewTaskText = normalized.taskText;
     this.liveViewPhase = 'running';
@@ -246,6 +250,7 @@ export class AgentController {
 
   async launchApp(bundleName: string, abilityName: string): Promise<void> {
     const target: AppTarget = { bundleName, abilityName };
+    this.lastLaunchTarget = target;
     await this.requireToolKit().launchApp(target);
   }
 
@@ -281,7 +286,25 @@ export class AgentController {
   }
 
   async transferToMain(): Promise<number> {
-    return await this.requireToolKit().transferToMain();
+    const toolKit = this.toolKit;
+    if (toolKit) {
+      try {
+        return await toolKit.transferToMain();
+      } catch (e) {
+        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'transferToMain via VTS failed: %{public}s', String(e));
+      }
+    }
+    const target = this.lastLaunchTarget;
+    if (!target) {
+      return 0;
+    }
+    try {
+      await this.startAppOnMain(target);
+      return 1;
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'transferToMain fallback start failed: %{public}s', String(e));
+      return 0;
+    }
   }
 
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
@@ -415,6 +438,7 @@ export class AgentController {
   }
 
   async handleTaskAction(action: AgentAction, description: string): Promise<void> {
+    this.updateLastLaunchTarget(action);
     if (!this.liveViewEnabled) {
       return;
     }
@@ -460,6 +484,106 @@ export class AgentController {
       return '';
     }
     return name.trim();
+  }
+
+  private updateLastLaunchTarget(action: AgentAction): void {
+    const name = action.name.trim().toLowerCase();
+    if (name !== 'launch_app') {
+      return;
+    }
+    const appName = this.resolveAppName(action);
+    if (appName.length === 0) {
+      return;
+    }
+    const target = this.resolveAppTarget(appName);
+    if (target) {
+      this.lastLaunchTarget = target;
+    }
+  }
+
+  private resolveAppTarget(rawName: string): AppTarget | null {
+    const name = rawName.trim();
+    if (name.length === 0) {
+      return null;
+    }
+    const direct = this.parseDirectTarget(name);
+    if (direct) {
+      return direct;
+    }
+    const mapped = this.appTargetMap.get(name);
+    if (mapped) {
+      return mapped;
+    }
+    const extracted = this.extractBundleNameSuffix(name);
+    if (extracted.length > 0) {
+      return { bundleName: extracted, abilityName: 'EntryAbility' };
+    }
+    return null;
+  }
+
+  private parseDirectTarget(name: string): AppTarget | null {
+    const slashIndex = name.indexOf('/');
+    if (slashIndex > 0 && slashIndex < name.length - 1) {
+      const bundleName = name.slice(0, slashIndex).trim();
+      const abilityName = name.slice(slashIndex + 1).trim();
+      if (bundleName.length === 0 || abilityName.length === 0) {
+        return null;
+      }
+      return { bundleName, abilityName };
+    }
+    if (this.looksLikeBundleName(name)) {
+      return { bundleName: name, abilityName: 'EntryAbility' };
+    }
+    return null;
+  }
+
+  private looksLikeBundleName(name: string): boolean {
+    const normalized = name.trim();
+    if (normalized.length === 0) {
+      return false;
+    }
+    if (normalized.startsWith('com.') || normalized.startsWith('ohos.') || normalized.startsWith('cn.')) {
+      return true;
+    }
+    return normalized.indexOf('.') >= 0;
+  }
+
+  private extractBundleNameSuffix(input: string): string {
+    if (!input.endsWith(')')) {
+      return '';
+    }
+    const openIndex = input.lastIndexOf('(');
+    if (openIndex < 0) {
+      return '';
+    }
+    return input.slice(openIndex + 1, input.length - 1).trim();
+  }
+
+  private buildAppTargetMap(targets: Array<AppTargetDescriptor>): Map<string, AppTarget> {
+    const map = new Map<string, AppTarget>();
+    for (let i = 0; i < targets.length; i++) {
+      const entry = targets[i];
+      const displayName = entry.displayName.trim();
+      const bundleName = entry.bundleName.trim();
+      if (displayName.length === 0 || bundleName.length === 0) {
+        continue;
+      }
+      const abilityName = entry.abilityName.trim().length > 0 ? entry.abilityName.trim() : 'EntryAbility';
+      map.set(displayName, { bundleName, abilityName });
+    }
+    return map;
+  }
+
+  private async startAppOnMain(target: AppTarget): Promise<void> {
+    const invoker = this.startAbilityInvoker;
+    if (!invoker) {
+      throw new Error('startAbilityInvoker_missing');
+    }
+    const want: Want = {
+      bundleName: target.bundleName,
+      abilityName: target.abilityName,
+    };
+    await invoker(want);
   }
 
   private async publishRunningLiveView(): Promise<void> {
