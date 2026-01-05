@@ -675,11 +675,7 @@ struct AgentSpaceViewer {
     this.stopStatusPolling();
     try {
       await this.ensureServiceConnected();
-      const result = await this.getServiceClient().transferToMain();
-      const count = parseInt(result, 10);
-      if (Number.isFinite(count) && count > 0) {
-        await this.getServiceClient().releaseAgentSpaceIfFinished();
-      }
+      await this.getServiceClient().transferToMainAndReleaseIfFinished();
     } catch (e) {
       console.error(`[AgentSpaceViewer] transfer to main failed: ${String(e)}`);
     }

@@ -193,6 +193,10 @@ export class AgentControllerClient {
     return await this.sendRequest(AgentControllerRequestCode.TRANSFER_TO_MAIN);
   }
 
+  async transferToMainAndReleaseIfFinished(): Promise<void> {
+    await this.sendRequest(AgentControllerRequestCode.TRANSFER_AND_RELEASE_IF_FINISHED);
+  }
+
   async releaseAgentSpaceIfFinished(): Promise<boolean> {
     const result = await this.sendRequest(AgentControllerRequestCode.RELEASE_AGENT_SPACE_IF_FINISHED);
     return result === '1';

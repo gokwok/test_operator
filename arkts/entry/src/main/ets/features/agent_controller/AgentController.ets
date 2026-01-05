@@ -310,6 +310,20 @@ export class AgentController {
     }
   }
 
+  async transferToMainAndReleaseIfFinished(): Promise<number> {
+    let count = 0;
+    try {
+      count = await this.transferToMain();
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'transferToMain failed: %{public}s', String(e));
+      return 0;
+    }
+    if (count > 0) {
+      await this.releaseAgentSpaceIfFinished();
+    }
+    return count;
+  }
+
   async releaseAgentSpaceIfFinished(): Promise<boolean> {
     const snapshot = this.taskManager.getSnapshot();
     if (snapshot.status !== 'finished') {
