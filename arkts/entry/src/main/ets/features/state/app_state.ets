@@ -26,6 +26,7 @@ const APP_NAME_WHITELIST: string[] = [
   '美团',
   '美团外卖',
   '大众点评',
+  '肯德基',
   // Travel
   '铁路12306',
   '12306',
