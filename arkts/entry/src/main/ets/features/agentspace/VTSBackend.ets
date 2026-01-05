@@ -16,6 +16,22 @@ const POINTER_ACTION_UP: number = 4;
 export type VTSBackendPointerAction = 'down' | 'move' | 'up' | 'cancel';
 type PointerAction = VTSBackendPointerAction;
 
+type ImeEventKind = 'none' | 'status' | 'calling_window' | 'selection' | 'text' | 'function';
+
+let lastImeStatus: number = -1;
+let lastCallingWindowId: number = -1;
+let lastSelectionChange: AppController.onSelChgParam | null = null;
+let lastTextChangeLength: number = -1;
+let lastTextChangeSample: string = '';
+let lastFunctionKey: number = -1;
+let lastImeEventKind: ImeEventKind = 'none';
+let lastImeEventAtMs: number = 0;
+let lastImeRegisterDisplayId: number = -1;
+let lastImeRegisterRet: number = -1;
+let lastImeRegisterAtMs: number = 0;
+let lastImeUnregisterDisplayId: number = -1;
+let lastImeUnregisterAtMs: number = 0;
+
 enum defaultInputMethodConnId {
   UNREGISTER_VIRTUALSCREEN = 0,
   REGISTER_VIRTUALSCREEN = 1,
@@ -54,16 +70,25 @@ function formatTextSample(value: string, limit: number): string {
 
 function onInputStatusFunc(unused: undefined, status: number): void {
   void unused;
+  lastImeStatus = status;
+  lastImeEventKind = 'status';
+  lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime status=${status}`);
 }
 
 function onSetCallingWindowFunc(unused: undefined, windowId: number): void {
   void unused;
+  lastCallingWindowId = windowId;
+  lastImeEventKind = 'calling_window';
+  lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime callingWindowId=${windowId}`);
 }
 
 function onSelectionChangeFunc(unused: undefined, data: AppController.onSelChgParam): void {
   void unused;
+  lastSelectionChange = data;
+  lastImeEventKind = 'selection';
+  lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime selectionChange=${safeStringify(data)}`);
 }
 
@@ -71,11 +96,18 @@ function onTextChangeFunc(unused: undefined, data: string): void {
   void unused;
   const text = typeof data === 'string' ? data : '';
   const sample = formatTextSample(text, 64);
+  lastTextChangeLength = text.length;
+  lastTextChangeSample = sample;
+  lastImeEventKind = 'text';
+  lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime textChange len=${text.length} sample=${sample}`);
 }
 
 function onFunctionKeyFunc(unused: undefined, funcKey: number): void {
   void unused;
+  lastFunctionKey = funcKey;
+  lastImeEventKind = 'function';
+  lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime functionKey=${funcKey}`);
 }
 
@@ -263,9 +295,26 @@ export class VTSBackend implements VTSBackendPort {
     const rt = this.requireRuntime();
     const displayId = rt.displayId ?? rt.screenId;
     const sample = formatTextSample(text, 64);
+    const nowMs = Date.now();
+    const sinceImeEventMs = lastImeEventAtMs > 0 ? nowMs - lastImeEventAtMs : -1;
+    const sinceImeRegisterMs = lastImeRegisterAtMs > 0 ? nowMs - lastImeRegisterAtMs : -1;
     console.info(
       `${LOG_TAG} inputText start len=${text.length} sendEnter=${sendEnter} displayId=${displayId} screenId=${rt.screenId} sample=${sample}`
     );
+    console.info(
+      `${LOG_TAG} inputText imeSnapshot registered=${this.imeRegistered} status=${lastImeStatus} ` +
+      `callingWindowId=${lastCallingWindowId} lastEvent=${lastImeEventKind} lastEventMs=${sinceImeEventMs} ` +
+      `lastRegisterDisplayId=${lastImeRegisterDisplayId} lastRegisterRet=${lastImeRegisterRet} ` +
+      `lastRegisterMs=${sinceImeRegisterMs}`
+    );
+    if (lastSelectionChange) {
+      console.info(`${LOG_TAG} inputText lastSelection=${safeStringify(lastSelectionChange)}`);
+    }
+    if (lastTextChangeLength >= 0) {
+      console.info(
+        `${LOG_TAG} inputText lastText len=${lastTextChangeLength} sample=${lastTextChangeSample} lastFunctionKey=${lastFunctionKey}`
+      );
+    }
     if (text.length > 0) {
       try {
         const ret = AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
@@ -325,6 +374,9 @@ export class VTSBackend implements VTSBackendPort {
 
   async clickPx(x: number, y: number): Promise<void> {
     const rt = this.requireRuntime();
+    console.info(
+      `${LOG_TAG} clickPx x=${x} y=${y} screenId=${rt.screenId} displayId=${rt.displayId ?? rt.screenId}`
+    );
     const event: AppController.PointEvent = {
       id: -1,
       pressed: 0,
@@ -404,6 +456,12 @@ export class VTSBackend implements VTSBackendPort {
   injectPointer(action: PointerAction, x: number, y: number, pointerId: number): void {
     const rt = this.requireRuntime();
     const safeId = Number.isFinite(pointerId) ? Math.max(0, Math.floor(pointerId)) : 0;
+    if (action === 'down' || action === 'up') {
+      console.info(
+        `${LOG_TAG} injectPointer action=${action} x=${x} y=${y} pointerId=${safeId} ` +
+        `screenId=${rt.screenId} displayId=${rt.displayId ?? rt.screenId}`
+      );
+    }
     const event: AppController.PointEvent = {
       id: safeId,
       pressed: 0,
@@ -487,6 +545,8 @@ export class VTSBackend implements VTSBackendPort {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
+      lastImeRegisterDisplayId = displayId;
+      lastImeRegisterAtMs = Date.now();
       console.info(`${LOG_TAG} connectInputMethod register displayId=${displayId}`);
       const ret = AppController.connectInputMethod(
         defaultInputMethodConnId.REGISTER_VIRTUALSCREEN,
@@ -494,6 +554,7 @@ export class VTSBackend implements VTSBackendPort {
         textCallback,
         sysCallback
       );
+      lastImeRegisterRet = ret;
       if (ret !== 0) {
         console.error(`${LOG_TAG} connectInputMethod ret ${ret}`);
       }
@@ -516,6 +577,8 @@ export class VTSBackend implements VTSBackendPort {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
+      lastImeUnregisterDisplayId = displayId;
+      lastImeUnregisterAtMs = Date.now();
       console.info(`${LOG_TAG} connectInputMethod unregister displayId=${displayId}`);
       AppController.connectInputMethod(
         defaultInputMethodConnId.UNREGISTER_VIRTUALSCREEN,
