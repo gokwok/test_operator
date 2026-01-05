@@ -20,23 +20,8 @@ const IME_POLL_INTERVAL_MS: number = 80;
 export type VTSBackendPointerAction = 'down' | 'move' | 'up' | 'cancel';
 type PointerAction = VTSBackendPointerAction;
 
-type ImeEventKind = 'none' | 'status' | 'calling_window' | 'selection' | 'text' | 'function';
-
 let lastImeStatus: number = -1;
-let lastImeStatusAtMs: number = 0;
 let lastCallingWindowId: number = -1;
-let lastCallingWindowAtMs: number = 0;
-let lastSelectionChange: AppController.onSelChgParam | null = null;
-let lastTextChangeLength: number = -1;
-let lastTextChangeSample: string = '';
-let lastFunctionKey: number = -1;
-let lastImeEventKind: ImeEventKind = 'none';
-let lastImeEventAtMs: number = 0;
-let lastImeRegisterDisplayId: number = -1;
-let lastImeRegisterRet: number = -1;
-let lastImeRegisterAtMs: number = 0;
-let lastImeUnregisterDisplayId: number = -1;
-let lastImeUnregisterAtMs: number = 0;
 
 enum defaultInputMethodConnId {
   UNREGISTER_VIRTUALSCREEN = 0,
@@ -55,68 +40,29 @@ enum defaultInputMethodOperatorId {
   ENTER = 4,
 }
 
-function safeStringify(value: AppController.onSelChgParam): string {
-  try {
-    return JSON.stringify(value);
-  } catch (e) {
-    return String(value);
-  }
-}
-
-function formatTextSample(value: string, limit: number): string {
-  if (value.length === 0) {
-    return '';
-  }
-  const sanitized = value.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
-  if (sanitized.length <= limit) {
-    return sanitized;
-  }
-  return `${sanitized.slice(0, limit)}...`;
-}
-
 function onInputStatusFunc(unused: undefined, status: number): void {
   void unused;
   lastImeStatus = status;
-  lastImeStatusAtMs = Date.now();
-  lastImeEventKind = 'status';
-  lastImeEventAtMs = Date.now();
-  console.info(`${LOG_TAG} ime status=${status}`);
 }
 
 function onSetCallingWindowFunc(unused: undefined, windowId: number): void {
   void unused;
   lastCallingWindowId = windowId;
-  lastCallingWindowAtMs = Date.now();
-  lastImeEventKind = 'calling_window';
-  lastImeEventAtMs = Date.now();
-  console.info(`${LOG_TAG} ime callingWindowId=${windowId}`);
 }
 
 function onSelectionChangeFunc(unused: undefined, data: AppController.onSelChgParam): void {
   void unused;
-  lastSelectionChange = data;
-  lastImeEventKind = 'selection';
-  lastImeEventAtMs = Date.now();
-  console.info(`${LOG_TAG} ime selectionChange=${safeStringify(data)}`);
+  void data;
 }
 
 function onTextChangeFunc(unused: undefined, data: string): void {
   void unused;
-  const text = typeof data === 'string' ? data : '';
-  const sample = formatTextSample(text, 64);
-  lastTextChangeLength = text.length;
-  lastTextChangeSample = sample;
-  lastImeEventKind = 'text';
-  lastImeEventAtMs = Date.now();
-  console.info(`${LOG_TAG} ime textChange len=${text.length} sample=${sample}`);
+  void data;
 }
 
 function onFunctionKeyFunc(unused: undefined, funcKey: number): void {
   void unused;
-  lastFunctionKey = funcKey;
-  lastImeEventKind = 'function';
-  lastImeEventAtMs = Date.now();
-  console.info(`${LOG_TAG} ime functionKey=${funcKey}`);
+  void funcKey;
 }
 
 export interface AppTarget {
@@ -186,7 +132,6 @@ export class VTSBackend implements VTSBackendPort {
   async create(): Promise<VTSRuntimeInfo> {
     if (this.runtime) {
       if (!this.imeRegistered) {
-        console.info(`${LOG_TAG} ime not registered, register for displayId=${this.runtime.displayId ?? this.runtime.screenId}`);
         this.imeRegistered = this.registerImeBestEffort(this.runtime.displayId ?? this.runtime.screenId);
       }
       return this.runtime;
@@ -238,12 +183,7 @@ export class VTSBackend implements VTSBackendPort {
     }
 
     this.runtime = runtime;
-    console.info(
-      `${LOG_TAG} runtime created screenId=${runtime.screenId} displayId=${runtime.displayId ?? runtime.screenId} ` +
-      `size=${runtime.widthPx}x${runtime.heightPx} density=${runtime.density}`
-    );
     this.imeRegistered = this.registerImeBestEffort(runtime.displayId ?? runtime.screenId);
-    console.info(`${LOG_TAG} ime registered=${this.imeRegistered}`);
     return runtime;
   }
 
@@ -256,7 +196,6 @@ export class VTSBackend implements VTSBackendPort {
     this.runtime = null;
     this.lastTarget = null;
     if (this.imeRegistered) {
-      console.info(`${LOG_TAG} unregister ime displayId=${imeDisplayId}`);
       this.unregisterImeBestEffort(imeDisplayId);
       this.imeRegistered = false;
     }
@@ -271,7 +210,6 @@ export class VTSBackend implements VTSBackendPort {
   async attachSurface(surfaceId: string): Promise<void> {
     const rt = this.requireRuntime();
     try {
-      console.info(`${LOG_TAG} attachSurface surfaceId=${surfaceId} screenId=${rt.screenId}`);
       screen.setVirtualScreenSurface(rt.screenId, surfaceId);
     } catch (e) {
       const err = e as BusinessError;
@@ -290,7 +228,6 @@ export class VTSBackend implements VTSBackendPort {
     };
 
     try {
-      console.info(`${LOG_TAG} startApp bundle=${target.bundleName} ability=${target.abilityName} displayId=${opt.displayId}`);
       await this.startAbilityInvoker(want, opt);
       this.lastTarget = target;
     } catch (e) {
@@ -302,30 +239,7 @@ export class VTSBackend implements VTSBackendPort {
   async inputText(text: string, sendEnter: boolean): Promise<void> {
     const rt = this.requireRuntime();
     const displayId = rt.displayId ?? rt.screenId;
-    const sample = formatTextSample(text, 64);
-    const nowMs = Date.now();
-    const sinceImeEventMs = lastImeEventAtMs > 0 ? nowMs - lastImeEventAtMs : -1;
-    const sinceImeRegisterMs = lastImeRegisterAtMs > 0 ? nowMs - lastImeRegisterAtMs : -1;
-    const sinceImeStatusMs = lastImeStatusAtMs > 0 ? nowMs - lastImeStatusAtMs : -1;
-    const sinceCallingWindowMs = lastCallingWindowAtMs > 0 ? nowMs - lastCallingWindowAtMs : -1;
-    console.info(
-      `${LOG_TAG} inputText start len=${text.length} sendEnter=${sendEnter} displayId=${displayId} screenId=${rt.screenId} sample=${sample}`
-    );
-    console.info(
-      `${LOG_TAG} inputText imeSnapshot registered=${this.imeRegistered} status=${lastImeStatus} ` +
-      `callingWindowId=${lastCallingWindowId} statusMs=${sinceImeStatusMs} callingWindowMs=${sinceCallingWindowMs} ` +
-      `lastEvent=${lastImeEventKind} lastEventMs=${sinceImeEventMs} ` +
-      `lastRegisterDisplayId=${lastImeRegisterDisplayId} lastRegisterRet=${lastImeRegisterRet} ` +
-      `lastRegisterMs=${sinceImeRegisterMs}`
-    );
-    if (lastSelectionChange) {
-      console.info(`${LOG_TAG} inputText lastSelection=${safeStringify(lastSelectionChange)}`);
-    }
-    if (lastTextChangeLength >= 0) {
-      console.info(
-        `${LOG_TAG} inputText lastText len=${lastTextChangeLength} sample=${lastTextChangeSample} lastFunctionKey=${lastFunctionKey}`
-      );
-    }
+    void sendEnter;
     if (text.length > 0) {
       const imeReady = await this.waitForImeReady(displayId, 'inputText');
       if (!imeReady) {
@@ -333,15 +247,10 @@ export class VTSBackend implements VTSBackendPort {
       }
       try {
         const ret = AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
-        console.info(`${LOG_TAG} inputText insert ret=${String(ret)} len=${text.length}`);
+        void ret;
       } catch (e) {
         console.error(`${LOG_TAG} inputText insert failed: ${String(e)}`);
       }
-    } else {
-      console.info(`${LOG_TAG} inputText skip insert: empty text`);
-    }
-    if (sendEnter) {
-      console.info(`${LOG_TAG} inputText sendEnter requested (enter sent via pressEnter)`);
     }
     // if (sendEnter) {
     //   AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
@@ -355,7 +264,7 @@ export class VTSBackend implements VTSBackendPort {
     }
     try {
       const ret = AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
-      console.info(`${LOG_TAG} pressEnter ret=${String(ret)}`);
+      void ret;
     } catch (e) {
       console.error(`${LOG_TAG} pressEnter failed: ${String(e)}`);
     }
@@ -389,9 +298,6 @@ export class VTSBackend implements VTSBackendPort {
 
   async clickPx(x: number, y: number): Promise<void> {
     const rt = this.requireRuntime();
-    console.info(
-      `${LOG_TAG} clickPx x=${x} y=${y} screenId=${rt.screenId} displayId=${rt.displayId ?? rt.screenId}`
-    );
     const event: AppController.PointEvent = {
       id: -1,
       pressed: 0,
@@ -471,12 +377,6 @@ export class VTSBackend implements VTSBackendPort {
   injectPointer(action: PointerAction, x: number, y: number, pointerId: number): void {
     const rt = this.requireRuntime();
     const safeId = Number.isFinite(pointerId) ? Math.max(0, Math.floor(pointerId)) : 0;
-    if (action === 'down' || action === 'up') {
-      console.info(
-        `${LOG_TAG} injectPointer action=${action} x=${x} y=${y} pointerId=${safeId} ` +
-        `screenId=${rt.screenId} displayId=${rt.displayId ?? rt.screenId}`
-      );
-    }
     const event: AppController.PointEvent = {
       id: safeId,
       pressed: 0,
@@ -554,15 +454,10 @@ export class VTSBackend implements VTSBackendPort {
 
   private async waitForImeReady(displayId: number, reason: string): Promise<boolean> {
     if (this.isImeReady()) {
-      console.info(`${LOG_TAG} ime ready immediate reason=${reason} status=${lastImeStatus} callingWindowId=${lastCallingWindowId}`);
       return true;
     }
-    console.info(
-      `${LOG_TAG} ime wait start reason=${reason} status=${lastImeStatus} callingWindowId=${lastCallingWindowId} displayId=${displayId}`
-    );
     const ready = await this.pollImeReady(IME_READY_WAIT_MS);
     if (ready) {
-      console.info(`${LOG_TAG} ime ready after wait reason=${reason}`);
       return true;
     }
     console.warn(
@@ -570,7 +465,9 @@ export class VTSBackend implements VTSBackendPort {
     );
     const reconnected = this.reconnectIme(displayId, reason);
     const readyAfter = await this.pollImeReady(IME_RECONNECT_WAIT_MS);
-    console.info(`${LOG_TAG} ime ready after reconnect=${readyAfter} reconnected=${reconnected} reason=${reason}`);
+    if (!readyAfter) {
+      console.warn(`${LOG_TAG} ime still not ready after reconnect reason=${reason} reconnected=${reconnected}`);
+    }
     return readyAfter;
   }
 
@@ -586,17 +483,15 @@ export class VTSBackend implements VTSBackendPort {
   }
 
   private reconnectIme(displayId: number, reason: string): boolean {
-    console.info(
-      `${LOG_TAG} ime reconnect start reason=${reason} displayId=${displayId} registered=${this.imeRegistered} ` +
-      `lastRegisterDisplayId=${lastImeRegisterDisplayId}`
-    );
     if (this.imeRegistered) {
       this.unregisterImeBestEffort(displayId);
       this.imeRegistered = false;
     }
     const ok = this.registerImeBestEffort(displayId);
     this.imeRegistered = ok;
-    console.info(`${LOG_TAG} ime reconnect done ok=${ok} reason=${reason}`);
+    if (!ok) {
+      console.warn(`${LOG_TAG} ime reconnect failed reason=${reason} displayId=${displayId}`);
+    }
     return ok;
   }
 
@@ -612,20 +507,15 @@ export class VTSBackend implements VTSBackendPort {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
-      lastImeRegisterDisplayId = displayId;
-      lastImeRegisterAtMs = Date.now();
-      console.info(`${LOG_TAG} connectInputMethod register displayId=${displayId}`);
       const ret = AppController.connectInputMethod(
         defaultInputMethodConnId.REGISTER_VIRTUALSCREEN,
         displayId,
         textCallback,
         sysCallback
       );
-      lastImeRegisterRet = ret;
       if (ret !== 0) {
         console.error(`${LOG_TAG} connectInputMethod ret ${ret}`);
       }
-      console.info(`${LOG_TAG} connectInputMethod register ret=${ret}`);
       return ret === 0;
     } catch (e) {
       console.error(`${LOG_TAG} connectInputMethod failed: ${String(e)}`);
@@ -644,16 +534,12 @@ export class VTSBackend implements VTSBackendPort {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
-      lastImeUnregisterDisplayId = displayId;
-      lastImeUnregisterAtMs = Date.now();
-      console.info(`${LOG_TAG} connectInputMethod unregister displayId=${displayId}`);
       AppController.connectInputMethod(
         defaultInputMethodConnId.UNREGISTER_VIRTUALSCREEN,
         displayId,
         textCallback,
         sysCallback
       );
-      console.info(`${LOG_TAG} connectInputMethod unregister ok`);
     } catch (e) {
       console.error(`${LOG_TAG} disconnectInputMethod failed: ${String(e)}`);
     }
