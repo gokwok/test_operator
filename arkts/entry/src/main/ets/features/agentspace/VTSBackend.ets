@@ -33,7 +33,7 @@ enum defaultInputMethodOperatorId {
   ENTER = 4,
 }
 
-function safeStringify(value: unknown): string {
+function safeStringify(value: AppController.onSelChgParam): string {
   try {
     return JSON.stringify(value);
   } catch (e) {
