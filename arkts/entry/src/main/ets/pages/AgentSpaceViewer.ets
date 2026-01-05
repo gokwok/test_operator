@@ -764,7 +764,7 @@ struct AgentSpaceViewer {
   }
 
   private async submitUserReply(
-    kind: 'call_user' | 'interact' | 'task_over',
+    kind: 'call_user' | 'interact' | 'take_over' | 'task_over',
     text: string,
     displayOverride?: string
   ): Promise<void> {
@@ -901,7 +901,8 @@ struct AgentSpaceViewer {
     this.stopManualControl();
     const reply = this.manualTakeOverReply;
     const message = `任务恢复执行\n${reply}`;
-    await this.submitUserReply('task_over', reply, message);
+    const kind = this.callUserKind === 'take_over' ? 'take_over' : 'task_over';
+    await this.submitUserReply(kind, reply, message);
   }
 
   private async updateViewerMode(mode: AgentSpaceDisplayMode): Promise<void> {

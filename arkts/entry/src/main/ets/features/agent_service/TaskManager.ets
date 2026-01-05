@@ -114,11 +114,12 @@ export class TaskManager {
       this.pushEvent('error', 'empty_user_reply');
       return;
     }
-    if (reply.kind === 'task_over') {
+    const shouldRollback = reply.kind === 'task_over';
+    if (shouldRollback) {
       this.pendingUserNote = content;
       this.pendingControlOp = 'rollback';
     }
-    const result: ActionResult = { status: 'SKIPPED', output: content };
+    const result: ActionResult = { status: shouldRollback ? 'SKIPPED' : 'SUCCESS', output: content };
     this.pendingActionResult = result;
     this.snapshot.lastResultStatus = result.status;
     this.snapshot.lastError = '';
