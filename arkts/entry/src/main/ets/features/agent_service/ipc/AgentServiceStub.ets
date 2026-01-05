@@ -42,7 +42,7 @@ export class AgentServiceStub extends rpc.RemoteObject {
       if (code === AgentServiceRequestCode.START_TASK) {
         const payload = data.readString();
         const request = JSON.parse(payload) as TaskStartRequest;
-        this.service.startTask(request);
+        await this.service.startTask(request);
         reply.writeString('ok');
         return true;
       }

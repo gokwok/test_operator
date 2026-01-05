@@ -93,7 +93,6 @@ export interface AgentSpaceHost {
 export type VTSBackendFactory = (invoker: StartAbilityInvoker) => VTSBackendPort;
 
 export class AgentSpace {
-  private static instance: AgentSpace | null = null;
   private backend: VTSBackendPort;
   private host: AgentSpaceHost | null = null;
   private state: AgentSpaceState = AgentSpaceState.IDLE;
@@ -104,34 +103,18 @@ export class AgentSpace {
   private viewerEffectSequence: number = 0;
   private viewerEffects: Array<AgentSpaceViewerEffect> = [];
 
-  static init(startAbilityInvoker: StartAbilityInvoker, host?: AgentSpaceHost, backendFactory?: VTSBackendFactory): AgentSpace {
-    if (!AgentSpace.instance) {
-      AgentSpace.instance = new AgentSpace(startAbilityInvoker, backendFactory);
-    } else {
-      AgentSpace.instance.updateStartAbility(startAbilityInvoker);
-    }
-    if (host) {
-      AgentSpace.instance.setHost(host);
-    }
-    return AgentSpace.instance;
-  }
-
-  static getInstance(): AgentSpace {
-    if (!AgentSpace.instance) {
-      throw new Error('AgentSpace not initialized. Call AgentSpace.init() first.');
-    }
-    return AgentSpace.instance;
-  }
-
-  private constructor(startAbilityInvoker: StartAbilityInvoker, backendFactory?: VTSBackendFactory) {
+  constructor(startAbilityInvoker: StartAbilityInvoker, backendFactory?: VTSBackendFactory, host?: AgentSpaceHost) {
     this.backend = backendFactory ? backendFactory(startAbilityInvoker) : new VTSBackend(startAbilityInvoker);
+    if (host) {
+      this.host = host;
+    }
   }
 
-  private updateStartAbility(startAbilityInvoker: StartAbilityInvoker): void {
+  updateStartAbility(startAbilityInvoker: StartAbilityInvoker): void {
     this.backend.updateStartAbility(startAbilityInvoker);
   }
 
-  private setHost(host: AgentSpaceHost): void {
+  setHost(host: AgentSpaceHost | null): void {
     this.host = host;
   }
 

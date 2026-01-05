@@ -53,6 +53,7 @@ export class AgentService {
   private startAbilityInvoker: StartAbilityInvoker | null = null;
   private readonly createdAtMs: number = Date.now();
   private taskManager: TaskManager = new TaskManager();
+  private agentSpace: AgentSpace | null = null;
   private deviceExecutor: DeviceExecutor | null = null;
   private cloudClient: CloudAgentClient | null = null;
   private lastScreenshotBase64: string = '';
@@ -70,6 +71,7 @@ export class AgentService {
   private liveViewCancelBound: boolean = false;
   private liveViewSelfStopping: boolean = false;
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
+  private agentSpaceOp: Promise<void> = Promise.resolve();
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -101,11 +103,12 @@ export class AgentService {
     return this.ctx;
   }
 
-  startTask(request: TaskStartRequest): void {
+  async startTask(request: TaskStartRequest): Promise<void> {
     this.ensureListenerBound();
     this.bindLiveViewCancelListener();
     const normalized = this.normalizeStartRequest(request);
-    const executor = this.getDeviceExecutor();
+    await this.resetAgentSpaceForNewTask();
+    const executor = this.requireDeviceExecutor();
     const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
     executor.setAppTargets(targets);
     const cloud = this.getCloudClient();
@@ -143,7 +146,7 @@ export class AgentService {
       this.setCloudEndpoint(settings.cloudEndpoint);
     }
     this.applyEfficiencyResourcesBestEffort();
-    this.startTask(request);
+    await this.startTask(request);
     await this.hideFloatWindow();
   }
 
@@ -230,26 +233,26 @@ export class AgentService {
   }
 
   async ensureVtsJson(): Promise<string> {
-    const runtime = await this.getDeviceExecutor().ensureVts();
+    const runtime = await this.requireDeviceExecutor().ensureVts();
     return JSON.stringify(runtime);
   }
 
   async getRuntimeJson(): Promise<string> {
-    const runtime = await this.getDeviceExecutor().getRuntimeInfo();
+    const runtime = await this.requireDeviceExecutor().getRuntimeInfo();
     return JSON.stringify(runtime);
   }
 
   async launchApp(bundleName: string, abilityName: string): Promise<void> {
     const target: AppTarget = { bundleName, abilityName };
-    await this.getDeviceExecutor().launchApp(target);
+    await this.requireDeviceExecutor().launchApp(target);
   }
 
   async clickNorm(xNorm: number, yNorm: number): Promise<void> {
-    await this.getDeviceExecutor().clickNorm(xNorm, yNorm);
+    await this.requireDeviceExecutor().clickNorm(xNorm, yNorm);
   }
 
   async captureScreenshotLength(): Promise<string> {
-    const base64 = await this.getDeviceExecutor().screenshotBase64();
+    const base64 = await this.requireDeviceExecutor().screenshotBase64();
     this.lastScreenshotBase64 = base64;
     return String(base64.length);
   }
@@ -268,15 +271,15 @@ export class AgentService {
   }
 
   async destroyVts(): Promise<void> {
-    await this.getDeviceExecutor().destroy();
+    await this.requireDeviceExecutor().destroy();
   }
 
   async stopVts(): Promise<number> {
-    return await this.getDeviceExecutor().stop();
+    return await this.requireDeviceExecutor().stop();
   }
 
   async transferToMain(): Promise<number> {
-    return await this.getDeviceExecutor().transferToMain();
+    return await this.requireDeviceExecutor().transferToMain();
   }
 
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
@@ -327,19 +330,35 @@ export class AgentService {
   }
 
   async setViewerActive(active: boolean): Promise<void> {
-    await this.ensureAgentSpace().setViewerActive(active);
+    const space = this.agentSpace;
+    if (!space) {
+      return;
+    }
+    await space.setViewerActive(active);
   }
 
   async getViewerMode(): Promise<AgentSpaceViewerMode> {
-    return await this.ensureAgentSpace().getViewerMode();
+    const space = this.agentSpace;
+    if (!space) {
+      return 'display';
+    }
+    return await space.getViewerMode();
   }
 
   async setViewerMode(mode: AgentSpaceViewerMode): Promise<void> {
-    await this.ensureAgentSpace().setViewerMode(mode);
+    const space = this.agentSpace;
+    if (!space) {
+      return;
+    }
+    await space.setViewerMode(mode);
   }
 
   async attachViewerSurface(surfaceId: string): Promise<void> {
-    await this.ensureAgentSpace().attachViewerSurface(surfaceId);
+    const space = this.agentSpace;
+    if (!space) {
+      return;
+    }
+    await space.attachViewerSurface(surfaceId);
   }
 
   private ensureListenerBound(): void {
@@ -356,6 +375,13 @@ export class AgentService {
     if (status === 'finished' || status === 'failed' || status === 'stopping' || status === 'idle') {
       this.releaseEfficiencyResourcesBestEffort();
     }
+
+    if (status === 'finished' || status === 'failed' || status === 'idle') {
+      void this.runAgentSpaceOp(async () => {
+        await this.destroyAgentSpaceInternal();
+      });
+    }
+
     if (!this.liveViewEnabled) {
       return;
     }
@@ -734,11 +760,19 @@ export class AgentService {
   }
 
   async sendViewerEvent(event: AgentSpacePointerEvent): Promise<void> {
-    await this.ensureAgentSpace().sendViewerEvent(event);
+    const space = this.agentSpace;
+    if (!space) {
+      return;
+    }
+    await space.sendViewerEvent(event);
   }
 
   async pullViewerEffectsJson(lastSequence: number): Promise<string> {
-    const batch: AgentSpaceViewerEffectBatch | null = await this.ensureAgentSpace().pullViewerEffects(lastSequence);
+    const space = this.agentSpace;
+    if (!space) {
+      return '';
+    }
+    const batch: AgentSpaceViewerEffectBatch | null = await space.pullViewerEffects(lastSequence);
     if (!batch) {
       return '';
     }
@@ -746,7 +780,7 @@ export class AgentService {
   }
 
   private async executeAction(action: AgentAction): Promise<string> {
-    const result = await this.getDeviceExecutor().executeAction(action);
+    const result = await this.requireDeviceExecutor().executeAction(action);
     return this.formatActionResult(result);
   }
 
@@ -759,19 +793,12 @@ export class AgentService {
     return status;
   }
 
-  private ensureAgentSpace(): AgentSpace {
-    const invoker = this.startAbilityInvoker;
-    if (!invoker) {
-      throw new Error('Service startAbility not initialized');
+  private requireDeviceExecutor(): DeviceExecutor {
+    const executor = this.deviceExecutor;
+    if (!executor) {
+      throw new Error('device_executor_not_ready');
     }
-    return AgentSpace.init(invoker);
-  }
-
-  private getDeviceExecutor(): DeviceExecutor {
-    if (!this.deviceExecutor) {
-      this.deviceExecutor = new DeviceExecutor(this.ensureAgentSpace());
-    }
-    return this.deviceExecutor;
+    return executor;
   }
 
   private getCloudClient(): CloudAgentClient {
@@ -779,6 +806,46 @@ export class AgentService {
       this.cloudClient = new CloudAgentClient(DEFAULT_CLOUD_ENDPOINT);
     }
     return this.cloudClient;
+  }
+
+  private async resetAgentSpaceForNewTask(): Promise<void> {
+    await this.runAgentSpaceOp(async () => {
+      await this.destroyAgentSpaceInternal();
+      this.createAgentSpaceInternal();
+    });
+  }
+
+  private runAgentSpaceOp(op: () => Promise<void>): Promise<void> {
+    const next = this.agentSpaceOp.then(op, op);
+    this.agentSpaceOp = next.catch(() => {
+      // keep chain alive
+    });
+    return next;
+  }
+
+  private createAgentSpaceInternal(): void {
+    const invoker = this.startAbilityInvoker;
+    if (!invoker) {
+      throw new Error('Service startAbility not initialized');
+    }
+    const space = new AgentSpace(invoker);
+    this.agentSpace = space;
+    this.deviceExecutor = new DeviceExecutor(space);
+  }
+
+  private async destroyAgentSpaceInternal(): Promise<void> {
+    const space = this.agentSpace;
+    this.agentSpace = null;
+    this.deviceExecutor = null;
+    this.lastScreenshotBase64 = '';
+    if (!space) {
+      return;
+    }
+    try {
+      await space.destroy();
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'destroyAgentSpace failed: %{public}s', String(e));
+    }
   }
 }
 
