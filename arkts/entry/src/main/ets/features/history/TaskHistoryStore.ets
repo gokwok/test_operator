@@ -1,10 +1,10 @@
 import distributedKVStore from '@ohos.data.distributedKVStore';
 import type { common } from '@kit.AbilityKit';
-import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
 import util from '@ohos.util';
 
 const STORE_ID: string = 'agent_history';
+const STORE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const KEY_INDEX: string = 'H1:IDX';
 const KEY_PREFIX_TASK: string = 'H1:T:';
 const KEY_PREFIX_STEP: string = 'H1:S:';
@@ -31,11 +31,36 @@ export interface HistoryTaskMeta {
   error: string;
 }
 
+export interface HistoryTaskMetaPatch {
+  sessionId?: string;
+  taskText?: string;
+  cloudEndpoint?: string;
+  waitAfterActionMs?: number;
+  status?: HistoryTaskStatus;
+  startAtMs?: number;
+  endAtMs?: number;
+  stepCount?: number;
+  finishContent?: string;
+  error?: string;
+}
+
 export interface HistoryStepImageMeta {
   format: string;
   bytes: number;
   chunkSize: number;
   chunkCount: number;
+}
+
+export interface HistoryStepBaseMeta {
+  taskId: string;
+  stepIndex: number;
+  tsMs: number;
+  description: string;
+  actionName: string;
+  actionJson: string;
+  resultStatus: string;
+  error: string;
+  output: string;
 }
 
 export interface HistoryStepMeta {
@@ -97,7 +122,7 @@ export class TaskHistoryStore {
     });
   }
 
-  async updateTaskMeta(taskId: string, patch: Partial<HistoryTaskMeta>): Promise<void> {
+  async updateTaskMeta(taskId: string, patch: HistoryTaskMetaPatch): Promise<void> {
     if (!this.enabled) {
       return;
     }
@@ -107,12 +132,12 @@ export class TaskHistoryStore {
       if (!current) {
         return;
       }
-      const next: HistoryTaskMeta = { ...current, ...patch };
+      const next: HistoryTaskMeta = TaskHistoryStore.applyTaskPatch(current, patch);
       await store.put(TaskHistoryStore.taskKey(taskId), JSON.stringify(next));
     });
   }
 
-  async putStep(taskId: string, meta: Omit<HistoryStepMeta, 'image'>, screenshotBase64: string): Promise<void> {
+  async putStep(taskId: string, meta: HistoryStepBaseMeta, screenshotBase64: string): Promise<void> {
     if (!this.enabled) {
       return;
     }
@@ -124,7 +149,15 @@ export class TaskHistoryStore {
     const bytes = helper.decodeSync(trimmed);
     const imageMeta = TaskHistoryStore.buildImageMeta(bytes.byteLength);
     const step: HistoryStepMeta = {
-      ...meta,
+      taskId: meta.taskId,
+      stepIndex: meta.stepIndex,
+      tsMs: meta.tsMs,
+      description: meta.description,
+      actionName: meta.actionName,
+      actionJson: meta.actionJson,
+      resultStatus: meta.resultStatus,
+      error: meta.error,
+      output: meta.output,
       image: imageMeta,
     };
 
@@ -134,10 +167,9 @@ export class TaskHistoryStore {
       await store.put(TaskHistoryStore.stepKey(taskId, meta.stepIndex), JSON.stringify(step));
       const currentTask = await this.getTaskMeta(store, taskId);
       if (currentTask && meta.stepIndex > currentTask.stepCount) {
-        await store.put(
-          TaskHistoryStore.taskKey(taskId),
-          JSON.stringify({ ...currentTask, stepCount: meta.stepIndex })
-        );
+        const updated = TaskHistoryStore.cloneTaskMeta(currentTask);
+        updated.stepCount = meta.stepIndex;
+        await store.put(TaskHistoryStore.taskKey(taskId), JSON.stringify(updated));
       }
     });
   }
@@ -155,10 +187,16 @@ export class TaskHistoryStore {
       }
       const parsed = JSON.parse(raw) as HistoryStepMeta;
       const next: HistoryStepMeta = {
-        ...parsed,
+        taskId: parsed.taskId,
+        stepIndex: parsed.stepIndex,
+        tsMs: parsed.tsMs,
+        description: parsed.description,
+        actionName: parsed.actionName,
+        actionJson: parsed.actionJson,
         resultStatus: status,
         error,
         output,
+        image: parsed.image,
       };
       await store.put(key, JSON.stringify(next));
     });
@@ -282,8 +320,8 @@ export class TaskHistoryStore {
     let total = 0;
     for (let i = 0; i < count; i++) {
       const key = TaskHistoryStore.imageChunkKey(taskId, stepIndex, i);
-      const value = await store.get(key) as Uint8Array;
-      if (!value || value.byteLength === 0) {
+      const value = await store.get(key);
+      if (!(value instanceof Uint8Array) || value.byteLength === 0) {
         return null;
       }
       const copy = new Uint8Array(value);
@@ -328,33 +366,36 @@ export class TaskHistoryStore {
     if (!ctx) {
       throw new Error('history_store_context_missing');
     }
-    const config: distributedKVStore.KVManagerConfig = {
-      context: ctx,
-      bundleName: ctx.bundleName,
-    };
+    const promise = this.openStore(ctx);
+    this.storePromise = promise;
+    try {
+      const store = await promise;
+      this.store = store;
+      return store;
+    } catch (e: Object) {
+      throw new Error(String(e));
+    } finally {
+      this.storePromise = null;
+    }
+  }
+
+  private async openStore(ctx: common.Context): Promise<distributedKVStore.SingleKVStore> {
+    if (!this.manager) {
+      const config: distributedKVStore.KVManagerConfig = {
+        context: ctx,
+        bundleName: STORE_BUNDLE_NAME,
+      };
+      this.manager = distributedKVStore.createKVManager(config);
+    }
     const options: distributedKVStore.Options = {
       createIfMissing: true,
       encrypt: false,
       backup: false,
       autoSync: false,
       kvStoreType: distributedKVStore.KVStoreType.SINGLE_VERSION,
+      securityLevel: distributedKVStore.SecurityLevel.S1,
     };
-    const promise = distributedKVStore.createKVManager(config)
-      .then((manager: distributedKVStore.KVManager) => {
-        this.manager = manager;
-        return manager.getKVStore<distributedKVStore.SingleKVStore>(STORE_ID, options);
-      })
-      .then((store: distributedKVStore.SingleKVStore) => {
-        this.store = store;
-        this.storePromise = null;
-        return store;
-      })
-      .catch((e: BusinessError) => {
-        this.storePromise = null;
-        throw e;
-      });
-    this.storePromise = promise;
-    return await promise;
+    return await this.manager.getKVStore<distributedKVStore.SingleKVStore>(STORE_ID, options);
   }
 
   private async getTaskMeta(store: distributedKVStore.SingleKVStore, taskId: string): Promise<HistoryTaskMeta | null> {
@@ -412,7 +453,13 @@ export class TaskHistoryStore {
 
   private async insertIndex(store: distributedKVStore.SingleKVStore, taskId: string): Promise<void> {
     const ids = await this.readIndex(store);
-    const next = [taskId, ...ids.filter(id => id !== taskId)];
+    const next: string[] = [taskId];
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (id !== taskId) {
+        next.push(id);
+      }
+    }
     await store.put(KEY_INDEX, JSON.stringify(next));
   }
 
@@ -468,5 +515,55 @@ export class TaskHistoryStore {
     const safe = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
     return safe.toString().padStart(width, '0');
   }
-}
 
+  private static cloneTaskMeta(meta: HistoryTaskMeta): HistoryTaskMeta {
+    return {
+      taskId: meta.taskId,
+      sessionId: meta.sessionId,
+      taskText: meta.taskText,
+      cloudEndpoint: meta.cloudEndpoint,
+      waitAfterActionMs: meta.waitAfterActionMs,
+      status: meta.status,
+      startAtMs: meta.startAtMs,
+      endAtMs: meta.endAtMs,
+      stepCount: meta.stepCount,
+      finishContent: meta.finishContent,
+      error: meta.error,
+    };
+  }
+
+  private static applyTaskPatch(meta: HistoryTaskMeta, patch: HistoryTaskMetaPatch): HistoryTaskMeta {
+    const next: HistoryTaskMeta = TaskHistoryStore.cloneTaskMeta(meta);
+    if (typeof patch.sessionId === 'string') {
+      next.sessionId = patch.sessionId;
+    }
+    if (typeof patch.taskText === 'string') {
+      next.taskText = patch.taskText;
+    }
+    if (typeof patch.cloudEndpoint === 'string') {
+      next.cloudEndpoint = patch.cloudEndpoint;
+    }
+    if (typeof patch.waitAfterActionMs === 'number' && Number.isFinite(patch.waitAfterActionMs)) {
+      next.waitAfterActionMs = Math.max(0, Math.floor(patch.waitAfterActionMs));
+    }
+    if (patch.status) {
+      next.status = patch.status;
+    }
+    if (typeof patch.startAtMs === 'number' && Number.isFinite(patch.startAtMs)) {
+      next.startAtMs = Math.max(0, Math.floor(patch.startAtMs));
+    }
+    if (typeof patch.endAtMs === 'number' && Number.isFinite(patch.endAtMs)) {
+      next.endAtMs = Math.max(0, Math.floor(patch.endAtMs));
+    }
+    if (typeof patch.stepCount === 'number' && Number.isFinite(patch.stepCount)) {
+      next.stepCount = Math.max(0, Math.floor(patch.stepCount));
+    }
+    if (typeof patch.finishContent === 'string') {
+      next.finishContent = patch.finishContent;
+    }
+    if (typeof patch.error === 'string') {
+      next.error = patch.error;
+    }
+    return next;
+  }
+}

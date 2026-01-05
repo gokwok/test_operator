@@ -12,7 +12,12 @@ import { DeviceExecutor } from './DeviceExecutor';
 import type { TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { TaskHistoryStore } from '../history/TaskHistoryStore';
-import type { HistoryStepMeta, HistoryTaskMeta, HistoryTaskStatus } from '../history/TaskHistoryStore';
+import type {
+  HistoryStepBaseMeta,
+  HistoryTaskMeta,
+  HistoryTaskMetaPatch,
+  HistoryTaskStatus
+} from '../history/TaskHistoryStore';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
@@ -669,7 +674,7 @@ export class TaskManager {
     if (stepIndex <= 0) {
       return;
     }
-    const meta: Omit<HistoryStepMeta, 'image'> = {
+    const meta: HistoryStepBaseMeta = {
       taskId,
       stepIndex,
       tsMs: Date.now(),
@@ -699,16 +704,13 @@ export class TaskManager {
     if (taskId.length === 0) {
       return;
     }
-    const patch: Partial<HistoryTaskMeta> = {
+    const trimmed = detail.trim();
+    const patch: HistoryTaskMetaPatch = {
       status,
       endAtMs: Date.now(),
+      finishContent: status === 'finished' ? trimmed : '',
+      error: status === 'finished' ? '' : trimmed,
     };
-    if (status === 'finished') {
-      patch.finishContent = detail.trim();
-      patch.error = '';
-    } else {
-      patch.error = detail.trim();
-    }
     void this.historyStore.updateTaskMeta(taskId, patch);
   }
 

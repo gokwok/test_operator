@@ -249,8 +249,7 @@ struct Index {
 
   @Builder
   private taskDetailView(): void {
-    const task = this.selectedTask;
-    if (task) {
+    if (this.selectedTask) {
       Column({ space: 12 }) {
         Row({ space: 8 }) {
           Button('返回')
@@ -273,35 +272,35 @@ struct Index {
               void this.deleteSelectedTask();
             })
 
-          Text(task.status)
+          Text(this.selectedTask.status)
             .fontSize(11)
             .fontColor('#B8C1CC')
             .layoutWeight(1)
             .textAlign(TextAlign.End)
         }
 
-        Text(task.taskText)
+        Text(this.selectedTask.taskText)
           .fontSize(12)
           .fontColor(Color.White)
 
-        Text(`session: ${task.sessionId}`)
+        Text(`session: ${this.selectedTask.sessionId}`)
           .fontSize(11)
           .fontColor('#B8C1CC')
 
-        Text(`cloud: ${task.cloudEndpoint}`)
+        Text(`cloud: ${this.selectedTask.cloudEndpoint}`)
           .fontSize(11)
           .fontColor('#B8C1CC')
 
-        Text(`wait_ms: ${task.waitAfterActionMs}    steps: ${task.stepCount}`)
+        Text(`wait_ms: ${this.selectedTask.waitAfterActionMs}    steps: ${this.selectedTask.stepCount}`)
           .fontSize(11)
           .fontColor('#B8C1CC')
 
-        if (task.finishContent.trim().length > 0) {
-          Text(`finish:\n${task.finishContent}`)
+        if (this.selectedTask.finishContent.trim().length > 0) {
+          Text(`finish:\n${this.selectedTask.finishContent}`)
             .fontSize(11)
             .fontColor('#B8C1CC')
-        } else if (task.error.trim().length > 0) {
-          Text(`error:\n${task.error}`)
+        } else if (this.selectedTask.error.trim().length > 0) {
+          Text(`error:\n${this.selectedTask.error}`)
             .fontSize(11)
             .fontColor('#F8B4B4')
         }
@@ -371,22 +370,21 @@ struct Index {
 
   @Builder
   private stepDetailView(): void {
-    const step = this.selectedStep;
-    if (step) {
+    if (this.selectedStep) {
       Column({ space: 6 }) {
-        Text(`Step #${step.stepIndex}`)
+        Text(`Step #${this.selectedStep.stepIndex}`)
           .fontSize(12)
           .fontColor(Color.White)
           .fontWeight(FontWeight.Medium)
 
-        if (step.error.trim().length > 0) {
-          Text(step.error)
+        if (this.selectedStep.error.trim().length > 0) {
+          Text(this.selectedStep.error)
             .fontSize(11)
             .fontColor('#F8B4B4')
         }
 
-        if (step.output.trim().length > 0) {
-          Text(step.output)
+        if (this.selectedStep.output.trim().length > 0) {
+          Text(this.selectedStep.output)
             .fontSize(11)
             .fontColor('#B8C1CC')
         }
