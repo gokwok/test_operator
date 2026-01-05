@@ -73,6 +73,8 @@ export class AgentController {
   private efficiencyApplied: boolean = false;
   private liveViewCancelBound: boolean = false;
   private liveViewSelfStopping: boolean = false;
+  private viewerActive: boolean = false;
+  private pendingAgentSpaceDestroy: boolean = false;
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
   private agentSpaceOp: Promise<void> = Promise.resolve();
 
@@ -124,6 +126,7 @@ export class AgentController {
     this.liveViewIcon = null;
     this.liveViewNotificationId = this.allocateLiveViewId();
     const collector = new StateCollector(toolKit);
+    this.pendingAgentSpaceDestroy = false;
     this.taskManager.startTask(normalized, agentProxy, toolKit, collector);
     void this.publishRunningLiveView();
   }
@@ -355,11 +358,21 @@ export class AgentController {
   }
 
   async setViewerActive(active: boolean): Promise<void> {
+    this.viewerActive = active;
     const space = this.agentSpace;
     if (!space) {
+      if (!active && this.pendingAgentSpaceDestroy) {
+        this.pendingAgentSpaceDestroy = false;
+      }
       return;
     }
     await space.setViewerActive(active);
+    if (!active && this.pendingAgentSpaceDestroy) {
+      this.pendingAgentSpaceDestroy = false;
+      void this.runAgentSpaceOp(async () => {
+        await this.destroyAgentSpaceInternal();
+      });
+    }
   }
 
   async getViewerMode(): Promise<AgentSpaceViewerMode> {
@@ -401,10 +414,18 @@ export class AgentController {
       this.releaseEfficiencyResourcesBestEffort();
     }
 
-    if (status === 'finished' || status === 'failed' || status === 'idle') {
-      void this.runAgentSpaceOp(async () => {
-        await this.destroyAgentSpaceInternal();
-      });
+    if (status === 'finished') {
+      // Keep AgentSpace alive so transferToMain can reuse the existing app instance.
+      this.pendingAgentSpaceDestroy = false;
+    } else if (status === 'failed' || status === 'idle') {
+      if (this.viewerActive) {
+        this.pendingAgentSpaceDestroy = true;
+      } else {
+        this.pendingAgentSpaceDestroy = false;
+        void this.runAgentSpaceOp(async () => {
+          await this.destroyAgentSpaceInternal();
+        });
+      }
     }
 
     if (!this.liveViewEnabled) {
@@ -963,6 +984,7 @@ export class AgentController {
   }
 
   private async destroyAgentSpaceInternal(): Promise<void> {
+    this.pendingAgentSpaceDestroy = false;
     const space = this.agentSpace;
     this.agentSpace = null;
     this.toolKit = null;
