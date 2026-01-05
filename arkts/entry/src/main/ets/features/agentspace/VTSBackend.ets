@@ -234,9 +234,9 @@ export class VTSBackend implements VTSBackendPort {
     if (text.length > 0) {
       AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
     }
-    if (sendEnter) {
-      AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
-    }
+    // if (sendEnter) {
+    //   AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
+    // }
   }
 
   async pressEnter(): Promise<void> {
