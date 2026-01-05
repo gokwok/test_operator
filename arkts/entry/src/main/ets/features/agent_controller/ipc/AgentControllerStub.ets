@@ -171,6 +171,11 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(String(count));
         return true;
       }
+      if (code === AgentControllerRequestCode.RELEASE_AGENT_SPACE_IF_FINISHED) {
+        const released = await this.service.releaseAgentSpaceIfFinished();
+        reply.writeString(released ? '1' : '0');
+        return true;
+      }
       if (code === AgentControllerRequestCode.ACTION_DOUBLE_CLICK) {
         const xNorm = data.readInt();
         const yNorm = data.readInt();

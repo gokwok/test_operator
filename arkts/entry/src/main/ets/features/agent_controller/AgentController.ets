@@ -310,6 +310,20 @@ export class AgentController {
     }
   }
 
+  async releaseAgentSpaceIfFinished(): Promise<boolean> {
+    const snapshot = this.taskManager.getSnapshot();
+    if (snapshot.status !== 'finished') {
+      return false;
+    }
+    if (!this.agentSpace) {
+      return false;
+    }
+    await this.runAgentSpaceOp(async () => {
+      await this.destroyAgentSpaceInternal();
+    });
+    return true;
+  }
+
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
     const params: ActionParameters = { point: [xNorm, yNorm] };
     const action: AgentAction = { name: 'double_click', parameters: params };

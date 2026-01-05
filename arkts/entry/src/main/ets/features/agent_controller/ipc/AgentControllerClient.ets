@@ -193,6 +193,11 @@ export class AgentControllerClient {
     return await this.sendRequest(AgentControllerRequestCode.TRANSFER_TO_MAIN);
   }
 
+  async releaseAgentSpaceIfFinished(): Promise<boolean> {
+    const result = await this.sendRequest(AgentControllerRequestCode.RELEASE_AGENT_SPACE_IF_FINISHED);
+    return result === '1';
+  }
+
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
     return await this.sendRequestWithTwoInts(AgentControllerRequestCode.ACTION_DOUBLE_CLICK, xNorm, yNorm);
   }

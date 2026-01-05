@@ -36,4 +36,5 @@ export enum AgentControllerRequestCode {
   REQUEST_TASK_OVER = 44,
   REQUEST_SUPPLEMENT = 45,
   SUBMIT_USER_NOTE = 46,
+  RELEASE_AGENT_SPACE_IF_FINISHED = 47,
 }
