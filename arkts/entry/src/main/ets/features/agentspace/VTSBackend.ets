@@ -13,13 +13,19 @@ const POINTER_ACTION_DOWN: number = 2;
 const POINTER_ACTION_MOVE: number = 3;
 const POINTER_ACTION_UP: number = 4;
 
+const IME_READY_WAIT_MS: number = 1200;
+const IME_RECONNECT_WAIT_MS: number = 1200;
+const IME_POLL_INTERVAL_MS: number = 80;
+
 export type VTSBackendPointerAction = 'down' | 'move' | 'up' | 'cancel';
 type PointerAction = VTSBackendPointerAction;
 
 type ImeEventKind = 'none' | 'status' | 'calling_window' | 'selection' | 'text' | 'function';
 
 let lastImeStatus: number = -1;
+let lastImeStatusAtMs: number = 0;
 let lastCallingWindowId: number = -1;
+let lastCallingWindowAtMs: number = 0;
 let lastSelectionChange: AppController.onSelChgParam | null = null;
 let lastTextChangeLength: number = -1;
 let lastTextChangeSample: string = '';
@@ -71,6 +77,7 @@ function formatTextSample(value: string, limit: number): string {
 function onInputStatusFunc(unused: undefined, status: number): void {
   void unused;
   lastImeStatus = status;
+  lastImeStatusAtMs = Date.now();
   lastImeEventKind = 'status';
   lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime status=${status}`);
@@ -79,6 +86,7 @@ function onInputStatusFunc(unused: undefined, status: number): void {
 function onSetCallingWindowFunc(unused: undefined, windowId: number): void {
   void unused;
   lastCallingWindowId = windowId;
+  lastCallingWindowAtMs = Date.now();
   lastImeEventKind = 'calling_window';
   lastImeEventAtMs = Date.now();
   console.info(`${LOG_TAG} ime callingWindowId=${windowId}`);
@@ -298,12 +306,15 @@ export class VTSBackend implements VTSBackendPort {
     const nowMs = Date.now();
     const sinceImeEventMs = lastImeEventAtMs > 0 ? nowMs - lastImeEventAtMs : -1;
     const sinceImeRegisterMs = lastImeRegisterAtMs > 0 ? nowMs - lastImeRegisterAtMs : -1;
+    const sinceImeStatusMs = lastImeStatusAtMs > 0 ? nowMs - lastImeStatusAtMs : -1;
+    const sinceCallingWindowMs = lastCallingWindowAtMs > 0 ? nowMs - lastCallingWindowAtMs : -1;
     console.info(
       `${LOG_TAG} inputText start len=${text.length} sendEnter=${sendEnter} displayId=${displayId} screenId=${rt.screenId} sample=${sample}`
     );
     console.info(
       `${LOG_TAG} inputText imeSnapshot registered=${this.imeRegistered} status=${lastImeStatus} ` +
-      `callingWindowId=${lastCallingWindowId} lastEvent=${lastImeEventKind} lastEventMs=${sinceImeEventMs} ` +
+      `callingWindowId=${lastCallingWindowId} statusMs=${sinceImeStatusMs} callingWindowMs=${sinceCallingWindowMs} ` +
+      `lastEvent=${lastImeEventKind} lastEventMs=${sinceImeEventMs} ` +
       `lastRegisterDisplayId=${lastImeRegisterDisplayId} lastRegisterRet=${lastImeRegisterRet} ` +
       `lastRegisterMs=${sinceImeRegisterMs}`
     );
@@ -316,6 +327,10 @@ export class VTSBackend implements VTSBackendPort {
       );
     }
     if (text.length > 0) {
+      const imeReady = await this.waitForImeReady(displayId, 'inputText');
+      if (!imeReady) {
+        console.warn(`${LOG_TAG} inputText proceed without ime ready`);
+      }
       try {
         const ret = AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
         console.info(`${LOG_TAG} inputText insert ret=${String(ret)} len=${text.length}`);
@@ -531,6 +546,58 @@ export class VTSBackend implements VTSBackendPort {
       return POINTER_ACTION_UP;
     }
     return POINTER_ACTION_CANCEL;
+  }
+
+  private isImeReady(): boolean {
+    return this.imeRegistered && lastImeStatus === 1;
+  }
+
+  private async waitForImeReady(displayId: number, reason: string): Promise<boolean> {
+    if (this.isImeReady()) {
+      console.info(`${LOG_TAG} ime ready immediate reason=${reason} status=${lastImeStatus} callingWindowId=${lastCallingWindowId}`);
+      return true;
+    }
+    console.info(
+      `${LOG_TAG} ime wait start reason=${reason} status=${lastImeStatus} callingWindowId=${lastCallingWindowId} displayId=${displayId}`
+    );
+    const ready = await this.pollImeReady(IME_READY_WAIT_MS);
+    if (ready) {
+      console.info(`${LOG_TAG} ime ready after wait reason=${reason}`);
+      return true;
+    }
+    console.warn(
+      `${LOG_TAG} ime wait timeout reason=${reason} status=${lastImeStatus} callingWindowId=${lastCallingWindowId} displayId=${displayId}`
+    );
+    const reconnected = this.reconnectIme(displayId, reason);
+    const readyAfter = await this.pollImeReady(IME_RECONNECT_WAIT_MS);
+    console.info(`${LOG_TAG} ime ready after reconnect=${readyAfter} reconnected=${reconnected} reason=${reason}`);
+    return readyAfter;
+  }
+
+  private async pollImeReady(timeoutMs: number): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (this.isImeReady()) {
+        return true;
+      }
+      await sleep(IME_POLL_INTERVAL_MS);
+    }
+    return this.isImeReady();
+  }
+
+  private reconnectIme(displayId: number, reason: string): boolean {
+    console.info(
+      `${LOG_TAG} ime reconnect start reason=${reason} displayId=${displayId} registered=${this.imeRegistered} ` +
+      `lastRegisterDisplayId=${lastImeRegisterDisplayId}`
+    );
+    if (this.imeRegistered) {
+      this.unregisterImeBestEffort(displayId);
+      this.imeRegistered = false;
+    }
+    const ok = this.registerImeBestEffort(displayId);
+    this.imeRegistered = ok;
+    console.info(`${LOG_TAG} ime reconnect done ok=${ok} reason=${reason}`);
+    return ok;
   }
 
 
