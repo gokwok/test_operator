@@ -7,7 +7,7 @@ import {
   CloudInvokeResponse,
   CloudInvokeOutput
 } from './AgentProxy';
-import { StateCollector } from './StateCollector';
+import { StateCollector } from './state_collector/StateCollector';
 import { ToolKit } from './ToolKit';
 import type { DeviceState, TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
 import { hilog } from '@kit.PerformanceAnalysisKit';

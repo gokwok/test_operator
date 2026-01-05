@@ -3,7 +3,7 @@ import bundleResourceManager from '@ohos.bundle.bundleResourceManager';
 import preferences from '@ohos.data.preferences';
 import image from '@ohos.multimedia.image';
 import type { common } from '@kit.AbilityKit';
-import type { AppTargetDescriptor } from '../agent_controller/types';
+import type { AppTargetDescriptor } from '../types';
 
 const APP_NAME_WHITELIST: string[] = [
   // Social & Messaging

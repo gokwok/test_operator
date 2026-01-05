@@ -1,5 +1,5 @@
-import type { DeviceState } from './types';
-import { ToolKit } from './ToolKit';
+import type { DeviceState } from '../types';
+import { ToolKit } from '../ToolKit';
 
 export class StateCollector {
   private toolKit: ToolKit;
@@ -29,4 +29,3 @@ export class StateCollector {
     return state;
   }
 }
-

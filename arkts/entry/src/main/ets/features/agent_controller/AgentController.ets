@@ -15,7 +15,7 @@ import type {
 } from './agentspace/AgentSpace';
 import type { AppTarget, StartAbilityInvoker } from './agentspace/VTSBackend';
 import { AgentProxy } from './AgentProxy';
-import { StateCollector } from './StateCollector';
+import { StateCollector } from './state_collector/StateCollector';
 import { ToolKit } from './ToolKit';
 import type {
   AppTargetDescriptor,
@@ -29,7 +29,7 @@ import { TaskManager, TaskManagerListener } from './TaskManager';
 import { LiveViewController, LiveViewContents, LiveViewType } from './live_view/LiveViewController';
 import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
 import { AgentSettings } from '../persistence/settings/AgentSettings';
-import { AppState } from '../state/app_state';
+import { AppState } from './state_collector/AppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
