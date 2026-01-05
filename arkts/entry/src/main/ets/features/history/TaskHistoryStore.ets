@@ -372,7 +372,7 @@ export class TaskHistoryStore {
       const store = await promise;
       this.store = store;
       return store;
-    } catch (e: Object) {
+    } catch (e) {
       throw new Error(String(e));
     } finally {
       this.storePromise = null;
