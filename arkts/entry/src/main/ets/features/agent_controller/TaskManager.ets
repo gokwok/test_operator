@@ -1,23 +1,23 @@
-import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
+import type { AgentAction, ActionParameters, ActionResult } from './agentspace/AgentSpace';
 import {
-  CloudAgentClient,
+  AgentProxy,
   CloudControl,
-  CloudDeviceState,
   CloudInvokeError,
   CloudInvokePayload,
   CloudInvokeResponse,
   CloudInvokeOutput
-} from './CloudAgentClient';
-import { DeviceExecutor } from './DeviceExecutor';
-import type { TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
+} from './AgentProxy';
+import { StateCollector } from './StateCollector';
+import { ToolKit } from './ToolKit';
+import type { DeviceState, TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { TaskHistoryStore } from '../history/TaskHistoryStore';
+import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 import type {
   HistoryStepBaseMeta,
   HistoryTaskMeta,
   HistoryTaskMetaPatch,
   HistoryTaskStatus
-} from '../history/TaskHistoryStore';
+} from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
@@ -50,8 +50,9 @@ export class TaskManager {
   private events: Array<TaskEvent> = [];
   private runToken: number = 0;
   private stopRequested: boolean = false;
-  private cloudClient: CloudAgentClient | null = null;
-  private deviceExecutor: DeviceExecutor | null = null;
+  private agentProxy: AgentProxy | null = null;
+  private toolKit: ToolKit | null = null;
+  private stateCollector: StateCollector | null = null;
   private waitAfterActionMs: number = DEFAULT_WAIT_AFTER_ACTION_MS;
   private taskText: string = '';
   private installedApps: Array<string> = [];
@@ -64,14 +65,15 @@ export class TaskManager {
   private historyTaskId: string = '';
   private historyTaskText: string = '';
 
-  startTask(request: TaskStartRequest, cloudClient: CloudAgentClient, deviceExecutor: DeviceExecutor): void {
+  startTask(request: TaskStartRequest, agentProxy: AgentProxy, toolKit: ToolKit, stateCollector: StateCollector): void {
     const taskText = request.taskText.trim();
     if (taskText.length === 0) {
       this.failTask('task_text_empty');
       return;
     }
-    this.cloudClient = cloudClient;
-    this.deviceExecutor = deviceExecutor;
+    this.agentProxy = agentProxy;
+    this.toolKit = toolKit;
+    this.stateCollector = stateCollector;
     this.waitAfterActionMs = this.normalizeWaitMs(request.waitMs);
     this.taskText = taskText;
     this.historyTaskText = taskText;
@@ -98,7 +100,7 @@ export class TaskManager {
       lastError: '',
       installedAppsSent: false,
     };
-    this.recordHistoryTaskStart(cloudClient.getEndpoint(), this.snapshot.sessionId);
+    this.recordHistoryTaskStart(agentProxy.getEndpoint(), this.snapshot.sessionId);
     this.pushEvent('status', 'running');
     this.notifyStatus();
     void this.runLoop(token);
@@ -306,9 +308,10 @@ export class TaskManager {
   }
 
   private async runLoop(token: number): Promise<void> {
-    const cloud = this.cloudClient;
-    const device = this.deviceExecutor;
-    if (!cloud || !device) {
+    const proxy = this.agentProxy;
+    const toolKit = this.toolKit;
+    const collector = this.stateCollector;
+    if (!proxy || !toolKit || !collector) {
       this.failTask('dependencies_missing');
       return;
     }
@@ -328,16 +331,16 @@ export class TaskManager {
             break;
           }
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) begin', token, this.snapshot.stepIndex);
-          const screenshot = await device.screenshotBase64();
+          const screenshot = await collector.screenshotBase64();
           if (this.shouldAbortLoop()) {
             break;
           }
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
           const payload = pendingResult
-            ? this.buildFollowupPayload(screenshot, pendingResult)
-            : this.buildInitialPayload(screenshot);
+            ? this.buildFollowupPayload(collector, screenshot, pendingResult)
+            : this.buildInitialPayload(collector, screenshot);
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(initial) begin', token, this.snapshot.stepIndex);
-          const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+          const response = await this.invokeWithRetry(proxy, sessionId, payload, token);
           if (this.shouldAbortLoop()) {
             break;
           }
@@ -345,7 +348,7 @@ export class TaskManager {
           pendingResult = null;
           sessionId = this.applySessionId(response, sessionId);
           const output = response.output;
-          const action = this.extractAction(cloud, output);
+          const action = this.extractAction(proxy, output);
           if (!action) {
             this.failTask('missing_action');
             break;
@@ -373,7 +376,7 @@ export class TaskManager {
           break;
         }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d executeAction begin name=%{public}s', token, this.snapshot.stepIndex, pendingAction.name);
-        const result = await this.executeAction(device, pendingAction);
+        const result = await this.executeAction(toolKit, pendingAction);
         if (this.shouldAbortLoop()) {
           break;
         }
@@ -387,21 +390,21 @@ export class TaskManager {
         }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d waitAfterAction done', token, this.snapshot.stepIndex);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) begin', token, this.snapshot.stepIndex);
-        const screenshot = await device.screenshotBase64();
+        const screenshot = await collector.screenshotBase64();
         if (this.shouldAbortLoop()) {
           break;
         }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
-        const payload = this.buildFollowupPayload(screenshot, result);
+        const payload = this.buildFollowupPayload(collector, screenshot, result);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) begin', token, this.snapshot.stepIndex);
-        const response = await this.invokeWithRetry(cloud, sessionId, payload, token);
+        const response = await this.invokeWithRetry(proxy, sessionId, payload, token);
         if (this.shouldAbortLoop()) {
           break;
         }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) done', token, this.snapshot.stepIndex);
         sessionId = this.applySessionId(response, sessionId);
         const output = response.output;
-        const action = this.extractAction(cloud, output);
+        const action = this.extractAction(proxy, output);
         if (!action) {
           this.failTask('missing_action');
           break;
@@ -435,8 +438,8 @@ export class TaskManager {
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'runLoop end token=%{public}d status=%{public}s', token, this.snapshot.status);
   }
 
-  private buildInitialPayload(screenshot: string): CloudInvokePayload {
-    const state = this.buildStatePayload(screenshot);
+  private buildInitialPayload(collector: StateCollector, screenshot: string): CloudInvokePayload {
+    const state = this.buildStatePayload(collector, screenshot);
     const payload: CloudInvokePayload = {
       task: this.taskText,
       state,
@@ -448,8 +451,8 @@ export class TaskManager {
     return payload;
   }
 
-  private buildFollowupPayload(screenshot: string, result: ActionResult): CloudInvokePayload {
-    const state = this.buildStatePayload(screenshot);
+  private buildFollowupPayload(collector: StateCollector, screenshot: string, result: ActionResult): CloudInvokePayload {
+    const state = this.buildStatePayload(collector, screenshot);
     const payload: CloudInvokePayload = {
       state,
       action_result: result,
@@ -461,14 +464,11 @@ export class TaskManager {
     return payload;
   }
 
-  private buildStatePayload(screenshot: string): CloudDeviceState {
-    const state: CloudDeviceState = { screenshot };
+  private buildStatePayload(collector: StateCollector, screenshot: string): DeviceState {
     const note = this.consumeUserNote();
-    if (note.length > 0) {
-      state.user_note = note;
-    }
-    if (!this.installedAppsSent && this.installedApps.length > 0) {
-      state.installed_apps = this.installedApps;
+    const includeInstalledApps = !this.installedAppsSent && this.installedApps.length > 0;
+    const state = collector.buildState(screenshot, this.installedApps, includeInstalledApps, note);
+    if (includeInstalledApps) {
       this.installedAppsSent = true;
       this.snapshot.installedAppsSent = true;
     }
@@ -486,11 +486,11 @@ export class TaskManager {
     return next;
   }
 
-  private extractAction(cloud: CloudAgentClient, output?: CloudInvokeOutput): AgentAction | null {
+  private extractAction(proxy: AgentProxy, output?: CloudInvokeOutput): AgentAction | null {
     if (!output || !output.action) {
       return null;
     }
-    return cloud.normalizeAction(output.action);
+    return proxy.normalizeAction(output.action);
   }
 
   private handleIncomingAction(action: AgentAction, description: string): 'continue' | 'finish' | 'wait_user' {
@@ -525,13 +525,13 @@ export class TaskManager {
     return 'continue';
   }
 
-  private async executeAction(device: DeviceExecutor, action: AgentAction): Promise<ActionResult> {
+  private async executeAction(toolKit: ToolKit, action: AgentAction): Promise<ActionResult> {
     const lower = action.name.trim().toLowerCase();
     if (lower === 'take_note') {
       const result: ActionResult = { status: 'SUCCESS' };
       return result;
     }
-    return await device.executeAction(action);
+    return await toolKit.executeAction(action);
   }
 
   private recordActionResult(result: ActionResult): void {
@@ -541,7 +541,7 @@ export class TaskManager {
   }
 
   private async invokeWithRetry(
-    cloud: CloudAgentClient,
+    proxy: AgentProxy,
     sessionId: string,
     payload: CloudInvokePayload,
     token: number
@@ -552,7 +552,7 @@ export class TaskManager {
         throw new Error('stopped');
       }
       try {
-        return await cloud.invoke(sessionId, payload);
+        return await proxy.invoke(sessionId, payload);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         const status = this.readStatusCode(err);

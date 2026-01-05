@@ -1,8 +1,8 @@
 import rpc from '@ohos.rpc';
 
-import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
-import { AgentService } from '../AgentService';
-import type { AgentSpacePointerAction, AgentSpacePointerEvent, AgentSpaceViewerMode } from '../../agentspace/AgentSpace';
+import { AGENT_CONTROLLER_DESCRIPTOR, AgentControllerRequestCode } from './AgentControllerProtocol';
+import { AgentController } from '../AgentController';
+import type { AgentSpacePointerAction, AgentSpacePointerEvent, AgentSpaceViewerMode } from '../agentspace/AgentSpace';
 import type { TaskStartRequest, UserReply } from '../types';
 
 interface DebugInteractPayload {
@@ -10,11 +10,11 @@ interface DebugInteractPayload {
   options?: Array<string>;
 }
 
-export class AgentServiceStub extends rpc.RemoteObject {
-  private service: AgentService;
+export class AgentControllerStub extends rpc.RemoteObject {
+  private service: AgentController;
 
-  constructor(service: AgentService) {
-    super(AGENT_SERVICE_DESCRIPTOR);
+  constructor(service: AgentController) {
+    super(AGENT_CONTROLLER_DESCRIPTOR);
     this.service = service;
   }
 
@@ -27,120 +27,120 @@ export class AgentServiceStub extends rpc.RemoteObject {
     void options;
     try {
       const token = data.readInterfaceToken();
-      if (token !== AGENT_SERVICE_DESCRIPTOR) {
+      if (token !== AGENT_CONTROLLER_DESCRIPTOR) {
         reply.writeString('ERR_BAD_DESCRIPTOR');
         return false;
       }
-      if (code === AgentServiceRequestCode.PING) {
+      if (code === AgentControllerRequestCode.PING) {
         reply.writeString(this.service.ping());
         return true;
       }
-      if (code === AgentServiceRequestCode.GET_SNAPSHOT) {
+      if (code === AgentControllerRequestCode.GET_SNAPSHOT) {
         reply.writeString(this.service.getSnapshotJson());
         return true;
       }
-      if (code === AgentServiceRequestCode.START_TASK) {
+      if (code === AgentControllerRequestCode.START_TASK) {
         const payload = data.readString();
         const request = JSON.parse(payload) as TaskStartRequest;
         await this.service.startTask(request);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.STOP_TASK) {
+      if (code === AgentControllerRequestCode.STOP_TASK) {
         const reason = data.readString();
         this.service.stopTask(reason);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.PULL_EVENTS) {
+      if (code === AgentControllerRequestCode.PULL_EVENTS) {
         const lastSequence = data.readInt();
         reply.writeString(this.service.pullEventsJson(lastSequence));
         return true;
       }
-      if (code === AgentServiceRequestCode.SUBMIT_USER_REPLY) {
+      if (code === AgentControllerRequestCode.SUBMIT_USER_REPLY) {
         const payload = data.readString();
         const replyPayload = JSON.parse(payload) as UserReply;
         this.service.submitUserReply(replyPayload);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.START_TASK_TEXT) {
+      if (code === AgentControllerRequestCode.START_TASK_TEXT) {
         const taskText = data.readString();
         await this.service.startTaskWithDefaults(taskText);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.ENSURE_VTS) {
+      if (code === AgentControllerRequestCode.ENSURE_VTS) {
         const payload = await this.service.ensureVtsJson();
         reply.writeString(payload);
         return true;
       }
-      if (code === AgentServiceRequestCode.GET_RUNTIME) {
+      if (code === AgentControllerRequestCode.GET_RUNTIME) {
         const payload = await this.service.getRuntimeJson();
         reply.writeString(payload);
         return true;
       }
-      if (code === AgentServiceRequestCode.LAUNCH_APP) {
+      if (code === AgentControllerRequestCode.LAUNCH_APP) {
         const bundleName = data.readString();
         const abilityName = data.readString();
         await this.service.launchApp(bundleName, abilityName);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.CLICK_NORM) {
+      if (code === AgentControllerRequestCode.CLICK_NORM) {
         const xNorm = data.readInt();
         const yNorm = data.readInt();
         await this.service.clickNorm(xNorm, yNorm);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.SCREENSHOT) {
+      if (code === AgentControllerRequestCode.SCREENSHOT) {
         const lengthText = await this.service.captureScreenshotLength();
         reply.writeString(lengthText);
         return true;
       }
-      if (code === AgentServiceRequestCode.SCREENSHOT_CHUNK) {
+      if (code === AgentControllerRequestCode.SCREENSHOT_CHUNK) {
         const offset = data.readInt();
         const size = data.readInt();
         const chunk = this.service.readScreenshotChunk(offset, size);
         reply.writeString(chunk);
         return true;
       }
-      if (code === AgentServiceRequestCode.DESTROY_VTS) {
+      if (code === AgentControllerRequestCode.DESTROY_VTS) {
         await this.service.destroyVts();
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.STOP_VTS) {
+      if (code === AgentControllerRequestCode.STOP_VTS) {
         const count = await this.service.stopVts();
         reply.writeString(String(count));
         return true;
       }
-      if (code === AgentServiceRequestCode.SET_VIEWER_ACTIVE) {
+      if (code === AgentControllerRequestCode.SET_VIEWER_ACTIVE) {
         const active = data.readInt() === 1;
         await this.service.setViewerActive(active);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.GET_VIEWER_MODE) {
+      if (code === AgentControllerRequestCode.GET_VIEWER_MODE) {
         const mode = await this.service.getViewerMode();
         reply.writeString(mode);
         return true;
       }
-      if (code === AgentServiceRequestCode.SET_VIEWER_MODE) {
+      if (code === AgentControllerRequestCode.SET_VIEWER_MODE) {
         const rawMode = data.readString();
         const mode = this.normalizeViewerMode(rawMode);
         await this.service.setViewerMode(mode);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.ATTACH_VIEWER_SURFACE) {
+      if (code === AgentControllerRequestCode.ATTACH_VIEWER_SURFACE) {
         const surfaceId = data.readString();
         await this.service.attachViewerSurface(surfaceId);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.SEND_VIEWER_EVENT) {
+      if (code === AgentControllerRequestCode.SEND_VIEWER_EVENT) {
         const actionText = data.readString();
         const action = this.normalizePointerAction(actionText);
         if (!action) {
@@ -160,25 +160,25 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.PULL_VIEWER_EFFECTS) {
+      if (code === AgentControllerRequestCode.PULL_VIEWER_EFFECTS) {
         const lastSequence = data.readInt();
         const payload = await this.service.pullViewerEffectsJson(lastSequence);
         reply.writeString(payload);
         return true;
       }
-      if (code === AgentServiceRequestCode.TRANSFER_TO_MAIN) {
+      if (code === AgentControllerRequestCode.TRANSFER_TO_MAIN) {
         const count = await this.service.transferToMain();
         reply.writeString(String(count));
         return true;
       }
-      if (code === AgentServiceRequestCode.ACTION_DOUBLE_CLICK) {
+      if (code === AgentControllerRequestCode.ACTION_DOUBLE_CLICK) {
         const xNorm = data.readInt();
         const yNorm = data.readInt();
         const result = await this.service.actionDoubleClick(xNorm, yNorm);
         reply.writeString(result);
         return true;
       }
-      if (code === AgentServiceRequestCode.ACTION_LONG_CLICK) {
+      if (code === AgentControllerRequestCode.ACTION_LONG_CLICK) {
         const xNorm = data.readInt();
         const yNorm = data.readInt();
         const durationMs = data.readInt();
@@ -186,7 +186,7 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString(result);
         return true;
       }
-      if (code === AgentServiceRequestCode.ACTION_SWIPE) {
+      if (code === AgentControllerRequestCode.ACTION_SWIPE) {
         const startX = data.readInt();
         const startY = data.readInt();
         const endX = data.readInt();
@@ -196,7 +196,7 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString(result);
         return true;
       }
-      if (code === AgentServiceRequestCode.ACTION_TYPE) {
+      if (code === AgentControllerRequestCode.ACTION_TYPE) {
         const content = data.readString();
         const hasPoint = data.readInt() === 1;
         const xNorm = data.readInt();
@@ -205,53 +205,53 @@ export class AgentServiceStub extends rpc.RemoteObject {
         reply.writeString(result);
         return true;
       }
-      if (code === AgentServiceRequestCode.ACTION_PRESS_BACK) {
+      if (code === AgentControllerRequestCode.ACTION_PRESS_BACK) {
         const result = await this.service.actionPressBack();
         reply.writeString(result);
         return true;
       }
-      if (code === AgentServiceRequestCode.ACTION_PRESS_ENTER) {
+      if (code === AgentControllerRequestCode.ACTION_PRESS_ENTER) {
         const result = await this.service.actionPressEnter();
         reply.writeString(result);
         return true;
       }
-      if (code === AgentServiceRequestCode.SET_CLOUD_ENDPOINT) {
+      if (code === AgentControllerRequestCode.SET_CLOUD_ENDPOINT) {
         const endpoint = data.readString();
         this.service.setCloudEndpoint(endpoint);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.REQUEST_TASK_OVER) {
+      if (code === AgentControllerRequestCode.REQUEST_TASK_OVER) {
         const content = data.readString();
         this.service.requestTaskOver(content);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.REQUEST_SUPPLEMENT) {
+      if (code === AgentControllerRequestCode.REQUEST_SUPPLEMENT) {
         const content = data.readString();
         this.service.requestSupplement(content);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.SUBMIT_USER_NOTE) {
+      if (code === AgentControllerRequestCode.SUBMIT_USER_NOTE) {
         const content = data.readString();
         this.service.submitUserNote(content);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.DEBUG_CALL_USER) {
+      if (code === AgentControllerRequestCode.DEBUG_CALL_USER) {
         const content = data.readString();
         this.service.debugCallUser(content);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.DEBUG_TAKE_OVER) {
+      if (code === AgentControllerRequestCode.DEBUG_TAKE_OVER) {
         const content = data.readString();
         this.service.debugTakeOver(content);
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentServiceRequestCode.DEBUG_INTERACT) {
+      if (code === AgentControllerRequestCode.DEBUG_INTERACT) {
         const payload = data.readString();
         const parsed = JSON.parse(payload) as DebugInteractPayload;
         const content = parsed?.content ?? '';

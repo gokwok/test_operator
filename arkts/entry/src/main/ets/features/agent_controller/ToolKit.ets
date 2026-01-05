@@ -1,9 +1,9 @@
-import type { AgentAction, ActionResult, AgentSpaceRuntimeInfo } from '../agentspace/AgentSpace';
-import { AgentSpace } from '../agentspace/AgentSpace';
-import type { AppTarget } from '../agentspace/VTSBackend';
+import type { AgentAction, ActionResult, AgentSpaceRuntimeInfo } from './agentspace/AgentSpace';
+import { AgentSpace } from './agentspace/AgentSpace';
+import type { AppTarget } from './agentspace/VTSBackend';
 import type { AppTargetDescriptor } from './types';
 
-export class DeviceExecutor {
+export class ToolKit {
   private agentSpace: AgentSpace;
   private appTargets: Map<string, AppTarget> = new Map<string, AppTarget>();
 

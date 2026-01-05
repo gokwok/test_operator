@@ -4,7 +4,7 @@ import { wantAgent } from '@kit.AbilityKit';
 import type { common, Want, WantAgent } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
-import { AppState } from '../state/app_state';
+import { AppState } from '../../state/app_state';
 
 const LOG_TAG: string = '[LiveView]';
 const DEFAULT_APP_NAME: string = 'com.huawei.aios.agent.operation';

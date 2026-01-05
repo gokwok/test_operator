@@ -31,7 +31,7 @@ export default class EntryAbility extends UIAbility {
         hilog.error(DOMAIN, 'testTag', 'Failed to enable full screen. Cause: %{public}s', JSON.stringify(err));
       });
 
-    windowStage.loadContent('pages/Index', (err) => {
+    windowStage.loadContent('ui/pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
         return;

@@ -1,10 +1,10 @@
 import type { common } from '@kit.AbilityKit';
 import image from '@ohos.multimedia.image';
 
-import { TaskHistoryStore } from '../features/history/TaskHistoryStore';
-import type { HistoryStepMeta, HistoryTaskMeta } from '../features/history/TaskHistoryStore';
-import { AgentSettings } from '../features/settings/AgentSettings';
-import type { AgentSettingsData } from '../features/settings/AgentSettings';
+import { TaskHistoryStore } from '../../features/persistence/history/TaskHistoryStore';
+import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistence/history/TaskHistoryStore';
+import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
+import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
 
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;

@@ -1,24 +1,24 @@
 import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import type { common } from '@kit.AbilityKit';
-import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../features/agentspace/AgentSpace';
-import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
-import type { TaskSnapshot, UserReply } from '../features/agent_service/types';
-import { GlowOverlay, GLOW_PALETTES } from '../view/GlowOverlay';
-import { FloatingOrb, FloatingOrbController } from '../view/FloatingOrb';
-import { StatusFloatWindow, StatusFloatWindowController } from '../view/StatusFloatWindow';
+import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../../features/agent_controller/agentspace/AgentSpace';
+import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
+import type { TaskSnapshot, UserReply } from '../../features/agent_controller/types';
+import { GlowOverlay, GLOW_PALETTES } from '../views/GlowOverlay';
+import { FloatingOrb, FloatingOrbController } from '../views/FloatingOrb';
+import { StatusFloatWindow, StatusFloatWindowController } from '../views/StatusFloatWindow';
 import {
   InteractionEffectController,
   InteractionEffectOverlay,
   InteractionEffectOptions,
   InteractionPoint
-} from '../view/InteractionEffectOverlay';
-import { AgentSpaceDisplay } from '../view/AgentSpaceDisplay';
+} from '../views/InteractionEffectOverlay';
+import { AgentSpaceDisplay } from '../views/AgentSpaceDisplay';
 import type {
   AgentSpaceDisplayMode,
   AgentSpaceDisplaySurfaceInfo,
   AgentSpacePointerEvent
-} from '../view/AgentSpaceDisplay';
+} from '../views/AgentSpaceDisplay';
 
 const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
 
@@ -72,7 +72,7 @@ struct AgentSpaceViewer {
       this.onOrbClick();
     }
   );
-  private serviceClient: AgentServiceClient | null = null;
+  private serviceClient: AgentControllerClient | null = null;
   private effectSequence: number = 0;
   private effectPollTimerId: number = -1;
   private effectPolling: boolean = false;
@@ -203,9 +203,9 @@ struct AgentSpaceViewer {
     }
   }
 
-  private getServiceClient(): AgentServiceClient {
+  private getServiceClient(): AgentControllerClient {
     if (!this.serviceClient) {
-      this.serviceClient = new AgentServiceClient();
+      this.serviceClient = new AgentControllerClient();
     }
     return this.serviceClient;
   }

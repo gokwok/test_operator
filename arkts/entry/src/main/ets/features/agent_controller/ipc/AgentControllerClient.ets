@@ -2,7 +2,7 @@ import type { common, Want } from '@kit.AbilityKit';
 import bundleManager from '@ohos.bundle.bundleManager';
 import rpc from '@ohos.rpc';
 
-import { AGENT_SERVICE_DESCRIPTOR, AgentServiceRequestCode } from './AgentServiceProtocol';
+import { AGENT_CONTROLLER_DESCRIPTOR, AgentControllerRequestCode } from './AgentControllerProtocol';
 import type { TaskStartRequest, UserReply } from '../types';
 
 interface DebugInteractPayload {
@@ -13,7 +13,7 @@ interface DebugInteractPayload {
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
 
-export class AgentServiceClient {
+export class AgentControllerClient {
   private remote: rpc.IRemoteObject | null = null;
   private connectionId: number = -1;
   private connectPromise: Promise<void> | null = null;
@@ -85,53 +85,53 @@ export class AgentServiceClient {
   }
 
   async ping(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.PING);
+    return await this.sendRequest(AgentControllerRequestCode.PING);
   }
 
   async getSnapshot(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.GET_SNAPSHOT);
+    return await this.sendRequest(AgentControllerRequestCode.GET_SNAPSHOT);
   }
 
   async startTask(request: TaskStartRequest): Promise<void> {
     const payload = JSON.stringify(request);
-    await this.sendRequestWithString(AgentServiceRequestCode.START_TASK, payload);
+    await this.sendRequestWithString(AgentControllerRequestCode.START_TASK, payload);
   }
 
   async stopTask(reason: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.STOP_TASK, reason);
+    await this.sendRequestWithString(AgentControllerRequestCode.STOP_TASK, reason);
   }
 
   async pullEvents(lastSequence: number): Promise<string> {
-    return await this.sendRequestWithInt(AgentServiceRequestCode.PULL_EVENTS, lastSequence);
+    return await this.sendRequestWithInt(AgentControllerRequestCode.PULL_EVENTS, lastSequence);
   }
 
   async submitUserReply(reply: UserReply): Promise<void> {
     const payload = JSON.stringify(reply);
-    await this.sendRequestWithString(AgentServiceRequestCode.SUBMIT_USER_REPLY, payload);
+    await this.sendRequestWithString(AgentControllerRequestCode.SUBMIT_USER_REPLY, payload);
   }
 
   async startTaskText(taskText: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.START_TASK_TEXT, taskText);
+    await this.sendRequestWithString(AgentControllerRequestCode.START_TASK_TEXT, taskText);
   }
 
   async ensureVts(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.ENSURE_VTS);
+    return await this.sendRequest(AgentControllerRequestCode.ENSURE_VTS);
   }
 
   async getRuntime(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.GET_RUNTIME);
+    return await this.sendRequest(AgentControllerRequestCode.GET_RUNTIME);
   }
 
   async launchApp(bundleName: string, abilityName: string): Promise<void> {
-    await this.sendRequestWithTwoStrings(AgentServiceRequestCode.LAUNCH_APP, bundleName, abilityName);
+    await this.sendRequestWithTwoStrings(AgentControllerRequestCode.LAUNCH_APP, bundleName, abilityName);
   }
 
   async clickNorm(xNorm: number, yNorm: number): Promise<void> {
-    await this.sendRequestWithTwoInts(AgentServiceRequestCode.CLICK_NORM, xNorm, yNorm);
+    await this.sendRequestWithTwoInts(AgentControllerRequestCode.CLICK_NORM, xNorm, yNorm);
   }
 
   async screenshot(): Promise<string> {
-    const lengthText = await this.sendRequest(AgentServiceRequestCode.SCREENSHOT);
+    const lengthText = await this.sendRequest(AgentControllerRequestCode.SCREENSHOT);
     const total = parseInt(lengthText, 10);
     if (!Number.isFinite(total) || total <= 0) {
       return '';
@@ -141,7 +141,7 @@ export class AgentServiceClient {
     const parts: Array<string> = [];
     while (offset < total) {
       const size = Math.min(chunkSize, total - offset);
-      const chunk = await this.sendRequestWithTwoInts(AgentServiceRequestCode.SCREENSHOT_CHUNK, offset, size);
+      const chunk = await this.sendRequestWithTwoInts(AgentControllerRequestCode.SCREENSHOT_CHUNK, offset, size);
       if (chunk.length === 0) {
         break;
       }
@@ -152,32 +152,32 @@ export class AgentServiceClient {
   }
 
   async destroyVts(): Promise<void> {
-    await this.sendRequest(AgentServiceRequestCode.DESTROY_VTS);
+    await this.sendRequest(AgentControllerRequestCode.DESTROY_VTS);
   }
 
   async stopVts(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.STOP_VTS);
+    return await this.sendRequest(AgentControllerRequestCode.STOP_VTS);
   }
 
   async setViewerActive(active: boolean): Promise<void> {
-    await this.sendRequestWithInt(AgentServiceRequestCode.SET_VIEWER_ACTIVE, active ? 1 : 0);
+    await this.sendRequestWithInt(AgentControllerRequestCode.SET_VIEWER_ACTIVE, active ? 1 : 0);
   }
 
   async getViewerMode(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.GET_VIEWER_MODE);
+    return await this.sendRequest(AgentControllerRequestCode.GET_VIEWER_MODE);
   }
 
   async setViewerMode(mode: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.SET_VIEWER_MODE, mode);
+    await this.sendRequestWithString(AgentControllerRequestCode.SET_VIEWER_MODE, mode);
   }
 
   async attachViewerSurface(surfaceId: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.ATTACH_VIEWER_SURFACE, surfaceId);
+    await this.sendRequestWithString(AgentControllerRequestCode.ATTACH_VIEWER_SURFACE, surfaceId);
   }
 
   async sendViewerEvent(action: string, xNorm: number, yNorm: number, pointerId: number): Promise<void> {
     await this.sendRequestWithStringAndInts(
-      AgentServiceRequestCode.SEND_VIEWER_EVENT,
+      AgentControllerRequestCode.SEND_VIEWER_EVENT,
       action,
       xNorm,
       yNorm,
@@ -186,19 +186,19 @@ export class AgentServiceClient {
   }
 
   async pullViewerEffects(lastSequence: number): Promise<string> {
-    return await this.sendRequestWithInt(AgentServiceRequestCode.PULL_VIEWER_EFFECTS, lastSequence);
+    return await this.sendRequestWithInt(AgentControllerRequestCode.PULL_VIEWER_EFFECTS, lastSequence);
   }
 
   async transferToMain(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.TRANSFER_TO_MAIN);
+    return await this.sendRequest(AgentControllerRequestCode.TRANSFER_TO_MAIN);
   }
 
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
-    return await this.sendRequestWithTwoInts(AgentServiceRequestCode.ACTION_DOUBLE_CLICK, xNorm, yNorm);
+    return await this.sendRequestWithTwoInts(AgentControllerRequestCode.ACTION_DOUBLE_CLICK, xNorm, yNorm);
   }
 
   async actionLongClick(xNorm: number, yNorm: number, durationMs: number): Promise<string> {
-    return await this.sendRequestWithThreeInts(AgentServiceRequestCode.ACTION_LONG_CLICK, xNorm, yNorm, durationMs);
+    return await this.sendRequestWithThreeInts(AgentControllerRequestCode.ACTION_LONG_CLICK, xNorm, yNorm, durationMs);
   }
 
   async actionSwipe(
@@ -209,7 +209,7 @@ export class AgentServiceClient {
     durationMs: number
   ): Promise<string> {
     return await this.sendRequestWithFiveInts(
-      AgentServiceRequestCode.ACTION_SWIPE,
+      AgentControllerRequestCode.ACTION_SWIPE,
       startX,
       startY,
       endX,
@@ -220,45 +220,45 @@ export class AgentServiceClient {
 
   async actionType(content: string, hasPoint: boolean, xNorm: number, yNorm: number): Promise<string> {
     const flag = hasPoint ? 1 : 0;
-    return await this.sendRequestWithStringAndInts(AgentServiceRequestCode.ACTION_TYPE, content, flag, xNorm, yNorm);
+    return await this.sendRequestWithStringAndInts(AgentControllerRequestCode.ACTION_TYPE, content, flag, xNorm, yNorm);
   }
 
   async actionPressBack(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.ACTION_PRESS_BACK);
+    return await this.sendRequest(AgentControllerRequestCode.ACTION_PRESS_BACK);
   }
 
   async actionPressEnter(): Promise<string> {
-    return await this.sendRequest(AgentServiceRequestCode.ACTION_PRESS_ENTER);
+    return await this.sendRequest(AgentControllerRequestCode.ACTION_PRESS_ENTER);
   }
 
   async setCloudEndpoint(endpoint: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.SET_CLOUD_ENDPOINT, endpoint);
+    await this.sendRequestWithString(AgentControllerRequestCode.SET_CLOUD_ENDPOINT, endpoint);
   }
 
   async requestTaskOver(content: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.REQUEST_TASK_OVER, content);
+    await this.sendRequestWithString(AgentControllerRequestCode.REQUEST_TASK_OVER, content);
   }
 
   async requestSupplement(content: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.REQUEST_SUPPLEMENT, content);
+    await this.sendRequestWithString(AgentControllerRequestCode.REQUEST_SUPPLEMENT, content);
   }
 
   async submitUserNote(content: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.SUBMIT_USER_NOTE, content);
+    await this.sendRequestWithString(AgentControllerRequestCode.SUBMIT_USER_NOTE, content);
   }
 
   async debugCallUser(content: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_CALL_USER, content);
+    await this.sendRequestWithString(AgentControllerRequestCode.DEBUG_CALL_USER, content);
   }
 
   async debugTakeOver(content: string): Promise<void> {
-    await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_TAKE_OVER, content);
+    await this.sendRequestWithString(AgentControllerRequestCode.DEBUG_TAKE_OVER, content);
   }
 
   async debugInteract(content: string, options: Array<string>): Promise<void> {
     const payload: DebugInteractPayload = { content, options };
     const text = JSON.stringify(payload);
-    await this.sendRequestWithString(AgentServiceRequestCode.DEBUG_INTERACT, text);
+    await this.sendRequestWithString(AgentControllerRequestCode.DEBUG_INTERACT, text);
   }
 
   private async sendRequest(code: number): Promise<string> {
@@ -270,7 +270,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
       if (result.errCode !== 0) {
@@ -292,7 +292,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeString(value);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
@@ -315,7 +315,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeInt(value);
       const result = await remote.sendMessageRequest(code, data, reply, option);
       const response = reply.readString();
@@ -338,7 +338,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeString(first);
       data.writeString(second);
       const result = await remote.sendMessageRequest(code, data, reply, option);
@@ -362,7 +362,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeInt(first);
       data.writeInt(second);
       const result = await remote.sendMessageRequest(code, data, reply, option);
@@ -386,7 +386,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeInt(first);
       data.writeInt(second);
       data.writeInt(third);
@@ -418,7 +418,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeInt(first);
       data.writeInt(second);
       data.writeInt(third);
@@ -451,7 +451,7 @@ export class AgentServiceClient {
     const reply = rpc.MessageSequence.create();
     const option = new rpc.MessageOption();
     try {
-      data.writeInterfaceToken(AGENT_SERVICE_DESCRIPTOR);
+      data.writeInterfaceToken(AGENT_CONTROLLER_DESCRIPTOR);
       data.writeString(text);
       data.writeInt(first);
       data.writeInt(second);

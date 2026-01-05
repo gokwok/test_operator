@@ -1,6 +1,6 @@
-export const AGENT_SERVICE_DESCRIPTOR: string = 'com.huawei.aios.agent.operation.AgentService';
+export const AGENT_CONTROLLER_DESCRIPTOR: string = 'com.huawei.aios.agent.operation.AgentController';
 
-export enum AgentServiceRequestCode {
+export enum AgentControllerRequestCode {
   PING = 1,
   GET_SNAPSHOT = 2,
   START_TASK = 3,

@@ -1,16 +1,11 @@
 import http from '@ohos.net.http';
 
-import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
-
-export interface CloudDeviceState {
-  screenshot: string;
-  user_note?: string;
-  installed_apps?: Array<string>;
-}
+import type { AgentAction, ActionParameters, ActionResult } from './agentspace/AgentSpace';
+import type { DeviceState } from './types';
 
 export interface CloudInvokePayload {
   task?: string;
-  state: CloudDeviceState;
+  state: DeviceState;
   action_result?: ActionResult;
   control?: CloudControl;
 }
@@ -66,7 +61,7 @@ export class CloudInvokeError extends Error {
   }
 }
 
-export class CloudAgentClient {
+export class AgentProxy {
   private endpoint: string;
 
   constructor(endpoint: string) {

@@ -2,14 +2,14 @@ import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
-import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
+import { AgentControllerClient } from '../features/agent_controller/ipc/AgentControllerClient';
 
 const DOMAIN = 0x0000;
 const TAG = 'AgentSpaceViewerAbility';
 
 export default class AgentSpaceViewerAbility extends UIAbility {
   private currentWindowStage: window.WindowStage | null = null;
-  private serviceClient: AgentServiceClient | null = null;
+  private serviceClient: AgentControllerClient | null = null;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     void launchParam;
@@ -39,7 +39,7 @@ export default class AgentSpaceViewerAbility extends UIAbility {
     if (this.currentWindowStage === null) {
       this.currentWindowStage = windowStage;
     }
-    windowStage.loadContent('pages/AgentSpaceViewer', (err) => {
+    windowStage.loadContent('ui/pages/AgentSpaceViewer', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, TAG, 'loadContent failed. err=%{public}s', JSON.stringify(err));
       }
@@ -62,9 +62,9 @@ export default class AgentSpaceViewerAbility extends UIAbility {
     return true;
   }
 
-  private getServiceClient(): AgentServiceClient {
+  private getServiceClient(): AgentControllerClient {
     if (!this.serviceClient) {
-      this.serviceClient = new AgentServiceClient();
+      this.serviceClient = new AgentControllerClient();
     }
     return this.serviceClient;
   }

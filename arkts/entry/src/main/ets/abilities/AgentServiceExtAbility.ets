@@ -3,9 +3,9 @@ import type Want from '@ohos.app.ability.Want';
 import rpc from '@ohos.rpc';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
-import { AgentService } from '../features/agent_service/AgentService';
-import { AgentServiceStub } from '../features/agent_service/ipc/AgentServiceStub';
-import type { StartAbilityInvoker } from '../features/agentspace/VTSBackend';
+import { AgentController } from '../features/agent_controller/AgentController';
+import { AgentControllerStub } from '../features/agent_controller/ipc/AgentControllerStub';
+import type { StartAbilityInvoker } from '../features/agent_controller/agentspace/VTSBackend';
 
 const LOG_TAG: string = '[AgentServiceExt]';
 const DOMAIN: number = 0x0000;
@@ -17,13 +17,13 @@ interface AgentServiceStartParams {
 }
 
 export default class AgentServiceExtAbility extends ServiceExtensionAbility {
-  private stub: AgentServiceStub | null = null;
+  private stub: AgentControllerStub | null = null;
 
   onCreate(_want: Want): void {
-    const service = AgentService.getInstance();
+    const service = AgentController.getInstance();
     const startAbilityInvoker: StartAbilityInvoker = (want, options) => this.context.startAbility(want, options);
     service.init(this.context, startAbilityInvoker);
-    this.stub = new AgentServiceStub(service);
+    this.stub = new AgentControllerStub(service);
   }
 
   async onRequest(want: Want, _startId: number): Promise<void> {
@@ -44,7 +44,7 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
     }
 
     try {
-      const service = AgentService.getInstance();
+      const service = AgentController.getInstance();
       await service.startTaskWithDefaults(taskText);
     } catch (e) {
       hilog.error(DOMAIN, LOG_TAG, 'start_task failed: %{public}s', String(e));
@@ -53,7 +53,7 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
 
   onConnect(_want: Want): rpc.RemoteObject {
     if (!this.stub) {
-      this.stub = new AgentServiceStub(AgentService.getInstance());
+      this.stub = new AgentControllerStub(AgentController.getInstance());
     }
     return this.stub;
   }
@@ -63,7 +63,7 @@ export default class AgentServiceExtAbility extends ServiceExtensionAbility {
   }
 
   onDestroy(): void {
-    AgentService.getInstance().releaseEfficiencyResourcesOnExit();
+    AgentController.getInstance().releaseEfficiencyResourcesOnExit();
     this.stub = null;
   }
 

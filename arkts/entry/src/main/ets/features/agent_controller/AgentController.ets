@@ -4,7 +4,7 @@ import image from '@ohos.multimedia.image';
 import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
-import { AgentSpace } from '../agentspace/AgentSpace';
+import { AgentSpace } from './agentspace/AgentSpace';
 import type {
   AgentAction,
   ActionParameters,
@@ -12,10 +12,11 @@ import type {
   AgentSpacePointerEvent,
   AgentSpaceViewerEffectBatch,
   AgentSpaceViewerMode
-} from '../agentspace/AgentSpace';
-import type { AppTarget, StartAbilityInvoker } from '../agentspace/VTSBackend';
-import { CloudAgentClient } from './CloudAgentClient';
-import { DeviceExecutor } from './DeviceExecutor';
+} from './agentspace/AgentSpace';
+import type { AppTarget, StartAbilityInvoker } from './agentspace/VTSBackend';
+import { AgentProxy } from './AgentProxy';
+import { StateCollector } from './StateCollector';
+import { ToolKit } from './ToolKit';
 import type {
   AppTargetDescriptor,
   TaskEventBatch,
@@ -25,11 +26,11 @@ import type {
   UserReply
 } from './types';
 import { TaskManager, TaskManagerListener } from './TaskManager';
-import { LiveViewController, LiveViewContents, LiveViewType } from '../live_view/LiveViewController';
-import type { AgentSettingsData } from '../settings/AgentSettings';
-import { AgentSettings } from '../settings/AgentSettings';
+import { LiveViewController, LiveViewContents, LiveViewType } from './live_view/LiveViewController';
+import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
+import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from '../state/app_state';
-import { TaskHistoryStore } from '../history/TaskHistoryStore';
+import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const DEFAULT_TASK_PLACEHOLDER: string = '正在分析用户需求...';
@@ -45,17 +46,17 @@ const FINISHED_TTS_TEXT: string = '任务已完成';
 const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
 const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
-const HILOG_TAG: string = 'AgentService';
+const HILOG_TAG: string = 'AgentController';
 
-export class AgentService {
-  private static instance: AgentService | null = null;
+export class AgentController {
+  private static instance: AgentController | null = null;
   private ctx: common.Context | null = null;
   private startAbilityInvoker: StartAbilityInvoker | null = null;
   private readonly createdAtMs: number = Date.now();
   private taskManager: TaskManager = new TaskManager();
   private agentSpace: AgentSpace | null = null;
-  private deviceExecutor: DeviceExecutor | null = null;
-  private cloudClient: CloudAgentClient | null = null;
+  private toolKit: ToolKit | null = null;
+  private agentProxy: AgentProxy | null = null;
   private lastScreenshotBase64: string = '';
   private liveViewController: LiveViewController = LiveViewController.getInstance();
   private liveViewEnabled: boolean = true;
@@ -73,11 +74,11 @@ export class AgentService {
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
   private agentSpaceOp: Promise<void> = Promise.resolve();
 
-  static getInstance(): AgentService {
-    if (!AgentService.instance) {
-      AgentService.instance = new AgentService();
+  static getInstance(): AgentController {
+    if (!AgentController.instance) {
+      AgentController.instance = new AgentController();
     }
-    return AgentService.instance;
+    return AgentController.instance;
   }
 
   init(ctx: common.Context, startAbilityInvoker: StartAbilityInvoker): void {
@@ -92,7 +93,7 @@ export class AgentService {
   }
 
   ping(): string {
-    return `agent_service:${this.createdAtMs}`;
+    return `agent_controller:${this.createdAtMs}`;
   }
 
   getSnapshotJson(): string {
@@ -108,17 +109,18 @@ export class AgentService {
     this.bindLiveViewCancelListener();
     const normalized = this.normalizeStartRequest(request);
     await this.resetAgentSpaceForNewTask();
-    const executor = this.requireDeviceExecutor();
+    const toolKit = this.requireToolKit();
     const targets = Array.isArray(normalized.appTargets) ? normalized.appTargets : [];
-    executor.setAppTargets(targets);
-    const cloud = this.getCloudClient();
+    toolKit.setAppTargets(targets);
+    const agentProxy = this.getAgentProxy();
     this.liveViewTaskText = normalized.taskText;
     this.liveViewPhase = 'running';
     this.liveViewStarted = false;
     this.liveViewAppName = '';
     this.liveViewIcon = null;
     this.liveViewNotificationId = this.allocateLiveViewId();
-    this.taskManager.startTask(normalized, cloud, executor);
+    const collector = new StateCollector(toolKit);
+    this.taskManager.startTask(normalized, agentProxy, toolKit, collector);
     void this.publishRunningLiveView();
   }
 
@@ -154,7 +156,7 @@ export class AgentService {
     try {
       return await AppState.listAppNames(ctx);
     } catch (e) {
-      console.warn(`[AgentService] listAppNames failed: ${String(e)}`);
+      console.warn(`[AgentController] listAppNames failed: ${String(e)}`);
       return [];
     }
   }
@@ -163,7 +165,7 @@ export class AgentService {
     try {
       return await AppState.listAppTargets(ctx);
     } catch (e) {
-      console.warn(`[AgentService] listAppTargets failed: ${String(e)}`);
+      console.warn(`[AgentController] listAppTargets failed: ${String(e)}`);
       return [];
     }
   }
@@ -229,30 +231,30 @@ export class AgentService {
   }
 
   setCloudEndpoint(endpoint: string): void {
-    this.getCloudClient().setEndpoint(endpoint);
+    this.getAgentProxy().setEndpoint(endpoint);
   }
 
   async ensureVtsJson(): Promise<string> {
-    const runtime = await this.requireDeviceExecutor().ensureVts();
+    const runtime = await this.requireToolKit().ensureVts();
     return JSON.stringify(runtime);
   }
 
   async getRuntimeJson(): Promise<string> {
-    const runtime = await this.requireDeviceExecutor().getRuntimeInfo();
+    const runtime = await this.requireToolKit().getRuntimeInfo();
     return JSON.stringify(runtime);
   }
 
   async launchApp(bundleName: string, abilityName: string): Promise<void> {
     const target: AppTarget = { bundleName, abilityName };
-    await this.requireDeviceExecutor().launchApp(target);
+    await this.requireToolKit().launchApp(target);
   }
 
   async clickNorm(xNorm: number, yNorm: number): Promise<void> {
-    await this.requireDeviceExecutor().clickNorm(xNorm, yNorm);
+    await this.requireToolKit().clickNorm(xNorm, yNorm);
   }
 
   async captureScreenshotLength(): Promise<string> {
-    const base64 = await this.requireDeviceExecutor().screenshotBase64();
+    const base64 = await this.requireToolKit().screenshotBase64();
     this.lastScreenshotBase64 = base64;
     return String(base64.length);
   }
@@ -271,15 +273,15 @@ export class AgentService {
   }
 
   async destroyVts(): Promise<void> {
-    await this.requireDeviceExecutor().destroy();
+    await this.requireToolKit().destroy();
   }
 
   async stopVts(): Promise<number> {
-    return await this.requireDeviceExecutor().stop();
+    return await this.requireToolKit().stop();
   }
 
   async transferToMain(): Promise<number> {
-    return await this.requireDeviceExecutor().transferToMain();
+    return await this.requireToolKit().transferToMain();
   }
 
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
@@ -365,7 +367,7 @@ export class AgentService {
     if (this.listenerBound) {
       return;
     }
-    const listener: TaskManagerListener = new AgentServiceTaskListener(this);
+    const listener: TaskManagerListener = new AgentControllerTaskListener(this);
     this.taskManager.setListener(listener);
     this.listenerBound = true;
   }
@@ -564,7 +566,7 @@ export class AgentService {
         await this.liveViewController.update(ctx, payload);
       }
     } catch (e) {
-      console.warn(`[AgentService] LiveView update failed: ${String(e)}`);
+      console.warn(`[AgentController] LiveView update failed: ${String(e)}`);
     }
   }
 
@@ -581,7 +583,7 @@ export class AgentService {
       this.liveViewSelfStopping = true;
       await this.liveViewController.stop(ctx, payload);
     } catch (e) {
-      console.warn(`[AgentService] LiveView stop failed: ${String(e)}`);
+      console.warn(`[AgentController] LiveView stop failed: ${String(e)}`);
     } finally {
       this.liveViewSelfStopping = false;
       this.liveViewStarted = false;
@@ -607,7 +609,7 @@ export class AgentService {
       this.liveViewIcon = icon;
       return icon;
     } catch (e) {
-      console.warn(`[AgentService] load default icon failed: ${String(e)}`);
+      console.warn(`[AgentController] load default icon failed: ${String(e)}`);
       return null;
     }
   }
@@ -625,7 +627,7 @@ export class AgentService {
       this.liveViewAppName = appName;
       this.liveViewIcon = icon;
     } catch (e) {
-      console.warn(`[AgentService] load app icon failed: ${String(e)}`);
+      console.warn(`[AgentController] load app icon failed: ${String(e)}`);
       return;
     }
     if (this.liveViewPhase === 'running') {
@@ -780,7 +782,7 @@ export class AgentService {
   }
 
   private async executeAction(action: AgentAction): Promise<string> {
-    const result = await this.requireDeviceExecutor().executeAction(action);
+    const result = await this.requireToolKit().executeAction(action);
     return this.formatActionResult(result);
   }
 
@@ -793,19 +795,22 @@ export class AgentService {
     return status;
   }
 
-  private requireDeviceExecutor(): DeviceExecutor {
-    const executor = this.deviceExecutor;
-    if (!executor) {
-      throw new Error('device_executor_not_ready');
+  private requireToolKit(): ToolKit {
+    if (!this.toolKit) {
+      this.createAgentSpaceInternal();
     }
-    return executor;
+    const toolKit = this.toolKit;
+    if (!toolKit) {
+      throw new Error('toolkit_not_ready');
+    }
+    return toolKit;
   }
 
-  private getCloudClient(): CloudAgentClient {
-    if (!this.cloudClient) {
-      this.cloudClient = new CloudAgentClient(DEFAULT_CLOUD_ENDPOINT);
+  private getAgentProxy(): AgentProxy {
+    if (!this.agentProxy) {
+      this.agentProxy = new AgentProxy(DEFAULT_CLOUD_ENDPOINT);
     }
-    return this.cloudClient;
+    return this.agentProxy;
   }
 
   private async resetAgentSpaceForNewTask(): Promise<void> {
@@ -830,13 +835,13 @@ export class AgentService {
     }
     const space = new AgentSpace(invoker);
     this.agentSpace = space;
-    this.deviceExecutor = new DeviceExecutor(space);
+    this.toolKit = new ToolKit(space);
   }
 
   private async destroyAgentSpaceInternal(): Promise<void> {
     const space = this.agentSpace;
     this.agentSpace = null;
-    this.deviceExecutor = null;
+    this.toolKit = null;
     this.lastScreenshotBase64 = '';
     if (!space) {
       return;
@@ -849,10 +854,10 @@ export class AgentService {
   }
 }
 
-class AgentServiceTaskListener implements TaskManagerListener {
-  private readonly owner: AgentService;
+class AgentControllerTaskListener implements TaskManagerListener {
+  private readonly owner: AgentController;
 
-  constructor(owner: AgentService) {
+  constructor(owner: AgentController) {
     this.owner = owner;
   }
 

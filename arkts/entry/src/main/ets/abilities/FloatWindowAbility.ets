@@ -87,7 +87,7 @@ export default class FloatWindowAbility extends ServiceExtensionAbility {
 
       await this.floatWindow.resize(defaultDisplay.width, regionHeight);
       await this.floatWindow.moveWindowTo(x, y);
-      await this.floatWindow.setUIContent('pages/FloatChatPage');
+      await this.floatWindow.setUIContent('ui/pages/FloatChatPage');
       await this.floatWindow.setWindowBackgroundColor('#00000000');
 
       this.floatWindow.setWindowTouchable(true);

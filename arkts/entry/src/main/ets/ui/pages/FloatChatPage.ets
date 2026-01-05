@@ -1,7 +1,7 @@
 import type { common, Want } from '@kit.AbilityKit';
-import { FloatChatInputBar } from '../view/FloatChatInputBar';
-import { AgentServiceClient } from '../features/agent_service/ipc/AgentServiceClient';
-import { asrFeature } from '../features/Asr';
+import { FloatChatInputBar } from '../views/FloatChatInputBar';
+import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
+import { asrFeature } from '../../features/voice_kit/Asr';
 
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
@@ -23,7 +23,7 @@ struct FloatChatPage {
   private readonly ANIMATION_DURATION_MS: number = 350;
   private readonly ENTER_DELAY_MS: number = 50;
   private enterTimerId: number = -1;
-  private serviceClient: AgentServiceClient = new AgentServiceClient();
+  private serviceClient: AgentControllerClient = new AgentControllerClient();
   private asrBaseText: string = '';
   private asrPartialText: string = '';
 

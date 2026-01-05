@@ -28,6 +28,12 @@ export interface TaskSnapshot {
   installedAppsSent: boolean;
 }
 
+export interface DeviceState {
+  screenshot: string;
+  user_note?: string;
+  installed_apps?: Array<string>;
+}
+
 export interface AppTargetDescriptor {
   displayName: string;
   bundleName: string;
