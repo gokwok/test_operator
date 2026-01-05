@@ -33,29 +33,50 @@ enum defaultInputMethodOperatorId {
   ENTER = 4,
 }
 
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch (e) {
+    return String(value);
+  }
+}
+
+function formatTextSample(value: string, limit: number): string {
+  if (value.length === 0) {
+    return '';
+  }
+  const sanitized = value.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+  if (sanitized.length <= limit) {
+    return sanitized;
+  }
+  return `${sanitized.slice(0, limit)}...`;
+}
+
 function onInputStatusFunc(unused: undefined, status: number): void {
   void unused;
-  void status;
+  console.info(`${LOG_TAG} ime status=${status}`);
 }
 
 function onSetCallingWindowFunc(unused: undefined, windowId: number): void {
   void unused;
-  void windowId;
+  console.info(`${LOG_TAG} ime callingWindowId=${windowId}`);
 }
 
 function onSelectionChangeFunc(unused: undefined, data: AppController.onSelChgParam): void {
   void unused;
-  void data;
+  console.info(`${LOG_TAG} ime selectionChange=${safeStringify(data)}`);
 }
 
 function onTextChangeFunc(unused: undefined, data: string): void {
   void unused;
-  void data;
+  const text = typeof data === 'string' ? data : '';
+  const sample = formatTextSample(text, 64);
+  console.info(`${LOG_TAG} ime textChange len=${text.length} sample=${sample}`);
 }
 
 function onFunctionKeyFunc(unused: undefined, funcKey: number): void {
   void unused;
-  void funcKey;
+  console.info(`${LOG_TAG} ime functionKey=${funcKey}`);
 }
 
 export interface AppTarget {
@@ -125,6 +146,7 @@ export class VTSBackend implements VTSBackendPort {
   async create(): Promise<VTSRuntimeInfo> {
     if (this.runtime) {
       if (!this.imeRegistered) {
+        console.info(`${LOG_TAG} ime not registered, register for displayId=${this.runtime.displayId ?? this.runtime.screenId}`);
         this.imeRegistered = this.registerImeBestEffort(this.runtime.displayId ?? this.runtime.screenId);
       }
       return this.runtime;
@@ -176,7 +198,12 @@ export class VTSBackend implements VTSBackendPort {
     }
 
     this.runtime = runtime;
+    console.info(
+      `${LOG_TAG} runtime created screenId=${runtime.screenId} displayId=${runtime.displayId ?? runtime.screenId} ` +
+      `size=${runtime.widthPx}x${runtime.heightPx} density=${runtime.density}`
+    );
     this.imeRegistered = this.registerImeBestEffort(runtime.displayId ?? runtime.screenId);
+    console.info(`${LOG_TAG} ime registered=${this.imeRegistered}`);
     return runtime;
   }
 
@@ -189,6 +216,7 @@ export class VTSBackend implements VTSBackendPort {
     this.runtime = null;
     this.lastTarget = null;
     if (this.imeRegistered) {
+      console.info(`${LOG_TAG} unregister ime displayId=${imeDisplayId}`);
       this.unregisterImeBestEffort(imeDisplayId);
       this.imeRegistered = false;
     }
@@ -203,6 +231,7 @@ export class VTSBackend implements VTSBackendPort {
   async attachSurface(surfaceId: string): Promise<void> {
     const rt = this.requireRuntime();
     try {
+      console.info(`${LOG_TAG} attachSurface surfaceId=${surfaceId} screenId=${rt.screenId}`);
       screen.setVirtualScreenSurface(rt.screenId, surfaceId);
     } catch (e) {
       const err = e as BusinessError;
@@ -221,6 +250,7 @@ export class VTSBackend implements VTSBackendPort {
     };
 
     try {
+      console.info(`${LOG_TAG} startApp bundle=${target.bundleName} ability=${target.abilityName} displayId=${opt.displayId}`);
       await this.startAbilityInvoker(want, opt);
       this.lastTarget = target;
     } catch (e) {
@@ -230,9 +260,24 @@ export class VTSBackend implements VTSBackendPort {
   }
 
   async inputText(text: string, sendEnter: boolean): Promise<void> {
-    this.requireRuntime();
+    const rt = this.requireRuntime();
+    const displayId = rt.displayId ?? rt.screenId;
+    const sample = formatTextSample(text, 64);
+    console.info(
+      `${LOG_TAG} inputText start len=${text.length} sendEnter=${sendEnter} displayId=${displayId} screenId=${rt.screenId} sample=${sample}`
+    );
     if (text.length > 0) {
-      AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
+      try {
+        const ret = AppController.operateInputMethod(defaultInputMethodOperatorId.INSERT, text, 0, 0);
+        console.info(`${LOG_TAG} inputText insert ret=${String(ret)} len=${text.length}`);
+      } catch (e) {
+        console.error(`${LOG_TAG} inputText insert failed: ${String(e)}`);
+      }
+    } else {
+      console.info(`${LOG_TAG} inputText skip insert: empty text`);
+    }
+    if (sendEnter) {
+      console.info(`${LOG_TAG} inputText sendEnter requested (enter sent via pressEnter)`);
     }
     // if (sendEnter) {
     //   AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
@@ -241,9 +286,15 @@ export class VTSBackend implements VTSBackendPort {
 
   async pressEnter(): Promise<void> {
     if (!this.runtime) {
+      console.warn(`${LOG_TAG} pressEnter skipped: runtime not ready`);
       return;
     }
-    AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
+    try {
+      const ret = AppController.operateInputMethod(defaultInputMethodOperatorId.ENTER, '', 0, 0);
+      console.info(`${LOG_TAG} pressEnter ret=${String(ret)}`);
+    } catch (e) {
+      console.error(`${LOG_TAG} pressEnter failed: ${String(e)}`);
+    }
   }
 
   async screenshotBase64(): Promise<string> {
@@ -436,6 +487,7 @@ export class VTSBackend implements VTSBackendPort {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
+      console.info(`${LOG_TAG} connectInputMethod register displayId=${displayId}`);
       const ret = AppController.connectInputMethod(
         defaultInputMethodConnId.REGISTER_VIRTUALSCREEN,
         displayId,
@@ -445,6 +497,7 @@ export class VTSBackend implements VTSBackendPort {
       if (ret !== 0) {
         console.error(`${LOG_TAG} connectInputMethod ret ${ret}`);
       }
+      console.info(`${LOG_TAG} connectInputMethod register ret=${ret}`);
       return ret === 0;
     } catch (e) {
       console.error(`${LOG_TAG} connectInputMethod failed: ${String(e)}`);
@@ -463,12 +516,14 @@ export class VTSBackend implements VTSBackendPort {
       onSetCallingWindow: onSetCallingWindowFunc,
     };
     try {
+      console.info(`${LOG_TAG} connectInputMethod unregister displayId=${displayId}`);
       AppController.connectInputMethod(
         defaultInputMethodConnId.UNREGISTER_VIRTUALSCREEN,
         displayId,
         textCallback,
         sysCallback
       );
+      console.info(`${LOG_TAG} connectInputMethod unregister ok`);
     } catch (e) {
       console.error(`${LOG_TAG} disconnectInputMethod failed: ${String(e)}`);
     }
