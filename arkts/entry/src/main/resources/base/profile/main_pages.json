@@ -2,6 +2,7 @@
   "src": [
     "ui/pages/Index",
     "ui/pages/AgentSpaceViewer",
-    "ui/pages/FloatChatPage"
+    "ui/pages/FloatChatPage",
+    "ui/pages/ScreenboardPage"
   ]
 }

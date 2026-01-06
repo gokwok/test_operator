@@ -76,7 +76,8 @@
         "usedScene": {
           "abilities": [
             "EntryAbility",
-            "AgentServiceExtAbility"
+            "AgentServiceExtAbility",
+            "ScreenboardAbility"
           ],
           "when": "inuse"
         }
@@ -106,6 +107,18 @@
       {
         "name": "AgentSpaceViewerAbility",
         "srcEntry": "./ets/abilities/AgentSpaceViewerAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": false,
+        "launchType": "singleton",
+        "removeMissionAfterTerminate": true
+      },
+      {
+        "name": "ScreenboardAbility",
+        "srcEntry": "./ets/abilities/ScreenboardAbility.ets",
         "description": "$string:EntryAbility_desc",
         "icon": "$media:layered_image",
         "label": "$string:EntryAbility_label",

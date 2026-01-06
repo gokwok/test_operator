@@ -141,6 +141,11 @@ export class AgentSpace {
       const err = e instanceof Error ? e : new Error(String(e));
       throw err;
     }
+    try {
+      await this.backend.ensureWallpaper();
+    } catch (e) {
+      console.warn(`[AgentSpace] ensure wallpaper failed: ${String(e)}`);
+    }
     return await this.getRuntimeInfo();
   }
 
