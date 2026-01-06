@@ -3,12 +3,15 @@ export struct FloatChatInputBar {
   @Link text!: string;
   @Link sendSequence!: number;
   @Link micSequence!: number;
+  @Prop @Watch('onFocusSequence') focusSequence: number = 0;
   @Prop placeholder: string = '点击进行输入';
   @Prop inputEnabled: boolean = true;
-  @Prop isListening: boolean = false;
+  @Prop @Watch('onListeningChange') isListening: boolean = false;
   @Prop listeningHint: string = '正在聆听...';
 
   @State private inputFocused: boolean = false;
+  @State private pendingFocus: boolean = false;
+  @State private inputFocusControl: FocusControl = new FocusControl();
 
   private readonly BAR_HEIGHT: number = 50;
   private readonly ICON_BTN_SIZE: number = 48;
@@ -38,6 +41,7 @@ export struct FloatChatInputBar {
 
       Stack() {
         TextInput({ placeholder: '', text: this.text })
+          .focusControl(this.inputFocusControl)
           .layoutWeight(1)
           .height('100%')
           .backgroundColor(Color.Transparent)
@@ -136,6 +140,26 @@ export struct FloatChatInputBar {
       return;
     }
     this.micSequence += 1;
+  }
+
+  private onFocusSequence(): void {
+    this.pendingFocus = true;
+    this.tryFocusInput();
+  }
+
+  private onListeningChange(): void {
+    this.tryFocusInput();
+  }
+
+  private tryFocusInput(): void {
+    if (!this.pendingFocus) {
+      return;
+    }
+    if (!this.isTextInputEnabled()) {
+      return;
+    }
+    this.pendingFocus = false;
+    this.inputFocusControl.requestFocus();
   }
 
   private isTextInputEnabled(): boolean {

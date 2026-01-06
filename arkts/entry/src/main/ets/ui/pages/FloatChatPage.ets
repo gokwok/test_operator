@@ -14,6 +14,7 @@ struct FloatChatPage {
   @State private isVisible: boolean = false;
   @State @Watch('onSendSequence') private sendSequence: number = 0;
   @State @Watch('onMicSequence') private micSequence: number = 0;
+  @State private focusSequence: number = 0;
   @State private isListening: boolean = false;
   @StorageProp('FloatWindow_IsClosing') @Watch('onClosingChange') private isClosing: boolean = false;
   @StorageProp('FloatWindow_IsWaiting') private isWaiting: boolean = false;
@@ -40,6 +41,7 @@ struct FloatChatPage {
       });
       this.enterTimerId = -1;
     }, this.ENTER_DELAY_MS) as number;
+    this.startListeningIfAllowed();
   }
 
   aboutToDisappear(): void {
@@ -70,6 +72,7 @@ struct FloatChatPage {
           text: $inputText,
           sendSequence: $sendSequence,
           micSequence: $micSequence,
+          focusSequence: this.focusSequence,
           inputEnabled: !this.isClosing && !this.isWaiting,
           isListening: this.isListening,
         })
@@ -97,6 +100,18 @@ struct FloatChatPage {
     }
     if (this.isListening) {
       this.stopListening();
+      this.requestInputFocus();
+      return;
+    }
+    void this.startListening();
+  }
+
+  private requestInputFocus(): void {
+    this.focusSequence += 1;
+  }
+
+  private startListeningIfAllowed(): void {
+    if (this.isClosing || this.isWaiting || this.isListening) {
       return;
     }
     void this.startListening();

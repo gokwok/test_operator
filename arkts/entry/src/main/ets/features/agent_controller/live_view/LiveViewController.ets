@@ -66,7 +66,7 @@ export class LiveViewController {
   }
 
   async startDefault(ctx: common.Context, taskText: string): Promise<void> {
-    const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
+    const content = taskText.trim().length > 0 ? taskText.trim() : '';
     const icon = await this.resolveDefaultIcon(ctx);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
@@ -79,7 +79,7 @@ export class LiveViewController {
   }
 
   async updateDefault(ctx: common.Context, taskText: string): Promise<void> {
-    const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
+    const content = taskText.trim().length > 0 ? taskText.trim() : '';
     const icon = await this.resolveDefaultIcon(ctx);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
