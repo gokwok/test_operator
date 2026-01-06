@@ -23,6 +23,10 @@
     {
       "name": "permission_microphone_reason",
       "value": "Enable speech recognition."
+    },
+    {
+      "name": "permission_get_wallpaper_reason",
+      "value": "Read system wallpaper for debugging."
     }
   ]
 }

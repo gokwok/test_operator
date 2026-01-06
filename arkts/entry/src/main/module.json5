@@ -69,6 +69,17 @@
           ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.GET_WALLPAPER",
+        "reason": "$string:permission_get_wallpaper_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility",
+            "AgentServiceExtAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "abilities": [

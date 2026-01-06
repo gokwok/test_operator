@@ -135,8 +135,17 @@ struct Index {
             .fontSize(11)
             .fontColor('#B8C1CC')
         }
+      }
+      .width('100%')
+    }
+    .scrollBar(BarState.On)
+  }
 
-        Text('壁纸调试')
+  @Builder
+  private debugTab(): void {
+    Scroll() {
+      Column({ space: 12 }) {
+        Text('调试')
           .fontSize(12)
           .fontColor(Color.White)
           .fontWeight(FontWeight.Medium)
@@ -162,7 +171,7 @@ struct Index {
         if (this.wallpaperPixelMap) {
           Image(this.wallpaperPixelMap)
             .width('100%')
-            .height(180)
+            .height(280)
             .borderRadius(12)
             .backgroundColor('#111217')
             .objectFit(ImageFit.Contain)
@@ -443,6 +452,11 @@ struct Index {
           this.historyTab();
         }
         .tabBar('历史')
+
+        TabContent() {
+          this.debugTab();
+        }
+        .tabBar('调试')
       }
       .barPosition(BarPosition.Start)
       .scrollable(true)
