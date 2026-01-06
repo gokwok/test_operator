@@ -23,10 +23,14 @@ export struct FloatChatInputBar {
   private readonly MUTED_COLOR: ResourceColor = '#6B8E94';
 
   build() {
-    const leftSymbolName = this.resolveLeftSymbolName();
     Row({ space: 4 }) {
       Button() {
-        this.SystemSymbol(leftSymbolName, 24, this.resolveLeftIconColor(), leftSymbolName);
+        this.SystemSymbol(
+          this.resolveLeftSymbolName(),
+          24,
+          this.resolveLeftIconColor(),
+          this.resolveLeftSymbolName()
+        );
       }
       .width(this.ICON_BTN_SIZE)
       .height(this.ICON_BTN_SIZE)
