@@ -32,7 +32,7 @@ const TASK_CARD_SUCCESS_BORDER: string = '#6FBF88';
 const TASK_CARD_FAIL_BG: string = '#FCEAEA';
 const TASK_CARD_FAIL_BORDER: string = '#E18181';
 const TASK_CARD_ICON_SIZE: number = 18;
-const TASK_CARD_MIN_HEIGHT: number = 132;
+const TASK_CARD_MIN_HEIGHT: number = 152;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -564,8 +564,8 @@ struct Index {
     ListItem() {
       Column({ space: 10 }) {
         Row({ space: 8 }) {
-          Text(task.status)
-            .fontSize(11)
+          Text(this.resolveTaskStatusLabel(task.status))
+            .fontSize(12)
             .fontColor(this.resolveTaskBorderColor(task.status))
             .fontWeight(FontWeight.Bold)
             .layoutWeight(1)
@@ -577,11 +577,23 @@ struct Index {
         }
 
         Text(task.taskText)
-          .fontSize(14)
+          .fontSize(15)
           .fontColor(THEME_TEXT_PRIMARY)
-          .fontWeight(FontWeight.Medium)
+          .fontWeight(FontWeight.Bold)
           .maxLines(3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Column({ space: 4 }) {
+          Text(`执行结果：${this.resolveTaskResult(task)}`)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          Text(`耗时：${this.resolveTaskDuration(task)}`)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
 
         Row() {
           Text(this.formatTime(task.startAtMs))
@@ -599,12 +611,13 @@ struct Index {
       .borderRadius(16)
       .backgroundColor(this.resolveTaskBackground(task.status))
       .border({ width: 1, color: this.resolveTaskBorderColor(task.status) })
+      .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.08)', offsetX: 0, offsetY: 6 })
     }
     .onClick(() => {
       void this.openTask(task.taskId);
     })
     .swipeAction({
-      start: () => {
+      end: () => {
         this.taskDeleteAction(task.taskId);
       }
     })
@@ -645,6 +658,61 @@ struct Index {
 
   private resolveTaskBorderColor(status: string): string {
     return this.isTaskFinished(status) ? TASK_CARD_SUCCESS_BORDER : TASK_CARD_FAIL_BORDER;
+  }
+
+  private resolveTaskStatusLabel(status: string): string {
+    const normalized = status.trim().toLowerCase();
+    if (this.isTaskFinished(normalized)) {
+      return '任务成功';
+    }
+    if (this.isTaskStopped(normalized)) {
+      return '手动终止';
+    }
+    if (this.isTaskFailed(normalized)) {
+      return '任务失败';
+    }
+    return status.trim().length > 0 ? status : '任务失败';
+  }
+
+  private resolveTaskResult(task: HistoryTaskMeta): string {
+    const normalized = task.status.trim().toLowerCase();
+    if (this.isTaskStopped(normalized)) {
+      return '用户手动停止了当前任务的执行。';
+    }
+    if (this.isTaskFinished(normalized)) {
+      return task.finishContent.trim().length > 0 ? task.finishContent : '任务成功';
+    }
+    if (this.isTaskFailed(normalized)) {
+      return task.error.trim().length > 0 ? task.error : '任务失败';
+    }
+    if (task.finishContent.trim().length > 0) {
+      return task.finishContent;
+    }
+    if (task.error.trim().length > 0) {
+      return task.error;
+    }
+    return '任务失败';
+  }
+
+  private resolveTaskDuration(task: HistoryTaskMeta): string {
+    if (task.startAtMs <= 0 || task.endAtMs <= 0) {
+      return '-';
+    }
+    const durationMs = Math.max(0, task.endAtMs - task.startAtMs);
+    const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${totalSeconds} s (${minutes} min ${seconds} s)`;
+  }
+
+  private isTaskStopped(status: string): boolean {
+    const normalized = status.trim().toLowerCase();
+    return normalized === 'stopped' || normalized === 'stop';
+  }
+
+  private isTaskFailed(status: string): boolean {
+    const normalized = status.trim().toLowerCase();
+    return normalized === 'failed' || normalized === 'fail' || normalized === 'error';
   }
 
   private isTaskFinished(status: string): boolean {

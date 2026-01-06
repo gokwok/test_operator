@@ -11,7 +11,7 @@ export struct FloatChatInputBar {
 
   @State private inputFocused: boolean = false;
   @State private pendingFocus: boolean = false;
-  @State private inputFocusControl: FocusControl = new FocusControl();
+  private readonly INPUT_FOCUS_ID: string = 'float_chat_input';
 
   private readonly BAR_HEIGHT: number = 50;
   private readonly ICON_BTN_SIZE: number = 48;
@@ -41,7 +41,7 @@ export struct FloatChatInputBar {
 
       Stack() {
         TextInput({ placeholder: '', text: this.text })
-          .focusControl(this.inputFocusControl)
+          .id(this.INPUT_FOCUS_ID)
           .layoutWeight(1)
           .height('100%')
           .backgroundColor(Color.Transparent)
@@ -50,6 +50,7 @@ export struct FloatChatInputBar {
           .caretColor(this.INACTIVE_COLOR)
           .fontSize(16)
           .padding({ left: 8 })
+          .enableKeyboardOnFocus(true)
           .enabled(this.isTextInputEnabled())
           .onChange((value: string) => {
             this.text = value;
@@ -158,8 +159,9 @@ export struct FloatChatInputBar {
     if (!this.isTextInputEnabled()) {
       return;
     }
-    this.pendingFocus = false;
-    this.inputFocusControl.requestFocus();
+    if (focusControl.requestFocus(this.INPUT_FOCUS_ID)) {
+      this.pendingFocus = false;
+    }
   }
 
   private isTextInputEnabled(): boolean {
