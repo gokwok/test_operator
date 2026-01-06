@@ -5,6 +5,7 @@ import { TaskHistoryStore } from '../../features/persistence/history/TaskHistory
 import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistence/history/TaskHistoryStore';
 import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
+import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;
@@ -20,6 +21,8 @@ struct Index {
   @State historyEnabled: boolean = true;
   @State historyMaxTasksText: string = '50';
   @State settingsInfo: string = '';
+  @State wallpaperInfo: string = '';
+  @State wallpaperPixelMap: image.PixelMap | null = null;
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -131,6 +134,38 @@ struct Index {
           Text(this.settingsInfo)
             .fontSize(11)
             .fontColor('#B8C1CC')
+        }
+
+        Text('壁纸调试')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Medium)
+
+        Row({ space: 8 }) {
+          Button('获取壁纸')
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor('#2A2C34')
+            .borderRadius(14)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.loadWallpaper();
+            })
+        }
+
+        if (this.wallpaperInfo.length > 0) {
+          Text(this.wallpaperInfo)
+            .fontSize(11)
+            .fontColor('#B8C1CC')
+        }
+
+        if (this.wallpaperPixelMap) {
+          Image(this.wallpaperPixelMap)
+            .width('100%')
+            .height(180)
+            .borderRadius(12)
+            .backgroundColor('#111217')
+            .objectFit(ImageFit.Contain)
         }
       }
       .width('100%')
@@ -464,6 +499,23 @@ struct Index {
       await this.refreshHistory();
     } catch (e) {
       this.settingsInfo = `保存失败: ${String(e)}`;
+    }
+  }
+
+  private async loadWallpaper(): Promise<void> {
+    this.wallpaperInfo = '正在获取壁纸...';
+    this.wallpaperPixelMap = null;
+    try {
+      const pixelMap = await WallpaperState.getCurrentWallpaper();
+      if (pixelMap) {
+        this.wallpaperPixelMap = pixelMap;
+        this.wallpaperInfo = '壁纸获取成功';
+      } else {
+        this.wallpaperInfo = '未获取到壁纸';
+      }
+    } catch (e) {
+      this.wallpaperInfo = `壁纸获取失败: ${String(e)}`;
+      this.wallpaperPixelMap = null;
     }
   }
 
