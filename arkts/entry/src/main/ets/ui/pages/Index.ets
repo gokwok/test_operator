@@ -595,7 +595,7 @@ struct Index {
         }
       }
       .padding(14)
-      .minHeight(TASK_CARD_MIN_HEIGHT)
+      .constraintSize({ minHeight: TASK_CARD_MIN_HEIGHT })
       .borderRadius(16)
       .backgroundColor(this.resolveTaskBackground(task.status))
       .border({ width: 1, color: this.resolveTaskBorderColor(task.status) })
