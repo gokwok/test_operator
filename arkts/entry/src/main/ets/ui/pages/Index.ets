@@ -9,6 +9,20 @@ import { WallpaperState } from '../../features/agent_controller/state_collector/
 
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;
+const THEME_BG_START: string = '#F7EAFB';
+const THEME_BG_END: string = '#F1F4FF';
+const THEME_PANEL: string = '#F9ECFF';
+const THEME_CARD: string = '#FFFFFF';
+const THEME_BORDER: string = '#E6DDF1';
+const THEME_ACCENT: string = '#3D6AE8';
+const THEME_ACCENT_SOFT: string = '#E6EEFF';
+const THEME_TEXT_PRIMARY: string = '#2B1E35';
+const THEME_TEXT_MUTED: string = '#7C6F8D';
+const THEME_TEXT_SUBTLE: string = '#B1A6C4';
+const THEME_NAV_BG: string = '#FFFFFFF0';
+const THEME_NAV_ACTIVE_BG: string = '#E9EFFF';
+const THEME_ERROR: string = '#D94848';
+const FONT_DISPLAY: string = 'HarmonyOS Sans SC';
 
 @Entry
 @Component
@@ -45,16 +59,18 @@ struct Index {
     Scroll() {
       Column({ space: 12 }) {
         Text('配置')
-          .fontSize(12)
-          .fontColor(Color.White)
+          .fontSize(14)
+          .fontFamily(FONT_DISPLAY)
+          .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
 
         TextInput({ placeholder: '云侧地址（http://ip:port）', text: this.cloudEndpoint })
           .height(32)
           .fontSize(12)
-          .fontColor(Color.White)
-          .backgroundColor('#1A1B22')
+          .fontColor(THEME_TEXT_PRIMARY)
+          .backgroundColor(THEME_CARD)
           .borderRadius(10)
+          .border({ width: 1, color: THEME_BORDER })
           .padding({ left: 10, right: 10 })
           .onChange((value: string) => {
             this.cloudEndpoint = value;
@@ -65,9 +81,10 @@ struct Index {
             .layoutWeight(1)
             .height(32)
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#1A1B22')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 10, right: 10 })
             .onChange((value: string) => {
               this.waitMsText = value;
@@ -75,9 +92,10 @@ struct Index {
 
           Button(this.liveViewEnabled ? 'LiveView: 开' : 'LiveView: 关')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(this.liveViewEnabled ? THEME_ACCENT : THEME_TEXT_PRIMARY)
+            .backgroundColor(this.liveViewEnabled ? THEME_ACCENT_SOFT : THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               this.liveViewEnabled = !this.liveViewEnabled;
@@ -87,9 +105,10 @@ struct Index {
         Row({ space: 8 }) {
           Button(this.historyEnabled ? '历史: 开' : '历史: 关')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(this.historyEnabled ? THEME_ACCENT : THEME_TEXT_PRIMARY)
+            .backgroundColor(this.historyEnabled ? THEME_ACCENT_SOFT : THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               this.historyEnabled = !this.historyEnabled;
@@ -99,9 +118,10 @@ struct Index {
             .layoutWeight(1)
             .height(32)
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#1A1B22')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 10, right: 10 })
             .onChange((value: string) => {
               this.historyMaxTasksText = value;
@@ -112,8 +132,9 @@ struct Index {
           Button('保存配置')
             .fontSize(12)
             .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .backgroundColor(THEME_ACCENT)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_ACCENT })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.saveSettings();
@@ -121,9 +142,10 @@ struct Index {
 
           Button('刷新历史')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.refreshHistory();
@@ -133,12 +155,13 @@ struct Index {
         if (this.settingsInfo.length > 0) {
           Text(this.settingsInfo)
             .fontSize(11)
-            .fontColor('#B8C1CC')
+            .fontColor(THEME_TEXT_MUTED)
         }
       }
       .width('100%')
     }
-    .scrollBar(BarState.On)
+    .scrollBar(BarState.Off)
+    .layoutWeight(1)
   }
 
   @Builder
@@ -146,16 +169,18 @@ struct Index {
     Scroll() {
       Column({ space: 12 }) {
         Text('调试')
-          .fontSize(12)
-          .fontColor(Color.White)
+          .fontSize(14)
+          .fontFamily(FONT_DISPLAY)
+          .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
 
         Row({ space: 8 }) {
           Button('获取壁纸')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.loadWallpaper();
@@ -165,7 +190,7 @@ struct Index {
         if (this.wallpaperInfo.length > 0) {
           Text(this.wallpaperInfo)
             .fontSize(11)
-            .fontColor('#B8C1CC')
+            .fontColor(THEME_TEXT_MUTED)
         }
 
         if (this.wallpaperPixelMap) {
@@ -173,13 +198,15 @@ struct Index {
             .width('100%')
             .height(280)
             .borderRadius(12)
-            .backgroundColor('#111217')
+            .backgroundColor(THEME_CARD)
+            .border({ width: 1, color: THEME_BORDER })
             .objectFit(ImageFit.Contain)
         }
       }
       .width('100%')
     }
-    .scrollBar(BarState.On)
+    .scrollBar(BarState.Off)
+    .layoutWeight(1)
   }
 
   @Builder
@@ -188,16 +215,18 @@ struct Index {
       Column({ space: 12 }) {
         Row({ space: 8 }) {
           Text('历史任务')
-            .fontSize(12)
-            .fontColor(Color.White)
+            .fontSize(14)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_PRIMARY)
             .fontWeight(FontWeight.Medium)
             .layoutWeight(1)
 
           Button('刷新')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.refreshHistory();
@@ -205,9 +234,10 @@ struct Index {
 
           Button('清空')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.clearAllHistory();
@@ -217,13 +247,13 @@ struct Index {
         if (this.historyLoading) {
           Text('加载中...')
             .fontSize(11)
-            .fontColor('#B8C1CC')
+            .fontColor(THEME_TEXT_MUTED)
         }
 
         if (this.historyError.length > 0) {
           Text(this.historyError)
             .fontSize(11)
-            .fontColor('#F8B4B4')
+            .fontColor(THEME_ERROR)
         }
 
         if (this.selectedTask && this.selectedTaskId.length > 0) {
@@ -234,7 +264,8 @@ struct Index {
       }
       .width('100%')
     }
-    .scrollBar(BarState.On)
+    .scrollBar(BarState.Off)
+    .layoutWeight(1)
   }
 
   @Builder
@@ -242,7 +273,7 @@ struct Index {
     if (this.historyTasks.length === 0) {
       Text('暂无历史任务')
         .fontSize(11)
-        .fontColor('#B8C1CC')
+        .fontColor(THEME_TEXT_MUTED)
     } else {
       List({ space: 10 }) {
         ForEach(this.historyTasks, (task: HistoryTaskMeta) => {
@@ -251,36 +282,37 @@ struct Index {
               Row() {
                 Text(this.formatTime(task.startAtMs))
                   .fontSize(11)
-                  .fontColor('#B8C1CC')
+                  .fontColor(THEME_TEXT_MUTED)
                   .layoutWeight(1)
 
                 Text(task.status)
                   .fontSize(11)
-                  .fontColor('#B8C1CC')
+                  .fontColor(THEME_TEXT_MUTED)
               }
 
               Text(task.taskText)
                 .fontSize(12)
-                .fontColor(Color.White)
+                .fontColor(THEME_TEXT_PRIMARY)
                 .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
 
               Row() {
                 Text(`steps: ${task.stepCount}`)
                   .fontSize(11)
-                  .fontColor('#B8C1CC')
+                  .fontColor(THEME_TEXT_MUTED)
                   .layoutWeight(1)
 
                 if (task.endAtMs > 0) {
                   Text(`end: ${this.formatTime(task.endAtMs)}`)
                     .fontSize(11)
-                    .fontColor('#B8C1CC')
+                    .fontColor(THEME_TEXT_MUTED)
                 }
               }
             }
             .padding(12)
             .borderRadius(12)
-            .backgroundColor('#111217')
+            .backgroundColor(THEME_CARD)
+            .border({ width: 1, color: THEME_BORDER })
             .onClick(() => {
               void this.openTask(task.taskId);
             })
@@ -298,9 +330,10 @@ struct Index {
         Row({ space: 8 }) {
           Button('返回')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
             .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               this.closeTask();
@@ -308,9 +341,10 @@ struct Index {
 
           Button('删除')
             .fontSize(12)
-            .fontColor(Color.White)
-            .backgroundColor('#2A2C34')
+            .fontColor(THEME_ERROR)
+            .backgroundColor('#FFF2F2')
             .borderRadius(14)
+            .border({ width: 1, color: '#F3C6C6' })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.deleteSelectedTask();
@@ -318,35 +352,35 @@ struct Index {
 
           Text(this.selectedTask.status)
             .fontSize(11)
-            .fontColor('#B8C1CC')
+            .fontColor(THEME_TEXT_MUTED)
             .layoutWeight(1)
             .textAlign(TextAlign.End)
         }
 
         Text(this.selectedTask.taskText)
           .fontSize(12)
-          .fontColor(Color.White)
+          .fontColor(THEME_TEXT_PRIMARY)
 
         Text(`session: ${this.selectedTask.sessionId}`)
           .fontSize(11)
-          .fontColor('#B8C1CC')
+          .fontColor(THEME_TEXT_MUTED)
 
         Text(`cloud: ${this.selectedTask.cloudEndpoint}`)
           .fontSize(11)
-          .fontColor('#B8C1CC')
+          .fontColor(THEME_TEXT_MUTED)
 
         Text(`wait_ms: ${this.selectedTask.waitAfterActionMs}    steps: ${this.selectedTask.stepCount}`)
           .fontSize(11)
-          .fontColor('#B8C1CC')
+          .fontColor(THEME_TEXT_MUTED)
 
         if (this.selectedTask.finishContent.trim().length > 0) {
           Text(`finish:\n${this.selectedTask.finishContent}`)
             .fontSize(11)
-            .fontColor('#B8C1CC')
+            .fontColor(THEME_TEXT_MUTED)
         } else if (this.selectedTask.error.trim().length > 0) {
           Text(`error:\n${this.selectedTask.error}`)
             .fontSize(11)
-            .fontColor('#F8B4B4')
+            .fontColor(THEME_ERROR)
         }
 
         if (this.selectedStepPixelMap) {
@@ -354,7 +388,8 @@ struct Index {
             .width('100%')
             .height(280)
             .borderRadius(12)
-            .backgroundColor('#111217')
+            .backgroundColor(THEME_CARD)
+            .border({ width: 1, color: THEME_BORDER })
             .objectFit(ImageFit.Contain)
         }
 
@@ -374,7 +409,7 @@ struct Index {
     if (this.selectedSteps.length === 0) {
       Text('暂无步骤')
         .fontSize(11)
-        .fontColor('#B8C1CC')
+        .fontColor(THEME_TEXT_MUTED)
     } else {
       List({ space: 8 }) {
         ForEach(this.selectedSteps, (step: HistoryStepMeta) => {
@@ -383,25 +418,26 @@ struct Index {
               Row() {
                 Text(`#${step.stepIndex}  ${step.actionName}`)
                   .fontSize(12)
-                  .fontColor(Color.White)
+                  .fontColor(THEME_TEXT_PRIMARY)
                   .layoutWeight(1)
 
                 Text(step.resultStatus.length > 0 ? step.resultStatus : '-')
                   .fontSize(11)
-                  .fontColor('#B8C1CC')
+                  .fontColor(THEME_TEXT_MUTED)
               }
 
               if (step.description.trim().length > 0) {
                 Text(step.description)
                   .fontSize(11)
-                  .fontColor('#B8C1CC')
+                  .fontColor(THEME_TEXT_MUTED)
                   .maxLines(2)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
             }
             .padding(12)
             .borderRadius(12)
-            .backgroundColor(this.selectedStepIndex === step.stepIndex ? '#1A1B22' : '#111217')
+            .backgroundColor(this.selectedStepIndex === step.stepIndex ? THEME_NAV_ACTIVE_BG : THEME_CARD)
+            .border({ width: 1, color: THEME_BORDER })
             .onClick(() => {
               void this.selectStep(step);
             })
@@ -418,58 +454,149 @@ struct Index {
       Column({ space: 6 }) {
         Text(`Step #${this.selectedStep.stepIndex}`)
           .fontSize(12)
-          .fontColor(Color.White)
+          .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
 
         if (this.selectedStep.error.trim().length > 0) {
           Text(this.selectedStep.error)
             .fontSize(11)
-            .fontColor('#F8B4B4')
+            .fontColor(THEME_ERROR)
         }
 
         if (this.selectedStep.output.trim().length > 0) {
           Text(this.selectedStep.output)
             .fontSize(11)
-            .fontColor('#B8C1CC')
+            .fontColor(THEME_TEXT_MUTED)
         }
       }
       .padding(12)
       .borderRadius(12)
-      .backgroundColor('#111217')
+      .backgroundColor(THEME_CARD)
+      .border({ width: 1, color: THEME_BORDER })
       .width('100%')
     }
   }
 
+  @Builder
+  private pageHeader(): void {
+    Column({ space: 4 }) {
+      Text(this.resolveTabTitle())
+        .fontSize(20)
+        .fontFamily(FONT_DISPLAY)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+
+      Text('Assistant Console')
+        .fontSize(11)
+        .fontColor(THEME_TEXT_SUBTLE)
+        .letterSpacing(0.4)
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private activeTabContent(): void {
+    if (this.activeTabIndex === 0) {
+      this.historyTab();
+    } else if (this.activeTabIndex === 1) {
+      this.debugTab();
+    } else {
+      this.settingsTab();
+    }
+  }
+
+  @Builder
+  private navItem(label: string, index: number): void {
+    const isActive = this.activeTabIndex === index;
+    Column({ space: 6 }) {
+      Blank()
+        .width(isActive ? 22 : 6)
+        .height(3)
+        .borderRadius(3)
+        .backgroundColor(isActive ? THEME_ACCENT : 'transparent')
+
+      Text(label)
+        .fontSize(11)
+        .fontFamily(FONT_DISPLAY)
+        .fontColor(isActive ? THEME_ACCENT : THEME_TEXT_SUBTLE)
+        .fontWeight(isActive ? FontWeight.Bold : FontWeight.Medium)
+    }
+    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+    .borderRadius(12)
+    .backgroundColor(isActive ? THEME_NAV_ACTIVE_BG : 'transparent')
+    .onClick(() => {
+      this.activeTabIndex = index;
+    })
+  }
+
+  @Builder
+  private bottomNav(): void {
+    Row({ space: 18 }) {
+      this.navItem('Task', 0);
+      this.navItem('Debug', 1);
+      this.navItem('Setting', 2);
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.SpaceAround)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(THEME_NAV_BG)
+    .borderRadius(18)
+    .border({ width: 1, color: THEME_BORDER })
+  }
+
+  private resolveTabTitle(): string {
+    if (this.activeTabIndex === 0) {
+      return 'Task';
+    }
+    if (this.activeTabIndex === 1) {
+      return 'Debug';
+    }
+    return 'Setting';
+  }
+
   build() {
-    Column() {
-      Tabs({ index: this.activeTabIndex }) {
-        TabContent() {
-          this.settingsTab();
-        }
-        .tabBar('设置')
+    Stack() {
+      Blank()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(THEME_BG_START)
 
-        TabContent() {
-          this.historyTab();
-        }
-        .tabBar('历史')
+      Blank()
+        .width(420)
+        .height(420)
+        .borderRadius(210)
+        .backgroundColor(THEME_BG_END)
+        .position({ x: -140, y: -180 })
+        .opacity(0.7)
 
-        TabContent() {
-          this.debugTab();
+      Blank()
+        .width(360)
+        .height(360)
+        .borderRadius(180)
+        .backgroundColor('#FFEAF5')
+        .position({ x: 120, y: 520 })
+        .opacity(0.55)
+
+      Column({ space: 12 }) {
+        Column({ space: 12 }) {
+          this.pageHeader();
+          this.activeTabContent();
         }
-        .tabBar('调试')
+        .width('100%')
+        .layoutWeight(1)
+        .padding({ left: 16, right: 16, top: 16, bottom: 10 })
+        .backgroundColor(THEME_PANEL)
+        .borderRadius(26)
+        .border({ width: 1, color: THEME_BORDER })
+
+        this.bottomNav();
       }
-      .barPosition(BarPosition.Start)
-      .scrollable(true)
-      .onChange((index: number) => {
-        this.activeTabIndex = index;
-      })
       .width('100%')
       .height('100%')
-      .padding({ left: 16, right: 16, top: 16, bottom: 24 })
+      .padding({ left: 16, right: 16, top: 16, bottom: 16 })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#090A0F')
   }
 
   private getUiContext(): common.UIAbilityContext {
