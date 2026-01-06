@@ -29,6 +29,7 @@ struct FloatChatPage {
   private serviceClient: AgentControllerClient = new AgentControllerClient();
   private asrBaseText: string = '';
   private asrPartialText: string = '';
+  private listeningToken: number = 0;
 
   aboutToAppear(): void {
     AppStorage.setOrCreate('FloatWindow_IsClosing', false);
@@ -185,26 +186,44 @@ struct FloatChatPage {
 
   private async startListening(): Promise<void> {
     const ctx = getContext(this) as common.UIAbilityContext;
+    const token = this.nextListeningToken();
     this.inputMode = 'voice';
     this.asrBaseText = this.inputText;
     this.asrPartialText = '';
     this.isListening = true;
     const started = await asrFeature.startListening(ctx, {
       onStart: () => {
+        if (!this.isListeningTokenActive(token)) {
+          return;
+        }
         this.isListening = true;
       },
       onPartialResult: (text: string) => {
+        if (!this.isListeningTokenActive(token)) {
+          return;
+        }
         this.updateAsrText(text);
       },
       onFinalResult: (text: string) => {
+        if (!this.isListeningTokenActive(token)) {
+          return;
+        }
         this.updateAsrText(text);
       },
       onComplete: () => {
+        if (!this.isListeningTokenActive(token)) {
+          return;
+        }
         this.isListening = false;
+        this.inputMode = 'voice';
         this.clearAsrBuffer();
       },
       onError: () => {
+        if (!this.isListeningTokenActive(token)) {
+          return;
+        }
         this.isListening = false;
+        this.inputMode = 'voice';
         this.clearAsrBuffer();
       }
     });
@@ -218,7 +237,9 @@ struct FloatChatPage {
     if (!this.isListening) {
       return;
     }
+    this.invalidateListeningToken();
     this.isListening = false;
+    this.inputMode = 'voice';
     asrFeature.stopListening(true);
   }
 
@@ -243,5 +264,18 @@ struct FloatChatPage {
   private clearAsrBuffer(): void {
     this.asrBaseText = '';
     this.asrPartialText = '';
+  }
+
+  private nextListeningToken(): number {
+    this.listeningToken += 1;
+    return this.listeningToken;
+  }
+
+  private invalidateListeningToken(): void {
+    this.listeningToken += 1;
+  }
+
+  private isListeningTokenActive(token: number): boolean {
+    return token === this.listeningToken;
   }
 }
