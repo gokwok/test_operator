@@ -24,11 +24,11 @@ export default class EntryAbility extends UIAbility {
 
     windowStage.getMainWindow()
       .then((mainWindow: window.Window) => {
-        mainWindow.setWindowLayoutFullScreen(true);
-        mainWindow.setWindowSystemBarEnable([]);
+        mainWindow.setWindowLayoutFullScreen(false);
+        mainWindow.setWindowSystemBarEnable(['status', 'navigation']);
       })
       .catch((err: Error) => {
-        hilog.error(DOMAIN, 'testTag', 'Failed to enable full screen. Cause: %{public}s', JSON.stringify(err));
+        hilog.error(DOMAIN, 'testTag', 'Failed to configure system bars. Cause: %{public}s', JSON.stringify(err));
       });
 
     windowStage.loadContent('ui/pages/Index', (err) => {
