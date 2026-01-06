@@ -45,7 +45,6 @@ const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 30000;
 const FINISHED_TTS_TEXT: string = '任务已完成';
-const LIVEVIEW_LOG_TAG: string = '[AS_LIVEVIEW]';
 const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
 const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
@@ -128,7 +127,6 @@ export class AgentController {
     this.liveViewAppName = '';
     this.liveViewIcon = null;
     this.liveViewNotificationId = this.allocateLiveViewId();
-    console.info(`${LIVEVIEW_LOG_TAG} startTask enabled=${this.liveViewEnabled} notifId=${this.liveViewNotificationId}`);
     const collector = new StateCollector(toolKit);
     this.pendingAgentSpaceDestroy = false;
     this.taskManager.startTask(normalized, agentProxy, toolKit, collector);
@@ -442,9 +440,6 @@ export class AgentController {
 
   async handleTaskStatusChanged(snapshot: TaskSnapshot): Promise<void> {
     const status = snapshot.status;
-    if (this.liveViewEnabled) {
-      console.info(`${LIVEVIEW_LOG_TAG} status=${status} phase=${this.liveViewPhase} viewerActive=${this.viewerActive}`);
-    }
     if (status === 'finished' || status === 'failed' || status === 'stopping' || status === 'idle') {
       this.releaseEfficiencyResourcesBestEffort();
     }
@@ -499,7 +494,6 @@ export class AgentController {
       return;
     }
     const name = action.name.trim().toLowerCase();
-    console.info(`${LIVEVIEW_LOG_TAG} action=${name} descLen=${description.length}`);
     if (name === 'launch_app') {
       const appName = this.resolveAppName(action);
       if (appName.length > 0) {
@@ -649,13 +643,10 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} publish running skipped ctx_missing`);
       return;
     }
     const content = this.liveViewTaskText.trim().length > 0 ? this.liveViewTaskText.trim() : DEFAULT_TASK_PLACEHOLDER;
-    console.info(`${LIVEVIEW_LOG_TAG} publish running begin taskLen=${content.length}`);
     const icon = await this.resolveLiveViewIcon();
-    console.info(`${LIVEVIEW_LOG_TAG} publish running icon=${icon ? 'yes' : 'no'}`);
     const payload = this.buildLiveViewPayload('任务执行中', content, CAPSULE_RUNNING, icon);
     await this.publishLiveView(payload);
   }
@@ -666,12 +657,9 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} publish interaction skipped ctx_missing`);
       return;
     }
-    console.info(`${LIVEVIEW_LOG_TAG} publish interaction begin contentLen=${content.length}`);
     const icon = await this.resolveLiveViewIcon();
-    console.info(`${LIVEVIEW_LOG_TAG} publish interaction icon=${icon ? 'yes' : 'no'}`);
     const payload = this.buildLiveViewPayload('等待答复', content, CAPSULE_INTERACTION, icon);
     await this.publishLiveView(payload);
   }
@@ -682,13 +670,11 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} publish finished skipped ctx_missing`);
       return;
     }
     const icon = await this.resolveLiveViewIcon();
     const trimmed = content.trim();
     const body = trimmed.length > 0 ? trimmed : FINISHED_TTS_TEXT;
-    console.info(`${LIVEVIEW_LOG_TAG} publish finished begin contentLen=${body.length} icon=${icon ? 'yes' : 'no'}`);
     const payload = this.buildLiveViewPayload('任务完成', body, CAPSULE_FINISHED, icon);
     void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
@@ -699,12 +685,10 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} publish stopped skipped ctx_missing`);
       return;
     }
     const icon = await this.resolveLiveViewIcon();
     const content = reason.trim().length > 0 ? reason.trim() : '';
-    console.info(`${LIVEVIEW_LOG_TAG} publish stopped begin contentLen=${content.length} icon=${icon ? 'yes' : 'no'}`);
     const payload = this.buildLiveViewPayload('任务已停止', content, CAPSULE_STOPPED, icon);
     void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
@@ -715,12 +699,10 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} publish failed skipped ctx_missing`);
       return;
     }
     const icon = await this.resolveLiveViewIcon();
     const content = reason.trim().length > 0 ? reason.trim() : '';
-    console.info(`${LIVEVIEW_LOG_TAG} publish failed begin contentLen=${content.length} icon=${icon ? 'yes' : 'no'}`);
     const payload = this.buildLiveViewPayload('任务异常', content, CAPSULE_FAILED, icon);
     void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
@@ -749,12 +731,9 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} publish skipped ctx_missing`);
       return;
     }
     try {
-      const mode = this.liveViewStarted ? 'update' : 'start';
-      console.info(`${LIVEVIEW_LOG_TAG} publish ${mode} title=${payload.primary.title} capsule=${payload.capsule.title} icon=${payload.capsuleIcon ? 'yes' : 'no'} id=${payload.id ?? 0}`);
       if (!this.liveViewStarted) {
         await this.liveViewController.start(ctx, payload);
         this.liveViewStarted = true;
@@ -772,12 +751,10 @@ export class AgentController {
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} stop skipped ctx_missing`);
       return;
     }
     payload.stopTimeoutMs = Math.max(0, Math.floor(delayMs));
     try {
-      console.info(`${LIVEVIEW_LOG_TAG} stop begin delayMs=${payload.stopTimeoutMs}`);
       this.liveViewSelfStopping = true;
       await this.liveViewController.stop(ctx, payload);
     } catch (e) {
@@ -796,23 +773,21 @@ export class AgentController {
 
   private async resolveLiveViewIcon(): Promise<image.PixelMap | null> {
     if (this.liveViewIcon) {
-      console.info(`${LIVEVIEW_LOG_TAG} resolve icon cached`);
       return this.liveViewIcon;
     }
     const ctx = this.ctx;
     if (!ctx) {
-      console.info(`${LIVEVIEW_LOG_TAG} resolve icon ctx_missing`);
       return null;
     }
-    console.info(`${LIVEVIEW_LOG_TAG} resolve icon via AppState`);
     try {
       const icon = await AppState.getIconByAppName(SELF_BUNDLE_NAME, ctx);
-      this.liveViewIcon = icon;
-      return icon;
+      if (this.isPixelMapValid(icon)) {
+        this.liveViewIcon = icon;
+        return icon;
+      }
     } catch (e) {
       console.warn(`[AgentController] load default icon failed: ${String(e)}`);
     }
-    console.info(`${LIVEVIEW_LOG_TAG} resolve icon via bundle fallback`);
     const fallback = await this.loadSelfBundleIcon();
     if (fallback) {
       this.liveViewIcon = fallback;
@@ -833,7 +808,10 @@ export class AgentController {
         applicationInfo.appIndex
       );
       const pixelMap = resourceInfo?.drawableDescriptor?.getPixelMap();
-      return pixelMap ?? null;
+      if (!pixelMap) {
+        return null;
+      }
+      return this.isPixelMapValid(pixelMap) ? pixelMap : null;
     } catch (e) {
       console.warn(`[AgentController] load self bundle icon failed: ${String(e)}`);
       return null;
@@ -845,21 +823,31 @@ export class AgentController {
     if (!ctx) {
       return;
     }
-    console.info(`${LIVEVIEW_LOG_TAG} update icon app=${appName}`);
     if (appName === this.liveViewAppName && this.liveViewIcon) {
       return;
     }
     try {
       const icon = await AppState.getIconByAppName(appName, ctx);
+      if (!this.isPixelMapValid(icon)) {
+        return;
+      }
       this.liveViewAppName = appName;
       this.liveViewIcon = icon;
-      console.info(`${LIVEVIEW_LOG_TAG} update icon success app=${appName}`);
     } catch (e) {
       console.warn(`[AgentController] load app icon failed: ${String(e)}`);
       return;
     }
     if (this.liveViewPhase === 'running') {
       await this.publishRunningLiveView();
+    }
+  }
+
+  private isPixelMapValid(pixelMap: image.PixelMap): boolean {
+    try {
+      const info: image.ImageInfo = pixelMap.getImageInfo();
+      return info.size.width > 0 && info.size.height > 0;
+    } catch (_e) {
+      return false;
     }
   }
 

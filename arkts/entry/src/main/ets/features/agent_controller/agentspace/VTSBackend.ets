@@ -6,8 +6,6 @@ import util from '@ohos.util';
 import * as AppController from '@hms.ai.appController';
 
 const LOG_TAG: string = '[VTSBackend]';
-const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
-const SCREENBOARD_ABILITY_NAME: string = 'ScreenboardAbility';
 
 const POINTER_ACTION_UNKNOWN: number = 0;
 const POINTER_ACTION_CANCEL: number = 1;
@@ -87,7 +85,6 @@ export interface VTSBackendPort {
   updateStartAbility(invoker: StartAbilityInvoker): void;
   getRuntime(): VTSRuntimeInfo | null;
   create(): Promise<VTSRuntimeInfo>;
-  ensureWallpaper(): Promise<void>;
   attachSurface(surfaceId: string): Promise<void>;
   startApp(target: AppTarget): Promise<void>;
   clickPx(x: number, y: number): Promise<void>;
@@ -119,8 +116,6 @@ export class VTSBackend implements VTSBackendPort {
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;
   private imeRegistered: boolean = false;
-  private appRunningInVts: boolean = false;
-  private wallpaperStarted: boolean = false;
 
   constructor(startAbilityInvoker: StartAbilityInvoker) {
     this.startAbilityInvoker = startAbilityInvoker;
@@ -189,30 +184,7 @@ export class VTSBackend implements VTSBackendPort {
 
     this.runtime = runtime;
     this.imeRegistered = this.registerImeBestEffort(runtime.displayId ?? runtime.screenId);
-    this.appRunningInVts = false;
-    this.wallpaperStarted = false;
     return runtime;
-  }
-
-  async ensureWallpaper(): Promise<void> {
-    if (this.appRunningInVts || this.wallpaperStarted) {
-      return;
-    }
-    const rt = this.requireRuntime();
-    const want: Want = {
-      bundleName: SELF_BUNDLE_NAME,
-      abilityName: SCREENBOARD_ABILITY_NAME,
-    };
-    const opt: StartOptions = {
-      displayId: rt.displayId ?? rt.screenId,
-    };
-    try {
-      await this.startAbilityInvoker(want, opt);
-      this.wallpaperStarted = true;
-    } catch (e) {
-      const err = e as BusinessError;
-      console.error(`${LOG_TAG} start wallpaper failed. Code:${err.code}, message:${err.message}`);
-    }
   }
 
   async destroy(): Promise<void> {
@@ -223,8 +195,6 @@ export class VTSBackend implements VTSBackendPort {
     const imeDisplayId = this.runtime.displayId ?? this.runtime.screenId;
     this.runtime = null;
     this.lastTarget = null;
-    this.appRunningInVts = false;
-    this.wallpaperStarted = false;
     if (this.imeRegistered) {
       this.unregisterImeBestEffort(imeDisplayId);
       this.imeRegistered = false;
@@ -260,8 +230,6 @@ export class VTSBackend implements VTSBackendPort {
     try {
       await this.startAbilityInvoker(want, opt);
       this.lastTarget = target;
-      this.appRunningInVts = true;
-      this.wallpaperStarted = false;
     } catch (e) {
       const err = e as BusinessError;
       throw new Error(`startAbility failed. Code:${err.code}, message:${err.message}`);
@@ -467,9 +435,6 @@ export class VTSBackend implements VTSBackendPort {
         console.error(`${LOG_TAG} startAppOnMain failed: ${String(e)}`);
       }
     }
-    this.appRunningInVts = false;
-    this.wallpaperStarted = false;
-    await this.ensureWallpaper();
     return transferred;
   }
 
