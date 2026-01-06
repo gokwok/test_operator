@@ -23,6 +23,10 @@ const THEME_NAV_ACTIVE_BG: string = '#E9EFFF';
 const THEME_ERROR: string = '#D94848';
 const FONT_DISPLAY: string = 'HarmonyOS Sans SC';
 const SAFE_TOP_PADDING: number = 24;
+const NAV_HEIGHT: number = 72;
+const NAV_BLUR_RADIUS: number = 18;
+
+type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 
 @Entry
 @Component
@@ -506,13 +510,9 @@ struct Index {
   }
 
   @Builder
-  private navItem(label: string, index: number): void {
+  private navItem(label: string, symbolName: NavSymbolName, index: number): void {
     Column({ space: 6 }) {
-      Blank()
-        .width(this.isTabActive(index) ? 22 : 6)
-        .height(3)
-        .borderRadius(3)
-        .backgroundColor(this.isTabActive(index) ? THEME_ACCENT : 'transparent')
+      this.navSymbol(symbolName, this.isTabActive(index));
 
       Text(label)
         .fontSize(11)
@@ -520,9 +520,11 @@ struct Index {
         .fontColor(this.isTabActive(index) ? THEME_ACCENT : THEME_TEXT_SUBTLE)
         .fontWeight(this.isTabActive(index) ? FontWeight.Bold : FontWeight.Medium)
     }
-    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-    .borderRadius(12)
-    .backgroundColor(this.isTabActive(index) ? THEME_NAV_ACTIVE_BG : 'transparent')
+    .height('100%')
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('transparent')
     .onClick(() => {
       this.activeTabIndex = index;
     })
@@ -530,17 +532,18 @@ struct Index {
 
   @Builder
   private bottomNav(): void {
-    Row({ space: 18 }) {
-      this.navItem('Task', 0);
-      this.navItem('Debug', 1);
-      this.navItem('Setting', 2);
+    Row() {
+      this.navItem('Task', 'house_fill', 0);
+      this.navItem('Debug', 'bolt_filled_on_circle', 1);
+      this.navItem('Setting', 'gearshape', 2);
     }
     .width('100%')
-    .justifyContent(FlexAlign.SpaceAround)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(THEME_NAV_BG)
-    .borderRadius(18)
+    .height(NAV_HEIGHT)
+    .justifyContent(FlexAlign.SpaceEvenly)
+    .backgroundColor('rgba(255, 255, 255, 0.72)')
+    .backdropBlur(NAV_BLUR_RADIUS)
     .border({ width: 1, color: THEME_BORDER })
+    .clip(true)
   }
 
   private resolveTabTitle(): string {
@@ -553,19 +556,36 @@ struct Index {
     return 'Setting';
   }
 
+  @Builder
+  private navSymbol(symbolName: NavSymbolName, active: boolean): void {
+    if (symbolName === 'house_fill') {
+      SymbolGlyph($r('sys.symbol.house_fill'))
+        .fontSize(20)
+        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE]);
+    } else if (symbolName === 'gearshape') {
+      SymbolGlyph($r('sys.symbol.gearshape'))
+        .fontSize(20)
+        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE]);
+    } else {
+      SymbolGlyph($r('sys.symbol.bolt_filled_on_circle'))
+        .fontSize(20)
+        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE]);
+    }
+  }
+
   private isTabActive(index: number): boolean {
     return this.activeTabIndex === index;
   }
 
   build() {
-    Column({ space: 12 }) {
+    Column({ space: 0 }) {
       Column({ space: 12 }) {
         this.pageHeader();
         this.activeTabContent();
       }
       .width('100%')
       .layoutWeight(1)
-      .padding({ left: 16, right: 16, top: 16, bottom: 10 })
+      .padding({ left: 16, right: 16, top: 16, bottom: 12 })
       .backgroundColor(THEME_PANEL)
       .borderRadius(26)
       .border({ width: 1, color: THEME_BORDER })
@@ -574,7 +594,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 16, right: 16, top: SAFE_TOP_PADDING, bottom: 16 })
+    .padding({ left: 0, right: 0, top: SAFE_TOP_PADDING, bottom: 0 })
     .backgroundColor(THEME_BG_START)
   }
 
