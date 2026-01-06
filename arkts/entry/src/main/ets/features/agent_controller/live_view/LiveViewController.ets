@@ -7,6 +7,7 @@ import image from '@ohos.multimedia.image';
 import { AppState } from '../state_collector/AppState';
 
 const LOG_TAG: string = '[LiveView]';
+const LIVEVIEW_LOG_TAG: string = '[AS_LIVEVIEW]';
 const DEFAULT_APP_NAME: string = 'com.huawei.aios.agent.operation';
 
 export enum LiveViewType {
@@ -68,6 +69,7 @@ export class LiveViewController {
   async startDefault(ctx: common.Context, taskText: string): Promise<void> {
     const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
     const icon = await this.resolveDefaultIcon(ctx);
+    console.info(`${LIVEVIEW_LOG_TAG} controller startDefault contentLen=${content.length} icon=${icon ? 'yes' : 'no'}`);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
       primary: { title: '任务执行中', content },
@@ -81,6 +83,7 @@ export class LiveViewController {
   async updateDefault(ctx: common.Context, taskText: string): Promise<void> {
     const content = taskText.trim().length > 0 ? taskText.trim() : 'xxxxxxx';
     const icon = await this.resolveDefaultIcon(ctx);
+    console.info(`${LIVEVIEW_LOG_TAG} controller updateDefault contentLen=${content.length} icon=${icon ? 'yes' : 'no'}`);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
       primary: { title: '任务执行中', content },
@@ -92,6 +95,7 @@ export class LiveViewController {
   }
 
   async stopDefault(ctx: common.Context, timeoutMs?: number): Promise<void> {
+    console.info(`${LIVEVIEW_LOG_TAG} controller stopDefault timeoutMs=${timeoutMs ?? -1}`);
     const params: LiveViewContents = {
       type: LiveViewType.VIEWER,
       stopTimeoutMs: timeoutMs,
@@ -103,6 +107,7 @@ export class LiveViewController {
   }
 
   async start(ctx: common.Context, param: LiveViewContents): Promise<void> {
+    console.info(`${LIVEVIEW_LOG_TAG} controller start title=${param.primary.title} capsule=${param.capsule.title} icon=${param.capsuleIcon ? 'yes' : 'no'}`);
     const request = await this.buildNotificationRequest(param);
     await this.ensureSubscribed();
     await this.publishOnce(request);
@@ -110,6 +115,7 @@ export class LiveViewController {
   }
 
   async update(ctx: common.Context, param: LiveViewContents): Promise<void> {
+    console.info(`${LIVEVIEW_LOG_TAG} controller update title=${param.primary.title} capsule=${param.capsule.title} icon=${param.capsuleIcon ? 'yes' : 'no'}`);
     const request = await this.buildNotificationRequest(param);
     await this.ensureSubscribed();
     await this.publishOnce(request);
@@ -117,6 +123,7 @@ export class LiveViewController {
   }
 
   async stop(ctx: common.Context, param: LiveViewContents): Promise<void> {
+    console.info(`${LIVEVIEW_LOG_TAG} controller stop title=${param.primary.title} capsule=${param.capsule.title} timeoutMs=${param.stopTimeoutMs ?? -1}`);
     const request = await this.buildNotificationRequest(param);
     const timeout = typeof param.stopTimeoutMs === 'number' ? param.stopTimeoutMs : 100;
 
@@ -183,8 +190,10 @@ export class LiveViewController {
     }
     const subscriber: notificationManager.SystemLiveViewSubscriber = {};
     try {
+      console.info(`${LIVEVIEW_LOG_TAG} subscribeSystemLiveView begin`);
       await notificationManager.subscribeSystemLiveView(subscriber);
       this.subscribed = true;
+      console.info(`${LIVEVIEW_LOG_TAG} subscribeSystemLiveView ok`);
     } catch (e) {
       console.warn(`${LOG_TAG} subscribeSystemLiveView failed: ${String(e)}`);
     }
@@ -205,9 +214,11 @@ export class LiveViewController {
       }
     };
     try {
+      console.info(`${LIVEVIEW_LOG_TAG} subscribeSelf begin`);
       await notificationSubscribe.subscribeSelf(subscriber);
       this.cancelSubscriber = subscriber;
       this.cancelSubscribed = true;
+      console.info(`${LIVEVIEW_LOG_TAG} subscribeSelf ok`);
     } catch (e) {
       console.warn(`${LOG_TAG} subscribeSelf failed: ${String(e)}`);
     }
@@ -222,6 +233,7 @@ export class LiveViewController {
     if (typeof id !== 'number') {
       return;
     }
+    console.info(`${LIVEVIEW_LOG_TAG} cancel received id=${id} reason=${data.reason ?? -1}`);
     this.cancelListener(id, data.reason);
   }
 
@@ -231,6 +243,7 @@ export class LiveViewController {
     const tapTarget = param.tapTarget ?? LiveViewController.buildViewerTapTarget();
     const wantAgentObj = await LiveViewController.buildWantAgent(tapTarget);
     const capsuleIcon = param.capsuleIcon;
+    console.info(`${LIVEVIEW_LOG_TAG} build request id=${id} title=${param.primary.title} capsule=${param.capsule.title} icon=${capsuleIcon ? 'yes' : 'no'} textLen=${param.primary.content.length}`);
 
     const request: notificationManager.NotificationRequest = {
       notificationSlotType: notificationManager.SlotType.LIVE_VIEW,
