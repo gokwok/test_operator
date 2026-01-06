@@ -14,6 +14,7 @@ export interface AgentSpaceRuntimeInfo {
   state: AgentSpaceState;
   viewerActive: boolean;
   surfaceAttached: boolean;
+  appLaunched: boolean;
   screenId: number;
   displayId?: number;
   widthPx: number;
@@ -102,6 +103,7 @@ export class AgentSpace {
   private viewerMode: AgentSpaceViewerMode = 'display';
   private viewerEffectSequence: number = 0;
   private viewerEffects: Array<AgentSpaceViewerEffect> = [];
+  private appLaunched: boolean = false;
 
   constructor(startAbilityInvoker: StartAbilityInvoker, backendFactory?: VTSBackendFactory, host?: AgentSpaceHost) {
     this.backend = backendFactory ? backendFactory(startAbilityInvoker) : new VTSBackend(startAbilityInvoker);
@@ -118,12 +120,17 @@ export class AgentSpace {
     this.host = host;
   }
 
+  isAppLaunched(): boolean {
+    return this.appLaunched;
+  }
+
   async getRuntimeInfo(): Promise<AgentSpaceRuntimeInfo> {
     const rt = this.backend.getRuntime();
     const info: AgentSpaceRuntimeInfo = {
       state: this.state,
       viewerActive: this.viewerActive,
       surfaceAttached: this.surfaceAttached,
+      appLaunched: this.appLaunched,
       screenId: rt?.screenId ?? -1,
       displayId: rt?.displayId,
       widthPx: rt?.widthPx ?? -1,
@@ -208,6 +215,7 @@ export class AgentSpace {
   async startApp(target: AppTarget): Promise<void> {
     await this.ensureVts();
     await this.backend.startApp(target);
+    this.appLaunched = true;
   }
 
   async clickPx(x: number, y: number): Promise<void> {
@@ -229,7 +237,11 @@ export class AgentSpace {
 
   async transferToMain(): Promise<number> {
     await this.ensureVts();
-    return await this.backend.transferToMain();
+    const transferred = await this.backend.transferToMain();
+    if (transferred > 0) {
+      this.appLaunched = false;
+    }
+    return transferred;
   }
 
   async executeAction(action: AgentAction): Promise<ActionResult> {
@@ -282,6 +294,7 @@ export class AgentSpace {
       this.viewerActive = false;
       this.surfaceId = '';
       this.surfaceAttached = false;
+      this.appLaunched = false;
     }
   }
 

@@ -18,15 +18,18 @@ const THEME_ACCENT_SOFT: string = '#E6EEFF';
 const THEME_TEXT_PRIMARY: string = '#2B1E35';
 const THEME_TEXT_MUTED: string = '#7C6F8D';
 const THEME_TEXT_SUBTLE: string = '#B1A6C4';
-const THEME_NAV_BG: string = '#FFFFFFF0';
 const THEME_NAV_ACTIVE_BG: string = '#E9EFFF';
 const THEME_ERROR: string = '#D94848';
 const FONT_DISPLAY: string = 'HarmonyOS Sans SC';
 const SAFE_TOP_PADDING: number = 24;
 const NAV_HEIGHT: number = 72;
 const NAV_BLUR_RADIUS: number = 18;
+const TASK_BAR_HEIGHT: number = 48;
+const TASK_BAR_ICON_SIZE: number = 18;
+const TASK_BAR_ACTION_WIDTH: number = 76;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
+type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
 
 @Entry
 @Component
@@ -217,54 +220,29 @@ struct Index {
   private historyTab(): void {
     Scroll() {
       Column({ space: 12 }) {
-        Row({ space: 8 }) {
-          Text('历史任务')
-            .fontSize(14)
-            .fontFamily(FONT_DISPLAY)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .fontWeight(FontWeight.Medium)
-            .layoutWeight(1)
+        this.taskTopBar();
 
-          Button('刷新')
-            .fontSize(12)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .backgroundColor(THEME_CARD)
-            .borderRadius(14)
-            .border({ width: 1, color: THEME_BORDER })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              void this.refreshHistory();
-            })
+        Column({ space: 12 }) {
+          if (this.historyLoading) {
+            Text('加载中...')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
 
-          Button('清空')
-            .fontSize(12)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .backgroundColor(THEME_CARD)
-            .borderRadius(14)
-            .border({ width: 1, color: THEME_BORDER })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              void this.clearAllHistory();
-            })
+          if (this.historyError.length > 0) {
+            Text(this.historyError)
+              .fontSize(11)
+              .fontColor(THEME_ERROR)
+          }
+
+          if (this.selectedTask && this.selectedTaskId.length > 0) {
+            this.taskDetailView();
+          } else {
+            this.taskListView();
+          }
         }
-
-        if (this.historyLoading) {
-          Text('加载中...')
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-        }
-
-        if (this.historyError.length > 0) {
-          Text(this.historyError)
-            .fontSize(11)
-            .fontColor(THEME_ERROR)
-        }
-
-        if (this.selectedTask && this.selectedTaskId.length > 0) {
-          this.taskDetailView();
-        } else {
-          this.taskListView();
-        }
+        .width('100%')
+        .padding({ left: 16, right: 16, bottom: 12 })
       }
       .width('100%')
     }
@@ -316,7 +294,6 @@ struct Index {
             .padding(12)
             .borderRadius(12)
             .backgroundColor(THEME_CARD)
-            .border({ width: 1, color: THEME_BORDER })
             .onClick(() => {
               void this.openTask(task.taskId);
             })
@@ -393,7 +370,6 @@ struct Index {
             .height(280)
             .borderRadius(12)
             .backgroundColor(THEME_CARD)
-            .border({ width: 1, color: THEME_BORDER })
             .objectFit(ImageFit.Contain)
         }
 
@@ -441,7 +417,6 @@ struct Index {
             .padding(12)
             .borderRadius(12)
             .backgroundColor(this.selectedStepIndex === step.stepIndex ? THEME_NAV_ACTIVE_BG : THEME_CARD)
-            .border({ width: 1, color: THEME_BORDER })
             .onClick(() => {
               void this.selectStep(step);
             })
@@ -476,7 +451,6 @@ struct Index {
       .padding(12)
       .borderRadius(12)
       .backgroundColor(THEME_CARD)
-      .border({ width: 1, color: THEME_BORDER })
       .width('100%')
     }
   }
@@ -557,38 +531,116 @@ struct Index {
   }
 
   @Builder
-  private navSymbol(symbolName: NavSymbolName, active: boolean): void {
-    if (symbolName === 'house_fill') {
-      SymbolGlyph($r('sys.symbol.house_fill'))
-        .fontSize(20)
-        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE]);
-    } else if (symbolName === 'gearshape') {
-      SymbolGlyph($r('sys.symbol.gearshape'))
-        .fontSize(20)
-        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE]);
-    } else {
-      SymbolGlyph($r('sys.symbol.bolt_filled_on_circle'))
-        .fontSize(20)
-        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE]);
+  private taskTopBar(): void {
+    Row() {
+      Row()
+        .width(TASK_BAR_ACTION_WIDTH)
+        .height('100%')
+
+      Text('任务')
+        .fontSize(15)
+        .fontFamily(FONT_DISPLAY)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+        .layoutWeight(1)
+        .textAlign(TextAlign.Center)
+
+      Row({ space: 8 }) {
+        this.taskBarIconButton('arrow_clockwise', THEME_TEXT_PRIMARY, () => {
+          void this.refreshHistory();
+        })
+        this.taskBarIconButton('clean', THEME_ERROR, () => {
+          void this.clearAllHistory();
+        })
+      }
+      .width(TASK_BAR_ACTION_WIDTH)
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+      .alignItems(VerticalAlign.Center)
     }
+    .width('100%')
+    .height(TASK_BAR_HEIGHT)
+    .backgroundColor(Color.White)
+  }
+
+  @Builder
+  private taskBarIconButton(symbolName: TaskBarSymbolName, color: string, onTap: () => void): void {
+    Row() {
+      Text() {
+        SymbolSpan(this.getTaskBarSymbolResource(symbolName))
+          .fontSize(TASK_BAR_ICON_SIZE)
+          .fontColor([color])
+      }
+      .width(TASK_BAR_ICON_SIZE + 6)
+      .height(TASK_BAR_ICON_SIZE + 6)
+      .textAlign(TextAlign.Center)
+      .hitTestBehavior(HitTestMode.None)
+    }
+    .width(32)
+    .height(32)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor('transparent')
+    .onClick(onTap)
+  }
+
+  private getTaskBarSymbolResource(symbolName: TaskBarSymbolName): Resource {
+    if (symbolName === 'arrow_clockwise') {
+      return $r('sys.symbol.arrow_clockwise');
+    }
+    return $r('sys.symbol.clean');
+  }
+
+  @Builder
+  private navSymbol(symbolName: NavSymbolName, active: boolean): void {
+    Text() {
+      SymbolSpan(this.getNavSymbolResource(symbolName))
+        .fontSize(20)
+        .fontColor([active ? THEME_ACCENT : THEME_TEXT_SUBTLE])
+    }
+    .key(`${symbolName}_${active ? 'on' : 'off'}`)
+    .width(24)
+    .height(24)
+    .textAlign(TextAlign.Center)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   private isTabActive(index: number): boolean {
     return this.activeTabIndex === index;
   }
 
+  private getNavSymbolResource(symbolName: NavSymbolName): Resource {
+    if (symbolName === 'house_fill') {
+      return $r('sys.symbol.house_fill');
+    }
+    if (symbolName === 'gearshape') {
+      return $r('sys.symbol.gearshape');
+    }
+    return $r('sys.symbol.bolt_filled_on_circle');
+  }
+
+  private resolvePanelBorderWidth(): number {
+    return this.activeTabIndex === 0 ? 0 : 1;
+  }
+
+  private resolvePanelSidePadding(): number {
+    return this.activeTabIndex === 0 ? 0 : 16;
+  }
+
   build() {
     Column({ space: 0 }) {
       Column({ space: 12 }) {
-        this.pageHeader();
+        if (this.activeTabIndex !== 0) {
+          this.pageHeader();
+        }
         this.activeTabContent();
       }
       .width('100%')
       .layoutWeight(1)
-      .padding({ left: 16, right: 16, top: 16, bottom: 12 })
+      .padding({ left: this.resolvePanelSidePadding(), right: this.resolvePanelSidePadding(), top: 16, bottom: 12 })
       .backgroundColor(THEME_PANEL)
       .borderRadius(26)
-      .border({ width: 1, color: THEME_BORDER })
+      .border({ width: this.resolvePanelBorderWidth(), color: THEME_BORDER })
 
       this.bottomNav();
     }

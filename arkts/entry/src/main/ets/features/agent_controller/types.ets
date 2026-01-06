@@ -26,6 +26,7 @@ export interface TaskSnapshot {
   lastResultStatus: ActionResultStatus;
   lastError: string;
   installedAppsSent: boolean;
+  appLaunched?: boolean;
 }
 
 export interface DeviceState {

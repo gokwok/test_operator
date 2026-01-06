@@ -103,7 +103,10 @@ export class AgentController {
   }
 
   getSnapshotJson(): string {
-    return JSON.stringify(this.taskManager.getSnapshot());
+    const snapshot = this.taskManager.getSnapshot();
+    const appLaunched = this.agentSpace ? this.agentSpace.isAppLaunched() : false;
+    snapshot.appLaunched = appLaunched;
+    return JSON.stringify(snapshot);
   }
 
   getContext(): common.Context | null {

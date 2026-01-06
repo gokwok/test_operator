@@ -52,6 +52,7 @@ struct AgentSpaceViewer {
   @State private showStatus: boolean = true;
   @State private showOrb: boolean = false;
   @State private wallpaper: image.PixelMap | null = null;
+  @State private showDisplay: boolean = false;
   @State private manualControlActive: boolean = false;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
     'Viewer active',
@@ -109,14 +110,16 @@ struct AgentSpaceViewer {
           .height('100%')
           .objectFit(ImageFit.Cover)
       }
-      AgentSpaceDisplay({
-        mode: this.viewerMode,
-        surfaceInfo: $displaySurfaceInfo,
-        pointerEvent: $displayPointerEvent,
-        eventSequence: $displayEventSequence,
-      })
-        .width('100%')
-        .height('100%')
+      if (this.showDisplay) {
+        AgentSpaceDisplay({
+          mode: this.viewerMode,
+          surfaceInfo: $displaySurfaceInfo,
+          pointerEvent: $displayPointerEvent,
+          eventSequence: $displayEventSequence,
+        })
+          .width('100%')
+          .height('100%')
+      }
 
       if (!this.manualControlActive && this.showGlow) {
         GlowOverlay({ paletteName: this.glowPaletteName, visible: this.showGlow })
@@ -311,6 +314,7 @@ struct AgentSpaceViewer {
       if (!snapshot) {
         return;
       }
+      this.updateDisplayVisibility(snapshot);
       const interaction = this.extractInteraction(snapshot);
       if (interaction) {
         if (!this.callUserActive ||
@@ -445,6 +449,16 @@ struct AgentSpaceViewer {
     } catch (e) {
       console.error(`[AgentSpaceViewer] parse snapshot failed: ${String(e)}`);
       return null;
+    }
+  }
+
+  private updateDisplayVisibility(snapshot: TaskSnapshot): void {
+    const appLaunched = snapshot.appLaunched === true;
+    if (appLaunched !== this.showDisplay) {
+      this.showDisplay = appLaunched;
+      if (!appLaunched) {
+        this.displaySurfaceInfo = null;
+      }
     }
   }
 
