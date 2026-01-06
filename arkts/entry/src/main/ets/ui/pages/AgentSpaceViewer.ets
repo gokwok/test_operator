@@ -55,7 +55,7 @@ struct AgentSpaceViewer {
   @State private showDisplay: boolean = false;
   @State private manualControlActive: boolean = false;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
-    'Viewer active',
+    '',
     () => {
       void this.onSupplementRequested();
     },

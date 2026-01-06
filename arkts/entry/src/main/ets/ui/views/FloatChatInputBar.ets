@@ -17,21 +17,19 @@ export struct FloatChatInputBar {
   private readonly MUTED_COLOR: ResourceColor = '#6B8E94';
 
   build() {
+    const leftSymbolName = this.resolveLeftSymbolName();
     Row({ space: 4 }) {
       Button() {
-        this.SystemSymbol('mic', 24, this.resolveMicColor(), 'mic');
+        this.SystemSymbol(leftSymbolName, 24, this.resolveLeftIconColor(), leftSymbolName);
       }
       .width(this.ICON_BTN_SIZE)
       .height(this.ICON_BTN_SIZE)
-      .backgroundColor(this.resolveMicBgColor())
+      .backgroundColor(this.resolveLeftIconBgColor())
       .borderRadius(this.ICON_BTN_SIZE / 2)
       .enabled(this.inputEnabled)
       .opacity(this.inputEnabled ? 1 : 0.45)
       .onClick(() => {
-        if (!this.inputEnabled) {
-          return;
-        }
-        this.micSequence += 1;
+        this.handleLeftButtonClick();
       })
 
       Stack() {
@@ -117,12 +115,23 @@ export struct FloatChatInputBar {
     return this.text.trim();
   }
 
-  private resolveMicColor(): ResourceColor {
+  private resolveLeftSymbolName(): string {
+    return this.isListening ? 'input_mode' : 'mic';
+  }
+
+  private resolveLeftIconColor(): ResourceColor {
     return this.isListening ? this.ACTIVE_COLOR : this.INACTIVE_COLOR;
   }
 
-  private resolveMicBgColor(): ResourceColor {
+  private resolveLeftIconBgColor(): ResourceColor {
     return this.isListening ? '#D7F2EE' : Color.Transparent;
+  }
+
+  private handleLeftButtonClick(): void {
+    if (!this.inputEnabled) {
+      return;
+    }
+    this.micSequence += 1;
   }
 
   private isTextInputEnabled(): boolean {
@@ -157,6 +166,8 @@ export struct FloatChatInputBar {
 
   private getSymbolResource(name: string): Resource {
     switch (name) {
+      case 'input_mode':
+        return $r('sys.symbol.input_mode');
       case 'paperplane_right_fill':
         return $r('sys.symbol.paperplane_right_fill');
       case 'mic':

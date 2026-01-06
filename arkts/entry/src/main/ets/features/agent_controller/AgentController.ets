@@ -28,23 +28,17 @@ import type {
   UserReply
 } from './types';
 import { TaskManager, TaskManagerListener } from './task_manager/TaskManager';
-import { LiveViewController, LiveViewContents, LiveViewType } from './live_view/LiveViewController';
+import { LiveViewController, LiveViewContents } from './live_view/LiveViewController';
+import { LiveViewPresenter, LiveViewPresenterContext } from './live_view/LiveViewPresenter';
 import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
 import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
-const DEFAULT_TASK_PLACEHOLDER: string = '正在分析用户需求...';
-const CAPSULE_RUNNING: string = '操作应用';
-const CAPSULE_INTERACTION: string = '需要交互';
-const CAPSULE_FINISHED: string = '任务完成';
-const CAPSULE_STOPPED: string = '任务已停止';
-const CAPSULE_FAILED: string = '任务异常';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 30000;
-const FINISHED_TTS_TEXT: string = '任务已完成';
 const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
 const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
@@ -473,12 +467,12 @@ export class AgentController {
       return;
     }
     if (status === 'waiting_user') {
-      const content = this.resolveInteractionContent(snapshot);
+      const content = LiveViewPresenter.resolveInteractionContent(snapshot);
       await this.publishInteractionLiveView(content);
       return;
     }
     if (status === 'finished') {
-      const content = this.resolveFinishContent(snapshot);
+      const content = LiveViewPresenter.resolveFinishContent(snapshot);
       await this.publishFinishedLiveView(content);
       return;
     }
@@ -505,31 +499,9 @@ export class AgentController {
       return;
     }
     if (name === 'call_user' || name === 'interact' || name === 'take_over' || name === 'task_over') {
-      const content = this.resolveActionContent(action, description);
+      const content = LiveViewPresenter.resolveActionContent(action, description);
       await this.publishInteractionLiveView(content);
     }
-  }
-
-  private resolveActionContent(action: AgentAction, fallback: string): string {
-    const content = action.parameters?.content ?? '';
-    if (typeof content === 'string' && content.trim().length > 0) {
-      return content.trim();
-    }
-    const trimmed = fallback.trim();
-    return trimmed.length > 0 ? trimmed : DEFAULT_TASK_PLACEHOLDER;
-  }
-
-  private resolveInteractionContent(snapshot: TaskSnapshot): string {
-    const json = snapshot.lastActionJson.trim();
-    if (json.length > 0) {
-      try {
-        const parsed = JSON.parse(json) as AgentAction;
-        return this.resolveActionContent(parsed, snapshot.lastDescription);
-      } catch (_e) {
-        // ignore
-      }
-    }
-    return snapshot.lastDescription.trim().length > 0 ? snapshot.lastDescription.trim() : DEFAULT_TASK_PLACEHOLDER;
   }
 
   private resolveAppName(action: AgentAction): string {
@@ -640,6 +612,15 @@ export class AgentController {
     await invoker(want);
   }
 
+  private buildLiveViewContext(icon: image.PixelMap | null): LiveViewPresenterContext {
+    const context: LiveViewPresenterContext = {
+      notificationId: this.liveViewNotificationId,
+      taskText: this.liveViewTaskText,
+      icon,
+    };
+    return context;
+  }
+
   private async publishRunningLiveView(): Promise<void> {
     if (!this.liveViewEnabled) {
       return;
@@ -648,9 +629,9 @@ export class AgentController {
     if (!ctx) {
       return;
     }
-    const content = this.liveViewTaskText.trim().length > 0 ? this.liveViewTaskText.trim() : DEFAULT_TASK_PLACEHOLDER;
     const icon = await this.resolveLiveViewIcon();
-    const payload = this.buildLiveViewPayload('任务执行中', content, CAPSULE_RUNNING, icon);
+    const presenterContext = this.buildLiveViewContext(icon);
+    const payload = LiveViewPresenter.buildRunning(presenterContext);
     await this.publishLiveView(payload);
   }
 
@@ -663,7 +644,8 @@ export class AgentController {
       return;
     }
     const icon = await this.resolveLiveViewIcon();
-    const payload = this.buildLiveViewPayload('等待答复', content, CAPSULE_INTERACTION, icon);
+    const presenterContext = this.buildLiveViewContext(icon);
+    const payload = LiveViewPresenter.buildInteraction(presenterContext, content);
     await this.publishLiveView(payload);
   }
 
@@ -676,9 +658,8 @@ export class AgentController {
       return;
     }
     const icon = await this.resolveLiveViewIcon();
-    const trimmed = content.trim();
-    const body = trimmed.length > 0 ? trimmed : FINISHED_TTS_TEXT;
-    const payload = this.buildLiveViewPayload('任务完成', body, CAPSULE_FINISHED, icon);
+    const presenterContext = this.buildLiveViewContext(icon);
+    const payload = LiveViewPresenter.buildFinished(presenterContext, content);
     void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
@@ -691,8 +672,8 @@ export class AgentController {
       return;
     }
     const icon = await this.resolveLiveViewIcon();
-    const content = reason.trim().length > 0 ? reason.trim() : '';
-    const payload = this.buildLiveViewPayload('任务已停止', content, CAPSULE_STOPPED, icon);
+    const presenterContext = this.buildLiveViewContext(icon);
+    const payload = LiveViewPresenter.buildStopped(presenterContext, reason);
     void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
   }
 
@@ -705,27 +686,9 @@ export class AgentController {
       return;
     }
     const icon = await this.resolveLiveViewIcon();
-    const content = reason.trim().length > 0 ? reason.trim() : '';
-    const payload = this.buildLiveViewPayload('任务异常', content, CAPSULE_FAILED, icon);
+    const presenterContext = this.buildLiveViewContext(icon);
+    const payload = LiveViewPresenter.buildFailed(presenterContext, reason);
     void this.stopLiveViewWithPayload(payload, LIVE_VIEW_AUTO_STOP_DELAY_MS);
-  }
-
-  private buildLiveViewPayload(
-    title: string,
-    content: string,
-    capsuleTitle: string,
-    icon: image.PixelMap | null
-  ): LiveViewContents {
-    const payload: LiveViewContents = {
-      type: LiveViewType.VIEWER,
-      id: this.liveViewNotificationId > 0 ? this.liveViewNotificationId : undefined,
-      primary: { title, content },
-      capsule: { title: capsuleTitle },
-    };
-    if (icon) {
-      payload.capsuleIcon = icon;
-    }
-    return payload;
   }
 
   private async publishLiveView(payload: LiveViewContents): Promise<void> {
@@ -875,26 +838,6 @@ export class AgentController {
     if (snapshot.status === 'running' || snapshot.status === 'waiting_user') {
       this.stopTask('liveview_closed');
     }
-  }
-
-  private resolveFinishContent(snapshot: TaskSnapshot): string {
-    const actionName = snapshot.lastActionName.trim().toLowerCase();
-    if (actionName === 'finish') {
-      const json = snapshot.lastActionJson.trim();
-      if (json.length > 0) {
-        try {
-          const parsed = JSON.parse(json) as AgentAction;
-          const content = parsed.parameters?.content ?? '';
-          if (typeof content === 'string' && content.trim().length > 0) {
-            return content.trim();
-          }
-        } catch (_e) {
-          // ignore
-        }
-      }
-    }
-    const fallback = snapshot.lastDescription.trim();
-    return fallback.length > 0 ? fallback : '';
   }
 
   private applyEfficiencyResourcesBestEffort(): void {

@@ -27,6 +27,12 @@ const NAV_BLUR_RADIUS: number = 18;
 const TASK_BAR_HEIGHT: number = 48;
 const TASK_BAR_ICON_SIZE: number = 18;
 const TASK_BAR_ACTION_WIDTH: number = 76;
+const TASK_CARD_SUCCESS_BG: string = '#EAF8EE';
+const TASK_CARD_SUCCESS_BORDER: string = '#6FBF88';
+const TASK_CARD_FAIL_BG: string = '#FCEAEA';
+const TASK_CARD_FAIL_BORDER: string = '#E18181';
+const TASK_CARD_ICON_SIZE: number = 18;
+const TASK_CARD_MIN_HEIGHT: number = 132;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -257,47 +263,9 @@ struct Index {
         .fontSize(11)
         .fontColor(THEME_TEXT_MUTED)
     } else {
-      List({ space: 10 }) {
+      List({ space: 14 }) {
         ForEach(this.historyTasks, (task: HistoryTaskMeta) => {
-          ListItem() {
-            Column({ space: 6 }) {
-              Row() {
-                Text(this.formatTime(task.startAtMs))
-                  .fontSize(11)
-                  .fontColor(THEME_TEXT_MUTED)
-                  .layoutWeight(1)
-
-                Text(task.status)
-                  .fontSize(11)
-                  .fontColor(THEME_TEXT_MUTED)
-              }
-
-              Text(task.taskText)
-                .fontSize(12)
-                .fontColor(THEME_TEXT_PRIMARY)
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-              Row() {
-                Text(`steps: ${task.stepCount}`)
-                  .fontSize(11)
-                  .fontColor(THEME_TEXT_MUTED)
-                  .layoutWeight(1)
-
-                if (task.endAtMs > 0) {
-                  Text(`end: ${this.formatTime(task.endAtMs)}`)
-                    .fontSize(11)
-                    .fontColor(THEME_TEXT_MUTED)
-                }
-              }
-            }
-            .padding(12)
-            .borderRadius(12)
-            .backgroundColor(THEME_CARD)
-            .onClick(() => {
-              void this.openTask(task.taskId);
-            })
-          }
+          this.taskCardItem(task);
         }, (task: HistoryTaskMeta) => task.taskId)
       }
       .width('100%')
@@ -592,6 +560,99 @@ struct Index {
   }
 
   @Builder
+  private taskCardItem(task: HistoryTaskMeta): void {
+    ListItem() {
+      Column({ space: 10 }) {
+        Row({ space: 8 }) {
+          Text(task.status)
+            .fontSize(11)
+            .fontColor(this.resolveTaskBorderColor(task.status))
+            .fontWeight(FontWeight.Bold)
+            .layoutWeight(1)
+
+          Image(this.resolveTaskStatusIcon(task.status))
+            .width(TASK_CARD_ICON_SIZE)
+            .height(TASK_CARD_ICON_SIZE)
+            .objectFit(ImageFit.Contain)
+        }
+
+        Text(task.taskText)
+          .fontSize(14)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Row() {
+          Text(this.formatTime(task.startAtMs))
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+            .layoutWeight(1)
+
+          Text(`steps ${task.stepCount}`)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+      }
+      .padding(14)
+      .minHeight(TASK_CARD_MIN_HEIGHT)
+      .borderRadius(16)
+      .backgroundColor(this.resolveTaskBackground(task.status))
+      .border({ width: 1, color: this.resolveTaskBorderColor(task.status) })
+    }
+    .onClick(() => {
+      void this.openTask(task.taskId);
+    })
+    .swipeAction({
+      start: () => {
+        this.taskDeleteAction(task.taskId);
+      }
+    })
+  }
+
+  @Builder
+  private taskDeleteAction(taskId: string): void {
+    Row() {
+      Image($r('app.media.delete'))
+        .width(20)
+        .height(20)
+        .objectFit(ImageFit.Contain)
+    }
+    .width(72)
+    .height('100%')
+    .backgroundColor('#FFECEC')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      void this.deleteTaskDirect(taskId);
+    })
+  }
+
+  private resolveTaskIcon(name: 'correct' | 'wrong'): Resource {
+    if (name === 'correct') {
+      return $r('app.media.correct');
+    }
+    return $r('app.media.wrong');
+  }
+
+  private resolveTaskStatusIcon(status: string): Resource {
+    return this.isTaskFinished(status) ? this.resolveTaskIcon('correct') : this.resolveTaskIcon('wrong');
+  }
+
+  private resolveTaskBackground(status: string): string {
+    return this.isTaskFinished(status) ? TASK_CARD_SUCCESS_BG : TASK_CARD_FAIL_BG;
+  }
+
+  private resolveTaskBorderColor(status: string): string {
+    return this.isTaskFinished(status) ? TASK_CARD_SUCCESS_BORDER : TASK_CARD_FAIL_BORDER;
+  }
+
+  private isTaskFinished(status: string): boolean {
+    const normalized = status.trim().toLowerCase();
+    return normalized === 'finish' || normalized === 'finished' || normalized === 'success';
+  }
+
+  @Builder
   private navSymbol(symbolName: NavSymbolName, active: boolean): void {
     Text() {
       SymbolSpan(this.getNavSymbolResource(symbolName))
@@ -627,6 +688,10 @@ struct Index {
     return this.activeTabIndex === 0 ? 0 : 16;
   }
 
+  private resolvePanelTopPadding(): number {
+    return this.activeTabIndex === 0 ? 0 : 16;
+  }
+
   build() {
     Column({ space: 0 }) {
       Column({ space: 12 }) {
@@ -637,7 +702,12 @@ struct Index {
       }
       .width('100%')
       .layoutWeight(1)
-      .padding({ left: this.resolvePanelSidePadding(), right: this.resolvePanelSidePadding(), top: 16, bottom: 12 })
+      .padding({
+        left: this.resolvePanelSidePadding(),
+        right: this.resolvePanelSidePadding(),
+        top: this.resolvePanelTopPadding(),
+        bottom: 12
+      })
       .backgroundColor(THEME_PANEL)
       .borderRadius(26)
       .border({ width: this.resolvePanelBorderWidth(), color: THEME_BORDER })
@@ -797,6 +867,25 @@ struct Index {
       store.init(ctx);
       await store.deleteTask(taskId);
       this.closeTask();
+      await this.refreshHistory();
+    } catch (e) {
+      this.historyError = `删除失败: ${String(e)}`;
+    }
+  }
+
+  private async deleteTaskDirect(taskId: string): Promise<void> {
+    const id = taskId.trim();
+    if (id.length === 0) {
+      return;
+    }
+    try {
+      const ctx = this.getUiContext();
+      const store = TaskHistoryStore.getInstance();
+      store.init(ctx);
+      await store.deleteTask(id);
+      if (this.selectedTaskId === id) {
+        this.closeTask();
+      }
       await this.refreshHistory();
     } catch (e) {
       this.historyError = `删除失败: ${String(e)}`;
