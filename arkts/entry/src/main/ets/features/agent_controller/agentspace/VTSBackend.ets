@@ -4,6 +4,7 @@ import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
 import util from '@ohos.util';
 import * as AppController from '@hms.ai.appController';
+import { WallpaperState } from '../state_collector/WallpaperState';
 
 const LOG_TAG: string = '[VTSBackend]';
 
@@ -116,6 +117,7 @@ export class VTSBackend implements VTSBackendPort {
   private runtime: VTSRuntimeInfo | null = null;
   private lastTarget: AppTarget | null = null;
   private imeRegistered: boolean = false;
+  private hasLaunchedApp: boolean = false;
 
   constructor(startAbilityInvoker: StartAbilityInvoker) {
     this.startAbilityInvoker = startAbilityInvoker;
@@ -184,6 +186,7 @@ export class VTSBackend implements VTSBackendPort {
 
     this.runtime = runtime;
     this.imeRegistered = this.registerImeBestEffort(runtime.displayId ?? runtime.screenId);
+    this.hasLaunchedApp = false;
     return runtime;
   }
 
@@ -195,6 +198,7 @@ export class VTSBackend implements VTSBackendPort {
     const imeDisplayId = this.runtime.displayId ?? this.runtime.screenId;
     this.runtime = null;
     this.lastTarget = null;
+    this.hasLaunchedApp = false;
     if (this.imeRegistered) {
       this.unregisterImeBestEffort(imeDisplayId);
       this.imeRegistered = false;
@@ -230,6 +234,7 @@ export class VTSBackend implements VTSBackendPort {
     try {
       await this.startAbilityInvoker(want, opt);
       this.lastTarget = target;
+      this.hasLaunchedApp = true;
     } catch (e) {
       const err = e as BusinessError;
       throw new Error(`startAbility failed. Code:${err.code}, message:${err.message}`);
@@ -278,6 +283,13 @@ export class VTSBackend implements VTSBackendPort {
       imageSize,
       displayId,
     };
+
+    if (!this.hasLaunchedApp) {
+      const wallpaper = await WallpaperState.getCurrentWallpaper();
+      if (wallpaper) {
+        return await pixelMapToBase64('image/jpeg', wallpaper);
+      }
+    }
 
     let imageMap: image.PixelMap | null = null;
     for (let i = 0; i < 3 && imageMap === null; i++) {
@@ -435,6 +447,7 @@ export class VTSBackend implements VTSBackendPort {
         console.error(`${LOG_TAG} startAppOnMain failed: ${String(e)}`);
       }
     }
+    this.hasLaunchedApp = false;
     return transferred;
   }
 

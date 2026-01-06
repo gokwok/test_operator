@@ -24,8 +24,8 @@ export default class EntryAbility extends UIAbility {
 
     windowStage.getMainWindow()
       .then((mainWindow: window.Window) => {
-        mainWindow.setWindowLayoutFullScreen(false);
-        mainWindow.setWindowSystemBarEnable(['status', 'navigation']);
+        mainWindow.setWindowLayoutFullScreen(true);
+        mainWindow.setWindowSystemBarEnable(['status']);
       })
       .catch((err: Error) => {
         hilog.error(DOMAIN, 'testTag', 'Failed to configure system bars. Cause: %{public}s', JSON.stringify(err));
