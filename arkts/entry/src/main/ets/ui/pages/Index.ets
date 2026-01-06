@@ -32,10 +32,11 @@ const TASK_CARD_SUCCESS_BORDER: string = '#6FBF88';
 const TASK_CARD_FAIL_BG: string = '#FCEAEA';
 const TASK_CARD_FAIL_BORDER: string = '#E18181';
 const TASK_CARD_ICON_SIZE: number = 18;
-const TASK_CARD_MIN_HEIGHT: number = 152;
+const TASK_CARD_MIN_HEIGHT: number = 140;
 const TASK_CARD_SIDE_MARGIN: number = 12;
 const TASK_CARD_PADDING_X: number = 12;
-const TASK_CARD_PADDING_Y: number = 14;
+const TASK_CARD_PADDING_TOP: number = 12;
+const TASK_CARD_PADDING_BOTTOM: number = 10;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -576,7 +577,7 @@ struct Index {
   private taskCardItem(task: HistoryTaskMeta): void {
     ListItem() {
       Row() {
-        Column({ space: 10 }) {
+        Column({ space: 8 }) {
           Row({ space: 8 }) {
             Text(`${this.resolveTaskStatusLabel(task.status)} / ${this.resolveTaskDuration(task)}`)
               .fontSize(12)
@@ -620,8 +621,8 @@ struct Index {
         .padding({
           left: TASK_CARD_PADDING_X,
           right: TASK_CARD_PADDING_X,
-          top: TASK_CARD_PADDING_Y,
-          bottom: TASK_CARD_PADDING_Y
+          top: TASK_CARD_PADDING_TOP,
+          bottom: TASK_CARD_PADDING_BOTTOM
         })
         .constraintSize({ minHeight: TASK_CARD_MIN_HEIGHT })
         .borderRadius(16)
