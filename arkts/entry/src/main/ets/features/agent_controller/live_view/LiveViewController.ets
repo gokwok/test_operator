@@ -285,15 +285,18 @@ export class LiveViewController {
   }
 
   private async publishOnce(request: notificationManager.NotificationRequest): Promise<void> {
+    console.info(`${LIVEVIEW_LOG_TAG} publish begin id=${request.id}`);
     await new Promise<void>((resolve, reject) => {
       const callback = (err?: BusinessError): void => {
         if (err && err.code) {
           const message = `${LOG_TAG} publish failed. Code=${err.code}, message=${err.message}, id=${request.id}`;
           console.error(message);
+          console.error(`${LIVEVIEW_LOG_TAG} publish failed code=${err.code} message=${err.message} id=${request.id}`);
           reject(new Error(message));
           return;
         }
         console.info(`${LOG_TAG} publish ok. id=${request.id}`);
+        console.info(`${LIVEVIEW_LOG_TAG} publish ok id=${request.id}`);
         resolve();
       };
       notificationManager.publish(request, callback);
