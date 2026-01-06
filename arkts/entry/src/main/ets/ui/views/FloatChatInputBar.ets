@@ -132,14 +132,11 @@ export struct FloatChatInputBar {
     if (!this.inputEnabled) {
       return this.MUTED_COLOR;
     }
-    return this.isListening ? this.ACTIVE_COLOR : this.INACTIVE_COLOR;
+    return this.INACTIVE_COLOR;
   }
 
   private resolveLeftIconBgColor(): ResourceColor {
-    if (!this.inputEnabled) {
-      return Color.Transparent;
-    }
-    return this.isListening ? '#D7F2EE' : Color.Transparent;
+    return Color.Transparent;
   }
 
   private handleLeftButtonClick(): void {
