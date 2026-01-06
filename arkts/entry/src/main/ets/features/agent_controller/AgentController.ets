@@ -1,6 +1,8 @@
 import type { common, Want } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
+import bundleManager from '@ohos.bundle.bundleManager';
+import bundleResourceManager from '@ohos.bundle.bundleResourceManager';
 import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
@@ -783,6 +785,30 @@ export class AgentController {
       return icon;
     } catch (e) {
       console.warn(`[AgentController] load default icon failed: ${String(e)}`);
+    }
+    const fallback = await this.loadSelfBundleIcon();
+    if (fallback) {
+      this.liveViewIcon = fallback;
+      return fallback;
+    }
+    return null;
+  }
+
+  private async loadSelfBundleIcon(): Promise<image.PixelMap | null> {
+    try {
+      const appFlags: number = bundleManager.ApplicationFlag.GET_APPLICATION_INFO_DEFAULT |
+        bundleManager.ApplicationFlag.GET_APPLICATION_INFO_WITH_DISABLE;
+      const applicationInfo = await bundleManager.getApplicationInfo(SELF_BUNDLE_NAME, appFlags);
+      const iconFlags: number = bundleResourceManager.ResourceFlag.GET_RESOURCE_INFO_WITH_DRAWABLE_DESCRIPTOR;
+      const resourceInfo = bundleResourceManager.getBundleResourceInfo(
+        applicationInfo.name,
+        iconFlags,
+        applicationInfo.appIndex
+      );
+      const pixelMap = resourceInfo?.drawableDescriptor?.getPixelMap();
+      return pixelMap ?? null;
+    } catch (e) {
+      console.warn(`[AgentController] load self bundle icon failed: ${String(e)}`);
       return null;
     }
   }
