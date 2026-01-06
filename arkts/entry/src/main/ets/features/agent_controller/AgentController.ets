@@ -781,7 +781,7 @@ export class AgentController {
     }
     try {
       const icon = await AppState.getIconByAppName(SELF_BUNDLE_NAME, ctx);
-      if (this.isPixelMapValid(icon)) {
+      if (await this.isPixelMapValid(icon)) {
         this.liveViewIcon = icon;
         return icon;
       }
@@ -811,7 +811,7 @@ export class AgentController {
       if (!pixelMap) {
         return null;
       }
-      return this.isPixelMapValid(pixelMap) ? pixelMap : null;
+      return await this.isPixelMapValid(pixelMap) ? pixelMap : null;
     } catch (e) {
       console.warn(`[AgentController] load self bundle icon failed: ${String(e)}`);
       return null;
@@ -828,7 +828,7 @@ export class AgentController {
     }
     try {
       const icon = await AppState.getIconByAppName(appName, ctx);
-      if (!this.isPixelMapValid(icon)) {
+      if (!await this.isPixelMapValid(icon)) {
         return;
       }
       this.liveViewAppName = appName;
@@ -842,9 +842,9 @@ export class AgentController {
     }
   }
 
-  private isPixelMapValid(pixelMap: image.PixelMap): boolean {
+  private async isPixelMapValid(pixelMap: image.PixelMap): Promise<boolean> {
     try {
-      const info: image.ImageInfo = pixelMap.getImageInfo();
+      const info: image.ImageInfo = await pixelMap.getImageInfo();
       return info.size.width > 0 && info.size.height > 0;
     } catch (_e) {
       return false;

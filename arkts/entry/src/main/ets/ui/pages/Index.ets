@@ -9,9 +9,8 @@ import { WallpaperState } from '../../features/agent_controller/state_collector/
 
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;
-const THEME_BG_START: string = '#F7EAFB';
-const THEME_BG_END: string = '#F1F4FF';
-const THEME_PANEL: string = '#F9ECFF';
+const THEME_BG_START: string = '#FFFFFF';
+const THEME_PANEL: string = '#FFFFFF';
 const THEME_CARD: string = '#FFFFFF';
 const THEME_BORDER: string = '#E6DDF1';
 const THEME_ACCENT: string = '#3D6AE8';
@@ -23,6 +22,7 @@ const THEME_NAV_BG: string = '#FFFFFFF0';
 const THEME_NAV_ACTIVE_BG: string = '#E9EFFF';
 const THEME_ERROR: string = '#D94848';
 const FONT_DISPLAY: string = 'HarmonyOS Sans SC';
+const SAFE_TOP_PADDING: number = 24;
 
 @Entry
 @Component
@@ -558,48 +558,24 @@ struct Index {
   }
 
   build() {
-    Stack() {
-      Row()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(THEME_BG_START)
-
-      Row()
-        .width(420)
-        .height(420)
-        .borderRadius(210)
-        .backgroundColor(THEME_BG_END)
-        .position({ x: -140, y: -180 })
-        .opacity(0.7)
-
-      Row()
-        .width(360)
-        .height(360)
-        .borderRadius(180)
-        .backgroundColor('#FFEAF5')
-        .position({ x: 120, y: 520 })
-        .opacity(0.55)
-
+    Column({ space: 12 }) {
       Column({ space: 12 }) {
-        Column({ space: 12 }) {
-          this.pageHeader();
-          this.activeTabContent();
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .padding({ left: 16, right: 16, top: 16, bottom: 10 })
-        .backgroundColor(THEME_PANEL)
-        .borderRadius(26)
-        .border({ width: 1, color: THEME_BORDER })
-
-        this.bottomNav();
+        this.pageHeader();
+        this.activeTabContent();
       }
       .width('100%')
-      .height('100%')
-      .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+      .layoutWeight(1)
+      .padding({ left: 16, right: 16, top: 16, bottom: 10 })
+      .backgroundColor(THEME_PANEL)
+      .borderRadius(26)
+      .border({ width: 1, color: THEME_BORDER })
+
+      this.bottomNav();
     }
     .width('100%')
     .height('100%')
+    .padding({ left: 16, right: 16, top: SAFE_TOP_PADDING, bottom: 16 })
+    .backgroundColor(THEME_BG_START)
   }
 
   private getUiContext(): common.UIAbilityContext {
