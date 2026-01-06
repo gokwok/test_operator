@@ -25,12 +25,13 @@ export struct FloatChatInputBar {
   build() {
     Row({ space: 4 }) {
       Button() {
-        this.SystemSymbol(
-          this.resolveLeftSymbolName(),
-          24,
-          this.resolveLeftIconColor(),
-          this.resolveLeftSymbolName()
-        );
+        if (this.isListening) {
+          this.SystemSymbol('mic', 24, this.resolveLeftIconColor(), 'mic_listening');
+        } else if (this.inputMode === 'voice') {
+          this.SystemSymbol('input_mode', 24, this.resolveLeftIconColor(), 'input_mode');
+        } else {
+          this.SystemSymbol('mic', 24, this.resolveLeftIconColor(), 'mic_idle');
+        }
       }
       .width(this.ICON_BTN_SIZE)
       .height(this.ICON_BTN_SIZE)
@@ -125,13 +126,6 @@ export struct FloatChatInputBar {
 
   private getTrimmedText(): string {
     return this.text.trim();
-  }
-
-  private resolveLeftSymbolName(): string {
-    if (this.isListening) {
-      return 'mic';
-    }
-    return this.inputMode === 'voice' ? 'input_mode' : 'mic';
   }
 
   private resolveLeftIconColor(): ResourceColor {

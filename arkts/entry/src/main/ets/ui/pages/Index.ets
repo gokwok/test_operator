@@ -495,6 +495,7 @@ struct Index {
     .backdropBlur(NAV_BLUR_RADIUS)
     .border({ width: 1, color: THEME_BORDER })
     .clip(true)
+    .position({ x: 0, y: this.resolveNavY() })
   }
 
   private resolveTabTitle(): string {
@@ -801,7 +802,6 @@ struct Index {
       .height('100%')
 
       this.bottomNav()
-        .position({ x: 0, y: this.resolveNavY() })
     }
     .width('100%')
     .height('100%')
