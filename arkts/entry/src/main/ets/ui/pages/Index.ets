@@ -507,23 +507,22 @@ struct Index {
 
   @Builder
   private navItem(label: string, index: number): void {
-    const isActive = this.activeTabIndex === index;
     Column({ space: 6 }) {
       Blank()
-        .width(isActive ? 22 : 6)
+        .width(this.isTabActive(index) ? 22 : 6)
         .height(3)
         .borderRadius(3)
-        .backgroundColor(isActive ? THEME_ACCENT : 'transparent')
+        .backgroundColor(this.isTabActive(index) ? THEME_ACCENT : 'transparent')
 
       Text(label)
         .fontSize(11)
         .fontFamily(FONT_DISPLAY)
-        .fontColor(isActive ? THEME_ACCENT : THEME_TEXT_SUBTLE)
-        .fontWeight(isActive ? FontWeight.Bold : FontWeight.Medium)
+        .fontColor(this.isTabActive(index) ? THEME_ACCENT : THEME_TEXT_SUBTLE)
+        .fontWeight(this.isTabActive(index) ? FontWeight.Bold : FontWeight.Medium)
     }
     .padding({ left: 12, right: 12, top: 6, bottom: 6 })
     .borderRadius(12)
-    .backgroundColor(isActive ? THEME_NAV_ACTIVE_BG : 'transparent')
+    .backgroundColor(this.isTabActive(index) ? THEME_NAV_ACTIVE_BG : 'transparent')
     .onClick(() => {
       this.activeTabIndex = index;
     })
@@ -554,14 +553,18 @@ struct Index {
     return 'Setting';
   }
 
+  private isTabActive(index: number): boolean {
+    return this.activeTabIndex === index;
+  }
+
   build() {
     Stack() {
-      Blank()
+      Row()
         .width('100%')
         .height('100%')
         .backgroundColor(THEME_BG_START)
 
-      Blank()
+      Row()
         .width(420)
         .height(420)
         .borderRadius(210)
@@ -569,7 +572,7 @@ struct Index {
         .position({ x: -140, y: -180 })
         .opacity(0.7)
 
-      Blank()
+      Row()
         .width(360)
         .height(360)
         .borderRadius(180)
