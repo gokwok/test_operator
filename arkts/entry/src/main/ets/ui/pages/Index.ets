@@ -33,6 +33,9 @@ const TASK_CARD_FAIL_BG: string = '#FCEAEA';
 const TASK_CARD_FAIL_BORDER: string = '#E18181';
 const TASK_CARD_ICON_SIZE: number = 18;
 const TASK_CARD_MIN_HEIGHT: number = 152;
+const TASK_CARD_SIDE_MARGIN: number = 12;
+const TASK_CARD_PADDING_X: number = 12;
+const TASK_CARD_PADDING_Y: number = 14;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -572,53 +575,62 @@ struct Index {
   @Builder
   private taskCardItem(task: HistoryTaskMeta): void {
     ListItem() {
-      Column({ space: 10 }) {
-        Row({ space: 8 }) {
-          Text(`${this.resolveTaskStatusLabel(task.status)} / ${this.resolveTaskDuration(task)}`)
-            .fontSize(12)
-            .fontColor(this.resolveTaskBorderColor(task.status))
-            .fontWeight(FontWeight.Bold)
-            .layoutWeight(1)
+      Row() {
+        Column({ space: 10 }) {
+          Row({ space: 8 }) {
+            Text(`${this.resolveTaskStatusLabel(task.status)} / ${this.resolveTaskDuration(task)}`)
+              .fontSize(12)
+              .fontColor(this.resolveTaskBorderColor(task.status))
+              .fontWeight(FontWeight.Bold)
+              .layoutWeight(1)
 
-          Image(this.resolveTaskStatusIcon(task.status))
-            .width(TASK_CARD_ICON_SIZE)
-            .height(TASK_CARD_ICON_SIZE)
-            .objectFit(ImageFit.Contain)
-        }
+            Image(this.resolveTaskStatusIcon(task.status))
+              .width(TASK_CARD_ICON_SIZE)
+              .height(TASK_CARD_ICON_SIZE)
+              .objectFit(ImageFit.Contain)
+          }
 
-        Text(task.taskText)
-          .fontSize(15)
-          .fontColor(THEME_TEXT_PRIMARY)
-          .fontWeight(FontWeight.Bold)
-          .maxLines(3)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-        Column({ space: 4 }) {
-          Text(`执行结果：${this.resolveTaskResult(task)}`)
-            .fontSize(12)
+          Text(task.taskText)
+            .fontSize(15)
             .fontColor(THEME_TEXT_PRIMARY)
-            .maxLines(2)
+            .fontWeight(FontWeight.Bold)
+            .maxLines(3)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
 
-        Row() {
-          Text(this.formatTime(task.startAtMs))
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-            .layoutWeight(1)
+          Column({ space: 4 }) {
+            Text(`执行结果：${this.resolveTaskResult(task)}`)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
 
-          Text(`steps ${task.stepCount}`)
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
+          Row() {
+            Text(this.formatTime(task.startAtMs))
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+              .layoutWeight(1)
+
+            Text(`steps ${task.stepCount}`)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
         }
+        .width('100%')
+        .padding({
+          left: TASK_CARD_PADDING_X,
+          right: TASK_CARD_PADDING_X,
+          top: TASK_CARD_PADDING_Y,
+          bottom: TASK_CARD_PADDING_Y
+        })
+        .constraintSize({ minHeight: TASK_CARD_MIN_HEIGHT })
+        .borderRadius(16)
+        .backgroundColor(this.resolveTaskBackground(task.status))
+        .border({ width: 1, color: this.resolveTaskBorderColor(task.status) })
+        .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.08)', offsetX: 0, offsetY: 6 })
       }
       .width('100%')
-      .padding(14)
-      .constraintSize({ minHeight: TASK_CARD_MIN_HEIGHT })
-      .borderRadius(16)
-      .backgroundColor(this.resolveTaskBackground(task.status))
-      .border({ width: 1, color: this.resolveTaskBorderColor(task.status) })
-      .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.08)', offsetX: 0, offsetY: 6 })
+      .padding({ left: TASK_CARD_SIDE_MARGIN, right: TASK_CARD_SIDE_MARGIN })
     }
     .onClick(() => {
       void this.openTask(task.taskId);
