@@ -1,9 +1,11 @@
 import { router } from '@kit.ArkUI';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import type { common } from '@kit.AbilityKit';
+import image from '@ohos.multimedia.image';
 import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../../features/agent_controller/agentspace/AgentSpace';
 import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
 import type { TaskSnapshot, UserReply } from '../../features/agent_controller/types';
+import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 import { GlowOverlay, GLOW_PALETTES } from '../views/GlowOverlay';
 import { FloatingOrb, FloatingOrbController } from '../views/FloatingOrb';
 import { StatusFloatWindow, StatusFloatWindowController } from '../views/StatusFloatWindow';
@@ -49,6 +51,7 @@ struct AgentSpaceViewer {
   @State private showGlow: boolean = true;
   @State private showStatus: boolean = true;
   @State private showOrb: boolean = false;
+  @State private wallpaper: image.PixelMap | null = null;
   @State private manualControlActive: boolean = false;
   @State private statusController: StatusFloatWindowController = StatusFloatWindowController.create(
     'Viewer active',
@@ -100,6 +103,12 @@ struct AgentSpaceViewer {
 
   build() {
     Stack() {
+      if (this.wallpaper) {
+        Image(this.wallpaper)
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Cover)
+      }
       AgentSpaceDisplay({
         mode: this.viewerMode,
         surfaceInfo: $displaySurfaceInfo,
@@ -150,6 +159,7 @@ struct AgentSpaceViewer {
 
   aboutToAppear(): void {
     void this.prepareViewer();
+    void this.loadWallpaper();
     this.interactionController.configure({
       coordScale: 1000,
       defaults: {
@@ -225,6 +235,10 @@ struct AgentSpaceViewer {
     } catch (e) {
       console.error(`[AgentSpaceViewer] service init failed: ${String(e)}`);
     }
+  }
+
+  private async loadWallpaper(): Promise<void> {
+    this.wallpaper = await WallpaperState.getCurrentWallpaper();
   }
 
   private async updateViewerActive(active: boolean): Promise<void> {

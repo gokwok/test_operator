@@ -43,7 +43,8 @@
         "usedScene": {
           "abilities": [
             "EntryAbility",
-            "AgentServiceExtAbility"
+            "AgentServiceExtAbility",
+            "AgentSpaceViewerAbility"
           ],
           "when": "always"
         }
