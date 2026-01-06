@@ -202,6 +202,10 @@ export class AgentControllerClient {
     return result === '1';
   }
 
+  async closeLiveViewNow(): Promise<void> {
+    await this.sendRequest(AgentControllerRequestCode.CLOSE_LIVE_VIEW);
+  }
+
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {
     return await this.sendRequestWithTwoInts(AgentControllerRequestCode.ACTION_DOUBLE_CLICK, xNorm, yNorm);
   }

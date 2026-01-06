@@ -6,6 +6,7 @@ import { asrFeature } from '../../features/voice_kit/Asr';
 const SERVICE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const SERVICE_ABILITY_NAME: string = 'AgentServiceExtAbility';
 const ACTION_START_TASK: string = 'start_task';
+type InputMode = 'voice' | 'keyboard';
 
 @Entry
 @Component
@@ -16,6 +17,7 @@ struct FloatChatPage {
   @State @Watch('onMicSequence') private micSequence: number = 0;
   @State private focusSequence: number = 0;
   @State private isListening: boolean = false;
+  @State private inputMode: InputMode = 'voice';
   @StorageProp('FloatWindow_IsClosing') @Watch('onClosingChange') private isClosing: boolean = false;
   @StorageProp('FloatWindow_IsWaiting') private isWaiting: boolean = false;
 
@@ -31,6 +33,7 @@ struct FloatChatPage {
   aboutToAppear(): void {
     AppStorage.setOrCreate('FloatWindow_IsClosing', false);
     this.isVisible = false;
+    this.inputMode = 'voice';
     if (this.enterTimerId !== -1) {
       clearTimeout(this.enterTimerId);
       this.enterTimerId = -1;
@@ -74,6 +77,7 @@ struct FloatChatPage {
           micSequence: $micSequence,
           focusSequence: this.focusSequence,
           inputEnabled: !this.isClosing && !this.isWaiting,
+          inputMode: this.inputMode,
           isListening: this.isListening,
         })
           .opacity(this.isVisible ? 1 : 0)
@@ -100,9 +104,14 @@ struct FloatChatPage {
     }
     if (this.isListening) {
       this.stopListening();
+      return;
+    }
+    if (this.inputMode === 'voice') {
+      this.inputMode = 'keyboard';
       this.requestInputFocus();
       return;
     }
+    this.inputMode = 'voice';
     void this.startListening();
   }
 
@@ -176,6 +185,7 @@ struct FloatChatPage {
 
   private async startListening(): Promise<void> {
     const ctx = getContext(this) as common.UIAbilityContext;
+    this.inputMode = 'voice';
     this.asrBaseText = this.inputText;
     this.asrPartialText = '';
     this.isListening = true;

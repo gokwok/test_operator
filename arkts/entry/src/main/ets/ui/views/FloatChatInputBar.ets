@@ -1,3 +1,5 @@
+type InputMode = 'voice' | 'keyboard';
+
 @Component
 export struct FloatChatInputBar {
   @Link text!: string;
@@ -6,6 +8,7 @@ export struct FloatChatInputBar {
   @Prop @Watch('onFocusSequence') focusSequence: number = 0;
   @Prop placeholder: string = '点击进行输入';
   @Prop inputEnabled: boolean = true;
+  @Prop @Watch('onInputModeChange') inputMode: InputMode = 'voice';
   @Prop @Watch('onListeningChange') isListening: boolean = false;
   @Prop listeningHint: string = '正在聆听...';
 
@@ -20,14 +23,10 @@ export struct FloatChatInputBar {
   private readonly MUTED_COLOR: ResourceColor = '#6B8E94';
 
   build() {
+    const leftSymbolName = this.resolveLeftSymbolName();
     Row({ space: 4 }) {
       Button() {
-        this.SystemSymbol(
-          this.resolveLeftSymbolName(),
-          24,
-          this.resolveLeftIconColor(),
-          this.resolveLeftSymbolName()
-        );
+        this.SystemSymbol(leftSymbolName, 24, this.resolveLeftIconColor(), leftSymbolName);
       }
       .width(this.ICON_BTN_SIZE)
       .height(this.ICON_BTN_SIZE)
@@ -125,14 +124,23 @@ export struct FloatChatInputBar {
   }
 
   private resolveLeftSymbolName(): string {
-    return this.isListening ? 'input_mode' : 'mic';
+    if (this.isListening) {
+      return 'mic';
+    }
+    return this.inputMode === 'voice' ? 'input_mode' : 'mic';
   }
 
   private resolveLeftIconColor(): ResourceColor {
+    if (!this.inputEnabled) {
+      return this.MUTED_COLOR;
+    }
     return this.isListening ? this.ACTIVE_COLOR : this.INACTIVE_COLOR;
   }
 
   private resolveLeftIconBgColor(): ResourceColor {
+    if (!this.inputEnabled) {
+      return Color.Transparent;
+    }
     return this.isListening ? '#D7F2EE' : Color.Transparent;
   }
 
@@ -152,6 +160,10 @@ export struct FloatChatInputBar {
     this.tryFocusInput();
   }
 
+  private onInputModeChange(): void {
+    this.tryFocusInput();
+  }
+
   private tryFocusInput(): void {
     if (!this.pendingFocus) {
       return;
@@ -165,7 +177,7 @@ export struct FloatChatInputBar {
   }
 
   private isTextInputEnabled(): boolean {
-    return this.inputEnabled && !this.isListening;
+    return this.inputEnabled && !this.isListening && this.inputMode === 'keyboard';
   }
 
   private isSendEnabled(): boolean {
@@ -177,7 +189,7 @@ export struct FloatChatInputBar {
   }
 
   private shouldShowPlaceholder(): boolean {
-    return this.getTrimmedText().length === 0 && !this.inputFocused && !this.isListening;
+    return this.getTrimmedText().length === 0 && !this.inputFocused && !this.isListening && this.inputMode === 'keyboard';
   }
 
   @Builder

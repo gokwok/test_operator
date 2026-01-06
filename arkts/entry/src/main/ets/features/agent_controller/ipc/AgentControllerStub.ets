@@ -181,6 +181,11 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(released ? '1' : '0');
         return true;
       }
+      if (code === AgentControllerRequestCode.CLOSE_LIVE_VIEW) {
+        await this.service.closeLiveViewNow();
+        reply.writeString('ok');
+        return true;
+      }
       if (code === AgentControllerRequestCode.ACTION_DOUBLE_CLICK) {
         const xNorm = data.readInt();
         const yNorm = data.readInt();

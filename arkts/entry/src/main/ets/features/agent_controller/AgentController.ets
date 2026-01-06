@@ -28,7 +28,7 @@ import type {
   UserReply
 } from './types';
 import { TaskManager, TaskManagerListener } from './task_manager/TaskManager';
-import { LiveViewController, LiveViewContents } from './live_view/LiveViewController';
+import { LiveViewController, LiveViewContents, LiveViewType } from './live_view/LiveViewController';
 import { LiveViewPresenter, LiveViewPresenterContext } from './live_view/LiveViewPresenter';
 import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
 import { AgentSettings } from '../persistence/settings/AgentSettings';
@@ -335,6 +335,35 @@ export class AgentController {
       await this.destroyAgentSpaceInternal();
     });
     return true;
+  }
+
+  async closeLiveViewNow(): Promise<void> {
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+    if (this.liveViewNotificationId <= 0) {
+      return;
+    }
+    const payload: LiveViewContents = {
+      type: LiveViewType.VIEWER,
+      id: this.liveViewNotificationId,
+      stopTimeoutMs: 0,
+      primary: { title: '', content: '' },
+      capsule: { title: '' },
+    };
+    try {
+      this.liveViewSelfStopping = true;
+      await this.liveViewController.stop(ctx, payload);
+    } catch (e) {
+      console.warn(`[AgentController] LiveView close failed: ${String(e)}`);
+    } finally {
+      this.liveViewSelfStopping = false;
+      this.liveViewStarted = false;
+    }
   }
 
   async actionDoubleClick(xNorm: number, yNorm: number): Promise<string> {

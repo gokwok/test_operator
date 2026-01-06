@@ -703,6 +703,9 @@ struct AgentSpaceViewer {
     this.stopStatusPolling();
     try {
       await this.ensureServiceConnected();
+      if (this.statusController.stopped) {
+        await this.getServiceClient().closeLiveViewNow();
+      }
       await this.getServiceClient().transferToMainAndReleaseIfFinished();
     } catch (e) {
       console.error(`[AgentSpaceViewer] transfer to main failed: ${String(e)}`);
