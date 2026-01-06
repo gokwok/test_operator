@@ -16,7 +16,7 @@ import type {
 import type { AppTarget, StartAbilityInvoker } from './agentspace/VTSBackend';
 import { AgentProxy } from './AgentProxy';
 import { StateCollector } from './state_collector/StateCollector';
-import { ToolKit } from './ToolKit';
+import { ToolKit } from './toolkit/ToolKit';
 import type {
   AppTargetDescriptor,
   TaskEventBatch,
@@ -25,7 +25,7 @@ import type {
   TaskStatus,
   UserReply
 } from './types';
-import { TaskManager, TaskManagerListener } from './TaskManager';
+import { TaskManager, TaskManagerListener } from './task_manager/TaskManager';
 import { LiveViewController, LiveViewContents, LiveViewType } from './live_view/LiveViewController';
 import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
 import { AgentSettings } from '../persistence/settings/AgentSettings';

@@ -1,5 +1,5 @@
 import type { DeviceState } from '../types';
-import { ToolKit } from '../ToolKit';
+import { ToolKit } from '../toolkit/ToolKit';
 
 export class StateCollector {
   private toolKit: ToolKit;

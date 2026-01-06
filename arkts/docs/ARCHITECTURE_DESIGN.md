@@ -33,7 +33,8 @@ entry/src/main/ets/
     agent_controller/        # 任务控制域（核心）
     voice_kit/               # 语音域（ASR/TTS）
     persistence/             # 可选：settings/history 归档（短期可不动）
-    state/                   # 设备/应用状态数据源（如 app_state）
+    agent_controller/
+      state_collector/       # 设备/应用状态数据源（如 AppState/StateCollector）
 ```
 
 > 现阶段项目已包含 `abilities/`, `pages/`, `view/`, `features/`；后续整改建议把 `pages/view` 合并到 `ui/pages` 与 `ui/views`，并把 `agent_service` 重命名/迁移到 `agent_controller`。
@@ -209,7 +210,7 @@ AgentController 域建议拆为：
 - `ViewerVM`：轮询 snapshot/effects、管理交互形态机（call_user/interact/take_over/补充/接管）、回传用户结果
 
 ### 6.3 Model（领域/数据）
-- `features/agent_controller/*`、`features/voice_kit/*`、`features/persistence/*`、`features/state/*`
+- `features/agent_controller/*`、`features/voice_kit/*`、`features/persistence/*`
 
 ---
 
@@ -235,7 +236,9 @@ AgentController 域建议拆为：
 
 ### 7.4 “每任务干净环境”策略
 - `startTask` 前：销毁旧 `TaskContext`（包含 `AgentSpace/VTS`）
-- 任务进入终态（finished/failed/idle）：释放 `TaskContext`，保证下次任务从全新虚拟屏开始
+- 任务进入终态（failed/idle）：立即释放 `TaskContext`
+- 任务进入终态（finished）：为保证 `transferToMain` 复用现有应用实例，允许延迟释放；
+  典型策略是 Viewer 收起后再释放 `AgentSpace`
 
 ---
 
@@ -249,7 +252,7 @@ AgentController 域建议拆为：
 - `features/live_view/LiveViewController.ets`：`LiveViewController`
 - `features/settings/*`：配置持久化（Preferences）
 - `features/history/*`：历史任务 KV-Store（FULL 截图）
-- `features/state/app_state.ets`：应用列表/图标数据源
+- `features/agent_controller/state_collector/AppState.ets`：应用列表/图标数据源
 - `features/Asr.ets`、`features/Tts.ets`：≈ `VoiceKit`
 - `pages/*` 与 `view/*`：≈ `ui/pages` 与 `ui/views`
 
@@ -265,4 +268,3 @@ AgentController 域建议拆为：
 - 不改变云端协议、不更换任务循环策略
 - 不引入多 AgentSpace 实例并存（当前策略是每任务一份）
 - 不引入复杂 DI 框架/事件总线
-

@@ -1,4 +1,4 @@
-import type { AgentAction, ActionParameters, ActionResult } from './agentspace/AgentSpace';
+import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
 import {
   AgentProxy,
   CloudControl,
@@ -6,18 +6,14 @@ import {
   CloudInvokePayload,
   CloudInvokeResponse,
   CloudInvokeOutput
-} from './AgentProxy';
-import { StateCollector } from './state_collector/StateCollector';
-import { ToolKit } from './ToolKit';
-import type { DeviceState, TaskEvent, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from './types';
+} from '../AgentProxy';
+import { StateCollector } from '../state_collector/StateCollector';
+import { ToolKit } from '../toolkit/ToolKit';
+import type { DeviceState, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from '../types';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
-import type {
-  HistoryStepBaseMeta,
-  HistoryTaskMeta,
-  HistoryTaskMetaPatch,
-  HistoryTaskStatus
-} from '../persistence/history/TaskHistoryStore';
+import { TaskHistoryStore } from '../../persistence/history/TaskHistoryStore';
+import { TaskEventQueue } from './TaskEventQueue';
+import { TaskHistoryRecorder } from './TaskHistoryRecorder';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
@@ -46,8 +42,7 @@ export class TaskManager {
     lastError: '',
     installedAppsSent: false,
   };
-  private eventSequence: number = 0;
-  private events: Array<TaskEvent> = [];
+  private eventQueue: TaskEventQueue = new TaskEventQueue();
   private runToken: number = 0;
   private stopRequested: boolean = false;
   private agentProxy: AgentProxy | null = null;
@@ -61,7 +56,7 @@ export class TaskManager {
   private pendingUserNote: string = '';
   private pendingControlOp: string = '';
   private listener: TaskManagerListener | null = null;
-  private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
+  private historyRecorder: TaskHistoryRecorder = new TaskHistoryRecorder(TaskHistoryStore.getInstance());
   private historyTaskId: string = '';
   private historyTaskText: string = '';
 
@@ -86,9 +81,8 @@ export class TaskManager {
     this.stopRequested = false;
     this.runToken += 1;
     const token = this.runToken;
-    this.eventSequence = 0;
-    this.events = [];
-    this.historyTaskId = this.historyStore.createTaskId();
+    this.eventQueue.reset();
+    this.historyTaskId = this.historyRecorder.createTaskId();
     this.snapshot = {
       sessionId: request.sessionId.trim(),
       status: 'running',
@@ -100,7 +94,13 @@ export class TaskManager {
       lastError: '',
       installedAppsSent: false,
     };
-    this.recordHistoryTaskStart(agentProxy.getEndpoint(), this.snapshot.sessionId);
+    this.historyRecorder.recordTaskStart(
+      this.historyTaskId,
+      this.historyTaskText,
+      agentProxy.getEndpoint(),
+      this.snapshot.sessionId,
+      this.waitAfterActionMs
+    );
     this.pushEvent('status', 'running');
     this.notifyStatus();
     void this.runLoop(token);
@@ -125,7 +125,7 @@ export class TaskManager {
     this.pendingActionResult = result;
     this.snapshot.lastResultStatus = result.status;
     this.snapshot.lastError = '';
-    this.recordHistoryStepResult(this.snapshot.stepIndex, result);
+    this.historyRecorder.recordStepResult(this.historyTaskId, this.snapshot.stepIndex, result);
     this.pushEvent('result', result.status, JSON.stringify(result));
     this.snapshot.status = 'running';
     this.pushEvent('status', 'running');
@@ -296,15 +296,7 @@ export class TaskManager {
   }
 
   pullEvents(lastSequence: number): TaskEventBatch | null {
-    if (this.events.length === 0 || this.eventSequence === lastSequence) {
-      return null;
-    }
-    const batch: TaskEventBatch = {
-      sequence: this.eventSequence,
-      events: this.events,
-    };
-    this.events = [];
-    return batch;
+    return this.eventQueue.pull(lastSequence);
   }
 
   private async runLoop(token: number): Promise<void> {
@@ -355,7 +347,7 @@ export class TaskManager {
           }
           pendingDescription = output?.description ?? '';
           const outcome = this.handleIncomingAction(action, pendingDescription);
-          this.recordHistoryStep(action, pendingDescription, screenshot);
+          this.historyRecorder.recordStep(this.historyTaskId, this.snapshot.stepIndex, pendingDescription, action, screenshot);
           if (outcome !== 'continue') {
             break;
           }
@@ -382,7 +374,7 @@ export class TaskManager {
         }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d executeAction done status=%{public}s', token, this.snapshot.stepIndex, result.status);
         this.recordActionResult(result);
-        this.recordHistoryStepResult(this.snapshot.stepIndex, result);
+        this.historyRecorder.recordStepResult(this.historyTaskId, this.snapshot.stepIndex, result);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d waitAfterAction begin ms=%{public}d', token, this.snapshot.stepIndex, this.waitAfterActionMs);
         await this.waitAfterAction(token);
         if (this.shouldAbortLoop()) {
@@ -411,7 +403,7 @@ export class TaskManager {
         }
         pendingDescription = output?.description ?? '';
         const outcome = this.handleIncomingAction(action, pendingDescription);
-        this.recordHistoryStep(action, pendingDescription, screenshot);
+        this.historyRecorder.recordStep(this.historyTaskId, this.snapshot.stepIndex, pendingDescription, action, screenshot);
         if (outcome !== 'continue') {
           break;
         }
@@ -430,7 +422,7 @@ export class TaskManager {
       return;
     }
     if (this.stopRequested && (this.snapshot.status === 'stopping' || this.snapshot.status === 'running')) {
-      this.finalizeHistoryTask('stopped', this.snapshot.lastError);
+      this.historyRecorder.finalizeTask(this.historyTaskId, 'stopped', this.snapshot.lastError);
       this.snapshot.status = 'idle';
       this.pushEvent('status', 'idle');
       this.notifyStatus();
@@ -481,7 +473,7 @@ export class TaskManager {
     const next = envelopeId.length > 0 ? envelopeId : outputId.length > 0 ? outputId : fallback;
     if (next !== this.snapshot.sessionId) {
       this.snapshot.sessionId = next;
-      this.updateHistorySessionId(next);
+      this.historyRecorder.updateSessionId(this.historyTaskId, next);
     }
     return next;
   }
@@ -511,7 +503,11 @@ export class TaskManager {
       this.snapshot.status = 'finished';
       this.pushEvent('status', 'finished');
       this.notifyStatus();
-      this.finalizeHistoryTask('finished', this.extractFinishContent(action, description));
+      this.historyRecorder.finalizeTask(
+        this.historyTaskId,
+        'finished',
+        this.extractFinishContent(action, description)
+      );
       return 'finish';
     }
     if (lower === 'call_user' || lower === 'interact' || lower === 'task_over' || lower === 'take_over') {
@@ -637,84 +633,6 @@ export class TaskManager {
     return Math.max(0, Math.floor(value));
   }
 
-  private recordHistoryTaskStart(endpoint: string, sessionId: string): void {
-    const taskId = this.historyTaskId;
-    if (taskId.length === 0) {
-      return;
-    }
-    const meta: HistoryTaskMeta = {
-      taskId,
-      sessionId,
-      taskText: this.historyTaskText,
-      cloudEndpoint: endpoint,
-      waitAfterActionMs: this.waitAfterActionMs,
-      status: 'running',
-      startAtMs: Date.now(),
-      endAtMs: 0,
-      stepCount: 0,
-      finishContent: '',
-      error: '',
-    };
-    void this.historyStore.createTask(meta);
-  }
-
-  private updateHistorySessionId(sessionId: string): void {
-    const taskId = this.historyTaskId;
-    if (taskId.length === 0) {
-      return;
-    }
-    void this.historyStore.updateTaskMeta(taskId, { sessionId });
-  }
-
-  private recordHistoryStep(action: AgentAction, description: string, screenshot: string): void {
-    const taskId = this.historyTaskId;
-    if (taskId.length === 0) {
-      return;
-    }
-    const stepIndex = this.snapshot.stepIndex;
-    if (stepIndex <= 0) {
-      return;
-    }
-    const meta: HistoryStepBaseMeta = {
-      taskId,
-      stepIndex,
-      tsMs: Date.now(),
-      description,
-      actionName: action.name,
-      actionJson: JSON.stringify(action),
-      resultStatus: '',
-      error: '',
-      output: '',
-    };
-    void this.historyStore.putStep(taskId, meta, screenshot);
-  }
-
-  private recordHistoryStepResult(stepIndex: number, result: ActionResult): void {
-    const taskId = this.historyTaskId;
-    if (taskId.length === 0 || stepIndex <= 0) {
-      return;
-    }
-    const status = result.status;
-    const error = result.error ?? '';
-    const output = result.output ?? '';
-    void this.historyStore.updateStepResult(taskId, stepIndex, status, error, output);
-  }
-
-  private finalizeHistoryTask(status: HistoryTaskStatus, detail: string): void {
-    const taskId = this.historyTaskId;
-    if (taskId.length === 0) {
-      return;
-    }
-    const trimmed = detail.trim();
-    const patch: HistoryTaskMetaPatch = {
-      status,
-      endAtMs: Date.now(),
-      finishContent: status === 'finished' ? trimmed : '',
-      error: status === 'finished' ? '' : trimmed,
-    };
-    void this.historyStore.updateTaskMeta(taskId, patch);
-  }
-
   private extractFinishContent(action: AgentAction, fallback: string): string {
     const content = action.parameters?.content ?? '';
     if (typeof content === 'string' && content.trim().length > 0) {
@@ -727,7 +645,7 @@ export class TaskManager {
     this.stopRequested = true;
     this.snapshot.status = 'failed';
     this.snapshot.lastError = reason;
-    this.finalizeHistoryTask('failed', reason);
+    this.historyRecorder.finalizeTask(this.historyTaskId, 'failed', reason);
     this.pushEvent('error', reason);
     this.pushEvent('status', 'failed');
     this.notifyStatus();
@@ -748,14 +666,7 @@ export class TaskManager {
   }
 
   private pushEvent(type: TaskEventType, message: string, payloadJson?: string): void {
-    this.eventSequence += 1;
-    const event: TaskEvent = {
-      seq: this.eventSequence,
-      type,
-      message,
-      payloadJson: payloadJson ?? '',
-    };
-    this.events.push(event);
+    this.eventQueue.push(type, message, payloadJson);
   }
 }
 
