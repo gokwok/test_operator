@@ -61,6 +61,7 @@ struct Index {
   @State selectedStepIndex: number = 0;
   @State selectedStep: HistoryStepMeta | null = null;
   @State selectedStepPixelMap: image.PixelMap | null = null;
+  @State private viewportHeight: number = 0;
 
   aboutToAppear(): void {
     void this.loadSettings();
@@ -226,8 +227,6 @@ struct Index {
   private historyTab(): void {
     Scroll() {
       Column({ space: 12 }) {
-        this.taskTopBar();
-
         Column({ space: 12 }) {
           if (this.historyLoading) {
             Text('加载中...')
@@ -248,7 +247,7 @@ struct Index {
           }
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: 12 })
+        .padding({ left: 0, right: 0, top: 12, bottom: 0 })
       }
       .width('100%')
     }
@@ -443,12 +442,22 @@ struct Index {
   @Builder
   private activeTabContent(): void {
     if (this.activeTabIndex === 0) {
-      this.historyTab();
+      this.taskTabContent();
     } else if (this.activeTabIndex === 1) {
       this.debugTab();
     } else {
       this.settingsTab();
     }
+  }
+
+  @Builder
+  private taskTabContent(): void {
+    Column({ space: 0 }) {
+      this.taskTopBar();
+      this.historyTab();
+    }
+    .width('100%')
+    .layoutWeight(1)
   }
 
   @Builder
@@ -564,7 +573,7 @@ struct Index {
     ListItem() {
       Column({ space: 10 }) {
         Row({ space: 8 }) {
-          Text(this.resolveTaskStatusLabel(task.status))
+          Text(`${this.resolveTaskStatusLabel(task.status)} / ${this.resolveTaskDuration(task)}`)
             .fontSize(12)
             .fontColor(this.resolveTaskBorderColor(task.status))
             .fontWeight(FontWeight.Bold)
@@ -589,10 +598,6 @@ struct Index {
             .fontColor(THEME_TEXT_PRIMARY)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-          Text(`耗时：${this.resolveTaskDuration(task)}`)
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
         }
 
         Row() {
@@ -606,6 +611,7 @@ struct Index {
             .fontColor(THEME_TEXT_MUTED)
         }
       }
+      .width('100%')
       .padding(14)
       .constraintSize({ minHeight: TASK_CARD_MIN_HEIGHT })
       .borderRadius(16)
@@ -633,7 +639,7 @@ struct Index {
     }
     .width(72)
     .height('100%')
-    .backgroundColor('#FFECEC')
+    .backgroundColor('transparent')
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
@@ -696,13 +702,16 @@ struct Index {
 
   private resolveTaskDuration(task: HistoryTaskMeta): string {
     if (task.startAtMs <= 0 || task.endAtMs <= 0) {
-      return '-';
+      return '0 s';
     }
     const durationMs = Math.max(0, task.endAtMs - task.startAtMs);
     const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+    if (totalSeconds < 60) {
+      return `${totalSeconds} s`;
+    }
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    return `${totalSeconds} s (${minutes} min ${seconds} s)`;
+    return `${minutes} min ${seconds} s`;
   }
 
   private isTaskStopped(status: string): boolean {
@@ -760,32 +769,47 @@ struct Index {
     return this.activeTabIndex === 0 ? 0 : 16;
   }
 
+  private resolveNavY(): number {
+    if (!Number.isFinite(this.viewportHeight) || this.viewportHeight <= 0) {
+      return 0;
+    }
+    return Math.max(0, this.viewportHeight - NAV_HEIGHT);
+  }
+
   build() {
-    Column({ space: 0 }) {
-      Column({ space: 12 }) {
-        if (this.activeTabIndex !== 0) {
-          this.pageHeader();
+    Stack() {
+      Column({ space: 0 }) {
+        Column({ space: 12 }) {
+          if (this.activeTabIndex !== 0) {
+            this.pageHeader();
+          }
+          this.activeTabContent();
         }
-        this.activeTabContent();
+        .width('100%')
+        .layoutWeight(1)
+        .padding({
+          left: this.resolvePanelSidePadding(),
+          right: this.resolvePanelSidePadding(),
+          top: this.resolvePanelTopPadding(),
+          bottom: 0
+        })
+        .backgroundColor(THEME_PANEL)
+        .borderRadius(26)
+        .border({ width: this.resolvePanelBorderWidth(), color: THEME_BORDER })
       }
       .width('100%')
-      .layoutWeight(1)
-      .padding({
-        left: this.resolvePanelSidePadding(),
-        right: this.resolvePanelSidePadding(),
-        top: this.resolvePanelTopPadding(),
-        bottom: 12
-      })
-      .backgroundColor(THEME_PANEL)
-      .borderRadius(26)
-      .border({ width: this.resolvePanelBorderWidth(), color: THEME_BORDER })
+      .height('100%')
 
-      this.bottomNav();
+      this.bottomNav()
+        .position({ x: 0, y: this.resolveNavY() })
     }
     .width('100%')
     .height('100%')
     .padding({ left: 0, right: 0, top: SAFE_TOP_PADDING, bottom: 0 })
     .backgroundColor(THEME_BG_START)
+    .onAreaChange((_oldValue, newValue) => {
+      this.viewportHeight = Number(newValue.height);
+    })
   }
 
   private getUiContext(): common.UIAbilityContext {
