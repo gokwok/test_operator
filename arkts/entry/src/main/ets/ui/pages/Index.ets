@@ -60,8 +60,29 @@ const STEP_IMAGE_HEIGHT: number = 460;
 const STEP_SWIPER_HEIGHT: number = 540;
 type JsonLike = object | string | number | boolean | null;
 
+interface AgentActionSnapshot {
+  name: string;
+  parameters?: AgentActionParametersSnapshot;
+}
+
+interface AgentActionParametersSnapshot {
+  point?: Array<number>;
+  start_point?: Array<number>;
+  end_point?: Array<number>;
+  duration_ms?: number;
+  seconds?: number;
+  content?: string;
+  app?: string;
+  options?: Array<string>;
+}
+
+interface StepParamLine {
+  label: string;
+  value: string;
+}
+
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
-type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
+type TaskBarSymbolName = 'arrow_clockwise' | 'clean' | 'chevron_left' | 'trash';
 
 @Entry
 @Component
@@ -89,6 +110,9 @@ struct Index {
   @State selectedStepPosition: number = 0;
   @State selectedStep: HistoryStepMeta | null = null;
   @State selectedStepPixelMap: image.PixelMap | null = null;
+  @State selectedStepParamLines: Array<StepParamLine> = [];
+  @State showTaskMeta: boolean = false;
+  @State showStepMore: boolean = false;
   @State private viewportHeight: number = 0;
 
   aboutToAppear(): void {
@@ -323,7 +347,6 @@ struct Index {
   private taskDetailView(): void {
     if (this.selectedTask) {
       Column({ space: 14 }) {
-        this.taskDetailHeader();
         this.taskSummaryCard(this.selectedTask);
 
         if (this.selectedSteps.length > 0) {
@@ -340,44 +363,8 @@ struct Index {
   }
 
   @Builder
-  private taskDetailHeader(): void {
-    Row({ space: 8 }) {
-      this.detailHeaderButton('返回', THEME_TEXT_PRIMARY, THEME_CARD, () => {
-        this.closeTask();
-      })
-
-      Text('任务详情')
-        .fontSize(14)
-        .fontFamily(FONT_DISPLAY)
-        .fontColor(THEME_TEXT_PRIMARY)
-        .fontWeight(FontWeight.Bold)
-        .layoutWeight(1)
-        .textAlign(TextAlign.Center)
-
-      this.detailHeaderButton('删除', THEME_ERROR, '#FFF2F2', () => {
-        void this.deleteSelectedTask();
-      })
-    }
-    .width('100%')
-    .height(40)
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  private detailHeaderButton(label: string, textColor: string, background: string, onTap: () => void): void {
-    Button(label)
-      .fontSize(12)
-      .fontColor(textColor)
-      .backgroundColor(background)
-      .borderRadius(14)
-      .border({ width: 1, color: THEME_BORDER })
-      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .onClick(onTap)
-  }
-
-  @Builder
   private taskSummaryCard(task: HistoryTaskMeta): void {
-    Column({ space: 10 }) {
+    Column({ space: 12 }) {
       Row({ space: 8 }) {
         this.detailTag(this.resolveTaskStatusLabel(task.status), this.resolveStatusTagText(task.status), this.resolveStatusTagBg(task.status))
         this.detailTag(this.resolveTaskDuration(task), THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
@@ -392,44 +379,69 @@ struct Index {
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      this.detailSection('执行结果', this.resolveTaskResult(task), THEME_TEXT_PRIMARY, 6)
+      this.statusCallout(
+        '任务结果',
+        this.resolveTaskResult(task),
+        this.resolveTaskBackground(task.status),
+        this.resolveTaskBorderColor(task.status),
+        this.isTaskFinished(task.status) ? THEME_TEXT_PRIMARY : THEME_ERROR
+      )
 
       Row({ space: 8 }) {
         this.detailTag(`步骤 ${task.stepCount}`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
         this.detailTag(`wait ${task.waitAfterActionMs}ms`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
       }
 
-      Row({ space: 12 }) {
-        Column({ space: 4 }) {
-          Text('开始时间')
-            .fontSize(10)
-            .fontColor(THEME_TEXT_MUTED)
-          Text(this.formatTime(task.startAtMs))
-            .fontSize(11)
-            .fontColor(THEME_TEXT_PRIMARY)
-        }
-        .layoutWeight(1)
+      Row() {
+        Row()
+          .layoutWeight(1)
 
-        Column({ space: 4 }) {
-          Text('结束时间')
-            .fontSize(10)
-            .fontColor(THEME_TEXT_MUTED)
-          Text(task.endAtMs > 0 ? this.formatTime(task.endAtMs) : '-')
-            .fontSize(11)
-            .fontColor(THEME_TEXT_PRIMARY)
-        }
-        .layoutWeight(1)
+        Text(this.showTaskMeta ? '收起信息' : '更多信息')
+          .fontSize(11)
+          .fontColor(THEME_ACCENT)
+          .fontWeight(FontWeight.Medium)
       }
+      .width('100%')
+      .onClick(() => {
+        this.showTaskMeta = !this.showTaskMeta;
+      })
 
-      Column({ space: 6 }) {
-        this.detailRow('任务ID', task.taskId)
-        this.detailRow('Session', task.sessionId)
-        this.detailRow('云端', task.cloudEndpoint)
+      if (this.showTaskMeta) {
+        Column({ space: 10 }) {
+          Row({ space: 12 }) {
+            Column({ space: 4 }) {
+              Text('开始时间')
+                .fontSize(10)
+                .fontColor(THEME_TEXT_MUTED)
+              Text(this.formatTime(task.startAtMs))
+                .fontSize(11)
+                .fontColor(THEME_TEXT_PRIMARY)
+            }
+            .layoutWeight(1)
+
+            Column({ space: 4 }) {
+              Text('结束时间')
+                .fontSize(10)
+                .fontColor(THEME_TEXT_MUTED)
+              Text(task.endAtMs > 0 ? this.formatTime(task.endAtMs) : '-')
+                .fontSize(11)
+                .fontColor(THEME_TEXT_PRIMARY)
+            }
+            .layoutWeight(1)
+          }
+
+          Column({ space: 6 }) {
+            this.detailRow('任务ID', task.taskId)
+            this.detailRow('Session', task.sessionId)
+            this.detailRow('云端', task.cloudEndpoint)
+            this.detailRow('wait_ms', String(task.waitAfterActionMs))
+          }
+          .padding(12)
+          .borderRadius(DETAIL_SECTION_RADIUS)
+          .backgroundColor(DETAIL_SECTION_BG)
+          .border({ width: 1, color: DETAIL_SECTION_BORDER })
+        }
       }
-      .padding(12)
-      .borderRadius(DETAIL_SECTION_RADIUS)
-      .backgroundColor(DETAIL_SECTION_BG)
-      .border({ width: 1, color: DETAIL_SECTION_BORDER })
     }
     .width('100%')
     .padding(14)
@@ -459,7 +471,7 @@ struct Index {
   private stepSwiperView(): void {
     Column({ space: 10 }) {
       Row({ space: 8 }) {
-        Text('步骤记录')
+        Text('步骤')
           .fontSize(DETAIL_TITLE_SIZE)
           .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Bold)
@@ -497,104 +509,207 @@ struct Index {
 
   @Builder
   private stepScreenshotSlide(step: HistoryStepMeta, position: number): void {
-    Column({ space: 12 }) {
-      Row({ space: 8 }) {
-        this.detailTag(`#${step.stepIndex}`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
-        Text(this.formatTime(step.tsMs))
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
-          .layoutWeight(1)
-      }
+    Column({ space: 10 }) {
+      this.stepScreenshotCard(step, position);
 
-      Text(step.actionName.trim().length > 0 ? step.actionName : '未记录动作名')
-        .fontSize(15)
+      Text(step.description.trim().length > 0 ? step.description : this.resolveActionDisplayName(step.actionName))
+        .fontSize(12)
         .fontColor(THEME_TEXT_PRIMARY)
-        .fontWeight(FontWeight.Bold)
-        .maxLines(1)
+        .lineHeight(18)
+        .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      this.stepScreenshot(step, position);
     }
     .width('100%')
     .padding(14)
+  }
+
+  @Builder
+  private stepScreenshotCard(step: HistoryStepMeta, position: number): void {
+    Column() {
+      Stack() {
+        this.stepScreenshot(step, position);
+
+        Column() {
+          Row({ space: 8 }) {
+            this.detailTag(`#${step.stepIndex}`, THEME_TEXT_PRIMARY, 'rgba(255, 255, 255, 0.86)')
+            Row()
+              .layoutWeight(1)
+            this.detailTag(
+              this.resolveStepStatusLabel(step.resultStatus),
+              this.resolveStepStatusText(step.resultStatus),
+              this.resolveStepStatusBg(step.resultStatus)
+            )
+          }
+          .width('100%')
+
+          Row({ space: 8 }) {
+            this.detailTag(this.resolveActionDisplayName(step.actionName), THEME_TEXT_PRIMARY, 'rgba(255, 255, 255, 0.86)')
+            Row()
+              .layoutWeight(1)
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .height('100%')
+        .padding(12)
+        .justifyContent(FlexAlign.SpaceBetween)
+      }
+      .width('100%')
+      .height('100%')
+      .borderRadius(DETAIL_CARD_RADIUS)
+      .clip(true)
+    }
+    .width('100%')
+    .height(STEP_IMAGE_HEIGHT)
+    .backgroundColor(DETAIL_SECTION_BG)
     .borderRadius(DETAIL_CARD_RADIUS)
-    .backgroundColor(DETAIL_CARD_BG)
     .border({ width: 1, color: DETAIL_CARD_BORDER })
-    .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.06)', offsetX: 0, offsetY: 6 })
+    .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.08)', offsetX: 0, offsetY: 6 })
   }
 
   @Builder
   private stepScreenshot(step: HistoryStepMeta, position: number): void {
-    Column({ space: 6 }) {
-      if (this.isStepPositionActive(position) && this.selectedStepPixelMap) {
-        Image(this.selectedStepPixelMap)
-          .width('100%')
-          .height(STEP_IMAGE_HEIGHT)
-          .borderRadius(DETAIL_CARD_RADIUS)
-          .backgroundColor(THEME_CARD)
-          .objectFit(ImageFit.Contain)
-      } else {
-        Row() {
-          Text('截图加载中')
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-        }
+    if (this.isStepPositionActive(position) && this.selectedStepPixelMap) {
+      Image(this.selectedStepPixelMap)
         .width('100%')
-        .height(STEP_IMAGE_HEIGHT)
-        .borderRadius(DETAIL_CARD_RADIUS)
-        .backgroundColor(DETAIL_SECTION_BG)
-        .border({ width: 1, color: DETAIL_SECTION_BORDER })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
+        .height('100%')
+        .backgroundColor(THEME_CARD)
+        .objectFit(ImageFit.Contain)
+    } else {
+      Row() {
+        Text('正在加载截图…')
+          .fontSize(11)
+          .fontColor(THEME_TEXT_MUTED)
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(DETAIL_SECTION_BG)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
     }
   }
 
   @Builder
   private stepDetailPanel(step: HistoryStepMeta): void {
     Column({ space: 12 }) {
-      Column({ space: 6 }) {
-        Text('动作说明')
+      Row({ space: 8 }) {
+        this.detailTag(`第 ${this.resolveStepSwiperIndex() + 1} 步`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
+        this.detailTag(this.resolveActionDisplayName(step.actionName), DETAIL_TAG_TEXT, DETAIL_TAG_BG)
+        this.detailTag(
+          this.resolveStepStatusLabel(step.resultStatus),
+          this.resolveStepStatusText(step.resultStatus),
+          this.resolveStepStatusBg(step.resultStatus)
+        )
+        Row()
+          .layoutWeight(1)
+        Text(this.formatTimeShort(step.tsMs))
           .fontSize(10)
-          .fontColor(THEME_TEXT_MUTED)
-
-        Text(step.actionName.trim().length > 0 ? step.actionName : '未记录动作名')
-          .fontSize(DETAIL_TITLE_SIZE)
-          .fontColor(THEME_TEXT_PRIMARY)
-          .fontWeight(FontWeight.Bold)
-
-        Text(step.description.trim().length > 0 ? step.description : '暂无动作描述')
-          .fontSize(12)
-          .fontColor(THEME_TEXT_PRIMARY)
-          .lineHeight(18)
-      }
-      .padding(12)
-      .borderRadius(DETAIL_SECTION_RADIUS)
-      .backgroundColor(DETAIL_SECTION_BG)
-      .border({ width: 1, color: DETAIL_SECTION_BORDER })
-
-      this.detailSection('动作参数', this.formatActionJson(step.actionJson), THEME_TEXT_PRIMARY, 10)
-      this.detailSection('执行输出', step.output, THEME_TEXT_PRIMARY, 8)
-
-      if (step.error.trim().length > 0) {
-        this.detailSection('错误信息', step.error, THEME_ERROR, 6)
+          .fontColor(DETAIL_HINT_TEXT)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
 
-      Column({ space: 6 }) {
-        this.detailRow('步骤编号', `#${step.stepIndex}`)
-        this.detailRow('动作状态', this.resolveStepStatusLabel(step.resultStatus))
-        this.detailRow('时间', this.formatTime(step.tsMs))
-        this.detailRow('截图格式', step.image.format)
-        this.detailRow('截图大小', this.formatBytes(step.image.bytes))
-        this.detailRow('分片大小', `${step.image.chunkSize} B`)
-        this.detailRow('分片数量', String(step.image.chunkCount))
+      Text(step.description.trim().length > 0 ? step.description : '暂无步骤说明')
+        .fontSize(13)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .lineHeight(20)
+
+      if (!this.showStepMore && this.selectedStepParamLines.length > 0) {
+        Column({ space: 6 }) {
+          Text('关键参数')
+            .fontSize(DETAIL_TITLE_SIZE)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .fontWeight(FontWeight.Medium)
+
+          ForEach(this.resolveStepParamPreviewLines(), (line: StepParamLine) => {
+            this.detailRow(line.label, line.value)
+          }, (line: StepParamLine) => line.label)
+        }
+        .padding(12)
+        .borderRadius(DETAIL_SECTION_RADIUS)
+        .backgroundColor(DETAIL_SECTION_BG)
+        .border({ width: 1, color: DETAIL_SECTION_BORDER })
       }
-      .padding(12)
-      .borderRadius(DETAIL_SECTION_RADIUS)
-      .backgroundColor(DETAIL_SECTION_BG)
-      .border({ width: 1, color: DETAIL_SECTION_BORDER })
+
+      this.statusCallout(
+        '执行结果',
+        this.resolveStepResultSummary(step),
+        this.resolveStepResultBg(step),
+        this.resolveStepResultBorder(step),
+        this.resolveStepResultTextColor(step)
+      )
+
+      Row() {
+        Row()
+          .layoutWeight(1)
+        Text(this.showStepMore ? '收起更多信息' : '查看更多信息')
+          .fontSize(11)
+          .fontColor(THEME_ACCENT)
+          .fontWeight(FontWeight.Medium)
+      }
+      .width('100%')
+      .onClick(() => {
+        this.showStepMore = !this.showStepMore;
+      })
+
+      if (this.showStepMore) {
+        if (this.selectedStepParamLines.length > 0) {
+          Column({ space: 6 }) {
+            Text('动作参数')
+              .fontSize(DETAIL_TITLE_SIZE)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .fontWeight(FontWeight.Medium)
+
+            ForEach(this.selectedStepParamLines, (line: StepParamLine) => {
+              this.detailRow(line.label, line.value)
+            }, (line: StepParamLine) => `${line.label}:${line.value}`)
+          }
+          .padding(12)
+          .borderRadius(DETAIL_SECTION_RADIUS)
+          .backgroundColor(DETAIL_SECTION_BG)
+          .border({ width: 1, color: DETAIL_SECTION_BORDER })
+        }
+
+        if (step.output.trim().length > 0) {
+          this.detailSection('完整输出', step.output, THEME_TEXT_PRIMARY, 10)
+        }
+
+        if (step.error.trim().length > 0) {
+          this.detailSection('错误详情', step.error, THEME_ERROR, 10)
+        }
+
+        Column({ space: 6 }) {
+          this.detailRow('截图格式', step.image.format)
+          this.detailRow('截图大小', this.formatBytes(step.image.bytes))
+        }
+        .padding(12)
+        .borderRadius(DETAIL_SECTION_RADIUS)
+        .backgroundColor(DETAIL_SECTION_BG)
+        .border({ width: 1, color: DETAIL_SECTION_BORDER })
+      }
     }
     .width('100%')
+  }
+
+  @Builder
+  private statusCallout(title: string, content: string, background: string, borderColor: string, textColor: string): void {
+    Column({ space: 6 }) {
+      Text(title)
+        .fontSize(DETAIL_TITLE_SIZE)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+
+      Text(content.trim().length > 0 ? content : '-')
+        .fontSize(DETAIL_TEXT_SIZE)
+        .fontColor(textColor)
+        .lineHeight(18)
+        .maxLines(6)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .padding(12)
+    .borderRadius(DETAIL_SECTION_RADIUS)
+    .backgroundColor(background)
+    .border({ width: 1, color: borderColor })
   }
 
   @Builder
@@ -789,14 +904,30 @@ struct Index {
     return 'Setting';
   }
 
+  private isTaskDetailActive(): boolean {
+    return this.selectedTaskId.trim().length > 0 && this.selectedTask !== null;
+  }
+
   @Builder
   private taskTopBar(): void {
     Row() {
-      Row()
+      if (this.isTaskDetailActive()) {
+        Row() {
+          this.taskBarIconButton('chevron_left', THEME_TEXT_PRIMARY, () => {
+            this.closeTask();
+          })
+        }
         .width(TASK_BAR_ACTION_WIDTH)
         .height('100%')
+        .justifyContent(FlexAlign.Start)
+        .alignItems(VerticalAlign.Center)
+      } else {
+        Row()
+          .width(TASK_BAR_ACTION_WIDTH)
+          .height('100%')
+      }
 
-      Text('任务')
+      Text(this.isTaskDetailActive() ? '任务详情' : '任务')
         .fontSize(15)
         .fontFamily(FONT_DISPLAY)
         .fontColor(THEME_TEXT_PRIMARY)
@@ -804,18 +935,30 @@ struct Index {
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
-      Row({ space: 8 }) {
-        this.taskBarIconButton('arrow_clockwise', THEME_TEXT_PRIMARY, () => {
-          void this.refreshHistory();
-        })
-        this.taskBarIconButton('clean', THEME_ERROR, () => {
-          void this.clearAllHistory();
-        })
+      if (this.isTaskDetailActive()) {
+        Row({ space: 8 }) {
+          this.taskBarIconButton('trash', THEME_ERROR, () => {
+            void this.deleteSelectedTask();
+          })
+        }
+        .width(TASK_BAR_ACTION_WIDTH)
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+        .alignItems(VerticalAlign.Center)
+      } else {
+        Row({ space: 8 }) {
+          this.taskBarIconButton('arrow_clockwise', THEME_TEXT_PRIMARY, () => {
+            void this.refreshHistory();
+          })
+          this.taskBarIconButton('clean', THEME_ERROR, () => {
+            void this.clearAllHistory();
+          })
+        }
+        .width(TASK_BAR_ACTION_WIDTH)
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+        .alignItems(VerticalAlign.Center)
       }
-      .width(TASK_BAR_ACTION_WIDTH)
-      .height('100%')
-      .justifyContent(FlexAlign.End)
-      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height(TASK_BAR_HEIGHT)
@@ -849,7 +992,13 @@ struct Index {
     if (symbolName === 'arrow_clockwise') {
       return $r('sys.symbol.arrow_clockwise');
     }
-    return $r('sys.symbol.clean');
+    if (symbolName === 'clean') {
+      return $r('sys.symbol.clean');
+    }
+    if (symbolName === 'chevron_left') {
+      return $r('sys.symbol.chevron_left');
+    }
+    return $r('sys.symbol.trash');
   }
 
   @Builder
@@ -1088,37 +1237,227 @@ struct Index {
   }
 
   private resolveStepStatusLabel(status: string): string {
-    const trimmed = status.trim();
-    if (trimmed.length === 0) {
-      return '未知状态';
+    const normalized = status.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return '未知';
     }
-    return trimmed;
+    if (normalized === 'success' || normalized === 'ok') {
+      return '成功';
+    }
+    if (normalized === 'failed' || normalized === 'fail' || normalized === 'error') {
+      return '失败';
+    }
+    if (normalized === 'skipped' || normalized === 'skip') {
+      return '跳过';
+    }
+    return status.trim();
   }
 
   private resolveStepStatusBg(status: string): string {
-    const trimmed = status.trim();
-    if (trimmed.length === 0) {
+    const normalized = status.trim().toLowerCase();
+    if (normalized.length === 0) {
       return DETAIL_SECTION_BG;
     }
-    if (this.isTaskFinished(trimmed)) {
+    if (normalized === 'skipped' || normalized === 'skip') {
+      return DETAIL_TAG_BG;
+    }
+    if (this.isTaskFinished(normalized)) {
       return DETAIL_STATUS_OK_BG;
     }
-    if (this.isTaskFailed(trimmed)) {
+    if (this.isTaskFailed(normalized)) {
       return DETAIL_STATUS_FAIL_BG;
     }
     return DETAIL_SECTION_BG;
   }
 
   private resolveStepStatusText(status: string): string {
-    const trimmed = status.trim();
-    if (trimmed.length === 0) {
+    const normalized = status.trim().toLowerCase();
+    if (normalized.length === 0) {
       return THEME_TEXT_MUTED;
     }
-    if (this.isTaskFinished(trimmed)) {
+    if (normalized === 'skipped' || normalized === 'skip') {
+      return DETAIL_TAG_TEXT;
+    }
+    if (this.isTaskFinished(normalized)) {
       return DETAIL_STATUS_OK_TEXT;
     }
-    if (this.isTaskFailed(trimmed)) {
+    if (this.isTaskFailed(normalized)) {
       return DETAIL_STATUS_FAIL_TEXT;
+    }
+    return THEME_TEXT_PRIMARY;
+  }
+
+  private resolveActionDisplayName(actionName: string): string {
+    const normalized = actionName.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return '未知操作';
+    }
+    if (normalized === 'click' || normalized === 'tap') {
+      return '点击';
+    }
+    if (normalized === 'type') {
+      return '输入';
+    }
+    if (normalized === 'double_click') {
+      return '双击';
+    }
+    if (normalized === 'long_click') {
+      return '长按';
+    }
+    if (normalized === 'swipe') {
+      return '滑动';
+    }
+    if (normalized === 'wait') {
+      return '等待';
+    }
+    if (normalized === 'start_app' || normalized === 'open_app' || normalized === 'launch_app') {
+      return '打开应用';
+    }
+    if (normalized === 'press_back') {
+      return '返回';
+    }
+    if (normalized === 'press_enter') {
+      return '回车';
+    }
+    if (normalized === 'call_user') {
+      return '请求用户操作';
+    }
+    if (normalized === 'take_over') {
+      return '接管';
+    }
+    if (normalized === 'task_over') {
+      return '任务恢复';
+    }
+    if (normalized === 'interact') {
+      return '交互';
+    }
+    return actionName.trim();
+  }
+
+  private parseActionSnapshot(actionJson: string): AgentActionSnapshot | null {
+    const trimmed = actionJson.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as AgentActionSnapshot;
+      if (parsed && parsed.name && String(parsed.name).trim().length > 0) {
+        return parsed;
+      }
+      return null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  private buildStepParamLines(actionJson: string): Array<StepParamLine> {
+    const snapshot = this.parseActionSnapshot(actionJson);
+    if (!snapshot || !snapshot.parameters) {
+      return [];
+    }
+    const params = snapshot.parameters;
+    const lines: Array<StepParamLine> = [];
+    if (params.content && params.content.trim().length > 0) {
+      lines.push({ label: '内容', value: params.content });
+    }
+    if (params.point && params.point.length >= 2) {
+      lines.push({ label: '位置', value: this.formatNormPoint(params.point) });
+    }
+    if (params.start_point && params.start_point.length >= 2) {
+      lines.push({ label: '起点', value: this.formatNormPoint(params.start_point) });
+    }
+    if (params.end_point && params.end_point.length >= 2) {
+      lines.push({ label: '终点', value: this.formatNormPoint(params.end_point) });
+    }
+    if (Number.isFinite(params.duration_ms) && (params.duration_ms ?? 0) > 0) {
+      lines.push({ label: '时长', value: `${Math.floor(params.duration_ms ?? 0)} ms` });
+    }
+    if (Number.isFinite(params.seconds) && (params.seconds ?? 0) > 0) {
+      lines.push({ label: '等待', value: `${Math.floor(params.seconds ?? 0)} s` });
+    }
+    if (params.app && params.app.trim().length > 0) {
+      lines.push({ label: '应用', value: params.app });
+    }
+    if (params.options && params.options.length > 0) {
+      lines.push({ label: '选项', value: params.options.join(' / ') });
+    }
+    return lines;
+  }
+
+  private resolveStepParamPreviewLines(): Array<StepParamLine> {
+    if (this.selectedStepParamLines.length <= 3) {
+      return this.selectedStepParamLines;
+    }
+    return this.selectedStepParamLines.slice(0, 3);
+  }
+
+  private formatNormPoint(point: Array<number>): string {
+    const x = point.length > 0 ? point[0] : 0;
+    const y = point.length > 1 ? point[1] : 0;
+    const xPct = this.formatPercent(x);
+    const yPct = this.formatPercent(y);
+    return `${xPct}, ${yPct}`;
+  }
+
+  private formatPercent(value: number): string {
+    if (!Number.isFinite(value)) {
+      return '-';
+    }
+    const clamped = Math.min(1, Math.max(0, value));
+    return `${Math.round(clamped * 100)}%`;
+  }
+
+  private resolveStepResultSummary(step: HistoryStepMeta): string {
+    const normalized = step.resultStatus.trim().toLowerCase();
+    const output = step.output.trim();
+    const error = step.error.trim();
+    if (normalized === 'failed' || normalized === 'fail' || normalized === 'error') {
+      if (error.length > 0) {
+        return error;
+      }
+      return output.length > 0 ? output : '执行失败';
+    }
+    if (normalized === 'skipped' || normalized === 'skip') {
+      return output.length > 0 ? output : '已跳过';
+    }
+    if (normalized.length === 0) {
+      return output.length > 0 ? output : '-';
+    }
+    return output.length > 0 ? output : '执行成功';
+  }
+
+  private resolveStepResultBg(step: HistoryStepMeta): string {
+    const normalized = step.resultStatus.trim().toLowerCase();
+    if (normalized === 'failed' || normalized === 'fail' || normalized === 'error') {
+      return DETAIL_STATUS_FAIL_BG;
+    }
+    if (normalized === 'skipped' || normalized === 'skip') {
+      return DETAIL_SECTION_BG;
+    }
+    if (normalized.length === 0) {
+      return DETAIL_SECTION_BG;
+    }
+    return DETAIL_STATUS_OK_BG;
+  }
+
+  private resolveStepResultBorder(step: HistoryStepMeta): string {
+    const normalized = step.resultStatus.trim().toLowerCase();
+    if (normalized === 'failed' || normalized === 'fail' || normalized === 'error') {
+      return DETAIL_STATUS_FAIL_TEXT;
+    }
+    if (normalized === 'skipped' || normalized === 'skip') {
+      return DETAIL_SECTION_BORDER;
+    }
+    if (normalized.length === 0) {
+      return DETAIL_SECTION_BORDER;
+    }
+    return DETAIL_STATUS_OK_TEXT;
+  }
+
+  private resolveStepResultTextColor(step: HistoryStepMeta): string {
+    const normalized = step.resultStatus.trim().toLowerCase();
+    if (normalized === 'failed' || normalized === 'fail' || normalized === 'error') {
+      return THEME_ERROR;
     }
     return THEME_TEXT_PRIMARY;
   }
@@ -1340,14 +1679,16 @@ struct Index {
           if (this.selectedSteps.length > 0) {
             const target = this.selectedSteps.find((step) => step.stepIndex === this.selectedStepIndex);
             await this.selectStep(target ?? this.selectedSteps[0]);
-          } else {
-            this.selectedStep = null;
-            this.selectedStepPixelMap = null;
-            this.selectedStepIndex = 0;
-            this.selectedStepPosition = 0;
-          }
-        }
-      }
+	          } else {
+	            this.selectedStep = null;
+	            this.selectedStepPixelMap = null;
+	            this.selectedStepParamLines = [];
+	            this.showStepMore = false;
+	            this.selectedStepIndex = 0;
+	            this.selectedStepPosition = 0;
+	          }
+	        }
+	      }
     } catch (e) {
       this.historyError = `加载历史失败: ${String(e)}`;
     } finally {
@@ -1361,6 +1702,9 @@ struct Index {
     this.selectedStepPosition = 0;
     this.selectedStep = null;
     this.selectedStepPixelMap = null;
+    this.selectedStepParamLines = [];
+    this.showTaskMeta = false;
+    this.showStepMore = false;
     try {
       const ctx = this.getUiContext();
       const store = TaskHistoryStore.getInstance();
@@ -1386,6 +1730,9 @@ struct Index {
     this.selectedStepPosition = 0;
     this.selectedStep = null;
     this.selectedStepPixelMap = null;
+    this.selectedStepParamLines = [];
+    this.showTaskMeta = false;
+    this.showStepMore = false;
   }
 
   private async selectStep(step: HistoryStepMeta): Promise<void> {
@@ -1393,6 +1740,8 @@ struct Index {
     this.selectedStepPosition = this.findStepPosition(step.stepIndex);
     this.selectedStep = step;
     this.selectedStepPixelMap = null;
+    this.selectedStepParamLines = this.buildStepParamLines(step.actionJson);
+    this.showStepMore = false;
     try {
       const ctx = this.getUiContext();
       const store = TaskHistoryStore.getInstance();
@@ -1468,6 +1817,18 @@ struct Index {
       return date.toLocaleString();
     } catch (_e) {
       return String(ms);
+    }
+  }
+
+  private formatTimeShort(ms: number): string {
+    if (ms <= 0) {
+      return '-';
+    }
+    try {
+      const date = new Date(ms);
+      return date.toLocaleTimeString();
+    } catch (_e) {
+      return this.formatTime(ms);
     }
   }
 }
