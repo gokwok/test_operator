@@ -49,13 +49,6 @@ const DETAIL_TITLE_SIZE: number = 13;
 const DETAIL_TEXT_SIZE: number = 11;
 const STEP_IMAGE_HEIGHT: number = 400;
 
-type JsonPrimitive = string | number | boolean | null;
-type JsonValue = JsonPrimitive | JsonObject | JsonArray;
-interface JsonObject {
-  [key: string]: JsonValue;
-}
-type JsonArray = JsonValue[];
-
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
 
@@ -1061,7 +1054,7 @@ struct Index {
       return '-';
     }
     try {
-      const parsed = JSON.parse(trimmed) as JsonValue;
+      const parsed = JSON.parse(trimmed) as unknown;
       return JSON.stringify(parsed, null, 2);
     } catch (e) {
       return trimmed;
