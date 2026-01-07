@@ -111,11 +111,14 @@ struct Index {
   @State selectedStep: HistoryStepMeta | null = null;
   @State selectedStepPixelMap: image.PixelMap | null = null;
   @State selectedStepParamLines: Array<StepParamLine> = [];
+  @State stepPixelMaps: Array<image.PixelMap | null> = [];
+  @State stepPixelMapLoading: Array<boolean> = [];
   @State showTaskMeta: boolean = false;
   @State showStepMore: boolean = false;
   @State private viewportHeight: number = 0;
 
   private stepPixelMapRequestSeq: number = 0;
+  private stepImageCacheSeq: number = 0;
 
   aboutToAppear(): void {
     void this.loadSettings();
@@ -479,10 +482,6 @@ struct Index {
           .fontWeight(FontWeight.Bold)
 
         this.detailTag(`步骤 ${this.resolveStepSwiperIndex() + 1}/${this.selectedSteps.length}`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
-
-        if (this.selectedStep) {
-          this.detailTag(this.resolveStepStatusLabel(this.selectedStep.resultStatus), this.resolveStepStatusText(this.selectedStep.resultStatus), this.resolveStepStatusBg(this.selectedStep.resultStatus))
-        }
       }
 
       Text('左右滑动查看每一步的截图与详情')
@@ -497,14 +496,10 @@ struct Index {
       .loop(false)
       .indicator(true)
       .index(this.resolveStepSwiperIndex())
-      .height(STEP_SWIPER_HEIGHT)
       .onChange((index: number) => {
         this.onStepChange(index);
       })
-
-      if (this.selectedStep) {
-        this.stepDetailPanel(this.selectedStep);
-      }
+      .height(STEP_SWIPER_HEIGHT)
     }
     .width('100%')
   }
@@ -514,15 +509,29 @@ struct Index {
     Column({ space: 10 }) {
       this.stepScreenshotCard(step, position);
 
-      Text(step.description.trim().length > 0 ? step.description : this.resolveActionDisplayName(step.actionName))
+      Row({ space: 8 }) {
+        Text(`第 ${position + 1} 步`)
+          .fontSize(13)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Bold)
+
+        this.detailTag(this.resolveActionDisplayName(step.actionName), DETAIL_TAG_TEXT, DETAIL_TAG_BG)
+      }
+
+      Text(step.description.trim().length > 0 ? step.description : '暂无步骤说明')
         .fontSize(12)
         .fontColor(THEME_TEXT_PRIMARY)
         .lineHeight(18)
-        .maxLines(2)
+        .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      this.stepParamSection(step.actionJson)
     }
     .width('100%')
     .padding(14)
+    .onAppear(() => {
+      this.ensureStepPixelMapLoaded(step.taskId, step.stepIndex, position);
+    })
   }
 
   @Builder
@@ -533,7 +542,7 @@ struct Index {
 
         Column() {
           Row({ space: 8 }) {
-            this.detailTag(`#${step.stepIndex}`, THEME_TEXT_PRIMARY, 'rgba(255, 255, 255, 0.86)')
+            this.detailTag(`步骤 ${position + 1}/${this.selectedSteps.length}`, THEME_TEXT_PRIMARY, 'rgba(255, 255, 255, 0.86)')
             Row()
               .layoutWeight(1)
             this.detailTag(
@@ -571,15 +580,19 @@ struct Index {
 
   @Builder
   private stepScreenshot(step: HistoryStepMeta, position: number): void {
-    if (this.isStepPositionActive(position) && this.selectedStepPixelMap) {
-      Image(this.selectedStepPixelMap)
+    const pixelMap =
+      position >= 0 && position < this.stepPixelMaps.length ? this.stepPixelMaps[position] : null;
+    const loading =
+      position >= 0 && position < this.stepPixelMapLoading.length ? this.stepPixelMapLoading[position] : false;
+    if (pixelMap) {
+      Image(pixelMap)
         .width('100%')
         .height('100%')
         .backgroundColor(THEME_CARD)
         .objectFit(ImageFit.Contain)
     } else {
       Row() {
-        Text('正在加载截图…')
+        Text(loading ? '正在加载截图…' : '暂无截图')
           .fontSize(11)
           .fontColor(THEME_TEXT_MUTED)
       }
@@ -1405,8 +1418,10 @@ struct Index {
     if (!Number.isFinite(value)) {
       return '-';
     }
-    const clamped = Math.min(1, Math.max(0, value));
-    return `${Math.round(clamped * 100)}%`;
+    if (value >= 0 && value <= 1) {
+      return `${Math.round(value * 100)}%`;
+    }
+    return `${Math.round(value)}px`;
   }
 
   private resolveStepResultSummary(step: HistoryStepMeta): string {
@@ -1504,6 +1519,7 @@ struct Index {
     this.selectedStepPixelMap = null;
     this.selectedStepParamLines = this.buildStepParamLines(step.actionJson);
     this.showStepMore = false;
+    this.ensureStepPixelMapLoaded(step.taskId, step.stepIndex, clamped);
     void this.loadStepPixelMap(step.taskId, step.stepIndex);
   }
 
@@ -1529,6 +1545,106 @@ struct Index {
 
   private isStepPositionActive(position: number): boolean {
     return position === this.selectedStepPosition;
+  }
+
+  @Builder
+  private stepParamSection(actionJson: string): void {
+    const lines: Array<StepParamLine> = this.buildStepParamLines(actionJson);
+    if (lines.length > 0) {
+      Column({ space: 6 }) {
+        Text('关键参数')
+          .fontSize(DETAIL_TITLE_SIZE)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+
+        ForEach(lines, (line: StepParamLine) => {
+          this.detailRow(line.label, line.value)
+        }, (line: StepParamLine) => line.label)
+      }
+      .padding(12)
+      .borderRadius(DETAIL_SECTION_RADIUS)
+      .backgroundColor(DETAIL_SECTION_BG)
+      .border({ width: 1, color: DETAIL_SECTION_BORDER })
+    }
+  }
+
+  private resetStepScreenshotCache(length: number): void {
+    this.stepImageCacheSeq += 1;
+    const pixelMaps: Array<image.PixelMap | null> = [];
+    const loading: Array<boolean> = [];
+    for (let i = 0; i < length; i += 1) {
+      pixelMaps.push(null);
+      loading.push(false);
+    }
+    this.stepPixelMaps = pixelMaps;
+    this.stepPixelMapLoading = loading;
+  }
+
+  private ensureStepPixelMapLoaded(taskId: string, stepIndex: number, position: number): void {
+    if (position < 0 || position >= this.selectedSteps.length) {
+      return;
+    }
+    if (position < this.stepPixelMaps.length && this.stepPixelMaps[position]) {
+      return;
+    }
+    if (position < this.stepPixelMapLoading.length && this.stepPixelMapLoading[position]) {
+      return;
+    }
+
+    const nextLoading = this.stepPixelMapLoading.slice();
+    while (nextLoading.length < this.selectedSteps.length) {
+      nextLoading.push(false);
+    }
+    nextLoading[position] = true;
+    this.stepPixelMapLoading = nextLoading;
+
+    const requestSeq = this.stepImageCacheSeq;
+    void this.loadStepPixelMapForPosition(requestSeq, taskId, stepIndex, position);
+  }
+
+  private async loadStepPixelMapForPosition(
+    requestSeq: number,
+    taskId: string,
+    stepIndex: number,
+    position: number
+  ): Promise<void> {
+    try {
+      const ctx = this.getUiContext();
+      const store = TaskHistoryStore.getInstance();
+      store.init(ctx);
+      const pixelMap = await store.getStepPixelMap(taskId, stepIndex);
+      if (requestSeq !== this.stepImageCacheSeq) {
+        return;
+      }
+      if (this.selectedTaskId !== taskId) {
+        return;
+      }
+      if (position < 0 || position >= this.selectedSteps.length) {
+        return;
+      }
+      const step = this.selectedSteps[position];
+      if (!step || step.stepIndex !== stepIndex) {
+        return;
+      }
+
+      const next = this.stepPixelMaps.slice();
+      while (next.length < this.selectedSteps.length) {
+        next.push(null);
+      }
+      next[position] = pixelMap;
+      this.stepPixelMaps = next;
+    } catch (_e) {
+      // ignore
+    } finally {
+      if (requestSeq !== this.stepImageCacheSeq) {
+        return;
+      }
+      const nextLoading = this.stepPixelMapLoading.slice();
+      if (position >= 0 && position < nextLoading.length) {
+        nextLoading[position] = false;
+        this.stepPixelMapLoading = nextLoading;
+      }
+    }
   }
 
   private findStepPosition(stepIndex: number): number {
@@ -1724,19 +1840,20 @@ struct Index {
         if (refreshed) {
           this.selectedTask = refreshed;
           this.selectedSteps = (await store.listSteps(this.selectedTaskId)).slice(0, DEFAULT_STEP_LIST_LIMIT);
+          this.resetStepScreenshotCache(this.selectedSteps.length);
           if (this.selectedSteps.length > 0) {
             const target = this.selectedSteps.find((step) => step.stepIndex === this.selectedStepIndex);
             await this.selectStep(target ?? this.selectedSteps[0]);
-	          } else {
-	            this.selectedStep = null;
-	            this.selectedStepPixelMap = null;
-	            this.selectedStepParamLines = [];
-	            this.showStepMore = false;
-	            this.selectedStepIndex = 0;
-	            this.selectedStepPosition = 0;
-	          }
-	        }
-	      }
+		          } else {
+		            this.selectedStep = null;
+		            this.selectedStepPixelMap = null;
+		            this.selectedStepParamLines = [];
+		            this.showStepMore = false;
+		            this.selectedStepIndex = 0;
+		            this.selectedStepPosition = 0;
+		          }
+		        }
+		      }
     } catch (e) {
       this.historyError = `加载历史失败: ${String(e)}`;
     } finally {
@@ -1751,6 +1868,7 @@ struct Index {
     this.selectedStep = null;
     this.selectedStepPixelMap = null;
     this.selectedStepParamLines = [];
+    this.resetStepScreenshotCache(0);
     this.showTaskMeta = false;
     this.showStepMore = false;
     try {
@@ -1760,6 +1878,7 @@ struct Index {
       const task = await store.getTask(taskId);
       this.selectedTask = task;
       this.selectedSteps = task ? (await store.listSteps(taskId)).slice(0, DEFAULT_STEP_LIST_LIMIT) : [];
+      this.resetStepScreenshotCache(this.selectedSteps.length);
       if (this.selectedSteps.length > 0) {
         await this.selectStep(this.selectedSteps[0]);
       }
@@ -1767,6 +1886,7 @@ struct Index {
       this.historyError = `加载任务详情失败: ${String(e)}`;
       this.selectedTask = null;
       this.selectedSteps = [];
+      this.resetStepScreenshotCache(0);
     }
   }
 
@@ -1779,6 +1899,7 @@ struct Index {
     this.selectedStep = null;
     this.selectedStepPixelMap = null;
     this.selectedStepParamLines = [];
+    this.resetStepScreenshotCache(0);
     this.showTaskMeta = false;
     this.showStepMore = false;
   }
