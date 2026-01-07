@@ -48,6 +48,7 @@ const DETAIL_SECTION_BORDER: string = '#E8E1F2';
 const DETAIL_TITLE_SIZE: number = 13;
 const DETAIL_TEXT_SIZE: number = 11;
 const STEP_IMAGE_HEIGHT: number = 400;
+type JsonLike = object | string | number | boolean | null;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -1054,7 +1055,7 @@ struct Index {
       return '-';
     }
     try {
-      const parsed = JSON.parse(trimmed) as unknown;
+      const parsed: JsonLike = JSON.parse(trimmed) as JsonLike;
       return JSON.stringify(parsed, null, 2);
     } catch (e) {
       return trimmed;
