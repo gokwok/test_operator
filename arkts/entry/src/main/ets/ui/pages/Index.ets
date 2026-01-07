@@ -6,6 +6,7 @@ import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistenc
 import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
+import { ForegroundAppState } from '../../features/agent_controller/state_collector/ForegroundAppState';
 
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;
@@ -54,6 +55,7 @@ struct Index {
   @State settingsInfo: string = '';
   @State wallpaperInfo: string = '';
   @State wallpaperPixelMap: image.PixelMap | null = null;
+  @State foregroundAppInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -203,10 +205,27 @@ struct Index {
             .onClick(() => {
               void this.loadWallpaper();
             })
+
+          Button('前台应用')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.loadForegroundApp();
+            })
         }
 
         if (this.wallpaperInfo.length > 0) {
           Text(this.wallpaperInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.foregroundAppInfo.length > 0) {
+          Text(this.foregroundAppInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -883,6 +902,20 @@ struct Index {
     } catch (e) {
       this.wallpaperInfo = `壁纸获取失败: ${String(e)}`;
       this.wallpaperPixelMap = null;
+    }
+  }
+
+  private async loadForegroundApp(): Promise<void> {
+    this.foregroundAppInfo = '正在获取前台应用...';
+    try {
+      const bundleName = await ForegroundAppState.getForegroundAppBundleName();
+      if (bundleName.length > 0) {
+        this.foregroundAppInfo = `前台应用: ${bundleName}`;
+      } else {
+        this.foregroundAppInfo = '未检测到前台应用';
+      }
+    } catch (e) {
+      this.foregroundAppInfo = `获取前台应用失败: ${String(e)}`;
     }
   }
 

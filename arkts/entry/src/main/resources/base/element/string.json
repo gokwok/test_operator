@@ -27,6 +27,10 @@
     {
       "name": "permission_get_wallpaper_reason",
       "value": "Read system wallpaper for debugging."
+    },
+    {
+      "name": "permission_get_running_info_reason",
+      "value": "Read foreground app status for task execution."
     }
   ]
 }

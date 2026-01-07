@@ -38,6 +38,18 @@
         "name": "ohos.permission.GET_BUNDLE_RESOURCES"
       },
       {
+        "name": "ohos.permission.GET_RUNNING_INFO",
+        "reason": "$string:permission_get_running_info_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility",
+            "AgentServiceExtAbility",
+            "AgentSpaceViewerAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
         "name": "ohos.permission.GET_INSTALLED_BUNDLE_LIST",
         "reason": "$string:permission_get_installed_bundle_list_reason",
         "usedScene": {

@@ -1,5 +1,6 @@
 import type { DeviceState } from '../types';
 import { ToolKit } from '../toolkit/ToolKit';
+import { ForegroundAppState } from './ForegroundAppState';
 
 export class StateCollector {
   private toolKit: ToolKit;
@@ -10,6 +11,10 @@ export class StateCollector {
 
   async screenshotBase64(): Promise<string> {
     return await this.toolKit.screenshotBase64();
+  }
+
+  async getForegroundAppBundleName(): Promise<string> {
+    return await ForegroundAppState.getForegroundAppBundleName();
   }
 
   buildState(
