@@ -580,19 +580,15 @@ struct Index {
 
   @Builder
   private stepScreenshot(step: HistoryStepMeta, position: number): void {
-    const pixelMap =
-      position >= 0 && position < this.stepPixelMaps.length ? this.stepPixelMaps[position] : null;
-    const loading =
-      position >= 0 && position < this.stepPixelMapLoading.length ? this.stepPixelMapLoading[position] : false;
-    if (pixelMap) {
-      Image(pixelMap)
+    if (this.resolveStepPixelMap(position) !== null) {
+      Image(this.resolveStepPixelMap(position) as image.PixelMap)
         .width('100%')
         .height('100%')
         .backgroundColor(THEME_CARD)
         .objectFit(ImageFit.Contain)
     } else {
       Row() {
-        Text(loading ? '正在加载截图…' : '暂无截图')
+        Text(this.resolveStepPixelMapLoading(position) ? '正在加载截图…' : '暂无截图')
           .fontSize(11)
           .fontColor(THEME_TEXT_MUTED)
       }
@@ -1549,15 +1545,14 @@ struct Index {
 
   @Builder
   private stepParamSection(actionJson: string): void {
-    const lines: Array<StepParamLine> = this.buildStepParamLines(actionJson);
-    if (lines.length > 0) {
+    if (this.resolveStepParamLines(actionJson).length > 0) {
       Column({ space: 6 }) {
         Text('关键参数')
           .fontSize(DETAIL_TITLE_SIZE)
           .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
 
-        ForEach(lines, (line: StepParamLine) => {
+        ForEach(this.resolveStepParamLines(actionJson), (line: StepParamLine) => {
           this.detailRow(line.label, line.value)
         }, (line: StepParamLine) => line.label)
       }
@@ -1566,6 +1561,24 @@ struct Index {
       .backgroundColor(DETAIL_SECTION_BG)
       .border({ width: 1, color: DETAIL_SECTION_BORDER })
     }
+  }
+
+  private resolveStepParamLines(actionJson: string): Array<StepParamLine> {
+    return this.buildStepParamLines(actionJson);
+  }
+
+  private resolveStepPixelMap(position: number): image.PixelMap | null {
+    if (position < 0 || position >= this.stepPixelMaps.length) {
+      return null;
+    }
+    return this.stepPixelMaps[position] ?? null;
+  }
+
+  private resolveStepPixelMapLoading(position: number): boolean {
+    if (position < 0 || position >= this.stepPixelMapLoading.length) {
+      return false;
+    }
+    return this.stepPixelMapLoading[position] ?? false;
   }
 
   private resetStepScreenshotCache(length: number): void {
