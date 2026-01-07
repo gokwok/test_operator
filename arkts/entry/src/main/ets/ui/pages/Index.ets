@@ -497,7 +497,8 @@ struct Index {
     .height('100%')
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Center)
-    .justifyContent(FlexAlign.Center)
+    .justifyContent(FlexAlign.Start)
+    .padding({ top: 8 })
     .backgroundColor('transparent')
     .onClick(() => {
       this.activeTabIndex = index;
@@ -542,7 +543,7 @@ struct Index {
         .fontSize(15)
         .fontFamily(FONT_DISPLAY)
         .fontColor(THEME_TEXT_PRIMARY)
-        .fontWeight(FontWeight.Medium)
+        .fontWeight(FontWeight.Bold)
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
@@ -562,6 +563,8 @@ struct Index {
     .width('100%')
     .height(TASK_BAR_HEIGHT)
     .backgroundColor(Color.White)
+    .alignItems(VerticalAlign.Bottom)
+    .padding({ top: 6, bottom: 4 })
   }
 
   @Builder

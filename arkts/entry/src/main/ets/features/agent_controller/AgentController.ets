@@ -33,10 +33,12 @@ import { LiveViewPresenter, LiveViewPresenterContext } from './live_view/LiveVie
 import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
 import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
+import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
+const VIEWER_ABILITY_NAME: string = 'AgentSpaceViewerAbility';
 const SELF_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const LIVE_VIEW_AUTO_STOP_DELAY_MS: number = 30000;
 const EFFICIENCY_RESOURCE_TIMEOUT_MS: number = 60 * 60 * 1000;
@@ -70,6 +72,7 @@ export class AgentController {
   private liveViewCancelBound: boolean = false;
   private liveViewSelfStopping: boolean = false;
   private viewerActive: boolean = false;
+  private viewerOpening: boolean = false;
   private pendingAgentSpaceDestroy: boolean = false;
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
   private agentSpaceOp: Promise<void> = Promise.resolve();
@@ -254,6 +257,7 @@ export class AgentController {
     const target: AppTarget = { bundleName, abilityName };
     this.lastLaunchTarget = target;
     await this.requireToolKit().launchApp(target);
+    await this.openViewerIfForegroundMatch(target);
   }
 
   async clickNorm(xNorm: number, yNorm: number): Promise<void> {
@@ -524,6 +528,10 @@ export class AgentController {
       const appName = this.resolveAppName(action);
       if (appName.length > 0) {
         await this.updateLiveViewIcon(appName);
+        const target = this.resolveAppTarget(appName);
+        if (target) {
+          await this.openViewerIfForegroundMatch(target);
+        }
       }
       return;
     }
@@ -834,6 +842,35 @@ export class AgentController {
     }
     if (this.liveViewPhase === 'running') {
       await this.publishRunningLiveView();
+    }
+  }
+
+  private async openViewerIfForegroundMatch(target: AppTarget): Promise<void> {
+    if (this.viewerActive || this.viewerOpening) {
+      return;
+    }
+    const foregroundBundle = await ForegroundAppState.getForegroundAppBundleName();
+    if (foregroundBundle.length === 0) {
+      return;
+    }
+    if (foregroundBundle !== target.bundleName) {
+      return;
+    }
+    const invoker = this.startAbilityInvoker;
+    if (!invoker) {
+      return;
+    }
+    const want: Want = {
+      bundleName: SELF_BUNDLE_NAME,
+      abilityName: VIEWER_ABILITY_NAME,
+    };
+    this.viewerOpening = true;
+    try {
+      await invoker(want);
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'open viewer failed: %{public}s', String(e));
+    } finally {
+      this.viewerOpening = false;
     }
   }
 
