@@ -38,6 +38,7 @@ const TASK_CARD_SIDE_MARGIN: number = 12;
 const TASK_CARD_PADDING_X: number = 12;
 const TASK_CARD_PADDING_TOP: number = 12;
 const TASK_CARD_PADDING_BOTTOM: number = 10;
+const NAV_SAFE_SPACER: number = 12;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -268,6 +269,8 @@ struct Index {
           } else {
             this.taskListView();
           }
+
+          this.navSpacer();
         }
         .width('100%')
         .padding({ left: 0, right: 0, top: 12, bottom: 0 })
@@ -372,6 +375,14 @@ struct Index {
       .width('100%')
       .padding({ top: 8 })
     }
+  }
+
+  @Builder
+  private navSpacer(): void {
+    Row()
+      .width('100%')
+      .height(NAV_HEIGHT + NAV_SAFE_SPACER)
+      .backgroundColor('transparent')
   }
 
   @Builder
