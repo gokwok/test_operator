@@ -23,7 +23,7 @@ const THEME_NAV_ACTIVE_BG: string = '#E9EFFF';
 const THEME_ERROR: string = '#D94848';
 const FONT_DISPLAY: string = 'HarmonyOS Sans SC';
 const SAFE_TOP_PADDING: number = 24;
-const NAV_HEIGHT: number = 84;
+const NAV_HEIGHT: number = 96;
 const NAV_BLUR_RADIUS: number = 18;
 const TASK_BAR_HEIGHT: number = 48;
 const TASK_BAR_ICON_SIZE: number = 18;
@@ -498,7 +498,7 @@ struct Index {
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Center)
     .justifyContent(FlexAlign.Start)
-    .padding({ top: 8 })
+    .padding({ top: 4, bottom: 16 })
     .backgroundColor('transparent')
     .onClick(() => {
       this.activeTabIndex = index;
@@ -563,8 +563,8 @@ struct Index {
     .width('100%')
     .height(TASK_BAR_HEIGHT)
     .backgroundColor(Color.White)
-    .alignItems(VerticalAlign.Bottom)
-    .padding({ top: 6, bottom: 4 })
+    .alignItems(VerticalAlign.Center)
+    .padding({ top: 10, bottom: 2 })
   }
 
   @Builder
