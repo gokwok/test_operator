@@ -47,7 +47,17 @@ const DETAIL_SECTION_BG: string = '#F6F7FB';
 const DETAIL_SECTION_BORDER: string = '#E8E1F2';
 const DETAIL_TITLE_SIZE: number = 13;
 const DETAIL_TEXT_SIZE: number = 11;
-const STEP_IMAGE_HEIGHT: number = 400;
+const DETAIL_HINT_TEXT: string = '#9B93A8';
+const DETAIL_TAG_BG: string = '#EEF2FF';
+const DETAIL_TAG_TEXT: string = '#3D6AE8';
+const DETAIL_STATUS_OK_BG: string = '#E3F4EA';
+const DETAIL_STATUS_OK_TEXT: string = '#2F7A4E';
+const DETAIL_STATUS_FAIL_BG: string = '#FBE6E6';
+const DETAIL_STATUS_FAIL_TEXT: string = '#B04A4A';
+const DETAIL_CARD_RADIUS: number = 18;
+const DETAIL_SECTION_RADIUS: number = 12;
+const STEP_IMAGE_HEIGHT: number = 460;
+const STEP_SWIPER_HEIGHT: number = 540;
 type JsonLike = object | string | number | boolean | null;
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
@@ -369,15 +379,10 @@ struct Index {
   private taskSummaryCard(task: HistoryTaskMeta): void {
     Column({ space: 10 }) {
       Row({ space: 8 }) {
-        Text(`${this.resolveTaskStatusLabel(task.status)} / ${this.resolveTaskDuration(task)}`)
-          .fontSize(12)
-          .fontColor(this.resolveTaskBorderColor(task.status))
-          .fontWeight(FontWeight.Bold)
+        this.detailTag(this.resolveTaskStatusLabel(task.status), this.resolveStatusTagText(task.status), this.resolveStatusTagBg(task.status))
+        this.detailTag(this.resolveTaskDuration(task), THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
+        Row()
           .layoutWeight(1)
-
-        Text(task.status)
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
       }
 
       Text(task.taskText)
@@ -387,18 +392,48 @@ struct Index {
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      this.detailRow('执行结果', this.resolveTaskResult(task))
-      this.detailRow('任务ID', task.taskId)
-      this.detailRow('Session', task.sessionId)
-      this.detailRow('云端', task.cloudEndpoint)
-      this.detailRow('wait_ms', String(task.waitAfterActionMs))
-      this.detailRow('步骤数', String(task.stepCount))
-      this.detailRow('开始时间', this.formatTime(task.startAtMs))
-      this.detailRow('结束时间', task.endAtMs > 0 ? this.formatTime(task.endAtMs) : '-')
+      this.detailSection('执行结果', this.resolveTaskResult(task), THEME_TEXT_PRIMARY, 6)
+
+      Row({ space: 8 }) {
+        this.detailTag(`步骤 ${task.stepCount}`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
+        this.detailTag(`wait ${task.waitAfterActionMs}ms`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
+      }
+
+      Row({ space: 12 }) {
+        Column({ space: 4 }) {
+          Text('开始时间')
+            .fontSize(10)
+            .fontColor(THEME_TEXT_MUTED)
+          Text(this.formatTime(task.startAtMs))
+            .fontSize(11)
+            .fontColor(THEME_TEXT_PRIMARY)
+        }
+        .layoutWeight(1)
+
+        Column({ space: 4 }) {
+          Text('结束时间')
+            .fontSize(10)
+            .fontColor(THEME_TEXT_MUTED)
+          Text(task.endAtMs > 0 ? this.formatTime(task.endAtMs) : '-')
+            .fontSize(11)
+            .fontColor(THEME_TEXT_PRIMARY)
+        }
+        .layoutWeight(1)
+      }
+
+      Column({ space: 6 }) {
+        this.detailRow('任务ID', task.taskId)
+        this.detailRow('Session', task.sessionId)
+        this.detailRow('云端', task.cloudEndpoint)
+      }
+      .padding(12)
+      .borderRadius(DETAIL_SECTION_RADIUS)
+      .backgroundColor(DETAIL_SECTION_BG)
+      .border({ width: 1, color: DETAIL_SECTION_BORDER })
     }
     .width('100%')
     .padding(14)
-    .borderRadius(16)
+    .borderRadius(DETAIL_CARD_RADIUS)
     .backgroundColor(DETAIL_CARD_BG)
     .border({ width: 1, color: DETAIL_CARD_BORDER })
     .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.06)', offsetX: 0, offsetY: 6 })
@@ -416,6 +451,7 @@ struct Index {
         .fontSize(DETAIL_TEXT_SIZE)
         .fontColor(valueColor)
         .layoutWeight(1)
+        .lineHeight(16)
     }
   }
 
@@ -423,95 +459,65 @@ struct Index {
   private stepSwiperView(): void {
     Column({ space: 10 }) {
       Row({ space: 8 }) {
-        Text(`步骤 ${this.resolveStepSwiperIndex() + 1}/${this.selectedSteps.length}`)
+        Text('步骤记录')
           .fontSize(DETAIL_TITLE_SIZE)
           .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Bold)
 
-        Text(this.selectedStep ? this.selectedStep.actionName : '')
-          .fontSize(12)
-          .fontColor(THEME_TEXT_MUTED)
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        this.detailTag(`步骤 ${this.resolveStepSwiperIndex() + 1}/${this.selectedSteps.length}`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
 
-        Text(this.selectedStep && this.selectedStep.resultStatus.trim().length > 0 ? this.selectedStep.resultStatus : '-')
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
+        if (this.selectedStep) {
+          this.detailTag(this.resolveStepStatusLabel(this.selectedStep.resultStatus), this.resolveStepStatusText(this.selectedStep.resultStatus), this.resolveStepStatusBg(this.selectedStep.resultStatus))
+        }
       }
+
+      Text('左右滑动查看每一步的截图与详情')
+        .fontSize(10)
+        .fontColor(DETAIL_HINT_TEXT)
 
       Swiper() {
         ForEach(this.selectedSteps, (step: HistoryStepMeta, index: number) => {
-          this.stepSlide(step, index);
+          this.stepScreenshotSlide(step, index);
         }, (step: HistoryStepMeta) => `${step.taskId}:${step.stepIndex}`)
       }
       .loop(false)
-      .indicator(false)
+      .indicator(true)
       .index(this.resolveStepSwiperIndex())
-      .height(STEP_IMAGE_HEIGHT + 320)
+      .height(STEP_SWIPER_HEIGHT)
       .onChange((index: number) => {
         this.onStepChange(index);
       })
+
+      if (this.selectedStep) {
+        this.stepDetailPanel(this.selectedStep);
+      }
     }
     .width('100%')
   }
 
   @Builder
-  private stepSlide(step: HistoryStepMeta, position: number): void {
+  private stepScreenshotSlide(step: HistoryStepMeta, position: number): void {
     Column({ space: 12 }) {
       Row({ space: 8 }) {
-        Text(`#${step.stepIndex}`)
-          .fontSize(12)
-          .fontColor(THEME_TEXT_MUTED)
-
+        this.detailTag(`#${step.stepIndex}`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
         Text(this.formatTime(step.tsMs))
           .fontSize(11)
           .fontColor(THEME_TEXT_MUTED)
           .layoutWeight(1)
-
-        Text(step.resultStatus.trim().length > 0 ? step.resultStatus : '-')
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
       }
 
       Text(step.actionName.trim().length > 0 ? step.actionName : '未记录动作名')
         .fontSize(15)
         .fontColor(THEME_TEXT_PRIMARY)
         .fontWeight(FontWeight.Bold)
-        .maxLines(2)
+        .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      if (step.description.trim().length > 0) {
-        Text(step.description)
-          .fontSize(12)
-          .fontColor(THEME_TEXT_PRIMARY)
-          .maxLines(3)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-
       this.stepScreenshot(step, position);
-
-      this.detailSection('动作参数', this.formatActionJson(step.actionJson), THEME_TEXT_PRIMARY, 10)
-      this.detailSection('输出结果', step.output, THEME_TEXT_PRIMARY, 8)
-
-      if (step.error.trim().length > 0) {
-        this.detailSection('错误信息', step.error, THEME_ERROR, 6)
-      }
-
-      Column({ space: 6 }) {
-        this.detailRow('截图格式', step.image.format)
-        this.detailRow('截图大小', this.formatBytes(step.image.bytes))
-        this.detailRow('分片大小', `${step.image.chunkSize} B`)
-        this.detailRow('分片数量', String(step.image.chunkCount))
-      }
-      .padding(12)
-      .borderRadius(12)
-      .backgroundColor(DETAIL_SECTION_BG)
-      .border({ width: 1, color: DETAIL_SECTION_BORDER })
     }
     .width('100%')
     .padding(14)
-    .borderRadius(18)
+    .borderRadius(DETAIL_CARD_RADIUS)
     .backgroundColor(DETAIL_CARD_BG)
     .border({ width: 1, color: DETAIL_CARD_BORDER })
     .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.06)', offsetX: 0, offsetY: 6 })
@@ -520,16 +526,11 @@ struct Index {
   @Builder
   private stepScreenshot(step: HistoryStepMeta, position: number): void {
     Column({ space: 6 }) {
-      Text('截图')
-        .fontSize(DETAIL_TITLE_SIZE)
-        .fontColor(THEME_TEXT_PRIMARY)
-        .fontWeight(FontWeight.Medium)
-
       if (this.isStepPositionActive(position) && this.selectedStepPixelMap) {
         Image(this.selectedStepPixelMap)
           .width('100%')
           .height(STEP_IMAGE_HEIGHT)
-          .borderRadius(16)
+          .borderRadius(DETAIL_CARD_RADIUS)
           .backgroundColor(THEME_CARD)
           .objectFit(ImageFit.Contain)
       } else {
@@ -540,13 +541,60 @@ struct Index {
         }
         .width('100%')
         .height(STEP_IMAGE_HEIGHT)
-        .borderRadius(16)
+        .borderRadius(DETAIL_CARD_RADIUS)
         .backgroundColor(DETAIL_SECTION_BG)
         .border({ width: 1, color: DETAIL_SECTION_BORDER })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
       }
     }
+  }
+
+  @Builder
+  private stepDetailPanel(step: HistoryStepMeta): void {
+    Column({ space: 12 }) {
+      Column({ space: 6 }) {
+        Text('动作说明')
+          .fontSize(10)
+          .fontColor(THEME_TEXT_MUTED)
+
+        Text(step.actionName.trim().length > 0 ? step.actionName : '未记录动作名')
+          .fontSize(DETAIL_TITLE_SIZE)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Bold)
+
+        Text(step.description.trim().length > 0 ? step.description : '暂无动作描述')
+          .fontSize(12)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .lineHeight(18)
+      }
+      .padding(12)
+      .borderRadius(DETAIL_SECTION_RADIUS)
+      .backgroundColor(DETAIL_SECTION_BG)
+      .border({ width: 1, color: DETAIL_SECTION_BORDER })
+
+      this.detailSection('动作参数', this.formatActionJson(step.actionJson), THEME_TEXT_PRIMARY, 10)
+      this.detailSection('执行输出', step.output, THEME_TEXT_PRIMARY, 8)
+
+      if (step.error.trim().length > 0) {
+        this.detailSection('错误信息', step.error, THEME_ERROR, 6)
+      }
+
+      Column({ space: 6 }) {
+        this.detailRow('步骤编号', `#${step.stepIndex}`)
+        this.detailRow('动作状态', this.resolveStepStatusLabel(step.resultStatus))
+        this.detailRow('时间', this.formatTime(step.tsMs))
+        this.detailRow('截图格式', step.image.format)
+        this.detailRow('截图大小', this.formatBytes(step.image.bytes))
+        this.detailRow('分片大小', `${step.image.chunkSize} B`)
+        this.detailRow('分片数量', String(step.image.chunkCount))
+      }
+      .padding(12)
+      .borderRadius(DETAIL_SECTION_RADIUS)
+      .backgroundColor(DETAIL_SECTION_BG)
+      .border({ width: 1, color: DETAIL_SECTION_BORDER })
+    }
+    .width('100%')
   }
 
   @Builder
@@ -567,9 +615,10 @@ struct Index {
         .fontColor(contentColor)
         .maxLines(maxLines)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .lineHeight(18)
     }
     .padding(12)
-    .borderRadius(12)
+    .borderRadius(DETAIL_SECTION_RADIUS)
     .backgroundColor(DETAIL_SECTION_BG)
     .border({ width: 1, color: DETAIL_SECTION_BORDER })
   }
@@ -1018,6 +1067,60 @@ struct Index {
       return 0;
     }
     return Math.max(0, this.viewportHeight - NAV_HEIGHT);
+  }
+
+  @Builder
+  private detailTag(text: string, textColor: string, background: string): void {
+    Text(text)
+      .fontSize(10)
+      .fontColor(textColor)
+      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+      .backgroundColor(background)
+      .borderRadius(10)
+  }
+
+  private resolveStatusTagBg(status: string): string {
+    return this.isTaskFinished(status) ? DETAIL_STATUS_OK_BG : DETAIL_STATUS_FAIL_BG;
+  }
+
+  private resolveStatusTagText(status: string): string {
+    return this.isTaskFinished(status) ? DETAIL_STATUS_OK_TEXT : DETAIL_STATUS_FAIL_TEXT;
+  }
+
+  private resolveStepStatusLabel(status: string): string {
+    const trimmed = status.trim();
+    if (trimmed.length === 0) {
+      return '未知状态';
+    }
+    return trimmed;
+  }
+
+  private resolveStepStatusBg(status: string): string {
+    const trimmed = status.trim();
+    if (trimmed.length === 0) {
+      return DETAIL_SECTION_BG;
+    }
+    if (this.isTaskFinished(trimmed)) {
+      return DETAIL_STATUS_OK_BG;
+    }
+    if (this.isTaskFailed(trimmed)) {
+      return DETAIL_STATUS_FAIL_BG;
+    }
+    return DETAIL_SECTION_BG;
+  }
+
+  private resolveStepStatusText(status: string): string {
+    const trimmed = status.trim();
+    if (trimmed.length === 0) {
+      return THEME_TEXT_MUTED;
+    }
+    if (this.isTaskFinished(trimmed)) {
+      return DETAIL_STATUS_OK_TEXT;
+    }
+    if (this.isTaskFailed(trimmed)) {
+      return DETAIL_STATUS_FAIL_TEXT;
+    }
+    return THEME_TEXT_PRIMARY;
   }
 
   private resolveStepSwiperIndex(): number {
