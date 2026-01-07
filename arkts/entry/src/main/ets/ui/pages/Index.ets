@@ -56,8 +56,8 @@ const DETAIL_STATUS_FAIL_BG: string = '#FBE6E6';
 const DETAIL_STATUS_FAIL_TEXT: string = '#B04A4A';
 const DETAIL_CARD_RADIUS: number = 18;
 const DETAIL_SECTION_RADIUS: number = 12;
-const STEP_IMAGE_HEIGHT: number = 460;
-const STEP_SWIPER_HEIGHT: number = 540;
+const STEP_IMAGE_HEIGHT: number = 520;
+const STEP_SWIPER_HEIGHT: number = 720;
 type JsonLike = object | string | number | boolean | null;
 
 interface AgentActionSnapshot {
@@ -363,7 +363,7 @@ struct Index {
         }
       }
       .width('100%')
-      .padding({ top: 10 })
+      .padding({ left: 15, right: 15, top: 10 })
     }
   }
 
@@ -474,47 +474,71 @@ struct Index {
 
   @Builder
   private stepSwiperView(): void {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
-        Text('步骤')
-          .fontSize(DETAIL_TITLE_SIZE)
-          .fontColor(THEME_TEXT_PRIMARY)
-          .fontWeight(FontWeight.Bold)
-
-        this.detailTag(`步骤 ${this.resolveStepSwiperIndex() + 1}/${this.selectedSteps.length}`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
-      }
-
-      Text('左右滑动查看每一步的截图与详情')
-        .fontSize(10)
-        .fontColor(DETAIL_HINT_TEXT)
-
-      Swiper() {
-        ForEach(this.selectedSteps, (step: HistoryStepMeta, index: number) => {
-          this.stepScreenshotSlide(step, index);
-        }, (step: HistoryStepMeta) => `${step.taskId}:${step.stepIndex}`)
-      }
-      .loop(false)
-      .indicator(true)
-      .index(this.resolveStepSwiperIndex())
-      .onChange((index: number) => {
-        this.onStepChange(index);
-      })
-      .height(STEP_SWIPER_HEIGHT)
-
-      if (this.selectedStep) {
-        this.stepDetailPanel(this.selectedStep);
-      }
+    Swiper() {
+      ForEach(this.selectedSteps, (step: HistoryStepMeta, index: number) => {
+        this.stepScreenshotSlide(step, index);
+      }, (step: HistoryStepMeta) => `${step.taskId}:${step.stepIndex}`)
     }
     .width('100%')
+    .loop(false)
+    .indicator(true)
+    .index(this.resolveStepSwiperIndex())
+    .onChange((index: number) => {
+      this.onStepChange(index);
+    })
+    .height(STEP_SWIPER_HEIGHT)
   }
 
   @Builder
   private stepScreenshotSlide(step: HistoryStepMeta, position: number): void {
-    Column() {
-      this.stepScreenshotCard(step, position);
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        this.detailTag(`步骤 ${position + 1}/${this.selectedSteps.length}`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
+        this.detailTag(this.resolveActionDisplayName(step.actionName), DETAIL_TAG_TEXT, DETAIL_TAG_BG)
+        this.detailTag(
+          this.resolveStepStatusLabel(step.resultStatus),
+          this.resolveStepStatusText(step.resultStatus),
+          this.resolveStepStatusBg(step.resultStatus)
+        )
+        Row()
+          .layoutWeight(1)
+        Text(this.formatTimeShort(step.tsMs))
+          .fontSize(10)
+          .fontColor(DETAIL_HINT_TEXT)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+
+      Column() {
+        this.stepScreenshot(step, position);
+      }
+      .width('100%')
+      .height(STEP_IMAGE_HEIGHT)
+      .borderRadius(DETAIL_SECTION_RADIUS)
+      .clip(true)
+      .backgroundColor(DETAIL_SECTION_BG)
+      .border({ width: 1, color: DETAIL_SECTION_BORDER })
+
+      Text(step.description.trim().length > 0 ? step.description : '暂无步骤说明')
+        .fontSize(13)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .lineHeight(20)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Text(this.resolveStepFooterText(step))
+        .fontSize(11)
+        .fontColor(THEME_TEXT_MUTED)
+        .lineHeight(16)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .padding({ left: 14, right: 14, top: 0, bottom: 0 })
+    .padding(14)
+    .backgroundColor(DETAIL_CARD_BG)
+    .borderRadius(DETAIL_CARD_RADIUS)
+    .border({ width: 1, color: DETAIL_CARD_BORDER })
+    .shadow({ radius: 14, color: 'rgba(0, 0, 0, 0.08)', offsetX: 0, offsetY: 8 })
     .onAppear(() => {
       this.ensureStepPixelMapLoaded(step.taskId, step.stepIndex, position);
     })
@@ -1363,6 +1387,44 @@ struct Index {
       lines.push({ label: '选项', value: params.options.join(' / ') });
     }
     return lines;
+  }
+
+  private resolveStepFooterText(step: HistoryStepMeta): string {
+    const paramSummary = this.resolveStepParamSummary(step.actionJson);
+    const formatText = step.image.format.trim().length > 0 ? step.image.format : '-';
+    const sizeText = this.formatBytes(step.image.bytes);
+    if (paramSummary.length > 0) {
+      return `关键参数: ${paramSummary} / 格式: ${formatText} / 大小: ${sizeText}`;
+    }
+    return `格式: ${formatText} / 大小: ${sizeText}`;
+  }
+
+  private resolveStepParamSummary(actionJson: string): string {
+    const lines = this.buildStepParamLines(actionJson);
+    if (lines.length === 0) {
+      return '';
+    }
+
+    const parts: Array<string> = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      if (parts.length >= 2) {
+        break;
+      }
+      const line = lines[i];
+      const label = line.label.trim();
+      const value = this.shortenStepParamValue(label, line.value.trim());
+      if (label.length > 0 && value.length > 0) {
+        parts.push(`${label}: ${value}`);
+      }
+    }
+    return parts.join(' · ');
+  }
+
+  private shortenStepParamValue(label: string, value: string): string {
+    if (label === '内容' && value.length > 16) {
+      return `${value.slice(0, 16)}…`;
+    }
+    return value;
   }
 
   private resolveStepParamPreviewLines(): Array<StepParamLine> {
