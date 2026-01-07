@@ -115,6 +115,8 @@ struct Index {
   @State showStepMore: boolean = false;
   @State private viewportHeight: number = 0;
 
+  private stepPixelMapRequestSeq: number = 0;
+
   aboutToAppear(): void {
     void this.loadSettings();
     void this.refreshHistory();
@@ -1471,12 +1473,58 @@ struct Index {
   }
 
   private onStepChange(index: number): void {
-    const step = this.selectedSteps[index];
-    if (!step) {
-      this.selectedStepPosition = index;
+    this.selectStepAtPosition(index);
+  }
+
+  private selectStepAtPosition(position: number): void {
+    if (this.selectedSteps.length === 0) {
+      this.selectedStepPosition = 0;
+      this.selectedStepIndex = 0;
+      this.selectedStep = null;
+      this.selectedStepPixelMap = null;
+      this.selectedStepParamLines = [];
+      this.showStepMore = false;
       return;
     }
-    void this.selectStep(step);
+
+    const clamped = Math.max(0, Math.min(position, this.selectedSteps.length - 1));
+    this.selectedStepPosition = clamped;
+    const step = this.selectedSteps[clamped];
+    if (!step) {
+      this.selectedStepIndex = 0;
+      this.selectedStep = null;
+      this.selectedStepPixelMap = null;
+      this.selectedStepParamLines = [];
+      this.showStepMore = false;
+      return;
+    }
+
+    this.selectedStepIndex = step.stepIndex;
+    this.selectedStep = step;
+    this.selectedStepPixelMap = null;
+    this.selectedStepParamLines = this.buildStepParamLines(step.actionJson);
+    this.showStepMore = false;
+    void this.loadStepPixelMap(step.taskId, step.stepIndex);
+  }
+
+  private async loadStepPixelMap(taskId: string, stepIndex: number): Promise<void> {
+    const requestSeq = this.stepPixelMapRequestSeq + 1;
+    this.stepPixelMapRequestSeq = requestSeq;
+    try {
+      const ctx = this.getUiContext();
+      const store = TaskHistoryStore.getInstance();
+      store.init(ctx);
+      const pixelMap = await store.getStepPixelMap(taskId, stepIndex);
+      if (requestSeq !== this.stepPixelMapRequestSeq) {
+        return;
+      }
+      if (this.selectedTaskId !== taskId || this.selectedStepIndex !== stepIndex) {
+        return;
+      }
+      this.selectedStepPixelMap = pixelMap;
+    } catch (_e) {
+      // ignore
+    }
   }
 
   private isStepPositionActive(position: number): boolean {
@@ -1736,21 +1784,7 @@ struct Index {
   }
 
   private async selectStep(step: HistoryStepMeta): Promise<void> {
-    this.selectedStepIndex = step.stepIndex;
-    this.selectedStepPosition = this.findStepPosition(step.stepIndex);
-    this.selectedStep = step;
-    this.selectedStepPixelMap = null;
-    this.selectedStepParamLines = this.buildStepParamLines(step.actionJson);
-    this.showStepMore = false;
-    try {
-      const ctx = this.getUiContext();
-      const store = TaskHistoryStore.getInstance();
-      store.init(ctx);
-      const pixelMap = await store.getStepPixelMap(step.taskId, step.stepIndex);
-      this.selectedStepPixelMap = pixelMap;
-    } catch (e) {
-      this.historyError = `加载截图失败: ${String(e)}`;
-    }
+    this.selectStepAtPosition(this.findStepPosition(step.stepIndex));
   }
 
   private async deleteSelectedTask(): Promise<void> {
