@@ -500,35 +500,21 @@ struct Index {
         this.onStepChange(index);
       })
       .height(STEP_SWIPER_HEIGHT)
+
+      if (this.selectedStep) {
+        this.stepDetailPanel(this.selectedStep);
+      }
     }
     .width('100%')
   }
 
   @Builder
   private stepScreenshotSlide(step: HistoryStepMeta, position: number): void {
-    Column({ space: 10 }) {
+    Column() {
       this.stepScreenshotCard(step, position);
-
-      Row({ space: 8 }) {
-        Text(`第 ${position + 1} 步`)
-          .fontSize(13)
-          .fontColor(THEME_TEXT_PRIMARY)
-          .fontWeight(FontWeight.Bold)
-
-        this.detailTag(this.resolveActionDisplayName(step.actionName), DETAIL_TAG_TEXT, DETAIL_TAG_BG)
-      }
-
-      Text(step.description.trim().length > 0 ? step.description : '暂无步骤说明')
-        .fontSize(12)
-        .fontColor(THEME_TEXT_PRIMARY)
-        .lineHeight(18)
-        .maxLines(3)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      this.stepParamSection(step.actionJson)
     }
     .width('100%')
-    .padding(14)
+    .padding({ left: 14, right: 14, top: 0, bottom: 0 })
     .onAppear(() => {
       this.ensureStepPixelMapLoaded(step.taskId, step.stepIndex, position);
     })
@@ -604,7 +590,7 @@ struct Index {
   private stepDetailPanel(step: HistoryStepMeta): void {
     Column({ space: 12 }) {
       Row({ space: 8 }) {
-        this.detailTag(`第 ${this.resolveStepSwiperIndex() + 1} 步`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
+        this.detailTag(`步骤 ${this.resolveStepSwiperIndex() + 1}/${this.selectedSteps.length}`, THEME_TEXT_PRIMARY, DETAIL_TAG_BG)
         this.detailTag(this.resolveActionDisplayName(step.actionName), DETAIL_TAG_TEXT, DETAIL_TAG_BG)
         this.detailTag(
           this.resolveStepStatusLabel(step.resultStatus),
@@ -642,14 +628,6 @@ struct Index {
         .border({ width: 1, color: DETAIL_SECTION_BORDER })
       }
 
-      this.statusCallout(
-        '执行结果',
-        this.resolveStepResultSummary(step),
-        this.resolveStepResultBg(step),
-        this.resolveStepResultBorder(step),
-        this.resolveStepResultTextColor(step)
-      )
-
       Row() {
         Row()
           .layoutWeight(1)
@@ -679,14 +657,6 @@ struct Index {
           .borderRadius(DETAIL_SECTION_RADIUS)
           .backgroundColor(DETAIL_SECTION_BG)
           .border({ width: 1, color: DETAIL_SECTION_BORDER })
-        }
-
-        if (step.output.trim().length > 0) {
-          this.detailSection('完整输出', step.output, THEME_TEXT_PRIMARY, 10)
-        }
-
-        if (step.error.trim().length > 0) {
-          this.detailSection('错误详情', step.error, THEME_ERROR, 10)
         }
 
         Column({ space: 6 }) {
