@@ -41,6 +41,20 @@ const TASK_CARD_PADDING_X: number = 12;
 const TASK_CARD_PADDING_TOP: number = 12;
 const TASK_CARD_PADDING_BOTTOM: number = 10;
 const NAV_SAFE_SPACER: number = 12;
+const DETAIL_CARD_BG: string = '#FFFFFF';
+const DETAIL_CARD_BORDER: string = '#ECE5F5';
+const DETAIL_SECTION_BG: string = '#F6F7FB';
+const DETAIL_SECTION_BORDER: string = '#E8E1F2';
+const DETAIL_TITLE_SIZE: number = 13;
+const DETAIL_TEXT_SIZE: number = 11;
+const STEP_IMAGE_HEIGHT: number = 400;
+
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+interface JsonObject {
+  [key: string]: JsonValue;
+}
+type JsonArray = JsonValue[];
 
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean';
@@ -68,6 +82,7 @@ struct Index {
   @State selectedTask: HistoryTaskMeta | null = null;
   @State selectedSteps: Array<HistoryStepMeta> = [];
   @State selectedStepIndex: number = 0;
+  @State selectedStepPosition: number = 0;
   @State selectedStep: HistoryStepMeta | null = null;
   @State selectedStepPixelMap: image.PixelMap | null = null;
   @State private viewportHeight: number = 0;
@@ -303,81 +318,266 @@ struct Index {
   @Builder
   private taskDetailView(): void {
     if (this.selectedTask) {
-      Column({ space: 12 }) {
-        Row({ space: 8 }) {
-          Button('返回')
-            .fontSize(12)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .backgroundColor(THEME_CARD)
-            .borderRadius(14)
-            .border({ width: 1, color: THEME_BORDER })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.closeTask();
-            })
+      Column({ space: 14 }) {
+        this.taskDetailHeader();
+        this.taskSummaryCard(this.selectedTask);
 
-          Button('删除')
-            .fontSize(12)
-            .fontColor(THEME_ERROR)
-            .backgroundColor('#FFF2F2')
-            .borderRadius(14)
-            .border({ width: 1, color: '#F3C6C6' })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              void this.deleteSelectedTask();
-            })
-
-          Text(this.selectedTask.status)
+        if (this.selectedSteps.length > 0) {
+          this.stepSwiperView();
+        } else {
+          Text('暂无步骤')
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
-            .layoutWeight(1)
-            .textAlign(TextAlign.End)
         }
-
-        Text(this.selectedTask.taskText)
-          .fontSize(12)
-          .fontColor(THEME_TEXT_PRIMARY)
-
-        Text(`session: ${this.selectedTask.sessionId}`)
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
-
-        Text(`cloud: ${this.selectedTask.cloudEndpoint}`)
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
-
-        Text(`wait_ms: ${this.selectedTask.waitAfterActionMs}    steps: ${this.selectedTask.stepCount}`)
-          .fontSize(11)
-          .fontColor(THEME_TEXT_MUTED)
-
-        if (this.selectedTask.finishContent.trim().length > 0) {
-          Text(`finish:\n${this.selectedTask.finishContent}`)
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-        } else if (this.selectedTask.error.trim().length > 0) {
-          Text(`error:\n${this.selectedTask.error}`)
-            .fontSize(11)
-            .fontColor(THEME_ERROR)
-        }
-
-        if (this.selectedStepPixelMap) {
-          Image(this.selectedStepPixelMap)
-            .width('100%')
-            .height(280)
-            .borderRadius(12)
-            .backgroundColor(THEME_CARD)
-            .objectFit(ImageFit.Contain)
-        }
-
-        if (this.selectedStep) {
-          this.stepDetailView();
-        }
-
-        this.stepListView()
       }
       .width('100%')
-      .padding({ top: 8 })
+      .padding({ top: 10 })
     }
+  }
+
+  @Builder
+  private taskDetailHeader(): void {
+    Row({ space: 8 }) {
+      this.detailHeaderButton('返回', THEME_TEXT_PRIMARY, THEME_CARD, () => {
+        this.closeTask();
+      })
+
+      Text('任务详情')
+        .fontSize(14)
+        .fontFamily(FONT_DISPLAY)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Bold)
+        .layoutWeight(1)
+        .textAlign(TextAlign.Center)
+
+      this.detailHeaderButton('删除', THEME_ERROR, '#FFF2F2', () => {
+        void this.deleteSelectedTask();
+      })
+    }
+    .width('100%')
+    .height(40)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private detailHeaderButton(label: string, textColor: string, background: string, onTap: () => void): void {
+    Button(label)
+      .fontSize(12)
+      .fontColor(textColor)
+      .backgroundColor(background)
+      .borderRadius(14)
+      .border({ width: 1, color: THEME_BORDER })
+      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+      .onClick(onTap)
+  }
+
+  @Builder
+  private taskSummaryCard(task: HistoryTaskMeta): void {
+    Column({ space: 10 }) {
+      Row({ space: 8 }) {
+        Text(`${this.resolveTaskStatusLabel(task.status)} / ${this.resolveTaskDuration(task)}`)
+          .fontSize(12)
+          .fontColor(this.resolveTaskBorderColor(task.status))
+          .fontWeight(FontWeight.Bold)
+          .layoutWeight(1)
+
+        Text(task.status)
+          .fontSize(11)
+          .fontColor(THEME_TEXT_MUTED)
+      }
+
+      Text(task.taskText)
+        .fontSize(16)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Bold)
+        .maxLines(3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      this.detailRow('执行结果', this.resolveTaskResult(task))
+      this.detailRow('任务ID', task.taskId)
+      this.detailRow('Session', task.sessionId)
+      this.detailRow('云端', task.cloudEndpoint)
+      this.detailRow('wait_ms', String(task.waitAfterActionMs))
+      this.detailRow('步骤数', String(task.stepCount))
+      this.detailRow('开始时间', this.formatTime(task.startAtMs))
+      this.detailRow('结束时间', task.endAtMs > 0 ? this.formatTime(task.endAtMs) : '-')
+    }
+    .width('100%')
+    .padding(14)
+    .borderRadius(16)
+    .backgroundColor(DETAIL_CARD_BG)
+    .border({ width: 1, color: DETAIL_CARD_BORDER })
+    .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.06)', offsetX: 0, offsetY: 6 })
+  }
+
+  @Builder
+  private detailRow(label: string, value: string, valueColor: string = THEME_TEXT_PRIMARY): void {
+    Row({ space: 8 }) {
+      Text(label)
+        .fontSize(DETAIL_TEXT_SIZE)
+        .fontColor(THEME_TEXT_MUTED)
+        .width(72)
+
+      Text(value.trim().length > 0 ? value : '-')
+        .fontSize(DETAIL_TEXT_SIZE)
+        .fontColor(valueColor)
+        .layoutWeight(1)
+    }
+  }
+
+  @Builder
+  private stepSwiperView(): void {
+    Column({ space: 10 }) {
+      Row({ space: 8 }) {
+        Text(`步骤 ${this.resolveStepSwiperIndex() + 1}/${this.selectedSteps.length}`)
+          .fontSize(DETAIL_TITLE_SIZE)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Bold)
+
+        Text(this.selectedStep ? this.selectedStep.actionName : '')
+          .fontSize(12)
+          .fontColor(THEME_TEXT_MUTED)
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(this.selectedStep && this.selectedStep.resultStatus.trim().length > 0 ? this.selectedStep.resultStatus : '-')
+          .fontSize(11)
+          .fontColor(THEME_TEXT_MUTED)
+      }
+
+      Swiper() {
+        ForEach(this.selectedSteps, (step: HistoryStepMeta, index: number) => {
+          this.stepSlide(step, index);
+        }, (step: HistoryStepMeta) => `${step.taskId}:${step.stepIndex}`)
+      }
+      .loop(false)
+      .indicator(false)
+      .index(this.resolveStepSwiperIndex())
+      .height(STEP_IMAGE_HEIGHT + 320)
+      .onChange((index: number) => {
+        this.onStepChange(index);
+      })
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private stepSlide(step: HistoryStepMeta, position: number): void {
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Text(`#${step.stepIndex}`)
+          .fontSize(12)
+          .fontColor(THEME_TEXT_MUTED)
+
+        Text(this.formatTime(step.tsMs))
+          .fontSize(11)
+          .fontColor(THEME_TEXT_MUTED)
+          .layoutWeight(1)
+
+        Text(step.resultStatus.trim().length > 0 ? step.resultStatus : '-')
+          .fontSize(11)
+          .fontColor(THEME_TEXT_MUTED)
+      }
+
+      Text(step.actionName.trim().length > 0 ? step.actionName : '未记录动作名')
+        .fontSize(15)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Bold)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      if (step.description.trim().length > 0) {
+        Text(step.description)
+          .fontSize(12)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+
+      this.stepScreenshot(step, position);
+
+      this.detailSection('动作参数', this.formatActionJson(step.actionJson), THEME_TEXT_PRIMARY, 10)
+      this.detailSection('输出结果', step.output, THEME_TEXT_PRIMARY, 8)
+
+      if (step.error.trim().length > 0) {
+        this.detailSection('错误信息', step.error, THEME_ERROR, 6)
+      }
+
+      Column({ space: 6 }) {
+        this.detailRow('截图格式', step.image.format)
+        this.detailRow('截图大小', this.formatBytes(step.image.bytes))
+        this.detailRow('分片大小', `${step.image.chunkSize} B`)
+        this.detailRow('分片数量', String(step.image.chunkCount))
+      }
+      .padding(12)
+      .borderRadius(12)
+      .backgroundColor(DETAIL_SECTION_BG)
+      .border({ width: 1, color: DETAIL_SECTION_BORDER })
+    }
+    .width('100%')
+    .padding(14)
+    .borderRadius(18)
+    .backgroundColor(DETAIL_CARD_BG)
+    .border({ width: 1, color: DETAIL_CARD_BORDER })
+    .shadow({ radius: 12, color: 'rgba(0, 0, 0, 0.06)', offsetX: 0, offsetY: 6 })
+  }
+
+  @Builder
+  private stepScreenshot(step: HistoryStepMeta, position: number): void {
+    Column({ space: 6 }) {
+      Text('截图')
+        .fontSize(DETAIL_TITLE_SIZE)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+
+      if (this.isStepPositionActive(position) && this.selectedStepPixelMap) {
+        Image(this.selectedStepPixelMap)
+          .width('100%')
+          .height(STEP_IMAGE_HEIGHT)
+          .borderRadius(16)
+          .backgroundColor(THEME_CARD)
+          .objectFit(ImageFit.Contain)
+      } else {
+        Row() {
+          Text('截图加载中')
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+        .width('100%')
+        .height(STEP_IMAGE_HEIGHT)
+        .borderRadius(16)
+        .backgroundColor(DETAIL_SECTION_BG)
+        .border({ width: 1, color: DETAIL_SECTION_BORDER })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+      }
+    }
+  }
+
+  @Builder
+  private detailSection(
+    title: string,
+    content: string,
+    contentColor: string = THEME_TEXT_PRIMARY,
+    maxLines: number = 10
+  ): void {
+    Column({ space: 6 }) {
+      Text(title)
+        .fontSize(DETAIL_TITLE_SIZE)
+        .fontColor(THEME_TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+
+      Text(content.trim().length > 0 ? content : '-')
+        .fontSize(DETAIL_TEXT_SIZE)
+        .fontColor(contentColor)
+        .maxLines(maxLines)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .padding(12)
+    .borderRadius(12)
+    .backgroundColor(DETAIL_SECTION_BG)
+    .border({ width: 1, color: DETAIL_SECTION_BORDER })
   }
 
   @Builder
@@ -826,6 +1026,63 @@ struct Index {
     return Math.max(0, this.viewportHeight - NAV_HEIGHT);
   }
 
+  private resolveStepSwiperIndex(): number {
+    if (this.selectedSteps.length === 0) {
+      return 0;
+    }
+    const clamped = Math.max(0, Math.min(this.selectedStepPosition, this.selectedSteps.length - 1));
+    return clamped;
+  }
+
+  private onStepChange(index: number): void {
+    const step = this.selectedSteps[index];
+    if (!step) {
+      this.selectedStepPosition = index;
+      return;
+    }
+    void this.selectStep(step);
+  }
+
+  private isStepPositionActive(position: number): boolean {
+    return position === this.selectedStepPosition;
+  }
+
+  private findStepPosition(stepIndex: number): number {
+    if (this.selectedSteps.length === 0) {
+      return 0;
+    }
+    const position = this.selectedSteps.findIndex((step) => step.stepIndex === stepIndex);
+    return position >= 0 ? position : 0;
+  }
+
+  private formatActionJson(actionJson: string): string {
+    const trimmed = actionJson.trim();
+    if (trimmed.length === 0) {
+      return '-';
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as JsonValue;
+      return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      return trimmed;
+    }
+  }
+
+  private formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return '0 B';
+    }
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+    const kb = bytes / 1024;
+    if (kb < 1024) {
+      return `${kb.toFixed(1)} KB`;
+    }
+    const mb = kb / 1024;
+    return `${mb.toFixed(1)} MB`;
+  }
+
   build() {
     Stack() {
       Column({ space: 0 }) {
@@ -983,6 +1240,15 @@ struct Index {
         if (refreshed) {
           this.selectedTask = refreshed;
           this.selectedSteps = (await store.listSteps(this.selectedTaskId)).slice(0, DEFAULT_STEP_LIST_LIMIT);
+          if (this.selectedSteps.length > 0) {
+            const target = this.selectedSteps.find((step) => step.stepIndex === this.selectedStepIndex);
+            await this.selectStep(target ?? this.selectedSteps[0]);
+          } else {
+            this.selectedStep = null;
+            this.selectedStepPixelMap = null;
+            this.selectedStepIndex = 0;
+            this.selectedStepPosition = 0;
+          }
         }
       }
     } catch (e) {
@@ -995,6 +1261,7 @@ struct Index {
   private async openTask(taskId: string): Promise<void> {
     this.selectedTaskId = taskId;
     this.selectedStepIndex = 0;
+    this.selectedStepPosition = 0;
     this.selectedStep = null;
     this.selectedStepPixelMap = null;
     try {
@@ -1004,6 +1271,9 @@ struct Index {
       const task = await store.getTask(taskId);
       this.selectedTask = task;
       this.selectedSteps = task ? (await store.listSteps(taskId)).slice(0, DEFAULT_STEP_LIST_LIMIT) : [];
+      if (this.selectedSteps.length > 0) {
+        await this.selectStep(this.selectedSteps[0]);
+      }
     } catch (e) {
       this.historyError = `加载任务详情失败: ${String(e)}`;
       this.selectedTask = null;
@@ -1016,12 +1286,14 @@ struct Index {
     this.selectedTask = null;
     this.selectedSteps = [];
     this.selectedStepIndex = 0;
+    this.selectedStepPosition = 0;
     this.selectedStep = null;
     this.selectedStepPixelMap = null;
   }
 
   private async selectStep(step: HistoryStepMeta): Promise<void> {
     this.selectedStepIndex = step.stepIndex;
+    this.selectedStepPosition = this.findStepPosition(step.stepIndex);
     this.selectedStep = step;
     this.selectedStepPixelMap = null;
     try {
