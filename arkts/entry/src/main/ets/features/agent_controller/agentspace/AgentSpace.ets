@@ -1,3 +1,7 @@
+import type { common } from '@kit.AbilityKit';
+import photoAccessHelper from '@ohos.file.photoAccessHelper';
+import fs from '@ohos.file.fs';
+import image from '@ohos.multimedia.image';
 import { VTSBackend } from './VTSBackend';
 import type { AppTarget, StartAbilityInvoker, VTSBackendPort } from './VTSBackend';
 
@@ -104,12 +108,19 @@ export class AgentSpace {
   private viewerEffectSequence: number = 0;
   private viewerEffects: Array<AgentSpaceViewerEffect> = [];
   private appLaunched: boolean = false;
+  private ctx: common.Context | null = null;
 
-  constructor(startAbilityInvoker: StartAbilityInvoker, backendFactory?: VTSBackendFactory, host?: AgentSpaceHost) {
+  constructor(
+    startAbilityInvoker: StartAbilityInvoker,
+    backendFactory?: VTSBackendFactory,
+    host?: AgentSpaceHost,
+    ctx?: common.Context
+  ) {
     this.backend = backendFactory ? backendFactory(startAbilityInvoker) : new VTSBackend(startAbilityInvoker);
     if (host) {
       this.host = host;
     }
+    this.ctx = ctx ?? null;
   }
 
   updateStartAbility(startAbilityInvoker: StartAbilityInvoker): void {
@@ -273,6 +284,9 @@ export class AgentSpace {
     if (name === 'press_enter') {
       return await this.handlePressEnter();
     }
+    if (name === 'screenshot') {
+      return await this.handleScreenshot();
+    }
     if (name === 'launch_app') {
       return await this.handleLaunchApp(action.parameters);
     }
@@ -400,6 +414,19 @@ export class AgentSpace {
     return { status: 'SKIPPED', error: 'press_back_not_implemented' };
   }
 
+  private async handleScreenshot(): Promise<ActionResult> {
+    await this.ensureVts();
+    const pixelMap = await this.backend.screenshotPixelMap();
+    if (!pixelMap) {
+      return { status: 'FAILED', error: 'screenshot_failed' };
+    }
+    const saved = await this.savePixelMapToAlbum(pixelMap);
+    if (!saved) {
+      return { status: 'FAILED', error: 'save_failed' };
+    }
+    return { status: 'SUCCESS' };
+  }
+
   private async handleLaunchApp(params?: ActionParameters): Promise<ActionResult> {
     const name = params?.app ?? '';
     const target = this.resolveAppTarget(name);
@@ -408,6 +435,38 @@ export class AgentSpace {
     }
     await this.startApp(target);
     return { status: 'SUCCESS' };
+  }
+
+  private async savePixelMapToAlbum(pixelMap: image.PixelMap): Promise<boolean> {
+    const ctx = this.ctx;
+    if (!ctx) {
+      return false;
+    }
+    const helper = photoAccessHelper.getPhotoAccessHelper(ctx);
+    const displayName = `agent_screenshot_${Date.now()}.jpg`;
+    let fd = -1;
+    try {
+      const asset = await helper.createAsset(displayName);
+      fd = await asset.open('rw');
+      const packer = image.createImagePacker();
+      const buffer: ArrayBuffer = await packer.packing(pixelMap, {
+        format: 'image/jpeg',
+        quality: 90,
+        bufferSize: 50 * 1024 * 1024,
+      });
+      await fs.write(fd, buffer);
+      return true;
+    } catch (_e) {
+      return false;
+    } finally {
+      if (fd >= 0) {
+        try {
+          await fs.close(fd);
+        } catch (_e) {
+          // ignore
+        }
+      }
+    }
   }
 
   private resolveAppTarget(name: string): AppTarget | null {

@@ -93,6 +93,7 @@ export interface VTSBackendPort {
   swipePx(startX: number, startY: number, endX: number, endY: number, durationMs?: number): Promise<void>;
   inputText(text: string, sendEnter: boolean): Promise<void>;
   pressEnter(): Promise<void>;
+  screenshotPixelMap(): Promise<image.PixelMap | null>;
   screenshotBase64(): Promise<string>;
   transferToMain(): Promise<number>;
   destroy(): Promise<void>;
@@ -275,7 +276,7 @@ export class VTSBackend implements VTSBackendPort {
     }
   }
 
-  async screenshotBase64(): Promise<string> {
+  async screenshotPixelMap(): Promise<image.PixelMap | null> {
     const rt = this.requireRuntime();
     const imageSize: ScreenshotImageSize = { width: rt.widthPx, height: rt.heightPx };
     const displayId = rt.displayId ?? rt.screenId;
@@ -287,7 +288,7 @@ export class VTSBackend implements VTSBackendPort {
     if (!this.hasLaunchedApp) {
       const wallpaper = await WallpaperState.getCurrentWallpaper();
       if (wallpaper) {
-        return await pixelMapToBase64('image/jpeg', wallpaper);
+        return wallpaper;
       }
     }
 
@@ -301,10 +302,14 @@ export class VTSBackend implements VTSBackendPort {
       }
     }
 
-    if (imageMap === null) {
+    return imageMap;
+  }
+
+  async screenshotBase64(): Promise<string> {
+    const imageMap = await this.screenshotPixelMap();
+    if (!imageMap) {
       return '';
     }
-
     return await pixelMapToBase64('image/jpeg', imageMap);
   }
 

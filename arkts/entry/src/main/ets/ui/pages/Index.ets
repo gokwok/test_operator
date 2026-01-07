@@ -1,4 +1,6 @@
-import type { common } from '@kit.AbilityKit';
+import { abilityAccessCtrl } from '@kit.AbilityKit';
+import type { common, Permissions } from '@kit.AbilityKit';
+import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
 
 import { TaskHistoryStore } from '../../features/persistence/history/TaskHistoryStore';
@@ -73,6 +75,7 @@ struct Index {
   aboutToAppear(): void {
     void this.loadSettings();
     void this.refreshHistory();
+    void this.ensureWriteImageVideoPermission();
   }
 
   @Builder
@@ -860,6 +863,30 @@ struct Index {
 
   private getUiContext(): common.UIAbilityContext {
     return getContext(this) as common.UIAbilityContext;
+  }
+
+  private ensureWriteImageVideoPermission(): Promise<void> {
+    const ctx = this.getUiContext();
+    const atManager = abilityAccessCtrl.createAtManager();
+    const permission: Permissions = 'ohos.permission.WRITE_IMAGEVIDEO';
+    const tokenId = ctx.applicationInfo.accessTokenId;
+    return atManager.checkAccessToken(tokenId, permission)
+      .then((status: abilityAccessCtrl.GrantStatus) => {
+        if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+          return;
+        }
+        return atManager.requestPermissionsFromUser(ctx, [permission])
+          .then((result) => {
+            const granted = result.authResults.length > 0 &&
+              result.authResults.every((item: number) => item === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED);
+            if (!granted) {
+              console.warn('WRITE_IMAGEVIDEO permission denied');
+            }
+          });
+      })
+      .catch((error: BusinessError) => {
+        console.error(`WRITE_IMAGEVIDEO permission request failed, code: ${error.code}, message: ${error.message}`);
+      });
   }
 
   private async loadSettings(): Promise<void> {

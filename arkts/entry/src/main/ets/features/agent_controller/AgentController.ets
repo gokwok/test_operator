@@ -1061,7 +1061,7 @@ export class AgentController {
     if (!invoker) {
       throw new Error('Service startAbility not initialized');
     }
-    const space = new AgentSpace(invoker);
+    const space = new AgentSpace(invoker, undefined, undefined, this.ctx ?? undefined);
     this.agentSpace = space;
     this.toolKit = new ToolKit(space);
   }
