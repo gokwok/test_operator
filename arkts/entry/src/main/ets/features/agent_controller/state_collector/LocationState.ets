@@ -11,13 +11,13 @@ export interface GpsInfo {
 }
 
 export class LocationState {
-  static async getCurrentLocation(timeoutMs: number = 5000): Promise<GpsInfo | null> {
+  static async getCurrentLocation(timeoutMs: number = 15000): Promise<GpsInfo | null> {
     try {
       const request: geoLocationManager.CurrentLocationRequest = {
         priority: geoLocationManager.LocationRequestPriority.ACCURACY,
-        scenario: geoLocationManager.LocationRequestScenario.DAILY_LIFE_SERVICE,
+        scenario: geoLocationManager.LocationRequestScenario.NAVIGATION,
         timeoutMs,
-        maxAccuracy: 50
+        maxAccuracy: 5
       };
       const location: geoLocationManager.Location = await geoLocationManager.getCurrentLocation(request);
       const info: GpsInfo = {

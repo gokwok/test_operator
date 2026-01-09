@@ -1911,8 +1911,8 @@ struct Index {
     try {
       const location = await LocationState.getCurrentLocation();
       if (location) {
-        const lat = location.latitude.toFixed(6);
-        const lon = location.longitude.toFixed(6);
+        const lat = location.latitude.toFixed(10);
+        const lon = location.longitude.toFixed(10);
         const acc = Math.round(location.accuracy);
         let info = `定位: ${lat}, ${lon} (±${acc}m)`;
         const address = await LocationState.getAddressFromLocation(location.latitude, location.longitude);
