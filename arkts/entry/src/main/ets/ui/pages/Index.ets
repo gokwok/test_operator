@@ -9,6 +9,7 @@ import { AgentSettings } from '../../features/persistence/settings/AgentSettings
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 import { ForegroundAppState } from '../../features/agent_controller/state_collector/ForegroundAppState';
+import { LocationState } from '../../features/agent_controller/state_collector/LocationState';
 
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;
@@ -98,6 +99,7 @@ struct Index {
   @State wallpaperInfo: string = '';
   @State wallpaperPixelMap: image.PixelMap | null = null;
   @State foregroundAppInfo: string = '';
+  @State locationInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -269,6 +271,17 @@ struct Index {
             .onClick(() => {
               void this.loadForegroundApp();
             })
+
+          Button('获取定位')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.loadLocation();
+            })
         }
 
         if (this.wallpaperInfo.length > 0) {
@@ -279,6 +292,12 @@ struct Index {
 
         if (this.foregroundAppInfo.length > 0) {
           Text(this.foregroundAppInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.locationInfo.length > 0) {
+          Text(this.locationInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -1884,6 +1903,23 @@ struct Index {
       }
     } catch (e) {
       this.foregroundAppInfo = `获取前台应用失败: ${String(e)}`;
+    }
+  }
+
+  private async loadLocation(): Promise<void> {
+    this.locationInfo = '正在获取定位...';
+    try {
+      const location = await LocationState.getCurrentLocation();
+      if (location) {
+        const lat = location.latitude.toFixed(6);
+        const lon = location.longitude.toFixed(6);
+        const acc = Math.round(location.accuracy);
+        this.locationInfo = `定位: ${lat}, ${lon} (±${acc}m)`;
+      } else {
+        this.locationInfo = '未获取到定位';
+      }
+    } catch (e) {
+      this.locationInfo = `定位失败: ${String(e)}`;
     }
   }
 
