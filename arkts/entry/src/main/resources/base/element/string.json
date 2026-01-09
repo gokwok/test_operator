@@ -31,6 +31,10 @@
     {
       "name": "permission_get_running_info_reason",
       "value": "Read foreground app status for task execution."
+    },
+    {
+      "name": "permission_location_reason",
+      "value": "Read device location for task execution."
     }
   ]
 }

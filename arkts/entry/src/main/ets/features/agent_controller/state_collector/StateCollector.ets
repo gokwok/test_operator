@@ -1,6 +1,8 @@
 import type { DeviceState } from '../types';
 import { ToolKit } from '../toolkit/ToolKit';
 import { ForegroundAppState } from './ForegroundAppState';
+import type { GpsInfo } from './LocationState';
+import { LocationState } from './LocationState';
 
 export class StateCollector {
   private toolKit: ToolKit;
@@ -15,6 +17,10 @@ export class StateCollector {
 
   async getForegroundAppBundleName(): Promise<string> {
     return await ForegroundAppState.getForegroundAppBundleName();
+  }
+
+  async getCurrentLocation(): Promise<GpsInfo | null> {
+    return await LocationState.getCurrentLocation();
   }
 
   buildState(

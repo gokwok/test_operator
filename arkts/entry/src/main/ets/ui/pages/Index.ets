@@ -124,6 +124,7 @@ struct Index {
     void this.loadSettings();
     void this.refreshHistory();
     void this.ensureWriteImageVideoPermission();
+    void this.ensureLocationPermission();
   }
 
   @Builder
@@ -1788,6 +1789,30 @@ struct Index {
       })
       .catch((error: BusinessError) => {
         console.error(`WRITE_IMAGEVIDEO permission request failed, code: ${error.code}, message: ${error.message}`);
+      });
+  }
+
+  private ensureLocationPermission(): Promise<void> {
+    const ctx = this.getUiContext();
+    const atManager = abilityAccessCtrl.createAtManager();
+    const permission: Permissions = 'ohos.permission.APPROXIMATELY_LOCATION';
+    const tokenId = ctx.applicationInfo.accessTokenId;
+    return atManager.checkAccessToken(tokenId, permission)
+      .then((status: abilityAccessCtrl.GrantStatus) => {
+        if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+          return;
+        }
+        return atManager.requestPermissionsFromUser(ctx, [permission])
+          .then((result) => {
+            const granted = result.authResults.length > 0 &&
+              result.authResults.every((item: number) => item === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED);
+            if (!granted) {
+              console.warn('APPROXIMATELY_LOCATION permission denied');
+            }
+          });
+      })
+      .catch((error: BusinessError) => {
+        console.error(`APPROXIMATELY_LOCATION permission request failed, code: ${error.code}, message: ${error.message}`);
       });
   }
 
