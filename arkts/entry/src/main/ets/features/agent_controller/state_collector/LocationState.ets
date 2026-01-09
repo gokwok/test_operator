@@ -11,29 +11,36 @@ export interface GpsInfo {
 }
 
 export class LocationState {
-  static async getCurrentLocation(timeoutMs: number = 15000): Promise<GpsInfo | null> {
+  private static readonly cacheTtlMs: number = 30000;
+  private static readonly fastAccuracyThreshold: number = 30;
+  private static cachedLocation: GpsInfo | null = null;
+  private static cachedAtMs: number = 0;
+
+  static async getCurrentLocation(timeoutMs: number = 5000): Promise<GpsInfo | null> {
+    const cached = LocationState.readCache();
+    if (cached) {
+      return cached;
+    }
+    const lastLocation = LocationState.getLastLocation();
+    if (lastLocation && lastLocation.accuracy <= LocationState.fastAccuracyThreshold) {
+      LocationState.writeCache(lastLocation);
+      void LocationState.refreshHighAccuracy(timeoutMs);
+      return lastLocation;
+    }
     try {
-      const request: geoLocationManager.CurrentLocationRequest = {
-        priority: geoLocationManager.LocationRequestPriority.ACCURACY,
-        scenario: geoLocationManager.LocationRequestScenario.NAVIGATION,
-        timeoutMs,
-        maxAccuracy: 5
-      };
-      const location: geoLocationManager.Location = await geoLocationManager.getCurrentLocation(request);
-      const info: GpsInfo = {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        accuracy: location.accuracy,
-        altitude: location.altitude,
-        speed: location.speed,
-        direction: location.direction,
-        timeStamp: location.timeStamp
-      };
-      return info;
+      const info = await LocationState.requestLocation(timeoutMs, true);
+      if (info) {
+        LocationState.writeCache(info);
+        return info;
+      }
     } catch (e) {
       console.warn(`[LocationState] get location failed: ${String(e)}`);
-      return null;
     }
+    if (lastLocation) {
+      LocationState.writeCache(lastLocation);
+      return lastLocation;
+    }
+    return null;
   }
 
   static async getAddressFromLocation(
@@ -80,5 +87,69 @@ export class LocationState {
       }
     }
     return parts.join('');
+  }
+
+  private static async refreshHighAccuracy(timeoutMs: number): Promise<void> {
+    const info = await LocationState.requestLocation(timeoutMs, true);
+    if (info) {
+      LocationState.writeCache(info);
+    }
+  }
+
+  private static requestLocation(timeoutMs: number, highAccuracy: boolean): Promise<GpsInfo | null> {
+    const request: geoLocationManager.CurrentLocationRequest = {
+      priority: highAccuracy ? geoLocationManager.LocationRequestPriority.ACCURACY :
+        geoLocationManager.LocationRequestPriority.FIRST_FIX,
+      scenario: highAccuracy ? geoLocationManager.LocationRequestScenario.NAVIGATION :
+        geoLocationManager.LocationRequestScenario.DAILY_LIFE_SERVICE,
+      timeoutMs,
+      maxAccuracy: highAccuracy ? 5 : 30
+    };
+    return geoLocationManager.getCurrentLocation(request)
+      .then((location: geoLocationManager.Location) => {
+        return LocationState.mapLocation(location);
+      })
+      .catch((_e) => {
+        return null;
+      });
+  }
+
+  private static getLastLocation(): GpsInfo | null {
+    try {
+      const location: geoLocationManager.Location = geoLocationManager.getLastLocation();
+      return LocationState.mapLocation(location);
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  private static mapLocation(location: geoLocationManager.Location): GpsInfo {
+    return {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      accuracy: location.accuracy,
+      altitude: location.altitude,
+      speed: location.speed,
+      direction: location.direction,
+      timeStamp: location.timeStamp
+    };
+  }
+
+  private static readCache(): GpsInfo | null {
+    if (!LocationState.cachedLocation) {
+      return null;
+    }
+    const age = Date.now() - LocationState.cachedAtMs;
+    if (age > LocationState.cacheTtlMs) {
+      LocationState.cachedLocation = null;
+      LocationState.cachedAtMs = 0;
+      return null;
+    }
+    return LocationState.cachedLocation;
+  }
+
+  private static writeCache(location: GpsInfo): void {
+    LocationState.cachedLocation = location;
+    LocationState.cachedAtMs = Date.now();
   }
 }
