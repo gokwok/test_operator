@@ -109,7 +109,7 @@ export class LocationState {
       .then((location: geoLocationManager.Location) => {
         return LocationState.mapLocation(location);
       })
-      .catch((_e) => {
+      .catch(() => {
         return null;
       });
   }
