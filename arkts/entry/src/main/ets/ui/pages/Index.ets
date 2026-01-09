@@ -1914,7 +1914,12 @@ struct Index {
         const lat = location.latitude.toFixed(6);
         const lon = location.longitude.toFixed(6);
         const acc = Math.round(location.accuracy);
-        this.locationInfo = `定位: ${lat}, ${lon} (±${acc}m)`;
+        let info = `定位: ${lat}, ${lon} (±${acc}m)`;
+        const address = await LocationState.getAddressFromLocation(location.latitude, location.longitude);
+        if (address.length > 0) {
+          info = `${info}\n地址: ${address}`;
+        }
+        this.locationInfo = info;
       } else {
         this.locationInfo = '未获取到定位';
       }

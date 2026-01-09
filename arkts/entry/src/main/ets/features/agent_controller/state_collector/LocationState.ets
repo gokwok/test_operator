@@ -35,4 +35,50 @@ export class LocationState {
       return null;
     }
   }
+
+  static async getAddressFromLocation(
+    latitude: number,
+    longitude: number,
+    locale: string = 'zh-CN'
+  ): Promise<string> {
+    try {
+      const request: geoLocationManager.ReverseGeoCodeRequest = {
+        latitude,
+        longitude,
+        locale,
+        maxItems: 1
+      };
+      const addresses: geoLocationManager.GeoAddress[] =
+        await geoLocationManager.getAddressesFromLocation(request);
+      if (addresses.length === 0) {
+        return '';
+      }
+      return LocationState.formatGeoAddress(addresses[0]);
+    } catch (e) {
+      console.warn(`[LocationState] reverse geocode failed: ${String(e)}`);
+      return '';
+    }
+  }
+
+  private static formatGeoAddress(address: geoLocationManager.GeoAddress): string {
+    const parts: string[] = [];
+    const candidates: Array<string | undefined> = [
+      address.countryName,
+      address.administrativeArea,
+      address.subAdministrativeArea,
+      address.locality,
+      address.subLocality,
+      address.roadName,
+      address.subRoadName,
+      address.premises,
+      address.placeName
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      const value = candidates[i];
+      if (value && value.length > 0) {
+        parts.push(value);
+      }
+    }
+    return parts.join('');
+  }
 }
