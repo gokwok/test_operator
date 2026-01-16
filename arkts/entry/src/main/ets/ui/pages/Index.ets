@@ -298,6 +298,19 @@ struct Index {
             })
         }
 
+        Row({ space: 8 }) {
+          Button('唤出全局浮窗')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.showGlobalFloatWindow();
+            })
+        }
+
         if (this.wallpaperInfo.length > 0) {
           Text(this.wallpaperInfo)
             .fontSize(11)
@@ -1976,6 +1989,27 @@ struct Index {
       await ctx.startAbility(want);
     } catch (e) {
       console.error(`打开 AgentSpaceViewer 失败: ${String(e)}`);
+    }
+  }
+
+  private async showGlobalFloatWindow(): Promise<void> {
+    try {
+      const ctx = this.getUiContext();
+      const want: Want = {
+        bundleName: 'com.huawei.aios.agent.operation',
+        abilityName: 'FloatWindowAbility',
+        action: 'show',
+      };
+      const startServiceExtension = (ctx as unknown as {
+        startServiceExtensionAbility?: (want: Want) => Promise<void>;
+      }).startServiceExtensionAbility;
+      if (startServiceExtension) {
+        await startServiceExtension.call(ctx, want);
+      } else {
+        await ctx.startAbility(want);
+      }
+    } catch (e) {
+      console.error(`唤出全局浮窗失败: ${String(e)}`);
     }
   }
 
