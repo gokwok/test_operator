@@ -1,5 +1,5 @@
 import { abilityAccessCtrl } from '@kit.AbilityKit';
-import type { common, Permissions } from '@kit.AbilityKit';
+import type { common, Permissions, Want } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
 
@@ -282,6 +282,19 @@ struct Index {
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
               void this.loadLocation();
+            })
+        }
+
+        Row({ space: 8 }) {
+          Button('打开 AgentSpaceViewer')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.openAgentSpaceViewer();
             })
         }
 
@@ -1950,6 +1963,19 @@ struct Index {
       }
     } catch (e) {
       this.locationInfo = `定位失败: ${String(e)}`;
+    }
+  }
+
+  private async openAgentSpaceViewer(): Promise<void> {
+    try {
+      const ctx = this.getUiContext();
+      const want: Want = {
+        bundleName: 'com.huawei.aios.agent.operation',
+        abilityName: 'AgentSpaceViewerAbility',
+      };
+      await ctx.startAbility(want);
+    } catch (e) {
+      console.error(`打开 AgentSpaceViewer 失败: ${String(e)}`);
     }
   }
 
