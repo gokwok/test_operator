@@ -215,8 +215,8 @@ export class AgentController {
     this.taskManager.submitUserReply(reply);
   }
 
-  requestTaskOver(content: string): void {
-    this.taskManager.requestTaskOver(content);
+  requestTakeOver(content: string): void {
+    this.taskManager.requestTakeOver(content);
   }
 
   requestSupplement(content: string): void {
@@ -535,7 +535,7 @@ export class AgentController {
       }
       return;
     }
-    if (name === 'call_user' || name === 'interact' || name === 'take_over' || name === 'task_over') {
+    if (name === 'call_user' || name === 'interact' || name === 'take_over' || name === 'take_over') {
       const content = LiveViewPresenter.resolveActionContent(action, description);
       await this.publishInteractionLiveView(content);
     }

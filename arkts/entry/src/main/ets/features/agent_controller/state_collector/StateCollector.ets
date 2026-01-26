@@ -23,13 +23,23 @@ export class StateCollector {
     return await LocationState.getCurrentLocation();
   }
 
-  buildState(
+  async buildState(
     screenshotBase64: string,
     installedApps: Array<string>,
     includeInstalledApps: boolean,
     userNote: string
-  ): DeviceState {
+  ): Promise<DeviceState> {
     const state: DeviceState = { screenshot: screenshotBase64 };
+    const foregroundBundle = (await this.getForegroundAppBundleName()).trim();
+    if (foregroundBundle.length > 0) {
+      state.system_foreground_app_bundle = foregroundBundle;
+    }
+    const agentSpaceForeground = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
+    if (agentSpaceForeground.length > 0) {
+      const displayName = this.toolKit.resolveAppDisplayNameByBundleName(agentSpaceForeground).trim();
+      state.agentspace_foreground_app_bundle =
+        displayName.length > 0 ? `${displayName} (${agentSpaceForeground})` : agentSpaceForeground;
+    }
     const note = userNote.trim();
     if (note.length > 0) {
       state.user_note = note;

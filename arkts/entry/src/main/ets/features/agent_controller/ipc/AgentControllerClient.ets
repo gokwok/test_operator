@@ -248,8 +248,8 @@ export class AgentControllerClient {
     await this.sendRequestWithString(AgentControllerRequestCode.SET_CLOUD_ENDPOINT, endpoint);
   }
 
-  async requestTaskOver(content: string): Promise<void> {
-    await this.sendRequestWithString(AgentControllerRequestCode.REQUEST_TASK_OVER, content);
+  async requestTakeOver(content: string): Promise<void> {
+    await this.sendRequestWithString(AgentControllerRequestCode.REQUEST_TAKE_OVER, content);
   }
 
   async requestSupplement(content: string): Promise<void> {

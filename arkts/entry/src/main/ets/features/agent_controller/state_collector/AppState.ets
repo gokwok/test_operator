@@ -10,6 +10,7 @@ const APP_NAME_WHITELIST: string[] = [
   '微信',
   'QQ',
   '微博',
+  '畅连',
   // E-commerce
   '淘宝',
   '京东',
@@ -19,6 +20,7 @@ const APP_NAME_WHITELIST: string[] = [
   // Lifestyle & Social
   '小红书',
   '知乎',
+  'Keep',
   // Maps & Navigation
   '高德地图',
   '百度地图',
@@ -27,23 +29,31 @@ const APP_NAME_WHITELIST: string[] = [
   '美团外卖',
   '大众点评',
   '肯德基',
+  '盒马',
   // Travel
   '铁路12306',
   '12306',
   '滴滴出行',
+  '携程旅行',
+  '慧通差旅',
+  '飞猪旅行',
+  '航旅纵横',
   // Video & Entertainment
-  'bilibili',
+  '哔哩哔哩',
   '抖音',
   '快手',
   '腾讯视频',
   '爱奇艺',
   '芒果TV',
+  '优酷视频',
+  '豆瓣',
   // Music & Audio
   'QQ音乐',
   '汽水音乐',
   '喜马拉雅',
   // Productivity
   '飞书',
+  '腾讯会议',
   // AI & Tools
   '豆包',
   // News & Information
@@ -73,6 +83,7 @@ const APP_NAME_WHITELIST: string[] = [
   '国家税务总局',
   '建设银行',
   '快手极速版',
+  '网易邮箱大师',
 
   // HarmonyOS 系统应用 - 工具类
   '浏览器',
@@ -83,7 +94,7 @@ const APP_NAME_WHITELIST: string[] = [
   '云盘',
   '云空间',
   '邮件',
-  '文件管理器',
+  '文件管理',
   '文件',
   '查找设备',
   '查找手机',
@@ -197,15 +208,17 @@ class PersistedAppCache {
 export class AppState {
   private static readonly appNameToAppId: Map<string, string> = new Map<string, string>();
   private static readonly appIdToInfo: Map<string, appInfo> = new Map<string, appInfo>();
-  private static readonly cacheTtlMs: number = 24 * 60 * 60 * 1000;
+  // Keep app list reasonably fresh: new installs/uninstalls should reflect without requiring a restart.
+  // NOTE: Refreshing requires scanning bundles and can be expensive, so we still cache.
+  private static readonly cacheTtlMs: number = 5 * 60 * 1000;
   private static cacheUpdatedAtMs: number = 0;
   private static cachedAppNames: string[] = [];
   private static diskCacheLoaded: boolean = false;
   private static refreshInFlight: Promise<void> | null = null;
 
-  private static readonly diskSchemaVersion: number = 1;
+  private static readonly diskSchemaVersion: number = 2;
   private static readonly prefsName: string = 'app_state_cache';
-  private static readonly prefsKey: string = 'cache_v1';
+  private static readonly prefsKey: string = 'cache_v2';
 
   static async listAppNames(ctx: common.Context): Promise<string[]> {
     await AppState.ensureAppCache(ctx);

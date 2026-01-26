@@ -85,6 +85,7 @@ export interface VTSRuntimeInfo {
 export interface VTSBackendPort {
   updateStartAbility(invoker: StartAbilityInvoker): void;
   getRuntime(): VTSRuntimeInfo | null;
+  get_current_app_bundle(): AppTarget | null;
   create(): Promise<VTSRuntimeInfo>;
   attachSurface(surfaceId: string): Promise<void>;
   startApp(target: AppTarget): Promise<void>;
@@ -130,6 +131,10 @@ export class VTSBackend implements VTSBackendPort {
 
   getRuntime(): VTSRuntimeInfo | null {
     return this.runtime;
+  }
+
+  get_current_app_bundle(): AppTarget | null {
+    return this.lastTarget;
   }
 
   async create(): Promise<VTSRuntimeInfo> {

@@ -17,6 +17,10 @@ export class ToolKit {
     this.targetResolver.setTargets(targets);
   }
 
+  resolveAppDisplayNameByBundleName(bundleName: string): string {
+    return this.targetResolver.resolveDisplayNameByBundleName(bundleName);
+  }
+
   async ensureVts(): Promise<AgentSpaceRuntimeInfo> {
     return await this.agentSpace.ensureVts();
   }
@@ -39,6 +43,11 @@ export class ToolKit {
   async screenshotBase64(): Promise<string> {
     await this.agentSpace.ensureVts();
     return await this.agentSpace.screenshotBase64();
+  }
+
+  getCurrentAppBundleFromAgentSpace(): string {
+    const target = this.agentSpace.get_current_app_bundle();
+    return target ? target.bundleName : '';
   }
 
   async transferToMain(): Promise<number> {

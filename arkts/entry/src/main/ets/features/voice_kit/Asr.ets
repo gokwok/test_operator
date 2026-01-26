@@ -86,7 +86,7 @@ class AsrFeature {
       const extraParams: SpeechRecognizerStartExtraParams = {
         recognitionMode: 0,
         vadBegin: 10000,
-        vadEnd: 800,
+        vadEnd: 5000,
         maxAudioDuration: 20000
       };
       const startParams: speechRecognizer.StartParams = {

@@ -236,9 +236,9 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
-      if (code === AgentControllerRequestCode.REQUEST_TASK_OVER) {
+      if (code === AgentControllerRequestCode.REQUEST_TAKE_OVER) {
         const content = data.readString();
-        this.service.requestTaskOver(content);
+        this.service.requestTakeOver(content);
         reply.writeString('ok');
         return true;
       }

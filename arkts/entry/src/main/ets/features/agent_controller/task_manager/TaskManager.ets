@@ -116,7 +116,7 @@ export class TaskManager {
       this.pushEvent('error', 'empty_user_reply');
       return;
     }
-    const shouldRollback = reply.kind === 'task_over';
+    const shouldRollback = reply.kind === 'take_over';
     if (shouldRollback) {
       this.pendingUserNote = content;
       this.pendingControlOp = 'rollback';
@@ -220,24 +220,24 @@ export class TaskManager {
     this.notifyStatus();
   }
 
-  requestTaskOver(content: string): void {
+  requestTakeOver(content: string): void {
     const trimmed = content.trim();
     if (trimmed.length === 0) {
-      this.pushEvent('error', 'task_over_empty');
+      this.pushEvent('error', 'take_over_empty');
       return;
     }
     if (this.snapshot.status === 'idle') {
-      this.pushEvent('error', 'task_over_idle');
+      this.pushEvent('error', 'take_over_idle');
       return;
     }
     this.stopRequested = true;
     this.snapshot.status = 'waiting_user';
-    this.snapshot.lastDescription = 'task_over';
-    this.snapshot.lastActionName = 'task_over';
+    this.snapshot.lastDescription = 'take_over';
+    this.snapshot.lastActionName = 'take_over';
     const params: ActionParameters = { content: trimmed };
-    const action: AgentAction = { name: 'task_over', parameters: params };
+    const action: AgentAction = { name: 'take_over', parameters: params };
     this.snapshot.lastActionJson = JSON.stringify(action);
-    this.pushEvent('need_user', 'task_over', this.snapshot.lastActionJson);
+    this.pushEvent('need_user', 'take_over', this.snapshot.lastActionJson);
     this.pushEvent('status', 'waiting_user');
     this.notifyStatus();
   }
@@ -329,8 +329,8 @@ export class TaskManager {
           }
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(initial) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
           const payload = pendingResult
-            ? this.buildFollowupPayload(collector, screenshot, pendingResult)
-            : this.buildInitialPayload(collector, screenshot);
+            ? await this.buildFollowupPayload(collector, screenshot, pendingResult)
+            : await this.buildInitialPayload(collector, screenshot);
           hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(initial) begin', token, this.snapshot.stepIndex);
           const response = await this.invokeWithRetry(proxy, sessionId, payload, token);
           if (this.shouldAbortLoop()) {
@@ -387,7 +387,7 @@ export class TaskManager {
           break;
         }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d screenshot(after) done len=%{public}d', token, this.snapshot.stepIndex, screenshot.length);
-        const payload = this.buildFollowupPayload(collector, screenshot, result);
+        const payload = await this.buildFollowupPayload(collector, screenshot, result);
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'token=%{public}d step=%{public}d invoke(after) begin', token, this.snapshot.stepIndex);
         const response = await this.invokeWithRetry(proxy, sessionId, payload, token);
         if (this.shouldAbortLoop()) {
@@ -430,8 +430,8 @@ export class TaskManager {
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'runLoop end token=%{public}d status=%{public}s', token, this.snapshot.status);
   }
 
-  private buildInitialPayload(collector: StateCollector, screenshot: string): CloudInvokePayload {
-    const state = this.buildStatePayload(collector, screenshot);
+  private async buildInitialPayload(collector: StateCollector, screenshot: string): Promise<CloudInvokePayload> {
+    const state = await this.buildStatePayload(collector, screenshot);
     const payload: CloudInvokePayload = {
       task: this.taskText,
       state,
@@ -443,8 +443,8 @@ export class TaskManager {
     return payload;
   }
 
-  private buildFollowupPayload(collector: StateCollector, screenshot: string, result: ActionResult): CloudInvokePayload {
-    const state = this.buildStatePayload(collector, screenshot);
+  private async buildFollowupPayload(collector: StateCollector, screenshot: string, result: ActionResult): Promise<CloudInvokePayload> {
+    const state = await this.buildStatePayload(collector, screenshot);
     const payload: CloudInvokePayload = {
       state,
       action_result: result,
@@ -456,10 +456,10 @@ export class TaskManager {
     return payload;
   }
 
-  private buildStatePayload(collector: StateCollector, screenshot: string): DeviceState {
+  private async buildStatePayload(collector: StateCollector, screenshot: string): Promise<DeviceState> {
     const note = this.consumeUserNote();
     const includeInstalledApps = !this.installedAppsSent && this.installedApps.length > 0;
-    const state = collector.buildState(screenshot, this.installedApps, includeInstalledApps, note);
+    const state = await collector.buildState(screenshot, this.installedApps, includeInstalledApps, note);
     if (includeInstalledApps) {
       this.installedAppsSent = true;
       this.snapshot.installedAppsSent = true;
@@ -510,7 +510,7 @@ export class TaskManager {
       );
       return 'finish';
     }
-    if (lower === 'call_user' || lower === 'interact' || lower === 'task_over' || lower === 'take_over') {
+    if (lower === 'call_user' || lower === 'interact' || lower === 'take_over' || lower === 'take_over') {
       this.snapshot.status = 'waiting_user';
       const payload: NeedUserPayload = { description, action };
       this.pushEvent('need_user', lower, JSON.stringify(payload));

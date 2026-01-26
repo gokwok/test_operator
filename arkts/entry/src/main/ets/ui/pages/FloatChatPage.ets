@@ -15,9 +15,16 @@ struct FloatChatPage {
   @State private isVisible: boolean = false;
   @State @Watch('onSendSequence') private sendSequence: number = 0;
   @State @Watch('onMicSequence') private micSequence: number = 0;
+  @State @Watch('onPttStartSequence') private pttStartSequence: number = 0;
+  @State @Watch('onPttStopSequence') private pttStopSequence: number = 0;
+  @State private pttPressed: boolean = false;
   @State private focusSequence: number = 0;
   @State private isListening: boolean = false;
   @State private inputMode: InputMode = 'voice';
+  @State private asrLiveText: string = '';
+  @State private isTransferring: boolean = false;
+  @State private transferText: string = '';
+  @State private transferProgress: number = 0;
   @StorageProp('FloatWindow_IsClosing') @Watch('onClosingChange') private isClosing: boolean = false;
   @StorageProp('FloatWindow_IsWaiting') private isWaiting: boolean = false;
 
@@ -25,7 +32,11 @@ struct FloatChatPage {
   private readonly BOTTOM_PADDING: number = 24;
   private readonly ANIMATION_DURATION_MS: number = 350;
   private readonly ENTER_DELAY_MS: number = 50;
+  private readonly TRANSFER_DURATION_MS: number = 260;
+  private readonly PTT_AUTO_RESTART_DELAY_MS: number = 80;
   private enterTimerId: number = -1;
+  private transferTimerId: number = -1;
+  private pttRestartTimerId: number = -1;
   private serviceClient: AgentControllerClient = new AgentControllerClient();
   private asrBaseText: string = '';
   private asrPartialText: string = '';
@@ -45,7 +56,6 @@ struct FloatChatPage {
       });
       this.enterTimerId = -1;
     }, this.ENTER_DELAY_MS) as number;
-    this.startListeningIfAllowed();
   }
 
   aboutToDisappear(): void {
@@ -53,15 +63,25 @@ struct FloatChatPage {
       clearTimeout(this.enterTimerId);
       this.enterTimerId = -1;
     }
+    if (this.transferTimerId !== -1) {
+      clearTimeout(this.transferTimerId);
+      this.transferTimerId = -1;
+    }
+    this.clearPttRestartTimer();
     this.stopListening();
     this.inputText = '';
+    this.asrLiveText = '';
+    this.resetTransfer();
   }
 
   private onClosingChange(): void {
     if (!this.isClosing) {
       return;
     }
+    this.clearPttRestartTimer();
     this.stopListening();
+    this.asrLiveText = '';
+    this.resetTransfer();
     animateTo({ duration: this.ANIMATION_DURATION_MS, curve: Curve.EaseOut }, () => {
       this.isVisible = false;
     });
@@ -76,10 +96,19 @@ struct FloatChatPage {
           text: $inputText,
           sendSequence: $sendSequence,
           micSequence: $micSequence,
+          pttStartSequence: $pttStartSequence,
+          pttStopSequence: $pttStopSequence,
+          pttPressed: $pttPressed,
           focusSequence: this.focusSequence,
           inputEnabled: !this.isClosing && !this.isWaiting,
           inputMode: this.inputMode,
           isListening: this.isListening,
+          // Keep showing the last recognized ASR text even if the recognizer stops early
+          // (e.g., silence triggers onComplete) while the user is still holding PTT.
+          asrBubbleText: this.asrLiveText.trim().length > 0 ? this.asrLiveText : this.inputText,
+          isTransferring: this.isTransferring,
+          transferText: this.transferText,
+          transferProgress: this.transferProgress,
         })
           .opacity(this.isVisible ? 1 : 0)
           .translate({ y: this.isVisible ? 0 : 20 })
@@ -103,28 +132,44 @@ struct FloatChatPage {
     if (this.isClosing || this.isWaiting) {
       return;
     }
+    this.clearPttRestartTimer();
     if (this.isListening) {
       this.stopListening();
-      return;
     }
     if (this.inputMode === 'voice') {
+      this.resetTransfer();
       this.inputMode = 'keyboard';
       this.requestInputFocus();
       return;
     }
+    this.resetTransfer();
     this.inputMode = 'voice';
-    void this.startListening();
   }
 
   private requestInputFocus(): void {
     this.focusSequence += 1;
   }
 
-  private startListeningIfAllowed(): void {
+  private onPttStartSequence(): void {
     if (this.isClosing || this.isWaiting || this.isListening) {
       return;
     }
+    this.clearPttRestartTimer();
+    this.resetTransfer();
+    this.inputMode = 'voice';
     void this.startListening();
+  }
+
+  private onPttStopSequence(): void {
+    this.clearPttRestartTimer();
+    this.stopListening();
+    const mergedText = this.asrLiveText.trim();
+    if (mergedText.length > 0) {
+      this.beginTransferToInput(this.asrLiveText);
+    } else {
+      this.asrLiveText = '';
+      this.inputMode = 'keyboard';
+    }
   }
 
   private async dispatchTask(): Promise<void> {
@@ -188,8 +233,10 @@ struct FloatChatPage {
     const ctx = getContext(this) as common.UIAbilityContext;
     const token = this.nextListeningToken();
     this.inputMode = 'voice';
-    this.asrBaseText = this.inputText;
+    const baseText = this.asrLiveText.trim().length > 0 ? this.asrLiveText : this.inputText;
+    this.asrBaseText = baseText;
     this.asrPartialText = '';
+    this.asrLiveText = baseText;
     this.isListening = true;
     const started = await asrFeature.startListening(ctx, {
       onStart: () => {
@@ -215,37 +262,45 @@ struct FloatChatPage {
           return;
         }
         this.isListening = false;
-        this.inputMode = 'voice';
         this.clearAsrBuffer();
+        this.schedulePttAutoRestart();
       },
       onError: () => {
         if (!this.isListeningTokenActive(token)) {
           return;
         }
         this.isListening = false;
-        this.inputMode = 'voice';
         this.clearAsrBuffer();
+        this.schedulePttAutoRestart();
       }
     });
     if (!started) {
       this.isListening = false;
       this.clearAsrBuffer();
+      this.schedulePttAutoRestart();
     }
   }
 
   private stopListening(): void {
+    this.clearPttRestartTimer();
     if (!this.isListening) {
+      this.invalidateListeningToken();
       return;
     }
     this.invalidateListeningToken();
     this.isListening = false;
-    this.inputMode = 'voice';
     asrFeature.stopListening(true);
   }
 
   private updateAsrText(text: string): void {
+    // Some ASR engines may emit empty/whitespace results during silence. Treat those as
+    // "no update" so we don't clear already recognized interim text while the user is
+    // still holding the PTT button.
+    if (text.trim().length === 0) {
+      return;
+    }
     this.asrPartialText = text;
-    this.inputText = this.mergeAsrText(this.asrBaseText, this.asrPartialText);
+    this.asrLiveText = this.mergeAsrText(this.asrBaseText, this.asrPartialText);
   }
 
   private mergeAsrText(baseText: string, asrText: string): string {
@@ -264,6 +319,67 @@ struct FloatChatPage {
   private clearAsrBuffer(): void {
     this.asrBaseText = '';
     this.asrPartialText = '';
+  }
+
+  private schedulePttAutoRestart(): void {
+    if (!this.pttPressed || this.isClosing || this.isWaiting || this.inputMode !== 'voice') {
+      return;
+    }
+    if (this.pttRestartTimerId !== -1) {
+      return;
+    }
+    this.pttRestartTimerId = setTimeout(() => {
+      this.pttRestartTimerId = -1;
+      if (!this.pttPressed || this.isClosing || this.isWaiting || this.isListening || this.inputMode !== 'voice') {
+        return;
+      }
+      void this.startListening();
+    }, this.PTT_AUTO_RESTART_DELAY_MS) as number;
+  }
+
+  private clearPttRestartTimer(): void {
+    if (this.pttRestartTimerId === -1) {
+      return;
+    }
+    clearTimeout(this.pttRestartTimerId);
+    this.pttRestartTimerId = -1;
+  }
+
+  private beginTransferToInput(text: string): void {
+    const value = text.trimEnd();
+    if (value.length === 0) {
+      this.asrLiveText = '';
+      this.inputMode = 'keyboard';
+      return;
+    }
+    if (this.transferTimerId !== -1) {
+      clearTimeout(this.transferTimerId);
+      this.transferTimerId = -1;
+    }
+    this.inputText = value;
+    this.transferText = value;
+    this.isTransferring = true;
+    this.transferProgress = 0;
+    this.inputMode = 'keyboard';
+    animateTo({ duration: this.TRANSFER_DURATION_MS, curve: Curve.EaseOut }, () => {
+      this.transferProgress = 1;
+    });
+    this.transferTimerId = setTimeout(() => {
+      this.transferTimerId = -1;
+      this.asrLiveText = '';
+      this.clearAsrBuffer();
+      this.resetTransfer();
+    }, this.TRANSFER_DURATION_MS) as number;
+  }
+
+  private resetTransfer(): void {
+    if (this.transferTimerId !== -1) {
+      clearTimeout(this.transferTimerId);
+      this.transferTimerId = -1;
+    }
+    this.isTransferring = false;
+    this.transferText = '';
+    this.transferProgress = 0;
   }
 
   private nextListeningToken(): number {

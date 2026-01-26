@@ -100,7 +100,7 @@ export class LiveViewPresenter {
     if (trimmed === 'liveview_closed') {
       return '用户关闭了任务实况';
     }
-    if (trimmed === 'task_over') {
+    if (trimmed === 'take_over') {
       return '任务已结束';
     }
     return trimmed;

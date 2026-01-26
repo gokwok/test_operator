@@ -1377,7 +1377,7 @@ struct Index {
     if (normalized === 'take_over') {
       return '接管';
     }
-    if (normalized === 'task_over') {
+    if (normalized === 'take_over') {
       return '任务恢复';
     }
     if (normalized === 'interact') {

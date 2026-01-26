@@ -135,6 +135,10 @@ export class AgentSpace {
     return this.appLaunched;
   }
 
+  get_current_app_bundle(): AppTarget | null {
+    return this.backend.get_current_app_bundle();
+  }
+
   async getRuntimeInfo(): Promise<AgentSpaceRuntimeInfo> {
     const rt = this.backend.getRuntime();
     const info: AgentSpaceRuntimeInfo = {
@@ -291,7 +295,7 @@ export class AgentSpace {
       return await this.handleLaunchApp(action.parameters);
     }
 
-    if (name === 'call_user' || name === 'interact' || name === 'task_over' || name === 'take_note' || name === 'finish') {
+    if (name === 'call_user' || name === 'interact' || name === 'take_over' || name === 'take_note' || name === 'finish') {
       return { status: 'SKIPPED', error: `not_implemented:${name}` };
     }
 

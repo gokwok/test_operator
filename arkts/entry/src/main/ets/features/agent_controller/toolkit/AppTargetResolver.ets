@@ -3,9 +3,11 @@ import type { AppTargetDescriptor } from '../types';
 
 export class AppTargetResolver {
   private appTargets: Map<string, AppTarget> = new Map<string, AppTarget>();
+  private bundleNameToDisplayName: Map<string, string> = new Map<string, string>();
 
   setTargets(targets: Array<AppTargetDescriptor>): void {
     this.appTargets.clear();
+    this.bundleNameToDisplayName.clear();
     for (let i = 0; i < targets.length; i++) {
       const entry = targets[i];
       const displayName = entry.displayName.trim();
@@ -16,6 +18,9 @@ export class AppTargetResolver {
       const abilityName = entry.abilityName.trim().length > 0 ? entry.abilityName.trim() : 'EntryAbility';
       const target: AppTarget = { bundleName, abilityName };
       this.appTargets.set(displayName, target);
+      if (!this.bundleNameToDisplayName.has(bundleName)) {
+        this.bundleNameToDisplayName.set(bundleName, displayName);
+      }
     }
   }
 
@@ -37,6 +42,14 @@ export class AppTargetResolver {
       return { bundleName: extracted, abilityName: 'EntryAbility' };
     }
     return null;
+  }
+
+  resolveDisplayNameByBundleName(rawBundleName: string): string {
+    const bundleName = rawBundleName.trim();
+    if (bundleName.length === 0) {
+      return '';
+    }
+    return this.bundleNameToDisplayName.get(bundleName) ?? '';
   }
 
   private parseDirectTarget(name: string): AppTarget | null {

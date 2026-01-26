@@ -31,6 +31,8 @@ export interface TaskSnapshot {
 
 export interface DeviceState {
   screenshot: string;
+  system_foreground_app_bundle?: string;
+  agentspace_foreground_app_bundle?: string;
   user_note?: string;
   installed_apps?: Array<string>;
 }
@@ -42,7 +44,7 @@ export interface AppTargetDescriptor {
 }
 
 export interface UserReply {
-  kind: 'call_user' | 'interact' | 'take_over' | 'task_over';
+  kind: 'call_user' | 'interact' | 'take_over' | 'take_over';
   content: string;
 }
 
