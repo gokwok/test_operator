@@ -27,9 +27,13 @@ interface AccessibilityTreeNode {
   id: string;
   text?: string;
   accessibilityText?: string;
+  contents?: Array<string>;
   description?: string;
+  hintText?: string;
   resourceName?: string;
+  componentId?: number;
   componentType?: string;
+  customComponentType?: string;
   rect?: Rect;
   screenRect?: Rect;
   clickable?: boolean;
@@ -349,9 +353,13 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       id: String(state.nextId++),
       text: await this.readStringAttr(element, 'text'),
       accessibilityText: await this.readStringAttr(element, 'accessibilityText'),
+      contents: await this.readStringArrayAttr(element, 'contents'),
       description: await this.readStringAttr(element, 'description'),
+      hintText: await this.readStringAttr(element, 'hintText'),
       resourceName: await this.readStringAttr(element, 'resourceName'),
+      componentId: await this.readNumberAttr(element, 'componentId'),
       componentType: await this.readStringAttr(element, 'componentType'),
+      customComponentType: await this.readStringAttr(element, 'customComponentType'),
       rect: await this.readRectAttr(element, 'rect'),
       screenRect: await this.readRectAttr(element, 'screenRect'),
       clickable: await this.readBooleanAttr(element, 'clickable'),
@@ -416,6 +424,27 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       return value;
     }
     return undefined;
+  }
+
+  private async readStringArrayAttr(
+    element: AccessibilityElement,
+    key: string
+  ): Promise<Array<string> | undefined> {
+    try {
+      const value = await element.attributeValue(key as keyof ElementAttributeValues);
+      if (Array.isArray(value)) {
+        const results: Array<string> = [];
+        for (const item of value) {
+          if (typeof item === 'string' && item.length > 0) {
+            results.push(item);
+          }
+        }
+        return results.length > 0 ? results : undefined;
+      }
+      return undefined;
+    } catch (_e) {
+      return undefined;
+    }
   }
 
   private async readNumberAttr(

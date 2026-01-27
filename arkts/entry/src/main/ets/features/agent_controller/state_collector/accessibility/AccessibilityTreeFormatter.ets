@@ -12,14 +12,20 @@ interface AccessibilityRect {
   top?: number;
   right?: number;
   bottom?: number;
+  width?: number;
+  height?: number;
 }
 
 interface AccessibilityTreeNode {
   text?: string;
   accessibilityText?: string;
+  contents?: Array<string>;
   description?: string;
+  hintText?: string;
   resourceName?: string;
+  componentId?: number;
   componentType?: string;
+  customComponentType?: string;
   rect?: AccessibilityRect;
   screenRect?: AccessibilityRect;
   children?: Array<AccessibilityTreeNode>;
@@ -57,8 +63,8 @@ export class AccessibilityTreeFormatter {
     const walk = (node: AccessibilityTreeNode): void => {
       const item: AccessibilityTreeListItem = {
         index,
-        resourceId: node.resourceName ?? '',
-        className: AccessibilityTreeFormatter.shortClassName(node.componentType),
+        resourceId: AccessibilityTreeFormatter.pickResourceId(node),
+        className: AccessibilityTreeFormatter.shortClassName(node.customComponentType ?? node.componentType),
         text: AccessibilityTreeFormatter.pickText(node),
         bounds: AccessibilityTreeFormatter.formatBounds(node.screenRect ?? node.rect),
         children: []
@@ -83,15 +89,51 @@ export class AccessibilityTreeFormatter {
     if (a11yText.length > 0) {
       return a11yText;
     }
+    const contents = AccessibilityTreeFormatter.joinContents(node.contents);
+    if (contents.length > 0) {
+      return contents;
+    }
     const desc = (node.description ?? '').trim();
     if (desc.length > 0) {
       return desc;
+    }
+    const hint = (node.hintText ?? '').trim();
+    if (hint.length > 0) {
+      return hint;
     }
     const resource = (node.resourceName ?? '').trim();
     if (resource.length > 0) {
       return resource;
     }
-    return (node.componentType ?? '').trim();
+    return (node.customComponentType ?? node.componentType ?? '').trim();
+  }
+
+  private static pickResourceId(node: AccessibilityTreeNode): string {
+    const resource = (node.resourceName ?? '').trim();
+    if (resource.length > 0) {
+      return resource;
+    }
+    const componentId = node.componentId;
+    if (typeof componentId === 'number' && Number.isFinite(componentId)) {
+      return `${componentId}`;
+    }
+    return '';
+  }
+
+  private static joinContents(contents?: Array<string>): string {
+    if (!contents || contents.length === 0) {
+      return '';
+    }
+    const parts: Array<string> = [];
+    for (const item of contents) {
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed.length > 0) {
+          parts.push(trimmed);
+        }
+      }
+    }
+    return parts.join(' ');
   }
 
   private static shortClassName(componentType?: string): string {
@@ -112,8 +154,20 @@ export class AccessibilityTreeFormatter {
     }
     const left = rect.left;
     const top = rect.top;
-    const right = rect.right;
-    const bottom = rect.bottom;
+    let right = rect.right;
+    let bottom = rect.bottom;
+    const width = rect.width;
+    const height = rect.height;
+    if (
+      (typeof right !== 'number' || typeof bottom !== 'number') &&
+      typeof width === 'number' &&
+      typeof height === 'number' &&
+      typeof left === 'number' &&
+      typeof top === 'number'
+    ) {
+      right = left + width;
+      bottom = top + height;
+    }
     if (
       typeof left !== 'number' ||
       typeof top !== 'number' ||
