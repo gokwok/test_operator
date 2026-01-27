@@ -292,7 +292,7 @@ export class AgentControllerStub extends rpc.RemoteObject {
       return false;
     } catch (e) {
       reply.writeString(`ERR_EXCEPTION:${String(e)}`);
-      return false;
+      return true;
     }
   }
 

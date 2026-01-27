@@ -2100,6 +2100,10 @@ struct Index {
     try {
       await this.ensureAgentServiceConnected();
       const payload = await this.agentServiceClient.dumpAccessibilityTree();
+      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
+        this.accessibilityTreeInfo = `获取无障碍树失败: ${payload}`;
+        return;
+      }
       this.accessibilityTreeInfo = payload.length > 0 ? payload : '无障碍树为空';
     } catch (e) {
       this.accessibilityTreeInfo = `获取无障碍树失败: ${String(e)}`;

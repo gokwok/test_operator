@@ -242,24 +242,28 @@ export class AgentController {
   }
 
   async dumpAccessibilityTree(): Promise<string> {
-    const toolKit = this.requireToolKit();
-    let runtime = await toolKit.getRuntimeInfo();
-    if (runtime.screenId < 0) {
-      runtime = await toolKit.ensureVts();
+    try {
+      const toolKit = this.requireToolKit();
+      let runtime = await toolKit.getRuntimeInfo();
+      if (runtime.screenId < 0) {
+        runtime = await toolKit.ensureVts();
+      }
+      const displayId = runtime.displayId ?? runtime.screenId;
+      const targetBundle = toolKit.getCurrentAppBundleFromAgentSpace();
+      if (targetBundle.length === 0) {
+        return 'ERR:agentspace_bundle_missing';
+      }
+      const request: AccessibilityTreeRequestOptions = {
+        displayId: displayId >= 0 ? displayId : undefined,
+        bundleName: targetBundle,
+        maxDepth: 10,
+        maxNodes: 120
+      };
+      const response = await AccessibilityTreeClient.requestTreeJson(request);
+      return response;
+    } catch (e) {
+      return `ERR:${String(e)}`;
     }
-    const displayId = runtime.displayId ?? runtime.screenId;
-    const targetBundle = toolKit.getCurrentAppBundleFromAgentSpace();
-    if (targetBundle.length === 0) {
-      throw new Error('agentspace_bundle_missing');
-    }
-    const request: AccessibilityTreeRequestOptions = {
-      displayId: displayId >= 0 ? displayId : undefined,
-      bundleName: targetBundle,
-      maxDepth: 10,
-      maxNodes: 120
-    };
-    const response = await AccessibilityTreeClient.requestTreeJson(request);
-    return response;
   }
 
   setCloudEndpoint(endpoint: string): void {
