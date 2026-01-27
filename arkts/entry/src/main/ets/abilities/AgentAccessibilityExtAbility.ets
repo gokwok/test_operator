@@ -74,12 +74,6 @@ interface WindowEntry {
   meta: AccessibilityWindowMeta;
 }
 
-interface AccessibilityWindowContext {
-  getAccessibilityWindowsSync(displayId?: number): Array<AccessibilityElement>;
-  getRootInActiveWindow(windowId?: number): Promise<AccessibilityElement>;
-  getWindowRootElement?(windowId?: number): Promise<AccessibilityElement>;
-}
-
 const DEFAULT_MAX_DEPTH: number = 10;
 const DEFAULT_MAX_NODES: number = 120;
 const MAX_PAYLOAD_LENGTH: number = 60000;
@@ -177,7 +171,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
         };
       }
       const displayId = this.normalizeDisplayId(request.displayId);
-      const windows = this.listWindows(ctx, displayId);
+      const windows = this.listWindows(displayId);
       const entries = await this.buildWindowEntries(windows);
       const target = this.selectTargetWindow(entries, request);
       if (!target) {
@@ -187,7 +181,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
           error: 'window_not_found'
         };
       }
-      const root = await this.getWindowRoot(ctx, target.meta.windowId);
+      const root = await this.getWindowRoot(target.meta.windowId);
       if (!root) {
         return {
           requestId: request.requestId,
@@ -233,10 +227,11 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     }
   }
 
-  private listWindows(
-    ctx: AccessibilityWindowContext,
-    displayId?: number
-  ): Array<AccessibilityElement> {
+  private listWindows(displayId?: number): Array<AccessibilityElement> {
+    const ctx = this.context;
+    if (!ctx) {
+      return [];
+    }
     try {
       if (displayId === undefined) {
         return ctx.getAccessibilityWindowsSync();
@@ -300,10 +295,11 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     return entries[0];
   }
 
-  private async getWindowRoot(
-    ctx: AccessibilityWindowContext,
-    windowId?: number
-  ): Promise<AccessibilityElement | null> {
+  private async getWindowRoot(windowId?: number): Promise<AccessibilityElement | null> {
+    const ctx = this.context;
+    if (!ctx) {
+      return null;
+    }
     try {
       return await ctx.getRootInActiveWindow(windowId);
     } catch (_e) {
