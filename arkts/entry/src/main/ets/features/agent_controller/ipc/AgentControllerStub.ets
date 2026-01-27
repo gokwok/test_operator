@@ -295,6 +295,13 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentControllerRequestCode.DUMP_ACCESSIBILITY_TREE_LIST) {
+        const _ignored = data.readString();
+        void _ignored;
+        const payload = await this.service.dumpAccessibilityTreeList();
+        reply.writeString(payload);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

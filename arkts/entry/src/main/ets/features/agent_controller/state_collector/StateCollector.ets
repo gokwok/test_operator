@@ -4,6 +4,7 @@ import { ForegroundAppState } from './ForegroundAppState';
 import type { GpsInfo } from './LocationState';
 import { LocationState } from './LocationState';
 import { AccessibilityTreeClient } from './accessibility/AccessibilityTreeClient';
+import { AccessibilityTreeFormatter } from './accessibility/AccessibilityTreeFormatter';
 import type { AccessibilityTreeRequestOptions } from './accessibility/AccessibilityTreeProtocol';
 
 export class StateCollector {
@@ -92,5 +93,17 @@ export class StateCollector {
     } catch (e) {
       return `ERR:${String(e)}`;
     }
+  }
+
+  async dumpAccessibilityTreeListForAgentSpace(): Promise<string> {
+    const raw = await this.dumpAccessibilityTreeForAgentSpace();
+    if (raw.startsWith('ERR:') || raw.startsWith('ERR_EXCEPTION:')) {
+      return raw;
+    }
+    const listJson = AccessibilityTreeFormatter.toListJson(raw);
+    if (listJson.startsWith('ERR:')) {
+      return listJson;
+    }
+    return listJson;
   }
 }

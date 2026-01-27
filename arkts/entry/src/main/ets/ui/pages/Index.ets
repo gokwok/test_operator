@@ -109,6 +109,7 @@ struct Index {
   @State agentSpaceAppName: string = '';
   @State accessibilityTreeInfo: string = '';
   @State accessibilityWindowsInfo: string = '';
+  @State accessibilityTreeListInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -367,6 +368,17 @@ struct Index {
             .onClick(() => {
               void this.debugDumpAccessibilityWindows();
             })
+
+          Button('获取无障碍树列表')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.debugDumpAccessibilityTreeList();
+            })
         }
 
         Row({ space: 8 }) {
@@ -414,6 +426,12 @@ struct Index {
 
         if (this.accessibilityWindowsInfo.length > 0) {
           Text(this.accessibilityWindowsInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.accessibilityTreeListInfo.length > 0) {
+          Text(this.accessibilityTreeListInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -2140,6 +2158,21 @@ struct Index {
       this.accessibilityWindowsInfo = payload.length > 0 ? payload : '无障碍窗口为空';
     } catch (e) {
       this.accessibilityWindowsInfo = `获取无障碍窗口失败: ${String(e)}`;
+    }
+  }
+
+  private async debugDumpAccessibilityTreeList(): Promise<void> {
+    this.accessibilityTreeListInfo = '正在获取无障碍树列表...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.dumpAccessibilityTreeList();
+      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
+        this.accessibilityTreeListInfo = `获取无障碍树列表失败: ${payload}`;
+        return;
+      }
+      this.accessibilityTreeListInfo = payload.length > 0 ? payload : '无障碍树列表为空';
+    } catch (e) {
+      this.accessibilityTreeListInfo = `获取无障碍树列表失败: ${String(e)}`;
     }
   }
 
