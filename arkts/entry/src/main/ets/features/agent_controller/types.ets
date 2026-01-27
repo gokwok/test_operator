@@ -44,7 +44,7 @@ export interface AppTargetDescriptor {
 }
 
 export interface UserReply {
-  kind: 'call_user' | 'interact' | 'take_over' | 'take_over';
+  kind: 'call_user' | 'interact' | 'take_over';
   content: string;
 }
 

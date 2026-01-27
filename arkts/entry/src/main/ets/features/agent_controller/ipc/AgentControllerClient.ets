@@ -126,6 +126,10 @@ export class AgentControllerClient {
     await this.sendRequestWithTwoStrings(AgentControllerRequestCode.LAUNCH_APP, bundleName, abilityName);
   }
 
+  async launchAppByName(appName: string): Promise<void> {
+    await this.sendRequestWithString(AgentControllerRequestCode.LAUNCH_APP_BY_NAME, appName);
+  }
+
   async clickNorm(xNorm: number, yNorm: number): Promise<void> {
     await this.sendRequestWithTwoInts(AgentControllerRequestCode.CLICK_NORM, xNorm, yNorm);
   }

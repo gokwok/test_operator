@@ -510,7 +510,7 @@ export class TaskManager {
       );
       return 'finish';
     }
-    if (lower === 'call_user' || lower === 'interact' || lower === 'take_over' || lower === 'take_over') {
+    if (lower === 'call_user' || lower === 'interact' || lower === 'take_over') {
       this.snapshot.status = 'waiting_user';
       const payload: NeedUserPayload = { description, action };
       this.pushEvent('need_user', lower, JSON.stringify(payload));

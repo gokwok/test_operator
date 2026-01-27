@@ -253,6 +253,26 @@ export class AgentController {
     return JSON.stringify(runtime);
   }
 
+  async launchAppByName(appName: string): Promise<void> {
+    const trimmed = appName.trim();
+    if (trimmed.length === 0) {
+      throw new Error('app_name_empty');
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const targets = await this.safeListAppTargets(ctx);
+    this.appTargetMap = this.buildAppTargetMap(targets);
+    this.requireToolKit().setAppTargets(targets);
+
+    const target = this.resolveAppTarget(trimmed);
+    if (!target) {
+      throw new Error('app_not_mapped');
+    }
+    await this.launchApp(target.bundleName, target.abilityName);
+  }
+
   async launchApp(bundleName: string, abilityName: string): Promise<void> {
     const target: AppTarget = { bundleName, abilityName };
     this.lastLaunchTarget = target;
@@ -535,7 +555,7 @@ export class AgentController {
       }
       return;
     }
-    if (name === 'call_user' || name === 'interact' || name === 'take_over' || name === 'take_over') {
+    if (name === 'call_user' || name === 'interact' || name === 'take_over') {
       const content = LiveViewPresenter.resolveActionContent(action, description);
       await this.publishInteractionLiveView(content);
     }

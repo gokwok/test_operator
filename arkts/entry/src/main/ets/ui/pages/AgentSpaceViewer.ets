@@ -35,7 +35,7 @@ interface ParsedInteractionAction {
 }
 
 interface InteractionPayload {
-  kind: 'call_user' | 'interact' | 'take_over' | 'take_over';
+  kind: 'call_user' | 'interact' | 'take_over';
   content: string;
   options: Array<string>;
 }
@@ -85,7 +85,7 @@ struct AgentSpaceViewer {
   private lastStatusText: string = '';
   private callUserActive: boolean = false;
   private callUserContent: string = '';
-  private callUserKind: 'call_user' | 'interact' | 'take_over' | 'take_over' = 'call_user';
+  private callUserKind: 'call_user' | 'interact' | 'take_over' = 'call_user';
   private supplementActive: boolean = false;
   private takeOverIdleTimerId: number = -1;
   private takeOverCountdownTimerId: number = -1;
@@ -473,7 +473,7 @@ struct AgentSpaceViewer {
     try {
       const action = JSON.parse(actionJson) as ParsedInteractionAction;
       const name = action?.name?.toLowerCase() ?? '';
-      if (name !== 'call_user' && name !== 'interact' && name !== 'take_over' && name !== 'take_over') {
+      if (name !== 'call_user' && name !== 'interact' && name !== 'take_over') {
         return null;
       }
       const content = action?.parameters?.content ?? '';
@@ -486,13 +486,7 @@ struct AgentSpaceViewer {
       }
       const options = name === 'interact' ? this.normalizeOptions(action?.parameters?.options) : [];
       const payload: InteractionPayload = {
-        kind: name === 'interact'
-          ? 'interact'
-          : name === 'take_over'
-            ? 'take_over'
-            : name === 'take_over'
-              ? 'take_over'
-              : 'call_user',
+        kind: name === 'interact' ? 'interact' : name === 'take_over' ? 'take_over' : 'call_user',
         content: normalizedContent,
         options,
       };
@@ -521,8 +515,8 @@ struct AgentSpaceViewer {
     return result;
   }
 
-  private isTakeOverKind(kind: 'call_user' | 'interact' | 'take_over' | 'take_over'): boolean {
-    return kind === 'take_over' || kind === 'take_over';
+  private isTakeOverKind(kind: 'call_user' | 'interact' | 'take_over'): boolean {
+    return kind === 'take_over';
   }
 
   private isUserReplyStatusLocked(snapshot: TaskSnapshot): boolean {
@@ -532,7 +526,6 @@ struct AgentSpaceViewer {
     }
     return snapshot.lastActionName === 'call_user' ||
       snapshot.lastActionName === 'interact' ||
-      snapshot.lastActionName === 'take_over' ||
       snapshot.lastActionName === 'take_over';
   }
 
@@ -795,7 +788,7 @@ struct AgentSpaceViewer {
   }
 
   private async submitUserReply(
-    kind: 'call_user' | 'interact' | 'take_over' | 'take_over',
+    kind: 'call_user' | 'interact' | 'take_over',
     text: string,
     displayOverride?: string
   ): Promise<void> {
@@ -932,8 +925,7 @@ struct AgentSpaceViewer {
     this.stopManualControl();
     const reply = this.manualTakeOverReply;
     const message = `任务恢复执行\n${reply}`;
-    const kind = this.callUserKind === 'take_over' ? 'take_over' : 'take_over';
-    await this.submitUserReply(kind, reply, message);
+    await this.submitUserReply('take_over', reply, message);
   }
 
   private async updateViewerMode(mode: AgentSpaceDisplayMode): Promise<void> {

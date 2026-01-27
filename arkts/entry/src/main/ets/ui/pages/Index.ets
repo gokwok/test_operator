@@ -7,6 +7,7 @@ import { TaskHistoryStore } from '../../features/persistence/history/TaskHistory
 import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistence/history/TaskHistoryStore';
 import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
+import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 import { ForegroundAppState } from '../../features/agent_controller/state_collector/ForegroundAppState';
 import { LocationState } from '../../features/agent_controller/state_collector/LocationState';
@@ -82,6 +83,10 @@ interface StepParamLine {
   value: string;
 }
 
+interface ServiceExtensionStarter {
+  startServiceExtensionAbility?: (want: Want) => Promise<void>;
+}
+
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean' | 'chevron_left' | 'trash';
 
@@ -100,6 +105,8 @@ struct Index {
   @State wallpaperPixelMap: image.PixelMap | null = null;
   @State foregroundAppInfo: string = '';
   @State locationInfo: string = '';
+  @State agentSpaceInfo: string = '';
+  @State agentSpaceAppName: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -121,6 +128,7 @@ struct Index {
 
   private stepPixelMapRequestSeq: number = 0;
   private stepImageCacheSeq: number = 0;
+  private agentServiceClient: AgentControllerClient = new AgentControllerClient();
 
   aboutToAppear(): void {
     void this.loadSettings();
@@ -296,6 +304,43 @@ struct Index {
             .onClick(() => {
               void this.openAgentSpaceViewer();
             })
+
+          Button('初始化 AgentSpace')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.initAgentSpace();
+            })
+        }
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: '应用名称（如 微信 / com.xxx 或 com.xxx/EntryAbility）', text: this.agentSpaceAppName })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.agentSpaceAppName = value;
+            })
+
+          Button('打开应用')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.openAgentSpaceApp();
+            })
         }
 
         Row({ space: 8 }) {
@@ -325,6 +370,12 @@ struct Index {
 
         if (this.locationInfo.length > 0) {
           Text(this.locationInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.agentSpaceInfo.length > 0) {
+          Text(this.agentSpaceInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -1992,6 +2043,38 @@ struct Index {
     }
   }
 
+  private async ensureAgentServiceConnected(): Promise<void> {
+    const ctx = this.getUiContext();
+    await this.agentServiceClient.connect(ctx);
+  }
+
+  private async initAgentSpace(): Promise<void> {
+    this.agentSpaceInfo = '正在初始化 AgentSpace...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const runtimeJson = await this.agentServiceClient.ensureVts();
+      this.agentSpaceInfo = runtimeJson.length > 0 ? `AgentSpace 已初始化: ${runtimeJson}` : 'AgentSpace 已初始化';
+    } catch (e) {
+      this.agentSpaceInfo = `初始化 AgentSpace 失败: ${String(e)}`;
+    }
+  }
+
+  private async openAgentSpaceApp(): Promise<void> {
+    const name = this.agentSpaceAppName.trim();
+    if (name.length === 0) {
+      this.agentSpaceInfo = '请输入应用名称';
+      return;
+    }
+    this.agentSpaceInfo = `正在打开应用: ${name}`;
+    try {
+      await this.ensureAgentServiceConnected();
+      await this.agentServiceClient.launchAppByName(name);
+      this.agentSpaceInfo = `已下发打开应用: ${name}`;
+    } catch (e) {
+      this.agentSpaceInfo = `打开应用失败: ${String(e)}`;
+    }
+  }
+
   private async showGlobalFloatWindow(): Promise<void> {
     try {
       const ctx = this.getUiContext();
@@ -2000,14 +2083,12 @@ struct Index {
         abilityName: 'FloatWindowAbility',
         action: 'show',
       };
-      const startServiceExtension = (ctx as unknown as {
-        startServiceExtensionAbility?: (want: Want) => Promise<void>;
-      }).startServiceExtensionAbility;
-      if (startServiceExtension) {
-        await startServiceExtension.call(ctx, want);
-      } else {
-        await ctx.startAbility(want);
+      const starter = ctx as ServiceExtensionStarter;
+      if (starter.startServiceExtensionAbility) {
+        await starter.startServiceExtensionAbility(want);
+        return;
       }
+      await ctx.startAbility(want);
     } catch (e) {
       console.error(`唤出全局浮窗失败: ${String(e)}`);
     }

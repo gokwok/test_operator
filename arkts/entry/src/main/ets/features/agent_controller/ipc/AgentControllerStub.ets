@@ -87,6 +87,12 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString('ok');
         return true;
       }
+      if (code === AgentControllerRequestCode.LAUNCH_APP_BY_NAME) {
+        const appName = data.readString();
+        await this.service.launchAppByName(appName);
+        reply.writeString('ok');
+        return true;
+      }
       if (code === AgentControllerRequestCode.CLICK_NORM) {
         const xNorm = data.readInt();
         const yNorm = data.readInt();
