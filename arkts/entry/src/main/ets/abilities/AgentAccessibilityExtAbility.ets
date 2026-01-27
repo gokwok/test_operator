@@ -26,6 +26,7 @@ interface CommonEventPublishDataSafe {
 interface AccessibilityTreeNode {
   id: string;
   text?: string;
+  accessibilityText?: string;
   description?: string;
   resourceName?: string;
   componentType?: string;
@@ -175,7 +176,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
         };
       }
       const displayId = this.normalizeDisplayId(request.displayId);
-      const windows = this.listWindows(displayId);
+      const windows = await this.listWindows(displayId);
       const entries = await this.buildWindowEntries(windows);
       if (request.windowsOnly) {
         const snapshot: AccessibilityTreeSnapshot = {
@@ -247,18 +248,22 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     }
   }
 
-  private listWindows(displayId?: number): Array<AccessibilityElement> {
+  private async listWindows(displayId?: number): Promise<Array<AccessibilityElement>> {
     const ctx = this.context;
     if (!ctx) {
       return [];
     }
     try {
-      if (displayId === undefined) {
-        return ctx.getAccessibilityWindowsSync();
-      }
-      return ctx.getAccessibilityWindowsSync(displayId);
+      return await ctx.getWindows(displayId);
     } catch (_e) {
-      return [];
+      try {
+        if (displayId === undefined) {
+          return ctx.getAccessibilityWindowsSync();
+        }
+        return ctx.getAccessibilityWindowsSync(displayId);
+      } catch (_fallbackErr) {
+        return [];
+      }
     }
   }
 
@@ -321,11 +326,11 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       return null;
     }
     try {
-      return await ctx.getRootInActiveWindow(windowId);
+      return await ctx.getWindowRootElement(windowId);
     } catch (_e) {
-      if (ctx.getWindowRootElement) {
+      if (ctx.getRootInActiveWindow) {
         try {
-          return await ctx.getWindowRootElement(windowId);
+          return await ctx.getRootInActiveWindow(windowId);
         } catch (_fallbackErr) {
           return null;
         }
@@ -343,6 +348,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     const node: AccessibilityTreeNode = {
       id: String(state.nextId++),
       text: await this.readStringAttr(element, 'text'),
+      accessibilityText: await this.readStringAttr(element, 'accessibilityText'),
       description: await this.readStringAttr(element, 'description'),
       resourceName: await this.readStringAttr(element, 'resourceName'),
       componentType: await this.readStringAttr(element, 'componentType'),
@@ -378,8 +384,24 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
   }
 
   private async listChildren(element: AccessibilityElement): Promise<Array<AccessibilityElement>> {
+    const fromAttr = await this.readChildrenAttr(element);
+    if (fromAttr.length > 0) {
+      return fromAttr;
+    }
     try {
       return await element.getChildren();
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  private async readChildrenAttr(element: AccessibilityElement): Promise<Array<AccessibilityElement>> {
+    try {
+      const value = await element.attributeValue('children');
+      if (Array.isArray(value)) {
+        return value as Array<AccessibilityElement>;
+      }
+      return [];
     } catch (_e) {
       return [];
     }

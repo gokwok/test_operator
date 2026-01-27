@@ -36,6 +36,7 @@ export class AccessibilityTreeClient {
   private static pending: Map<string, PendingRequest> = new Map();
   private static selfBundleName: string | null = null;
   private static selfAbilityName: string | null = null;
+  private static selfAbilityId: string | null = null;
 
   static async requestTreeJson(
     params: AccessibilityTreeRequestOptions,
@@ -168,6 +169,11 @@ export class AccessibilityTreeClient {
       if (bundleName.length === 0) {
         return 'enable_failed_bundle_unknown';
       }
+      const abilityId = AccessibilityTreeClient.resolveAccessibilityAbilityId(bundleName);
+      if (abilityId.length > 0) {
+        await config.enableAbility(abilityId, DEFAULT_CAPABILITIES);
+        return '';
+      }
       const abilityName = AccessibilityTreeClient.resolveAccessibilityAbilityName();
       if (abilityName.length === 0) {
         return 'enable_failed_ability_unknown';
@@ -182,6 +188,10 @@ export class AccessibilityTreeClient {
       }
       if (err && typeof err.code === 'number') {
         const bundleName = AccessibilityTreeClient.resolveSelfBundleName();
+        const abilityId = AccessibilityTreeClient.resolveAccessibilityAbilityId(bundleName);
+        if (abilityId.length > 0) {
+          return `enable_failed_${err.code}@${abilityId}`;
+        }
         const abilityName = AccessibilityTreeClient.resolveAccessibilityAbilityName();
         if (bundleName.length > 0 && abilityName.length > 0) {
           return `enable_failed_${err.code}@${bundleName}/${abilityName}`;
@@ -251,6 +261,39 @@ export class AccessibilityTreeClient {
       resolved = ACCESS_TREE_ABILITY_NAME;
     }
     AccessibilityTreeClient.selfAbilityName = resolved;
+    return resolved;
+  }
+
+  private static resolveAccessibilityAbilityId(bundleName: string): string {
+    if (AccessibilityTreeClient.selfAbilityId !== null) {
+      return AccessibilityTreeClient.selfAbilityId;
+    }
+    let resolved = '';
+    try {
+      const list = accessibility.getAccessibilityExtensionListSync('all', 'install');
+      for (const info of list) {
+        if (info.bundleName !== bundleName) {
+          continue;
+        }
+        const id = info.id;
+        if (id && id.indexOf('/') > 0) {
+          resolved = id;
+          break;
+        }
+        const name = info.name;
+        if (name && name.indexOf('/') > 0) {
+          resolved = name;
+          break;
+        }
+        if (name) {
+          resolved = `${bundleName}/${name}`;
+          break;
+        }
+      }
+    } catch (_e) {
+      resolved = '';
+    }
+    AccessibilityTreeClient.selfAbilityId = resolved;
     return resolved;
   }
 

@@ -170,7 +170,15 @@
         "name": "AgentAccessibilityExtAbility",
         "srcEntry": "./ets/abilities/AgentAccessibilityExtAbility.ets",
         "type": "accessibility",
-        "exported": true
+        "exported": true,
+        "label": "$string:EntryAbility_label",
+        "description": "$string:EntryAbility_desc",
+        "metadata": [
+          {
+            "name": "ohos.accessibleability",
+            "resource": "$profile:accessibility_config"
+          }
+        ]
       },
       {
         "name": "FloatWindowAbility",
