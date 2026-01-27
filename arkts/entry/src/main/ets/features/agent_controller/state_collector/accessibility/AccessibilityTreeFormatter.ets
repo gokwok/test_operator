@@ -16,8 +16,9 @@ interface AccessibilityRect {
   height?: number;
 }
 
-interface StringAttributeMap {
-  [key: string]: string;
+interface AccessibilityAttributeEntry {
+  key: string;
+  value: string;
 }
 
 interface AccessibilityTreeNode {
@@ -32,7 +33,7 @@ interface AccessibilityTreeNode {
   customComponentType?: string;
   rect?: AccessibilityRect;
   screenRect?: AccessibilityRect;
-  attributes?: StringAttributeMap;
+  attributes?: Array<AccessibilityAttributeEntry>;
   children?: Array<AccessibilityTreeNode>;
 }
 
@@ -120,7 +121,7 @@ export class AccessibilityTreeFormatter {
   private static appendNodeAttributes(
     lines: Array<string>,
     item: AccessibilityTreeListItem,
-    attributes: StringAttributeMap | undefined,
+    attributes: Array<AccessibilityAttributeEntry> | undefined,
     depth: number
   ): void {
     const indent = '  '.repeat(depth);
@@ -142,13 +143,12 @@ export class AccessibilityTreeFormatter {
     if (!attributes) {
       return;
     }
-    const keys = Object.keys(attributes).sort();
-    for (const key of keys) {
-      const value = attributes[key];
-      if (value.length === 0) {
+    const ordered = attributes.slice().sort((a, b) => a.key.localeCompare(b.key));
+    for (const entry of ordered) {
+      if (entry.value.length === 0) {
         continue;
       }
-      lines.push(`${indent}  - ${key}: ${value}`);
+      lines.push(`${indent}  - ${entry.key}: ${entry.value}`);
     }
   }
 

@@ -46,7 +46,7 @@ interface AccessibilityTreeNode {
   scrollable?: boolean;
   bundleName?: string;
   windowId?: number;
-  attributes?: StringAttributeMap;
+  attributes?: Array<AccessibilityAttributeEntry>;
   children: Array<AccessibilityTreeNode>;
 }
 
@@ -80,8 +80,9 @@ interface WindowEntry {
   meta: AccessibilityWindowMeta;
 }
 
-interface StringAttributeMap {
-  [key: string]: string;
+interface AccessibilityAttributeEntry {
+  key: string;
+  value: string;
 }
 
 type AttributeValue = string | number | boolean | Rect | Array<string> | Array<AccessibilityElement>;
@@ -553,7 +554,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     }
   }
 
-  private async collectReadableAttributes(element: AccessibilityElement): Promise<StringAttributeMap> {
+  private async collectReadableAttributes(element: AccessibilityElement): Promise<Array<AccessibilityAttributeEntry>> {
     const keys: Array<ReadableAttributeKey> = [
       'text',
       'accessibilityText',
@@ -583,7 +584,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       'valueMin',
       'valueNow'
     ];
-    const attrs: StringAttributeMap = {};
+    const attrs: Array<AccessibilityAttributeEntry> = [];
     for (const key of keys) {
       let value: ReadableAttrValue | undefined;
       try {
@@ -613,7 +614,10 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       if (value === undefined) {
         continue;
       }
-      attrs[key] = this.formatAttrValue(value);
+      attrs.push({
+        key,
+        value: this.formatAttrValue(value)
+      });
     }
     return attrs;
   }
