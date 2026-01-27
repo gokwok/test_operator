@@ -68,6 +68,25 @@ export class AccessibilityTreeClient {
     return response.data ?? '';
   }
 
+  static async requestTreeListJson(
+    params: AccessibilityTreeRequestOptions,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+  ): Promise<string> {
+    const request: AccessibilityTreeRequestOptions = {
+      displayId: params.displayId,
+      windowId: params.windowId,
+      bundleName: params.bundleName,
+      maxDepth: params.maxDepth,
+      maxNodes: params.maxNodes,
+      output: 'list'
+    };
+    const response = await AccessibilityTreeClient.requestTree(request, timeoutMs);
+    if (!response.ok) {
+      throw new Error(response.error ?? 'accessibility_tree_list_failed');
+    }
+    return response.data ?? '';
+  }
+
   private static async requestTree(
     params: AccessibilityTreeRequestOptions,
     timeoutMs: number
@@ -83,7 +102,8 @@ export class AccessibilityTreeClient {
       maxDepth: params.maxDepth,
       maxNodes: params.maxNodes,
       windowsOnly: params.windowsOnly,
-      includeAttributes: params.includeAttributes
+      includeAttributes: params.includeAttributes,
+      output: params.output
     };
     const response = new Promise<AccessibilityTreeResponsePayload>((resolve, reject) => {
       const timeoutId: number = setTimeout(() => {

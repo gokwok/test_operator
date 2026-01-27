@@ -126,14 +126,9 @@ export class StateCollector {
         displayId,
         bundleName: targetBundle,
         maxDepth: 100,
-        maxNodes: 1000,
-        includeAttributes: false
+        maxNodes: 1000
       };
-      const raw = await AccessibilityTreeClient.requestTreeJson(request);
-      const listJson = AccessibilityTreeFormatter.toListJson(raw);
-      if (listJson.startsWith('ERR:')) {
-        return listJson;
-      }
+      const listJson = await AccessibilityTreeClient.requestTreeListJson(request);
       return listJson;
     } catch (e) {
       return `ERR:${String(e)}`;

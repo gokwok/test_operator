@@ -10,6 +10,7 @@ export interface AccessibilityTreeRequestOptions {
   maxNodes?: number;
   windowsOnly?: boolean;
   includeAttributes?: boolean;
+  output?: string;
 }
 
 export interface AccessibilityTreeRequestPayload extends AccessibilityTreeRequestOptions {

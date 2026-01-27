@@ -6,6 +6,7 @@ import AccessibilityExtensionAbility, {
 } from '@ohos.application.AccessibilityExtensionAbility';
 import commonEventManager from '@ohos.commonEventManager';
 import bundleManager from '@ohos.bundle.bundleManager';
+import display from '@ohos.display';
 
 import {
   ACCESS_TREE_REQUEST_EVENT,
@@ -67,6 +68,16 @@ interface AccessibilityTreeSnapshot {
   truncated: boolean;
 }
 
+interface AccessibilityTreeListItem {
+  index: number;
+  resourceId: string;
+  className: string;
+  text: string;
+  bounds: string;
+  textCandidates: Array<string>;
+  children: Array<AccessibilityTreeListItem>;
+}
+
 interface TreeBuildState {
   maxDepth: number;
   maxNodes: number;
@@ -116,9 +127,20 @@ type ReadableAttributeKey =
   | 'valueMin'
   | 'valueNow';
 
+interface ScreenSize {
+  width: number;
+  height: number;
+}
+
+interface ListPayload {
+  data: string;
+  truncated: boolean;
+}
+
 const DEFAULT_MAX_DEPTH: number = 10;
 const DEFAULT_MAX_NODES: number = 120;
 const MAX_PAYLOAD_LENGTH: number = 60000;
+const DEFAULT_MIN_ELEMENT_SIZE: number = 5;
 
 export default class AgentAccessibilityExtAbility extends AccessibilityExtensionAbility {
   private subscriber: commonEventManager.CommonEventSubscriber | null = null;
@@ -252,12 +274,25 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
         };
       }
       const state: TreeBuildState = {
-        maxDepth: this.normalizeBound(request.maxDepth, DEFAULT_MAX_DEPTH, 1, 30),
-        maxNodes: this.normalizeBound(request.maxNodes, DEFAULT_MAX_NODES, 10, 1000),
+        maxDepth: this.normalizeBound(request.maxDepth, DEFAULT_MAX_DEPTH, 1, 200),
+        maxNodes: this.normalizeBound(request.maxNodes, DEFAULT_MAX_NODES, 10, 3000),
         count: 0,
         truncated: false,
         nextId: 1
       };
+      const output = (request.output ?? '').trim();
+      if (output === 'list') {
+        const screenSize = this.resolveScreenSize(displayId);
+        const list: Array<AccessibilityTreeListItem> = [];
+        await this.buildList(root, 0, state, list, screenSize, DEFAULT_MIN_ELEMENT_SIZE);
+        const listPayload = this.stringifyList(list, state);
+        return {
+          requestId: request.requestId,
+          ok: true,
+          data: listPayload.data,
+          truncated: listPayload.truncated
+        };
+      }
       const includeAttributes = request.includeAttributes === true;
       const tree = await this.buildNodeTree(root, 0, state, includeAttributes);
       const snapshot: AccessibilityTreeSnapshot = {
@@ -443,6 +478,83 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     return node;
   }
 
+  private async buildList(
+    element: AccessibilityElement,
+    depth: number,
+    state: TreeBuildState,
+    list: Array<AccessibilityTreeListItem>,
+    screenSize: ScreenSize | null,
+    minSize: number
+  ): Promise<void> {
+    if (depth > state.maxDepth || state.count >= state.maxNodes) {
+      state.truncated = true;
+      return;
+    }
+    const bounds = await this.readBoundsRect(element);
+    if (!this.shouldIncludeElement(bounds, screenSize, minSize)) {
+      return;
+    }
+    const text = await this.readStringAttr(element, 'text');
+    const a11yText = await this.readStringAttr(element, 'accessibilityText');
+    const contents = await this.readStringArrayAttr(element, 'contents');
+    const description = await this.readStringAttr(element, 'description');
+    const hintText = await this.readStringAttr(element, 'hintText');
+    const resourceName = await this.readStringAttr(element, 'resourceName');
+    const componentType = await this.readStringAttr(element, 'componentType');
+    const customComponentType = await this.readStringAttr(element, 'customComponentType');
+    const componentId = await this.readNumberAttr(element, 'componentId');
+    const item: AccessibilityTreeListItem = {
+      index: state.nextId,
+      resourceId: this.pickResourceId(resourceName, componentId),
+      className: this.shortClassName(customComponentType ?? componentType),
+      text: this.pickText(text, a11yText, description, resourceName, customComponentType ?? componentType),
+      bounds: this.formatBounds(bounds),
+      textCandidates: this.buildTextCandidates(
+        text,
+        a11yText,
+        description,
+        contents,
+        hintText,
+        resourceName,
+        customComponentType ?? componentType
+      ),
+      children: []
+    };
+    list.push(item);
+    state.count += 1;
+    state.nextId += 1;
+    if (depth >= state.maxDepth || state.count >= state.maxNodes) {
+      state.truncated = true;
+      return;
+    }
+    const children = await this.listChildren(element);
+    for (const child of children) {
+      if (state.count >= state.maxNodes) {
+        state.truncated = true;
+        break;
+      }
+      await this.buildList(child, depth + 1, state, list, screenSize, minSize);
+    }
+  }
+
+  private stringifyList(
+    list: Array<AccessibilityTreeListItem>,
+    state: TreeBuildState
+  ): ListPayload {
+    let data = JSON.stringify(list);
+    if (data.length <= MAX_PAYLOAD_LENGTH) {
+      const payload: ListPayload = { data, truncated: state.truncated };
+      return payload;
+    }
+    let truncated = true;
+    while (list.length > 0 && data.length > MAX_PAYLOAD_LENGTH) {
+      list.pop();
+      data = JSON.stringify(list);
+    }
+    const payload: ListPayload = { data, truncated };
+    return payload;
+  }
+
   private async listChildren(element: AccessibilityElement): Promise<Array<AccessibilityElement>> {
     const fromAttr = await this.readChildrenAttr(element);
     if (fromAttr.length > 0) {
@@ -530,6 +642,174 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       return value as Rect;
     }
     return undefined;
+  }
+
+  private async readBoundsRect(element: AccessibilityElement): Promise<Rect | undefined> {
+    const screenRect = await this.readRectAttr(element, 'screenRect');
+    if (screenRect) {
+      return screenRect;
+    }
+    return await this.readRectAttr(element, 'rect');
+  }
+
+  private resolveScreenSize(displayId?: number): ScreenSize | null {
+    const normalized = this.normalizeDisplayId(displayId);
+    if (normalized === undefined) {
+      return null;
+    }
+    try {
+      const info = display.getDisplayByIdSync(normalized);
+      if (info && Number.isFinite(info.width) && Number.isFinite(info.height)) {
+        return { width: info.width, height: info.height };
+      }
+      return null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  private shouldIncludeElement(rect: Rect | undefined, screen: ScreenSize | null, minSize: number): boolean {
+    if (!rect || !screen) {
+      return true;
+    }
+    const left = rect.left;
+    const top = rect.top;
+    const width = rect.width;
+    const height = rect.height;
+    if (
+      typeof left !== 'number' ||
+      typeof top !== 'number' ||
+      typeof width !== 'number' ||
+      typeof height !== 'number'
+    ) {
+      return true;
+    }
+    if (width <= minSize || height <= minSize) {
+      return false;
+    }
+    const right = left + width;
+    const bottom = top + height;
+    if (right <= 0 || bottom <= 0 || left >= screen.width || top >= screen.height) {
+      return false;
+    }
+    return true;
+  }
+
+  private formatBounds(rect: Rect | undefined): string {
+    if (!rect) {
+      return '';
+    }
+    const left = rect.left;
+    const top = rect.top;
+    const width = rect.width;
+    const height = rect.height;
+    if (
+      typeof left === 'number' &&
+      typeof top === 'number' &&
+      typeof width === 'number' &&
+      typeof height === 'number'
+    ) {
+      return `${left},${top},${left + width},${top + height}`;
+    }
+    return '';
+  }
+
+  private shortClassName(typeName?: string): string {
+    const name = (typeName ?? '').trim();
+    if (name.length === 0) {
+      return '';
+    }
+    const parts = name.split('.');
+    return parts.length > 0 ? parts[parts.length - 1] : name;
+  }
+
+  private pickText(
+    text: string | undefined,
+    a11yText: string | undefined,
+    description: string | undefined,
+    resourceName: string | undefined,
+    typeName: string | undefined
+  ): string {
+    const primary = (text ?? '').trim();
+    if (primary.length > 0) {
+      return primary;
+    }
+    const desc = (a11yText ?? description ?? '').trim();
+    if (desc.length > 0) {
+      return desc;
+    }
+    const resource = (resourceName ?? '').trim();
+    if (resource.length > 0) {
+      return resource;
+    }
+    return this.shortClassName(typeName);
+  }
+
+  private buildTextCandidates(
+    text: string | undefined,
+    a11yText: string | undefined,
+    description: string | undefined,
+    contents: Array<string> | undefined,
+    hintText: string | undefined,
+    resourceName: string | undefined,
+    typeName: string | undefined
+  ): Array<string> {
+    const candidates: Array<string> = [];
+    const primary = (text ?? '').trim();
+    if (primary.length > 0) {
+      candidates.push(`text="${primary}"`);
+    }
+    const a11y = (a11yText ?? '').trim();
+    if (a11y.length > 0) {
+      candidates.push(`a11yText="${a11y}"`);
+    }
+    const desc = (description ?? '').trim();
+    if (desc.length > 0) {
+      candidates.push(`desc="${desc}"`);
+    }
+    if (contents && contents.length > 0) {
+      const joined = this.joinContents(contents);
+      if (joined.length > 0) {
+        candidates.push(`contents="${joined}"`);
+      }
+    }
+    const hint = (hintText ?? '').trim();
+    if (hint.length > 0) {
+      candidates.push(`hint="${hint}"`);
+    }
+    const resource = (resourceName ?? '').trim();
+    if (resource.length > 0) {
+      candidates.push(`resource="${resource}"`);
+    }
+    const type = this.shortClassName(typeName);
+    if (type.length > 0) {
+      candidates.push(`class="${type}"`);
+    }
+    return candidates;
+  }
+
+  private pickResourceId(resourceName: string | undefined, componentId: number | undefined): string {
+    const resource = (resourceName ?? '').trim();
+    if (resource.length > 0) {
+      return resource;
+    }
+    if (typeof componentId === 'number' && Number.isFinite(componentId)) {
+      return `${componentId}`;
+    }
+    return '';
+  }
+
+  private joinContents(contents: Array<string>): string {
+    const parts: Array<string> = [];
+    for (const item of contents) {
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed.length > 0) {
+          parts.push(trimmed);
+        }
+      }
+    }
+    return parts.join(' ');
   }
 
   private normalizeDisplayId(value?: number): number | undefined {
