@@ -108,6 +108,7 @@ struct Index {
   @State agentSpaceInfo: string = '';
   @State agentSpaceAppName: string = '';
   @State accessibilityTreeInfo: string = '';
+  @State accessibilityWindowsInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -355,6 +356,17 @@ struct Index {
             .onClick(() => {
               void this.debugDumpAccessibilityTree();
             })
+
+          Button('获取无障碍窗口')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.debugDumpAccessibilityWindows();
+            })
         }
 
         Row({ space: 8 }) {
@@ -396,6 +408,12 @@ struct Index {
 
         if (this.accessibilityTreeInfo.length > 0) {
           Text(this.accessibilityTreeInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.accessibilityWindowsInfo.length > 0) {
+          Text(this.accessibilityWindowsInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -2107,6 +2125,21 @@ struct Index {
       this.accessibilityTreeInfo = payload.length > 0 ? payload : '无障碍树为空';
     } catch (e) {
       this.accessibilityTreeInfo = `获取无障碍树失败: ${String(e)}`;
+    }
+  }
+
+  private async debugDumpAccessibilityWindows(): Promise<void> {
+    this.accessibilityWindowsInfo = '正在获取无障碍窗口...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.dumpAccessibilityWindows();
+      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
+        this.accessibilityWindowsInfo = `获取无障碍窗口失败: ${payload}`;
+        return;
+      }
+      this.accessibilityWindowsInfo = payload.length > 0 ? payload : '无障碍窗口为空';
+    } catch (e) {
+      this.accessibilityWindowsInfo = `获取无障碍窗口失败: ${String(e)}`;
     }
   }
 

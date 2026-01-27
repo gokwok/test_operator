@@ -2,10 +2,10 @@ import type { BusinessError } from '@kit.BasicServicesKit';
 import commonEventManager from '@ohos.commonEventManager';
 import accessibility from '@ohos.accessibility';
 import config from '@ohos.accessibility.config';
+import bundleManager from '@ohos.bundle.bundleManager';
 
 import {
   ACCESS_TREE_ABILITY_NAME,
-  ACCESS_TREE_BUNDLE_NAME,
   ACCESS_TREE_REQUEST_EVENT,
   ACCESS_TREE_RESPONSE_EVENT,
   AccessibilityTreeRequestOptions,
@@ -34,6 +34,8 @@ const DEFAULT_CAPABILITIES: Array<accessibility.Capability> = ['retrieve'];
 export class AccessibilityTreeClient {
   private static subscriber: commonEventManager.CommonEventSubscriber | null = null;
   private static pending: Map<string, PendingRequest> = new Map();
+  private static selfBundleName: string | null = null;
+  private static selfAbilityName: string | null = null;
 
   static async requestTreeJson(
     params: AccessibilityTreeRequestOptions,
@@ -42,6 +44,25 @@ export class AccessibilityTreeClient {
     const response = await AccessibilityTreeClient.requestTree(params, timeoutMs);
     if (!response.ok) {
       throw new Error(response.error ?? 'accessibility_tree_failed');
+    }
+    return response.data ?? '';
+  }
+
+  static async requestWindowsJson(
+    params: AccessibilityTreeRequestOptions,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+  ): Promise<string> {
+    const request: AccessibilityTreeRequestOptions = {
+      displayId: params.displayId,
+      windowId: params.windowId,
+      bundleName: params.bundleName,
+      maxDepth: params.maxDepth,
+      maxNodes: params.maxNodes,
+      windowsOnly: true
+    };
+    const response = await AccessibilityTreeClient.requestTree(request, timeoutMs);
+    if (!response.ok) {
+      throw new Error(response.error ?? 'accessibility_windows_failed');
     }
     return response.data ?? '';
   }
@@ -59,7 +80,8 @@ export class AccessibilityTreeClient {
       windowId: params.windowId,
       bundleName: params.bundleName,
       maxDepth: params.maxDepth,
-      maxNodes: params.maxNodes
+      maxNodes: params.maxNodes,
+      windowsOnly: params.windowsOnly
     };
     const response = new Promise<AccessibilityTreeResponsePayload>((resolve, reject) => {
       const timeoutId: number = setTimeout(() => {
@@ -129,9 +151,12 @@ export class AccessibilityTreeClient {
   private static publishRequest(payload: AccessibilityTreeRequestPayload): void {
     const data = JSON.stringify(payload);
     const publishData: CommonEventPublishDataSafe = {
-      bundleName: ACCESS_TREE_BUNDLE_NAME,
       data
     };
+    const bundleName = AccessibilityTreeClient.resolveSelfBundleName();
+    if (bundleName.length > 0) {
+      publishData.bundleName = bundleName;
+    }
     commonEventManager.publish(ACCESS_TREE_REQUEST_EVENT, publishData, (_err: BusinessError | null) => {
       void _err;
     });
@@ -139,7 +164,15 @@ export class AccessibilityTreeClient {
 
   private static async enableExtensionBestEffort(): Promise<string> {
     try {
-      const name = `${ACCESS_TREE_BUNDLE_NAME}/${ACCESS_TREE_ABILITY_NAME}`;
+      const bundleName = AccessibilityTreeClient.resolveSelfBundleName();
+      if (bundleName.length === 0) {
+        return 'enable_failed_bundle_unknown';
+      }
+      const abilityName = AccessibilityTreeClient.resolveAccessibilityAbilityName();
+      if (abilityName.length === 0) {
+        return 'enable_failed_ability_unknown';
+      }
+      const name = `${bundleName}/${abilityName}`;
       await config.enableAbility(name, DEFAULT_CAPABILITIES);
       return '';
     } catch (e) {
@@ -148,10 +181,77 @@ export class AccessibilityTreeClient {
         return '';
       }
       if (err && typeof err.code === 'number') {
+        const bundleName = AccessibilityTreeClient.resolveSelfBundleName();
+        const abilityName = AccessibilityTreeClient.resolveAccessibilityAbilityName();
+        if (bundleName.length > 0 && abilityName.length > 0) {
+          return `enable_failed_${err.code}@${bundleName}/${abilityName}`;
+        }
         return `enable_failed_${err.code}`;
       }
       return 'enable_failed';
     }
+  }
+
+  private static resolveSelfBundleName(): string {
+    if (AccessibilityTreeClient.selfBundleName !== null) {
+      return AccessibilityTreeClient.selfBundleName;
+    }
+    let name = '';
+    try {
+      const info = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      name = info.name;
+    } catch (_e) {
+      name = '';
+    }
+    AccessibilityTreeClient.selfBundleName = name;
+    return name;
+  }
+
+  private static resolveAccessibilityAbilityName(): string {
+    if (AccessibilityTreeClient.selfAbilityName !== null) {
+      return AccessibilityTreeClient.selfAbilityName;
+    }
+    let resolved = '';
+    try {
+      const flags =
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_HAP_MODULE |
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_EXTENSION_ABILITY;
+      const info = bundleManager.getBundleInfoForSelfSync(flags);
+      const modules = info.hapModulesInfo ?? [];
+      let fallback = '';
+      for (const moduleInfo of modules) {
+        const extensions = moduleInfo.extensionAbilitiesInfo ?? [];
+        for (const extensionInfo of extensions) {
+          if (extensionInfo.extensionAbilityType !== bundleManager.ExtensionAbilityType.ACCESSIBILITY) {
+            continue;
+          }
+          const name = extensionInfo.name;
+          if (name.length === 0) {
+            continue;
+          }
+          if (name === ACCESS_TREE_ABILITY_NAME || name.endsWith(`.${ACCESS_TREE_ABILITY_NAME}`)) {
+            resolved = name;
+            break;
+          }
+          if (fallback.length === 0) {
+            fallback = name;
+          }
+        }
+        if (resolved.length > 0) {
+          break;
+        }
+      }
+      if (resolved.length === 0) {
+        resolved = fallback;
+      }
+    } catch (_e) {
+      resolved = '';
+    }
+    if (resolved.length === 0) {
+      resolved = ACCESS_TREE_ABILITY_NAME;
+    }
+    AccessibilityTreeClient.selfAbilityName = resolved;
+    return resolved;
   }
 
   private static buildRequestId(): string {

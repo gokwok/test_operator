@@ -266,6 +266,25 @@ export class AgentController {
     }
   }
 
+  async dumpAccessibilityWindows(): Promise<string> {
+    try {
+      const toolKit = this.requireToolKit();
+      let runtime = await toolKit.getRuntimeInfo();
+      if (runtime.screenId < 0) {
+        runtime = await toolKit.ensureVts();
+      }
+      const displayId = runtime.displayId ?? runtime.screenId;
+      const request: AccessibilityTreeRequestOptions = {
+        displayId: displayId >= 0 ? displayId : undefined,
+        windowsOnly: true
+      };
+      const response = await AccessibilityTreeClient.requestWindowsJson(request);
+      return response;
+    } catch (e) {
+      return `ERR:${String(e)}`;
+    }
+  }
+
   setCloudEndpoint(endpoint: string): void {
     this.getAgentProxy().setEndpoint(endpoint);
   }

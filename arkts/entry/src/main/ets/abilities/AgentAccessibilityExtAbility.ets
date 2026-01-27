@@ -5,9 +5,9 @@ import AccessibilityExtensionAbility, {
   Rect
 } from '@ohos.application.AccessibilityExtensionAbility';
 import commonEventManager from '@ohos.commonEventManager';
+import bundleManager from '@ohos.bundle.bundleManager';
 
 import {
-  ACCESS_TREE_BUNDLE_NAME,
   ACCESS_TREE_REQUEST_EVENT,
   ACCESS_TREE_RESPONSE_EVENT,
   AccessibilityTreeRequestPayload,
@@ -80,6 +80,7 @@ const MAX_PAYLOAD_LENGTH: number = 60000;
 
 export default class AgentAccessibilityExtAbility extends AccessibilityExtensionAbility {
   private subscriber: commonEventManager.CommonEventSubscriber | null = null;
+  private cachedBundleName: string | null = null;
 
   onConnect(): void {
     void this.handleConnect();
@@ -152,9 +153,12 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
   private publishResponse(response: AccessibilityTreeResponsePayload): void {
     const data = JSON.stringify(response);
     const publishData: CommonEventPublishDataSafe = {
-      bundleName: ACCESS_TREE_BUNDLE_NAME,
       data
     };
+    const bundleName = this.resolveSelfBundleName();
+    if (bundleName.length > 0) {
+      publishData.bundleName = bundleName;
+    }
     commonEventManager.publish(ACCESS_TREE_RESPONSE_EVENT, publishData, (_err: BusinessError | null) => {
       void _err;
     });
@@ -173,6 +177,22 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       const displayId = this.normalizeDisplayId(request.displayId);
       const windows = this.listWindows(displayId);
       const entries = await this.buildWindowEntries(windows);
+      if (request.windowsOnly) {
+        const snapshot: AccessibilityTreeSnapshot = {
+          requestId: request.requestId,
+          displayId: displayId,
+          windows: entries.map((entry) => entry.meta),
+          nodeCount: 0,
+          truncated: false
+        };
+        const data = JSON.stringify(snapshot);
+        return {
+          requestId: request.requestId,
+          ok: true,
+          data,
+          truncated: false
+        };
+      }
       const target = this.selectTargetWindow(entries, request);
       if (!target) {
         return {
@@ -452,5 +472,20 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       return text;
     }
     return '';
+  }
+
+  private resolveSelfBundleName(): string {
+    if (this.cachedBundleName !== null) {
+      return this.cachedBundleName;
+    }
+    let name = '';
+    try {
+      const info = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      name = info.name;
+    } catch (_e) {
+      name = '';
+    }
+    this.cachedBundleName = name;
+    return name;
   }
 }

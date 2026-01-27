@@ -282,6 +282,10 @@ export class AgentControllerClient {
     return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_TREE, '');
   }
 
+  async dumpAccessibilityWindows(): Promise<string> {
+    return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_WINDOWS, '');
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
