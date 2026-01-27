@@ -51,7 +51,7 @@ export class AccessibilityTreeClient {
     timeoutMs: number
   ): Promise<AccessibilityTreeResponsePayload> {
     await AccessibilityTreeClient.ensureSubscriber();
-    await AccessibilityTreeClient.enableExtensionBestEffort();
+    const enableError = await AccessibilityTreeClient.enableExtensionBestEffort();
     const requestId = AccessibilityTreeClient.buildRequestId();
     const payload: AccessibilityTreeRequestPayload = {
       requestId,
@@ -64,7 +64,8 @@ export class AccessibilityTreeClient {
     const response = new Promise<AccessibilityTreeResponsePayload>((resolve, reject) => {
       const timeoutId: number = setTimeout(() => {
         AccessibilityTreeClient.pending.delete(requestId);
-        reject(new Error('accessibility_tree_timeout'));
+        const suffix = enableError.length > 0 ? `:${enableError}` : '';
+        reject(new Error(`accessibility_tree_timeout${suffix}`));
       }, timeoutMs);
       AccessibilityTreeClient.pending.set(requestId, {
         resolve,
@@ -136,15 +137,20 @@ export class AccessibilityTreeClient {
     });
   }
 
-  private static async enableExtensionBestEffort(): Promise<void> {
+  private static async enableExtensionBestEffort(): Promise<string> {
     try {
       const name = `${ACCESS_TREE_BUNDLE_NAME}/${ACCESS_TREE_ABILITY_NAME}`;
       await config.enableAbility(name, DEFAULT_CAPABILITIES);
+      return '';
     } catch (e) {
       const err = e as BusinessError;
       if (err && err.code === 9300002) {
-        return;
+        return '';
       }
+      if (err && typeof err.code === 'number') {
+        return `enable_failed_${err.code}`;
+      }
+      return 'enable_failed';
     }
   }
 

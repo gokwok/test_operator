@@ -170,7 +170,7 @@
         "name": "AgentAccessibilityExtAbility",
         "srcEntry": "./ets/abilities/AgentAccessibilityExtAbility.ets",
         "type": "accessibility",
-        "exported": false
+        "exported": true
       },
       {
         "name": "FloatWindowAbility",
