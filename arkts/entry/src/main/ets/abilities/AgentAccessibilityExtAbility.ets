@@ -1,7 +1,7 @@
 import type { BusinessError } from '@kit.BasicServicesKit';
 import AccessibilityExtensionAbility, {
   AccessibilityElement,
-  ElementAttributeValues,
+  ElementAttributeKeys,
   Rect
 } from '@ohos.application.AccessibilityExtensionAbility';
 import commonEventManager from '@ohos.commonEventManager';
@@ -46,7 +46,7 @@ interface AccessibilityTreeNode {
   scrollable?: boolean;
   bundleName?: string;
   windowId?: number;
-  attributes?: Record<string, string>;
+  attributes?: StringAttributeMap;
   children: Array<AccessibilityTreeNode>;
 }
 
@@ -79,6 +79,41 @@ interface WindowEntry {
   element: AccessibilityElement;
   meta: AccessibilityWindowMeta;
 }
+
+interface StringAttributeMap {
+  [key: string]: string;
+}
+
+type AttributeValue = string | number | boolean | Rect | Array<string> | Array<AccessibilityElement>;
+type ReadableAttrValue = string | number | boolean | Rect | Array<string>;
+type ReadableAttributeKey =
+  | 'text'
+  | 'accessibilityText'
+  | 'contents'
+  | 'description'
+  | 'hintText'
+  | 'resourceName'
+  | 'componentId'
+  | 'componentType'
+  | 'customComponentType'
+  | 'rect'
+  | 'screenRect'
+  | 'clickable'
+  | 'isEnable'
+  | 'isVisible'
+  | 'isFocused'
+  | 'selected'
+  | 'checked'
+  | 'editable'
+  | 'scrollable'
+  | 'bundleName'
+  | 'windowId'
+  | 'accessibilityFocused'
+  | 'checkable'
+  | 'textType'
+  | 'valueMax'
+  | 'valueMin'
+  | 'valueNow';
 
 const DEFAULT_MAX_DEPTH: number = 10;
 const DEFAULT_MAX_NODES: number = 120;
@@ -407,9 +442,9 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
 
   private async readChildrenAttr(element: AccessibilityElement): Promise<Array<AccessibilityElement>> {
     try {
-      const value = await element.attributeValue('children');
-      if (Array.isArray(value)) {
-        return value as Array<AccessibilityElement>;
+      const raw = await element.attributeValue('children') as AttributeValue;
+      if (Array.isArray(raw)) {
+        return raw as Array<AccessibilityElement>;
       }
       return [];
     } catch (_e) {
@@ -433,10 +468,10 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     key: string
   ): Promise<Array<string> | undefined> {
     try {
-      const value = await element.attributeValue(key as keyof ElementAttributeValues);
-      if (Array.isArray(value)) {
+      const raw = await element.attributeValue(key as ElementAttributeKeys) as AttributeValue;
+      if (Array.isArray(raw)) {
         const results: Array<string> = [];
-        for (const item of value) {
+        for (const item of raw) {
           if (typeof item === 'string' && item.length > 0) {
             results.push(item);
           }
@@ -505,12 +540,12 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     key: string
   ): Promise<string | number | boolean | Rect | undefined> {
     try {
-      const value = await element.attributeValue(key as keyof ElementAttributeValues);
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        return value;
+      const raw = await element.attributeValue(key as ElementAttributeKeys) as AttributeValue;
+      if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+        return raw;
       }
-      if (value && typeof value === 'object') {
-        return value as Rect;
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        return raw as Rect;
       }
       return undefined;
     } catch (_e) {
@@ -518,8 +553,8 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     }
   }
 
-  private async collectReadableAttributes(element: AccessibilityElement): Promise<Record<string, string>> {
-    const keys: Array<string> = [
+  private async collectReadableAttributes(element: AccessibilityElement): Promise<StringAttributeMap> {
+    const keys: Array<ReadableAttributeKey> = [
       'text',
       'accessibilityText',
       'contents',
@@ -548,13 +583,19 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       'valueMin',
       'valueNow'
     ];
-    const attrs: Record<string, string> = {};
+    const attrs: StringAttributeMap = {};
     for (const key of keys) {
-      let value: string | number | boolean | Rect | Array<string> | undefined;
+      let value: ReadableAttrValue | undefined;
       try {
-        const raw = await element.attributeValue(key as keyof ElementAttributeValues);
+        const raw = await element.attributeValue(key as ElementAttributeKeys) as ReadableAttrValue;
         if (Array.isArray(raw)) {
-          value = raw.filter((item) => typeof item === 'string').join(' ');
+          const parts: Array<string> = [];
+          for (const item of raw) {
+            if (typeof item === 'string' && item.length > 0) {
+              parts.push(item);
+            }
+          }
+          value = parts.length > 0 ? parts.join(' ') : undefined;
         } else if (raw && typeof raw === 'object') {
           value = raw as Rect;
         } else if (
@@ -577,7 +618,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     return attrs;
   }
 
-  private formatAttrValue(value: string | number | boolean | Rect | Array<string>): string {
+  private formatAttrValue(value: ReadableAttrValue): string {
     if (typeof value === 'string') {
       return value;
     }

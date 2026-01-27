@@ -16,6 +16,10 @@ interface AccessibilityRect {
   height?: number;
 }
 
+interface StringAttributeMap {
+  [key: string]: string;
+}
+
 interface AccessibilityTreeNode {
   text?: string;
   accessibilityText?: string;
@@ -28,7 +32,7 @@ interface AccessibilityTreeNode {
   customComponentType?: string;
   rect?: AccessibilityRect;
   screenRect?: AccessibilityRect;
-  attributes?: Record<string, string>;
+  attributes?: StringAttributeMap;
   children?: Array<AccessibilityTreeNode>;
 }
 
@@ -116,7 +120,7 @@ export class AccessibilityTreeFormatter {
   private static appendNodeAttributes(
     lines: Array<string>,
     item: AccessibilityTreeListItem,
-    attributes: Record<string, string> | undefined,
+    attributes: StringAttributeMap | undefined,
     depth: number
   ): void {
     const indent = '  '.repeat(depth);
