@@ -35,8 +35,6 @@ import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
-import { AccessibilityTreeClient } from './accessibility/AccessibilityTreeClient';
-import type { AccessibilityTreeRequestOptions } from './accessibility/AccessibilityTreeProtocol';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -242,47 +240,15 @@ export class AgentController {
   }
 
   async dumpAccessibilityTree(): Promise<string> {
-    try {
-      const toolKit = this.requireToolKit();
-      let runtime = await toolKit.getRuntimeInfo();
-      if (runtime.screenId < 0) {
-        runtime = await toolKit.ensureVts();
-      }
-      const displayId = runtime.displayId ?? runtime.screenId;
-      const targetBundle = toolKit.getCurrentAppBundleFromAgentSpace();
-      if (targetBundle.length === 0) {
-        return 'ERR:agentspace_bundle_missing';
-      }
-      const request: AccessibilityTreeRequestOptions = {
-        displayId: displayId >= 0 ? displayId : undefined,
-        bundleName: targetBundle,
-        maxDepth: 10,
-        maxNodes: 120
-      };
-      const response = await AccessibilityTreeClient.requestTreeJson(request);
-      return response;
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
+    const toolKit = this.requireToolKit();
+    const collector = new StateCollector(toolKit);
+    return await collector.dumpAccessibilityTreeForAgentSpace();
   }
 
   async dumpAccessibilityWindows(): Promise<string> {
-    try {
-      const toolKit = this.requireToolKit();
-      let runtime = await toolKit.getRuntimeInfo();
-      if (runtime.screenId < 0) {
-        runtime = await toolKit.ensureVts();
-      }
-      const displayId = runtime.displayId ?? runtime.screenId;
-      const request: AccessibilityTreeRequestOptions = {
-        displayId: displayId >= 0 ? displayId : undefined,
-        windowsOnly: true
-      };
-      const response = await AccessibilityTreeClient.requestWindowsJson(request);
-      return response;
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
+    const toolKit = this.requireToolKit();
+    const collector = new StateCollector(toolKit);
+    return await collector.dumpAccessibilityWindowsForAgentSpace();
   }
 
   setCloudEndpoint(endpoint: string): void {

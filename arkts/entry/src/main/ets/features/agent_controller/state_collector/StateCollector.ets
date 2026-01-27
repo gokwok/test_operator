@@ -3,6 +3,8 @@ import { ToolKit } from '../toolkit/ToolKit';
 import { ForegroundAppState } from './ForegroundAppState';
 import type { GpsInfo } from './LocationState';
 import { LocationState } from './LocationState';
+import { AccessibilityTreeClient } from './accessibility/AccessibilityTreeClient';
+import type { AccessibilityTreeRequestOptions } from './accessibility/AccessibilityTreeProtocol';
 
 export class StateCollector {
   private toolKit: ToolKit;
@@ -48,5 +50,47 @@ export class StateCollector {
       state.installed_apps = installedApps.slice();
     }
     return state;
+  }
+
+  async dumpAccessibilityTreeForAgentSpace(): Promise<string> {
+    try {
+      let runtime = await this.toolKit.getRuntimeInfo();
+      if (runtime.screenId < 0) {
+        runtime = await this.toolKit.ensureVts();
+      }
+      const displayId = runtime.displayId ?? runtime.screenId;
+      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace();
+      if (targetBundle.length === 0) {
+        return 'ERR:agentspace_bundle_missing';
+      }
+      const request: AccessibilityTreeRequestOptions = {
+        displayId: displayId >= 0 ? displayId : undefined,
+        bundleName: targetBundle,
+        maxDepth: 10,
+        maxNodes: 120
+      };
+      const response = await AccessibilityTreeClient.requestTreeJson(request);
+      return response;
+    } catch (e) {
+      return `ERR:${String(e)}`;
+    }
+  }
+
+  async dumpAccessibilityWindowsForAgentSpace(): Promise<string> {
+    try {
+      let runtime = await this.toolKit.getRuntimeInfo();
+      if (runtime.screenId < 0) {
+        runtime = await this.toolKit.ensureVts();
+      }
+      const displayId = runtime.displayId ?? runtime.screenId;
+      const request: AccessibilityTreeRequestOptions = {
+        displayId: displayId >= 0 ? displayId : undefined,
+        windowsOnly: true
+      };
+      const response = await AccessibilityTreeClient.requestWindowsJson(request);
+      return response;
+    } catch (e) {
+      return `ERR:${String(e)}`;
+    }
   }
 }

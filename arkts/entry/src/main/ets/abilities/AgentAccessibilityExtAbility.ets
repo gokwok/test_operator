@@ -12,7 +12,7 @@ import {
   ACCESS_TREE_RESPONSE_EVENT,
   AccessibilityTreeRequestPayload,
   AccessibilityTreeResponsePayload
-} from '../features/agent_controller/accessibility/AccessibilityTreeProtocol';
+} from '../features/agent_controller/state_collector/accessibility/AccessibilityTreeProtocol';
 
 interface CommonEventDataSafe {
   data?: string;
