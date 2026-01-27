@@ -3,13 +3,8 @@ import AccessibilityExtensionAbility, {
   AccessibilityElement,
   ElementAttributeValues,
   Rect
-} from '@kit.AccessibilityKit';
-import commonEventManager, {
-  CommonEventData,
-  CommonEventPublishData,
-  CommonEventSubscribeInfo,
-  CommonEventSubscriber
-} from '@ohos.commonEventManager';
+} from '@ohos.application.AccessibilityExtensionAbility';
+import commonEventManager from '@ohos.commonEventManager';
 
 import {
   ACCESS_TREE_BUNDLE_NAME,
@@ -19,8 +14,14 @@ import {
   AccessibilityTreeResponsePayload
 } from '../features/agent_controller/accessibility/AccessibilityTreeProtocol';
 
-type EventParamValue = string | number | boolean | undefined;
-type EventParams = Record<string, EventParamValue>;
+interface CommonEventDataSafe {
+  data?: string;
+}
+
+interface CommonEventPublishDataSafe {
+  bundleName?: string;
+  data?: string;
+}
 
 interface AccessibilityTreeNode {
   id: string;
@@ -84,7 +85,7 @@ const DEFAULT_MAX_NODES: number = 120;
 const MAX_PAYLOAD_LENGTH: number = 60000;
 
 export default class AgentAccessibilityExtAbility extends AccessibilityExtensionAbility {
-  private subscriber: CommonEventSubscriber | null = null;
+  private subscriber: commonEventManager.CommonEventSubscriber | null = null;
 
   onConnect(): void {
     void this.handleConnect();
@@ -114,12 +115,13 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     if (this.subscriber) {
       return;
     }
-    const info: CommonEventSubscribeInfo = {
+    const info: commonEventManager.CommonEventSubscribeInfo = {
       events: [ACCESS_TREE_REQUEST_EVENT]
     };
     const subscriber = await commonEventManager.createSubscriber(info);
     this.subscriber = subscriber;
-    commonEventManager.subscribe(subscriber, (data: CommonEventData) => {
+    commonEventManager.subscribe(subscriber, (_err: BusinessError | null, data: object) => {
+      void _err;
       void this.handleRequest(data);
     });
   }
@@ -135,35 +137,29 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     });
   }
 
-  private async handleRequest(data: CommonEventData): Promise<void> {
-    const params = this.toEventParams(data.parameters);
-    const requestId = this.readString(params, 'requestId');
-    if (requestId.length === 0) {
+  private async handleRequest(data: object): Promise<void> {
+    const payloadText = this.readEventData(data);
+    if (payloadText.length === 0) {
       return;
     }
-    const request: AccessibilityTreeRequestPayload = {
-      requestId,
-      displayId: this.readNumber(params, 'displayId'),
-      windowId: this.readNumber(params, 'windowId'),
-      bundleName: this.readString(params, 'bundleName'),
-      maxDepth: this.readNumber(params, 'maxDepth'),
-      maxNodes: this.readNumber(params, 'maxNodes')
-    };
+    let request: AccessibilityTreeRequestPayload | null = null;
+    try {
+      request = JSON.parse(payloadText) as AccessibilityTreeRequestPayload;
+    } catch (_e) {
+      return;
+    }
+    if (!request || request.requestId.length === 0) {
+      return;
+    }
     const response = await this.buildSnapshotResponse(request);
     this.publishResponse(response);
   }
 
   private publishResponse(response: AccessibilityTreeResponsePayload): void {
-    const params: EventParams = {
-      requestId: response.requestId,
-      ok: response.ok,
-      data: response.data,
-      error: response.error,
-      truncated: response.truncated
-    };
-    const publishData: CommonEventPublishData = {
+    const data = JSON.stringify(response);
+    const publishData: CommonEventPublishDataSafe = {
       bundleName: ACCESS_TREE_BUNDLE_NAME,
-      parameters: this.pruneParams(params)
+      data
     };
     commonEventManager.publish(ACCESS_TREE_RESPONSE_EVENT, publishData, (_err: BusinessError | null) => {
       void _err;
@@ -369,27 +365,15 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     try {
       return await element.getChildren();
     } catch (_e) {
-      const fallback = await this.readAttr(element, 'children');
-      return Array.isArray(fallback) ? fallback : [];
-    }
-  }
-
-  private async readAttr<T extends keyof ElementAttributeValues>(
-    element: AccessibilityElement,
-    key: T
-  ): Promise<ElementAttributeValues[T] | undefined> {
-    try {
-      return await element.attributeValue(key);
-    } catch (_e) {
-      return undefined;
+      return [];
     }
   }
 
   private async readStringAttr(
     element: AccessibilityElement,
-    key: keyof ElementAttributeValues
+    key: string
   ): Promise<string | undefined> {
-    const value = await this.readAttr(element, key);
+    const value = await this.readAttributeValue(element, key);
     if (typeof value === 'string' && value.length > 0) {
       return value;
     }
@@ -398,9 +382,9 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
 
   private async readNumberAttr(
     element: AccessibilityElement,
-    key: keyof ElementAttributeValues
+    key: string
   ): Promise<number | undefined> {
-    const value = await this.readAttr(element, key);
+    const value = await this.readAttributeValue(element, key);
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
     }
@@ -409,9 +393,9 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
 
   private async readBooleanAttr(
     element: AccessibilityElement,
-    key: keyof ElementAttributeValues
+    key: string
   ): Promise<boolean | undefined> {
-    const value = await this.readAttr(element, key);
+    const value = await this.readAttributeValue(element, key);
     if (typeof value === 'boolean') {
       return value;
     }
@@ -420,9 +404,9 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
 
   private async readRectAttr(
     element: AccessibilityElement,
-    key: keyof ElementAttributeValues
+    key: string
   ): Promise<Rect | undefined> {
-    const value = await this.readAttr(element, key);
+    const value = await this.readAttributeValue(element, key);
     if (value && typeof value === 'object') {
       return value as Rect;
     }
@@ -447,44 +431,30 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     return clamped;
   }
 
-  private toEventParams(raw?: EventParams): EventParams {
-    if (!raw) {
-      return {};
-    }
-    return raw;
-  }
-
-  private pruneParams(params: EventParams): EventParams {
-    const filtered: EventParams = {};
-    for (const key of Object.keys(params)) {
-      const value = params[key];
-      if (value !== undefined && value !== '') {
-        filtered[key] = value;
+  private async readAttributeValue(
+    element: AccessibilityElement,
+    key: string
+  ): Promise<string | number | boolean | Rect | undefined> {
+    try {
+      const value = await element.attributeValue(key as keyof ElementAttributeValues);
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return value;
       }
+      if (value && typeof value === 'object') {
+        return value as Rect;
+      }
+      return undefined;
+    } catch (_e) {
+      return undefined;
     }
-    return filtered;
   }
 
-  private readString(params: EventParams, key: string): string {
-    const value = params[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (typeof value === 'number') {
-      return String(value);
+  private readEventData(data: object): string {
+    const safe = data as CommonEventDataSafe;
+    const text = safe.data;
+    if (typeof text === 'string') {
+      return text;
     }
     return '';
-  }
-
-  private readNumber(params: EventParams, key: string): number | undefined {
-    const value = params[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : undefined;
-    }
-    return undefined;
   }
 }

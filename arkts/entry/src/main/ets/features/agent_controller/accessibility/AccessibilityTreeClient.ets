@@ -1,10 +1,5 @@
 import type { BusinessError } from '@kit.BasicServicesKit';
-import commonEventManager, {
-  CommonEventData,
-  CommonEventPublishData,
-  CommonEventSubscribeInfo,
-  CommonEventSubscriber
-} from '@ohos.commonEventManager';
+import commonEventManager from '@ohos.commonEventManager';
 import accessibility from '@ohos.accessibility';
 import config from '@ohos.accessibility.config';
 
@@ -13,12 +8,19 @@ import {
   ACCESS_TREE_BUNDLE_NAME,
   ACCESS_TREE_REQUEST_EVENT,
   ACCESS_TREE_RESPONSE_EVENT,
+  AccessibilityTreeRequestOptions,
   AccessibilityTreeRequestPayload,
   AccessibilityTreeResponsePayload
 } from './AccessibilityTreeProtocol';
 
-type EventParamValue = string | number | boolean | undefined;
-type EventParams = Record<string, EventParamValue>;
+interface CommonEventDataSafe {
+  data?: string;
+}
+
+interface CommonEventPublishDataSafe {
+  bundleName?: string;
+  data?: string;
+}
 
 interface PendingRequest {
   resolve: (value: AccessibilityTreeResponsePayload) => void;
@@ -30,14 +32,14 @@ const DEFAULT_TIMEOUT_MS: number = 6000;
 const DEFAULT_CAPABILITIES: Array<accessibility.Capability> = ['retrieve'];
 
 export class AccessibilityTreeClient {
-  private static subscriber: CommonEventSubscriber | null = null;
+  private static subscriber: commonEventManager.CommonEventSubscriber | null = null;
   private static pending: Map<string, PendingRequest> = new Map();
 
   static async requestTreeJson(
-    params: Omit<AccessibilityTreeRequestPayload, 'requestId'>,
+    params: AccessibilityTreeRequestOptions,
     timeoutMs: number = DEFAULT_TIMEOUT_MS
   ): Promise<string> {
-    const response = await this.requestTree(params, timeoutMs);
+    const response = await AccessibilityTreeClient.requestTree(params, timeoutMs);
     if (!response.ok) {
       throw new Error(response.error ?? 'accessibility_tree_failed');
     }
@@ -45,12 +47,12 @@ export class AccessibilityTreeClient {
   }
 
   private static async requestTree(
-    params: Omit<AccessibilityTreeRequestPayload, 'requestId'>,
+    params: AccessibilityTreeRequestOptions,
     timeoutMs: number
   ): Promise<AccessibilityTreeResponsePayload> {
-    await this.ensureSubscriber();
-    await this.enableExtensionBestEffort();
-    const requestId = this.buildRequestId();
+    await AccessibilityTreeClient.ensureSubscriber();
+    await AccessibilityTreeClient.enableExtensionBestEffort();
+    const requestId = AccessibilityTreeClient.buildRequestId();
     const payload: AccessibilityTreeRequestPayload = {
       requestId,
       displayId: params.displayId,
@@ -61,49 +63,59 @@ export class AccessibilityTreeClient {
     };
     const response = new Promise<AccessibilityTreeResponsePayload>((resolve, reject) => {
       const timeoutId: number = setTimeout(() => {
-        this.pending.delete(requestId);
+        AccessibilityTreeClient.pending.delete(requestId);
         reject(new Error('accessibility_tree_timeout'));
       }, timeoutMs);
-      this.pending.set(requestId, {
+      AccessibilityTreeClient.pending.set(requestId, {
         resolve,
         reject,
         timeoutId
       });
     });
-    this.publishRequest(payload);
+    AccessibilityTreeClient.publishRequest(payload);
     return await response;
   }
 
   private static async ensureSubscriber(): Promise<void> {
-    if (this.subscriber) {
+    if (AccessibilityTreeClient.subscriber) {
       return;
     }
-    const info: CommonEventSubscribeInfo = {
+    const info: commonEventManager.CommonEventSubscribeInfo = {
       events: [ACCESS_TREE_RESPONSE_EVENT]
     };
     const subscriber = await commonEventManager.createSubscriber(info);
-    this.subscriber = subscriber;
-    commonEventManager.subscribe(subscriber, (data: CommonEventData) => {
-      this.handleResponse(data);
+    AccessibilityTreeClient.subscriber = subscriber;
+    commonEventManager.subscribe(subscriber, (_err: BusinessError | null, data: object) => {
+      void _err;
+      AccessibilityTreeClient.handleResponse(data);
     });
   }
 
-  private static handleResponse(data: CommonEventData): void {
-    const params = this.toEventParams(data.parameters);
-    const requestId = this.readString(params, 'requestId');
+  private static handleResponse(data: object): void {
+    const payloadText = AccessibilityTreeClient.readEventData(data);
+    if (payloadText.length === 0) {
+      return;
+    }
+    let parsed: AccessibilityTreeResponsePayload | null = null;
+    try {
+      parsed = JSON.parse(payloadText) as AccessibilityTreeResponsePayload;
+    } catch (_e) {
+      return;
+    }
+    const requestId = parsed?.requestId ?? '';
     if (requestId.length === 0) {
       return;
     }
-    const pending = this.pending.get(requestId);
+    const pending = AccessibilityTreeClient.pending.get(requestId);
     if (!pending) {
       return;
     }
     clearTimeout(pending.timeoutId);
-    this.pending.delete(requestId);
-    const ok = this.readBoolean(params, 'ok', false);
-    const error = this.readString(params, 'error');
-    const payload = this.readString(params, 'data');
-    const truncated = this.readBoolean(params, 'truncated', false);
+    AccessibilityTreeClient.pending.delete(requestId);
+    const ok = parsed?.ok ?? false;
+    const error = parsed?.error ?? '';
+    const payload = parsed?.data ?? '';
+    const truncated = parsed?.truncated ?? false;
     pending.resolve({
       requestId,
       ok,
@@ -114,17 +126,10 @@ export class AccessibilityTreeClient {
   }
 
   private static publishRequest(payload: AccessibilityTreeRequestPayload): void {
-    const params: EventParams = {
-      requestId: payload.requestId,
-      displayId: payload.displayId,
-      windowId: payload.windowId,
-      bundleName: payload.bundleName,
-      maxDepth: payload.maxDepth,
-      maxNodes: payload.maxNodes
-    };
-    const publishData: CommonEventPublishData = {
+    const data = JSON.stringify(payload);
+    const publishData: CommonEventPublishDataSafe = {
       bundleName: ACCESS_TREE_BUNDLE_NAME,
-      parameters: this.pruneParams(params)
+      data
     };
     commonEventManager.publish(ACCESS_TREE_REQUEST_EVENT, publishData, (_err: BusinessError | null) => {
       void _err;
@@ -148,46 +153,12 @@ export class AccessibilityTreeClient {
     return `acc_${Date.now()}_${rand}`;
   }
 
-  private static toEventParams(raw?: EventParams): EventParams {
-    if (!raw) {
-      return {};
-    }
-    return raw;
-  }
-
-  private static pruneParams(params: EventParams): EventParams {
-    const filtered: EventParams = {};
-    for (const key of Object.keys(params)) {
-      const value = params[key];
-      if (value !== undefined && value !== '') {
-        filtered[key] = value;
-      }
-    }
-    return filtered;
-  }
-
-  private static readString(params: EventParams, key: string): string {
-    const value = params[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (typeof value === 'number') {
-      return String(value);
+  private static readEventData(data: object): string {
+    const safe = data as CommonEventDataSafe;
+    const text = safe.data;
+    if (typeof text === 'string') {
+      return text;
     }
     return '';
-  }
-
-  private static readBoolean(params: EventParams, key: string, fallback: boolean): boolean {
-    const value = params[key];
-    if (typeof value === 'boolean') {
-      return value;
-    }
-    if (typeof value === 'number') {
-      return value !== 0;
-    }
-    if (typeof value === 'string') {
-      return value === '1' || value.toLowerCase() === 'true';
-    }
-    return fallback;
   }
 }

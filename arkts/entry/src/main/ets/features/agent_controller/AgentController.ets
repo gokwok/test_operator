@@ -36,6 +36,7 @@ import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 import { AccessibilityTreeClient } from './accessibility/AccessibilityTreeClient';
+import type { AccessibilityTreeRequestOptions } from './accessibility/AccessibilityTreeProtocol';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -251,12 +252,13 @@ export class AgentController {
     if (targetBundle.length === 0) {
       throw new Error('agentspace_bundle_missing');
     }
-    const response = await AccessibilityTreeClient.requestTreeJson({
+    const request: AccessibilityTreeRequestOptions = {
       displayId: displayId >= 0 ? displayId : undefined,
       bundleName: targetBundle,
       maxDepth: 10,
       maxNodes: 120
-    });
+    };
+    const response = await AccessibilityTreeClient.requestTreeJson(request);
     return response;
   }
 

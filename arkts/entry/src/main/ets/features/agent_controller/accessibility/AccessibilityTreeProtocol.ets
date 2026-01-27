@@ -3,13 +3,16 @@ export const ACCESS_TREE_RESPONSE_EVENT: string = 'com.huawei.aios.agent.operati
 export const ACCESS_TREE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 export const ACCESS_TREE_ABILITY_NAME: string = 'AgentAccessibilityExtAbility';
 
-export interface AccessibilityTreeRequestPayload {
-  requestId: string;
+export interface AccessibilityTreeRequestOptions {
   displayId?: number;
   windowId?: number;
   bundleName?: string;
   maxDepth?: number;
   maxNodes?: number;
+}
+
+export interface AccessibilityTreeRequestPayload extends AccessibilityTreeRequestOptions {
+  requestId: string;
 }
 
 export interface AccessibilityTreeResponsePayload {
