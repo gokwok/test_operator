@@ -59,10 +59,12 @@ export class StateCollector {
       if (runtime.screenId < 0) {
         runtime = await this.toolKit.ensureVts();
       }
-      const displayId =
-        typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0
-          ? runtime.displayId
-          : undefined;
+      let displayId: number | undefined = undefined;
+      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
+        displayId = runtime.displayId;
+      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
+        displayId = runtime.screenId;
+      }
       const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
       if (targetBundle.length === 0) {
         return 'ERR:agentspace_bundle_missing';
@@ -86,10 +88,12 @@ export class StateCollector {
       if (runtime.screenId < 0) {
         runtime = await this.toolKit.ensureVts();
       }
-      const displayId =
-        typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0
-          ? runtime.displayId
-          : undefined;
+      let displayId: number | undefined = undefined;
+      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
+        displayId = runtime.displayId;
+      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
+        displayId = runtime.screenId;
+      }
       const request: AccessibilityTreeRequestOptions = {
         displayId,
         windowsOnly: true
