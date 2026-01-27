@@ -106,4 +106,16 @@ export class StateCollector {
     }
     return listJson;
   }
+
+  async dumpAccessibilityNodeAttributesForAgentSpace(): Promise<string> {
+    const raw = await this.dumpAccessibilityTreeForAgentSpace();
+    if (raw.startsWith('ERR:') || raw.startsWith('ERR_EXCEPTION:')) {
+      return raw;
+    }
+    const lines = AccessibilityTreeFormatter.toDebugLines(raw);
+    if (!lines) {
+      return 'ERR:accessibility_tree_parse_failed';
+    }
+    return lines.join('\n');
+  }
 }

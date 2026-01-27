@@ -257,6 +257,12 @@ export class AgentController {
     return await collector.dumpAccessibilityTreeListForAgentSpace();
   }
 
+  async dumpAccessibilityNodeAttributes(): Promise<string> {
+    const toolKit = this.requireToolKit();
+    const collector = new StateCollector(toolKit);
+    return await collector.dumpAccessibilityNodeAttributesForAgentSpace();
+  }
+
   setCloudEndpoint(endpoint: string): void {
     this.getAgentProxy().setEndpoint(endpoint);
   }

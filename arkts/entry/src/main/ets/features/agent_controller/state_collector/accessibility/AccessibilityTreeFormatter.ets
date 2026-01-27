@@ -28,6 +28,7 @@ interface AccessibilityTreeNode {
   customComponentType?: string;
   rect?: AccessibilityRect;
   screenRect?: AccessibilityRect;
+  attributes?: Record<string, string>;
   children?: Array<AccessibilityTreeNode>;
 }
 
@@ -79,6 +80,74 @@ export class AccessibilityTreeFormatter {
     walk(root);
     return results;
   }
+
+  static toDebugLines(snapshotJson: string): Array<string> | null {
+    let snapshot: AccessibilityTreeSnapshot | null = null;
+    try {
+      snapshot = JSON.parse(snapshotJson) as AccessibilityTreeSnapshot;
+    } catch (_e) {
+      return null;
+    }
+    if (!snapshot || !snapshot.tree) {
+      return [];
+    }
+    const lines: Array<string> = [];
+    let index = 1;
+    const walk = (node: AccessibilityTreeNode, depth: number): void => {
+      const item: AccessibilityTreeListItem = {
+        index,
+        resourceId: AccessibilityTreeFormatter.pickResourceId(node),
+        className: AccessibilityTreeFormatter.shortClassName(node.customComponentType ?? node.componentType),
+        text: AccessibilityTreeFormatter.pickText(node),
+        bounds: AccessibilityTreeFormatter.formatBounds(node.screenRect ?? node.rect),
+        children: []
+      };
+      AccessibilityTreeFormatter.appendNodeAttributes(lines, item, node.attributes, depth);
+      index += 1;
+      const children = Array.isArray(node.children) ? node.children : [];
+      for (const child of children) {
+        walk(child, depth + 1);
+      }
+    };
+    walk(snapshot.tree, 0);
+    return lines;
+  }
+
+  private static appendNodeAttributes(
+    lines: Array<string>,
+    item: AccessibilityTreeListItem,
+    attributes: Record<string, string> | undefined,
+    depth: number
+  ): void {
+    const indent = '  '.repeat(depth);
+    const headerParts: Array<string> = [];
+    headerParts.push(`${indent}${item.index}.`);
+    if (item.className.length > 0) {
+      headerParts.push(item.className);
+    }
+    if (item.resourceId.length > 0) {
+      headerParts.push(`"${item.resourceId}"`);
+    }
+    if (item.text.length > 0) {
+      headerParts.push(`"${item.text}"`);
+    }
+    if (item.bounds.length > 0) {
+      headerParts.push(`(${item.bounds})`);
+    }
+    lines.push(headerParts.join(' '));
+    if (!attributes) {
+      return;
+    }
+    const keys = Object.keys(attributes).sort();
+    for (const key of keys) {
+      const value = attributes[key];
+      if (value.length === 0) {
+        continue;
+      }
+      lines.push(`${indent}  - ${key}: ${value}`);
+    }
+  }
+
 
   private static pickText(node: AccessibilityTreeNode): string {
     const text = (node.text ?? '').trim();

@@ -46,6 +46,7 @@ interface AccessibilityTreeNode {
   scrollable?: boolean;
   bundleName?: string;
   windowId?: number;
+  attributes?: Record<string, string>;
   children: Array<AccessibilityTreeNode>;
 }
 
@@ -372,7 +373,8 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       scrollable: await this.readBooleanAttr(element, 'scrollable'),
       bundleName: await this.readStringAttr(element, 'bundleName'),
       windowId: await this.readNumberAttr(element, 'windowId'),
-      children: []
+      children: [],
+      attributes: await this.collectReadableAttributes(element)
     };
     if (depth >= state.maxDepth || state.count >= state.maxNodes) {
       state.truncated = true;
@@ -514,6 +516,90 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     } catch (_e) {
       return undefined;
     }
+  }
+
+  private async collectReadableAttributes(element: AccessibilityElement): Promise<Record<string, string>> {
+    const keys: Array<string> = [
+      'text',
+      'accessibilityText',
+      'contents',
+      'description',
+      'hintText',
+      'resourceName',
+      'componentId',
+      'componentType',
+      'customComponentType',
+      'rect',
+      'screenRect',
+      'clickable',
+      'isEnable',
+      'isVisible',
+      'isFocused',
+      'selected',
+      'checked',
+      'editable',
+      'scrollable',
+      'bundleName',
+      'windowId',
+      'accessibilityFocused',
+      'checkable',
+      'textType',
+      'valueMax',
+      'valueMin',
+      'valueNow'
+    ];
+    const attrs: Record<string, string> = {};
+    for (const key of keys) {
+      let value: string | number | boolean | Rect | Array<string> | undefined;
+      try {
+        const raw = await element.attributeValue(key as keyof ElementAttributeValues);
+        if (Array.isArray(raw)) {
+          value = raw.filter((item) => typeof item === 'string').join(' ');
+        } else if (raw && typeof raw === 'object') {
+          value = raw as Rect;
+        } else if (
+          typeof raw === 'string' ||
+          typeof raw === 'number' ||
+          typeof raw === 'boolean'
+        ) {
+          value = raw;
+        } else {
+          value = undefined;
+        }
+      } catch (_e) {
+        value = undefined;
+      }
+      if (value === undefined) {
+        continue;
+      }
+      attrs[key] = this.formatAttrValue(value);
+    }
+    return attrs;
+  }
+
+  private formatAttrValue(value: string | number | boolean | Rect | Array<string>): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return `${value}`;
+    }
+    if (Array.isArray(value)) {
+      return value.join(' ');
+    }
+    const left = value.left;
+    const top = value.top;
+    const width = value.width;
+    const height = value.height;
+    if (
+      typeof left === 'number' &&
+      typeof top === 'number' &&
+      typeof width === 'number' &&
+      typeof height === 'number'
+    ) {
+      return `${left},${top},${left + width},${top + height}`;
+    }
+    return JSON.stringify(value);
   }
 
   private readEventData(data: object): string {

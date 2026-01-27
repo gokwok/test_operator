@@ -110,6 +110,7 @@ struct Index {
   @State accessibilityTreeInfo: string = '';
   @State accessibilityWindowsInfo: string = '';
   @State accessibilityTreeListInfo: string = '';
+  @State accessibilityNodeAttrsInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -379,6 +380,17 @@ struct Index {
             .onClick(() => {
               void this.debugDumpAccessibilityTreeList();
             })
+
+          Button('获取无障碍属性')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.debugDumpAccessibilityNodeAttrs();
+            })
         }
 
         Row({ space: 8 }) {
@@ -432,6 +444,12 @@ struct Index {
 
         if (this.accessibilityTreeListInfo.length > 0) {
           Text(this.accessibilityTreeListInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.accessibilityNodeAttrsInfo.length > 0) {
+          Text(this.accessibilityNodeAttrsInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -2173,6 +2191,21 @@ struct Index {
       this.accessibilityTreeListInfo = payload.length > 0 ? payload : '无障碍树列表为空';
     } catch (e) {
       this.accessibilityTreeListInfo = `获取无障碍树列表失败: ${String(e)}`;
+    }
+  }
+
+  private async debugDumpAccessibilityNodeAttrs(): Promise<void> {
+    this.accessibilityNodeAttrsInfo = '正在获取无障碍属性...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.dumpAccessibilityNodeAttributes();
+      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
+        this.accessibilityNodeAttrsInfo = `获取无障碍属性失败: ${payload}`;
+        return;
+      }
+      this.accessibilityNodeAttrsInfo = payload.length > 0 ? payload : '无障碍属性为空';
+    } catch (e) {
+      this.accessibilityNodeAttrsInfo = `获取无障碍属性失败: ${String(e)}`;
     }
   }
 
