@@ -294,14 +294,18 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     if (!ctx) {
       return [];
     }
+    const normalized = this.normalizeDisplayId(displayId);
     try {
-      return await ctx.getWindows(displayId);
+      if (normalized === undefined) {
+        return await ctx.getWindows();
+      }
+      return await ctx.getWindows(normalized);
     } catch (_e) {
       try {
-        if (displayId === undefined) {
+        if (normalized === undefined) {
           return ctx.getAccessibilityWindowsSync();
         }
-        return ctx.getAccessibilityWindowsSync(displayId);
+        return ctx.getAccessibilityWindowsSync(normalized);
       } catch (_fallbackErr) {
         return [];
       }
@@ -366,12 +370,19 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
     if (!ctx) {
       return null;
     }
+    const normalized = this.normalizeDisplayId(windowId);
     try {
-      return await ctx.getWindowRootElement(windowId);
+      if (normalized === undefined) {
+        return await ctx.getWindowRootElement();
+      }
+      return await ctx.getWindowRootElement(normalized);
     } catch (_e) {
       if (ctx.getRootInActiveWindow) {
         try {
-          return await ctx.getRootInActiveWindow(windowId);
+          if (normalized === undefined) {
+            return await ctx.getRootInActiveWindow();
+          }
+          return await ctx.getRootInActiveWindow(normalized);
         } catch (_fallbackErr) {
           return null;
         }
@@ -519,13 +530,14 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
   }
 
   private normalizeDisplayId(value?: number): number | undefined {
-    if (value === undefined) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
       return undefined;
     }
-    if (!Number.isFinite(value)) {
+    const normalized = Math.trunc(value);
+    if (normalized < 0) {
       return undefined;
     }
-    return value;
+    return normalized;
   }
 
   private normalizeBound(value: number | undefined, fallback: number, min: number, max: number): number {

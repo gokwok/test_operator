@@ -59,13 +59,16 @@ export class StateCollector {
       if (runtime.screenId < 0) {
         runtime = await this.toolKit.ensureVts();
       }
-      const displayId = runtime.displayId ?? runtime.screenId;
-      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace();
+      const displayId =
+        typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0
+          ? runtime.displayId
+          : undefined;
+      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
       if (targetBundle.length === 0) {
         return 'ERR:agentspace_bundle_missing';
       }
       const request: AccessibilityTreeRequestOptions = {
-        displayId: displayId >= 0 ? displayId : undefined,
+        displayId,
         bundleName: targetBundle,
         maxDepth: 10,
         maxNodes: 120
@@ -83,9 +86,12 @@ export class StateCollector {
       if (runtime.screenId < 0) {
         runtime = await this.toolKit.ensureVts();
       }
-      const displayId = runtime.displayId ?? runtime.screenId;
+      const displayId =
+        typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0
+          ? runtime.displayId
+          : undefined;
       const request: AccessibilityTreeRequestOptions = {
-        displayId: displayId >= 0 ? displayId : undefined,
+        displayId,
         windowsOnly: true
       };
       const response = await AccessibilityTreeClient.requestWindowsJson(request);
