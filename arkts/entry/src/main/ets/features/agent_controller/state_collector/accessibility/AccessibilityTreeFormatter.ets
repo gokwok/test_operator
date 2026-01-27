@@ -161,27 +161,15 @@ export class AccessibilityTreeFormatter {
     if (text.length > 0) {
       return text;
     }
-    const a11yText = (node.accessibilityText ?? '').trim();
-    if (a11yText.length > 0) {
-      return a11yText;
-    }
-    const contents = AccessibilityTreeFormatter.joinContents(node.contents);
-    if (contents.length > 0) {
-      return contents;
-    }
-    const desc = (node.description ?? '').trim();
+    const desc = (node.accessibilityText ?? node.description ?? '').trim();
     if (desc.length > 0) {
       return desc;
-    }
-    const hint = (node.hintText ?? '').trim();
-    if (hint.length > 0) {
-      return hint;
     }
     const resource = (node.resourceName ?? '').trim();
     if (resource.length > 0) {
       return resource;
     }
-    return (node.customComponentType ?? node.componentType ?? '').trim();
+    return AccessibilityTreeFormatter.shortClassName(node.customComponentType ?? node.componentType);
   }
 
   private static buildTextCandidates(node: AccessibilityTreeNode): Array<string> {
@@ -194,13 +182,13 @@ export class AccessibilityTreeFormatter {
     if (a11yText.length > 0) {
       candidates.push(`a11yText="${a11yText}"`);
     }
-    const contents = AccessibilityTreeFormatter.joinContents(node.contents);
-    if (contents.length > 0) {
-      candidates.push(`contents="${contents}"`);
-    }
     const desc = (node.description ?? '').trim();
     if (desc.length > 0) {
       candidates.push(`desc="${desc}"`);
+    }
+    const contents = AccessibilityTreeFormatter.joinContents(node.contents);
+    if (contents.length > 0) {
+      candidates.push(`contents="${contents}"`);
     }
     const hint = (node.hintText ?? '').trim();
     if (hint.length > 0) {
@@ -210,9 +198,9 @@ export class AccessibilityTreeFormatter {
     if (resource.length > 0) {
       candidates.push(`resource="${resource}"`);
     }
-    const type = (node.customComponentType ?? node.componentType ?? '').trim();
+    const type = AccessibilityTreeFormatter.shortClassName(node.customComponentType ?? node.componentType);
     if (type.length > 0) {
-      candidates.push(`type="${type}"`);
+      candidates.push(`class="${type}"`);
     }
     return candidates;
   }
