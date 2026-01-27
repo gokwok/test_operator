@@ -26,6 +26,12 @@
         "name": "ohos.permission.SYSTEM_FLOAT_WINDOW"
       },
       {
+        "name": "ohos.permission.ACCESSIBILITY_EXTENSION_ABILITY"
+      },
+      {
+        "name": "ohos.permission.WRITE_ACCESSIBILITY_CONFIG"
+      },
+      {
         "name": "ohos.permission.START_ABILITIES_FROM_BACKGROUND"
       },
       {
@@ -158,6 +164,12 @@
         "name": "AgentServiceExtAbility",
         "srcEntry": "./ets/abilities/AgentServiceExtAbility.ets",
         "type": "service",
+        "exported": false
+      },
+      {
+        "name": "AgentAccessibilityExtAbility",
+        "srcEntry": "./ets/abilities/AgentAccessibilityExtAbility.ets",
+        "type": "accessibility",
         "exported": false
       },
       {

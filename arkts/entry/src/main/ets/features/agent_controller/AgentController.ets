@@ -35,6 +35,7 @@ import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
+import { AccessibilityTreeClient } from './accessibility/AccessibilityTreeClient';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -237,6 +238,26 @@ export class AgentController {
 
   debugInteract(content: string, options: Array<string>): void {
     this.taskManager.debugInteract(content, options);
+  }
+
+  async dumpAccessibilityTree(): Promise<string> {
+    const toolKit = this.requireToolKit();
+    let runtime = await toolKit.getRuntimeInfo();
+    if (runtime.screenId < 0) {
+      runtime = await toolKit.ensureVts();
+    }
+    const displayId = runtime.displayId ?? runtime.screenId;
+    const targetBundle = toolKit.getCurrentAppBundleFromAgentSpace();
+    if (targetBundle.length === 0) {
+      throw new Error('agentspace_bundle_missing');
+    }
+    const response = await AccessibilityTreeClient.requestTreeJson({
+      displayId: displayId >= 0 ? displayId : undefined,
+      bundleName: targetBundle,
+      maxDepth: 10,
+      maxNodes: 120
+    });
+    return response;
   }
 
   setCloudEndpoint(endpoint: string): void {

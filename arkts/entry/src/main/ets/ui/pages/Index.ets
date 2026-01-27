@@ -107,6 +107,7 @@ struct Index {
   @State locationInfo: string = '';
   @State agentSpaceInfo: string = '';
   @State agentSpaceAppName: string = '';
+  @State accessibilityTreeInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -344,6 +345,19 @@ struct Index {
         }
 
         Row({ space: 8 }) {
+          Button('获取无障碍树')
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(14)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .onClick(() => {
+              void this.debugDumpAccessibilityTree();
+            })
+        }
+
+        Row({ space: 8 }) {
           Button('唤出全局浮窗')
             .fontSize(12)
             .fontColor(THEME_TEXT_PRIMARY)
@@ -376,6 +390,12 @@ struct Index {
 
         if (this.agentSpaceInfo.length > 0) {
           Text(this.agentSpaceInfo)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_MUTED)
+        }
+
+        if (this.accessibilityTreeInfo.length > 0) {
+          Text(this.accessibilityTreeInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -2072,6 +2092,17 @@ struct Index {
       this.agentSpaceInfo = `已下发打开应用: ${name}`;
     } catch (e) {
       this.agentSpaceInfo = `打开应用失败: ${String(e)}`;
+    }
+  }
+
+  private async debugDumpAccessibilityTree(): Promise<void> {
+    this.accessibilityTreeInfo = '正在获取无障碍树...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.dumpAccessibilityTree();
+      this.accessibilityTreeInfo = payload.length > 0 ? payload : '无障碍树为空';
+    } catch (e) {
+      this.accessibilityTreeInfo = `获取无障碍树失败: ${String(e)}`;
     }
   }
 
