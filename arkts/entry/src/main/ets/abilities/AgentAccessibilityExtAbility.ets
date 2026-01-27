@@ -258,7 +258,8 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
         truncated: false,
         nextId: 1
       };
-      const tree = await this.buildNodeTree(root, 0, state);
+      const includeAttributes = request.includeAttributes === true;
+      const tree = await this.buildNodeTree(root, 0, state, includeAttributes);
       const snapshot: AccessibilityTreeSnapshot = {
         requestId: request.requestId,
         displayId: displayId,
@@ -394,9 +395,11 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
   private async buildNodeTree(
     element: AccessibilityElement,
     depth: number,
-    state: TreeBuildState
+    state: TreeBuildState,
+    includeAttributes: boolean
   ): Promise<AccessibilityTreeNode> {
     state.count += 1;
+    const attrs = includeAttributes ? await this.collectReadableAttributes(element) : undefined;
     const node: AccessibilityTreeNode = {
       id: String(state.nextId++),
       text: await this.readStringAttr(element, 'text'),
@@ -421,7 +424,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
       bundleName: await this.readStringAttr(element, 'bundleName'),
       windowId: await this.readNumberAttr(element, 'windowId'),
       children: [],
-      attributes: await this.collectReadableAttributes(element)
+      attributes: attrs
     };
     if (depth >= state.maxDepth || state.count >= state.maxNodes) {
       state.truncated = true;
@@ -434,7 +437,7 @@ export default class AgentAccessibilityExtAbility extends AccessibilityExtension
         state.truncated = true;
         break;
       }
-      nodes.push(await this.buildNodeTree(child, depth + 1, state));
+      nodes.push(await this.buildNodeTree(child, depth + 1, state, includeAttributes));
     }
     node.children = nodes;
     return node;

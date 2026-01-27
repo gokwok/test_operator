@@ -73,7 +73,8 @@ export class StateCollector {
         displayId,
         bundleName: targetBundle,
         maxDepth: 10,
-        maxNodes: 120
+        maxNodes: 120,
+        includeAttributes: false
       };
       const response = await AccessibilityTreeClient.requestTreeJson(request);
       return response;
@@ -118,14 +119,36 @@ export class StateCollector {
   }
 
   async dumpAccessibilityNodeAttributesForAgentSpace(): Promise<string> {
-    const raw = await this.dumpAccessibilityTreeForAgentSpace();
-    if (raw.startsWith('ERR:') || raw.startsWith('ERR_EXCEPTION:')) {
-      return raw;
+    try {
+      let runtime = await this.toolKit.getRuntimeInfo();
+      if (runtime.screenId < 0) {
+        runtime = await this.toolKit.ensureVts();
+      }
+      let displayId: number | undefined = undefined;
+      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
+        displayId = runtime.displayId;
+      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
+        displayId = runtime.screenId;
+      }
+      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
+      if (targetBundle.length === 0) {
+        return 'ERR:agentspace_bundle_missing';
+      }
+      const request: AccessibilityTreeRequestOptions = {
+        displayId,
+        bundleName: targetBundle,
+        maxDepth: 10,
+        maxNodes: 80,
+        includeAttributes: true
+      };
+      const raw = await AccessibilityTreeClient.requestTreeJson(request);
+      const lines = AccessibilityTreeFormatter.toDebugLines(raw);
+      if (!lines) {
+        return 'ERR:accessibility_tree_parse_failed';
+      }
+      return lines.join('\n');
+    } catch (e) {
+      return `ERR:${String(e)}`;
     }
-    const lines = AccessibilityTreeFormatter.toDebugLines(raw);
-    if (!lines) {
-      return 'ERR:accessibility_tree_parse_failed';
-    }
-    return lines.join('\n');
   }
 }

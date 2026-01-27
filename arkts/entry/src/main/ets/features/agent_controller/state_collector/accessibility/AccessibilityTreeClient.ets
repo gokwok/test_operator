@@ -82,7 +82,8 @@ export class AccessibilityTreeClient {
       bundleName: params.bundleName,
       maxDepth: params.maxDepth,
       maxNodes: params.maxNodes,
-      windowsOnly: params.windowsOnly
+      windowsOnly: params.windowsOnly,
+      includeAttributes: params.includeAttributes
     };
     const response = new Promise<AccessibilityTreeResponsePayload>((resolve, reject) => {
       const timeoutId: number = setTimeout(() => {

@@ -4,6 +4,7 @@ export interface AccessibilityTreeListItem {
   className: string;
   text: string;
   bounds: string;
+  textCandidates?: Array<string>;
   children: Array<AccessibilityTreeListItem>;
 }
 
@@ -73,6 +74,7 @@ export class AccessibilityTreeFormatter {
         className: AccessibilityTreeFormatter.shortClassName(node.customComponentType ?? node.componentType),
         text: AccessibilityTreeFormatter.pickText(node),
         bounds: AccessibilityTreeFormatter.formatBounds(node.screenRect ?? node.rect),
+        textCandidates: AccessibilityTreeFormatter.buildTextCandidates(node),
         children: []
       };
       results.push(item);
@@ -105,6 +107,7 @@ export class AccessibilityTreeFormatter {
         className: AccessibilityTreeFormatter.shortClassName(node.customComponentType ?? node.componentType),
         text: AccessibilityTreeFormatter.pickText(node),
         bounds: AccessibilityTreeFormatter.formatBounds(node.screenRect ?? node.rect),
+        textCandidates: AccessibilityTreeFormatter.buildTextCandidates(node),
         children: []
       };
       AccessibilityTreeFormatter.appendNodeAttributes(lines, item, node.attributes, depth);
@@ -179,6 +182,39 @@ export class AccessibilityTreeFormatter {
       return resource;
     }
     return (node.customComponentType ?? node.componentType ?? '').trim();
+  }
+
+  private static buildTextCandidates(node: AccessibilityTreeNode): Array<string> {
+    const candidates: Array<string> = [];
+    const text = (node.text ?? '').trim();
+    if (text.length > 0) {
+      candidates.push(`text="${text}"`);
+    }
+    const a11yText = (node.accessibilityText ?? '').trim();
+    if (a11yText.length > 0) {
+      candidates.push(`a11yText="${a11yText}"`);
+    }
+    const contents = AccessibilityTreeFormatter.joinContents(node.contents);
+    if (contents.length > 0) {
+      candidates.push(`contents="${contents}"`);
+    }
+    const desc = (node.description ?? '').trim();
+    if (desc.length > 0) {
+      candidates.push(`desc="${desc}"`);
+    }
+    const hint = (node.hintText ?? '').trim();
+    if (hint.length > 0) {
+      candidates.push(`hint="${hint}"`);
+    }
+    const resource = (node.resourceName ?? '').trim();
+    if (resource.length > 0) {
+      candidates.push(`resource="${resource}"`);
+    }
+    const type = (node.customComponentType ?? node.componentType ?? '').trim();
+    if (type.length > 0) {
+      candidates.push(`type="${type}"`);
+    }
+    return candidates;
   }
 
   private static pickResourceId(node: AccessibilityTreeNode): string {
