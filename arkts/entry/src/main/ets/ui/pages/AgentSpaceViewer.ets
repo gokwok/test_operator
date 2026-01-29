@@ -4,7 +4,7 @@ import type { common } from '@kit.AbilityKit';
 import image from '@ohos.multimedia.image';
 import type { AgentSpaceViewerEffect, AgentSpaceViewerEffectBatch, AgentSpaceViewerMode } from '../../features/agent_controller/agentspace/AgentSpace';
 import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
-import type { TaskSnapshot, UserReply } from '../../features/agent_controller/types';
+import type { TaskEvent, TaskEventBatch, TaskSnapshot, UserReply } from '../../features/agent_controller/types';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 import { GlowOverlay, GLOW_PALETTES } from '../views/GlowOverlay';
 import { FloatingOrb, FloatingOrbController } from '../views/FloatingOrb';
@@ -38,6 +38,65 @@ interface InteractionPayload {
   kind: 'call_user' | 'interact' | 'take_over';
   content: string;
   options: Array<string>;
+}
+
+interface A2AStatusMessagePart {
+  text?: string;
+}
+
+interface A2AStatusMessageMetadata {
+  action?: ParsedInteractionAction;
+  options?: Array<string>;
+}
+
+interface A2AStatusMessage {
+  parts?: Array<A2AStatusMessagePart>;
+  metadata?: A2AStatusMessageMetadata;
+}
+
+interface A2AStatusUpdate {
+  state?: string;
+  message?: A2AStatusMessage;
+}
+
+interface A2AArtifactPart {
+  kind?: string;
+  data?: Object;
+}
+
+interface A2AArtifact {
+  artifactId?: string;
+  parts?: Array<A2AArtifactPart>;
+}
+
+interface A2AArtifactUpdate {
+  artifact?: A2AArtifact;
+  artifacts?: Array<A2AArtifact>;
+}
+
+interface A2AStreamUpdate {
+  statusUpdate?: A2AStatusUpdate;
+  artifactUpdate?: A2AArtifactUpdate;
+}
+
+interface A2ADeltaData {
+  kind?: string;
+  description?: string;
+}
+
+interface A2AToolTracePayload {
+  tool_name?: string;
+  args?: Object;
+}
+
+interface A2AToolTraceRecord {
+  type?: string;
+  payload?: A2AToolTracePayload;
+}
+
+interface A2AToolTraceArgs {
+  redacted?: boolean;
+  [key: string]: Object;
 }
 
 @Entry
@@ -82,6 +141,8 @@ struct AgentSpaceViewer {
   private effectPolling: boolean = false;
   private statusPollTimerId: number = -1;
   private statusPolling: boolean = false;
+  private a2aEventSequence: number = 0;
+  private a2aEventMode: boolean = false;
   private lastStatusText: string = '';
   private callUserActive: boolean = false;
   private callUserContent: string = '';
@@ -161,6 +222,8 @@ struct AgentSpaceViewer {
   }
 
   aboutToAppear(): void {
+    this.a2aEventSequence = 0;
+    this.a2aEventMode = false;
     void this.prepareViewer();
     void this.loadWallpaper();
     this.interactionController.configure({
@@ -309,6 +372,12 @@ struct AgentSpaceViewer {
     this.statusPolling = true;
     try {
       await this.ensureServiceConnected();
+      const gotEvents = await this.flushA2AEvents();
+      if (this.a2aEventMode || gotEvents) {
+        await this.refreshDisplayVisibility();
+        return;
+      }
+
       const snapshotText = await this.getServiceClient().getSnapshot();
       const snapshot = this.readSnapshot(snapshotText);
       if (!snapshot) {
@@ -355,6 +424,370 @@ struct AgentSpaceViewer {
     } finally {
       this.statusPolling = false;
     }
+  }
+
+  private async refreshDisplayVisibility(): Promise<void> {
+    try {
+      const snapshotText = await this.getServiceClient().getSnapshot();
+      const snapshot = this.readSnapshot(snapshotText);
+      if (snapshot) {
+        this.updateDisplayVisibility(snapshot);
+      }
+    } catch (_e) {
+      // ignore display refresh failures
+    }
+  }
+
+  private async flushA2AEvents(): Promise<boolean> {
+    const payload = await this.getServiceClient().a2aPullEvents(this.a2aEventSequence);
+    const batch = this.parseA2AEventBatch(payload);
+    if (!batch) {
+      return false;
+    }
+    this.a2aEventSequence = batch.sequence;
+    if (!this.a2aEventMode) {
+      this.a2aEventMode = true;
+      this.stopEffectPolling();
+    }
+    for (let i = 0; i < batch.events.length; i += 1) {
+      this.handleA2AEvent(batch.events[i]);
+    }
+    return batch.events.length > 0;
+  }
+
+  private parseA2AEventBatch(payload: string): TaskEventBatch | null {
+    if (payload.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(payload) as TaskEventBatch;
+      if (!parsed || typeof parsed.sequence !== 'number' || !Array.isArray(parsed.events)) {
+        return null;
+      }
+      return parsed;
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] parse A2A event batch failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  private handleA2AEvent(event: TaskEvent): void {
+    if (event.type === 'assistant.delta') {
+      const update = this.parseA2AUpdate(event.payloadJson);
+      if (!update) {
+        return;
+      }
+      const description = this.extractDescription(update);
+      if (description.length > 0) {
+        this.updateStatusText(description);
+      }
+      return;
+    }
+    if (event.type === 'status' || event.type === 'input_required') {
+      const update = this.parseA2AUpdate(event.payloadJson);
+      if (update) {
+        this.handleA2AStatusUpdate(update, event.message);
+      } else if (event.message.length > 0) {
+        this.updateStatusText(event.message);
+      }
+      return;
+    }
+    if (event.type === 'tool.trace') {
+      const update = this.parseA2AUpdate(event.payloadJson);
+      if (update) {
+        this.handleToolTrace(update);
+      }
+      return;
+    }
+    if (event.type === 'error') {
+      if (event.message.length > 0) {
+        this.updateStatusText(event.message);
+      }
+    }
+  }
+
+  private parseA2AUpdate(payloadJson: string): A2AStreamUpdate | null {
+    if (payloadJson.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(payloadJson) as A2AStreamUpdate;
+      return parsed ?? null;
+    } catch (e) {
+      console.error(`[AgentSpaceViewer] parse A2A update failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  private handleA2AStatusUpdate(update: A2AStreamUpdate, fallbackMessage: string): void {
+    const statusUpdate = update.statusUpdate;
+    if (!statusUpdate) {
+      if (fallbackMessage.length > 0) {
+        this.updateStatusText(fallbackMessage);
+      }
+      return;
+    }
+    const state = typeof statusUpdate.state === 'string' ? statusUpdate.state : '';
+    const messageText = this.readStatusMessage(statusUpdate);
+    if (state === 'input-required') {
+      const interaction = this.extractInteractionFromA2A(statusUpdate, messageText);
+      if (interaction) {
+        this.enterInteraction(interaction);
+        return;
+      }
+      if (messageText.length > 0) {
+        this.updateStatusText(messageText);
+      }
+      return;
+    }
+    if (this.callUserActive) {
+      this.exitCallUser();
+    }
+    if (state === 'completed') {
+      this.enterA2ATaskFinished(messageText);
+      return;
+    }
+    if (state === 'failed') {
+      this.enterA2ATaskFailed(messageText);
+      return;
+    }
+    if (messageText.length > 0) {
+      this.updateStatusText(messageText);
+      return;
+    }
+    if (fallbackMessage.length > 0) {
+      this.updateStatusText(fallbackMessage);
+    }
+  }
+
+  private readStatusMessage(statusUpdate: A2AStatusUpdate): string {
+    const message = statusUpdate.message;
+    if (!message) {
+      return '';
+    }
+    const parts = message.parts;
+    if (!Array.isArray(parts) || parts.length === 0) {
+      return '';
+    }
+    const first = parts[0];
+    const text = first ? first.text : undefined;
+    if (typeof text === 'string') {
+      return text.trim();
+    }
+    return '';
+  }
+
+  private extractInteractionFromA2A(statusUpdate: A2AStatusUpdate, messageText: string): InteractionPayload | null {
+    const message = statusUpdate.message;
+    const metadata = message?.metadata;
+    const action = metadata?.action;
+    if (!action || typeof action !== 'object') {
+      return null;
+    }
+    const rawName = action.name ?? '';
+    const name = typeof rawName === 'string' ? rawName.trim().toLowerCase() : '';
+    if (name !== 'call_user' && name !== 'interact' && name !== 'take_over') {
+      return null;
+    }
+    const params: ParsedInteractionParams = action.parameters ?? {};
+    const contentRaw = typeof params.content === 'string' ? params.content : messageText;
+    const content = typeof contentRaw === 'string' ? contentRaw.trim() : '';
+    if (content.length === 0) {
+      return null;
+    }
+    const optionsRaw = metadata?.options ?? params.options;
+    const options = this.normalizeOptions(Array.isArray(optionsRaw) ? optionsRaw : undefined);
+    const payload: InteractionPayload = {
+      kind: name === 'interact' ? 'interact' : name === 'take_over' ? 'take_over' : 'call_user',
+      content,
+      options,
+    };
+    return payload;
+  }
+
+  private extractDescription(update: A2AStreamUpdate): string {
+    const artifactUpdate = update.artifactUpdate;
+    const artifact = artifactUpdate?.artifact;
+    const parts = artifact?.parts;
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (!part || part.kind !== 'data') {
+        continue;
+      }
+      const data = part.data as A2ADeltaData;
+      if (!data || data.kind !== 'agent.description') {
+        continue;
+      }
+      const desc = data.description;
+      if (typeof desc === 'string' && desc.trim().length > 0) {
+        return desc.trim();
+      }
+    }
+    return '';
+  }
+
+  private updateStatusText(text: string): void {
+    if (this.callUserActive) {
+      return;
+    }
+    const resolved = text.length > 0 ? text : '正在分析用户需求...';
+    if (resolved === this.lastStatusText) {
+      return;
+    }
+    this.lastStatusText = resolved;
+    this.statusController.setStatus(resolved);
+  }
+
+  private enterA2ATaskFinished(message: string): void {
+    if (this.callUserActive) {
+      this.exitCallUser();
+    }
+    const content = message.length > 0 ? message : '任务已完成';
+    this.statusController.setMode('default');
+    this.statusController.setTerminal('finished', content);
+    this.lastStatusText = content;
+    this.statusController.setStatus(content);
+    this.showFloatWindow();
+    this.showGlow = true;
+    this.glowPaletteName = 'Lagoon';
+  }
+
+  private enterA2ATaskFailed(message: string): void {
+    if (this.callUserActive) {
+      this.exitCallUser();
+    }
+    const content = message.length > 0 ? message : '任务失败';
+    this.statusController.setMode('default');
+    this.statusController.setTerminal('failed', content);
+    this.lastStatusText = content;
+    this.statusController.setStatus(content);
+    this.showFloatWindow();
+  }
+
+  private handleToolTrace(update: A2AStreamUpdate): void {
+    const record = this.readToolTraceRecord(update);
+    if (!record || typeof record.type !== 'string') {
+      return;
+    }
+    if (!record.type.startsWith('tool.call.started')) {
+      return;
+    }
+    const payload = record.payload;
+    const toolNameRaw = payload?.tool_name;
+    const toolName = typeof toolNameRaw === 'string' ? toolNameRaw.trim().toLowerCase() : '';
+    if (toolName.length === 0) {
+      return;
+    }
+    const args = payload?.args;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+      return;
+    }
+    const argsMap = args as A2AToolTraceArgs;
+    const redacted = argsMap.redacted;
+    if (typeof redacted === 'boolean' && redacted) {
+      return;
+    }
+    const effect = this.buildEffectFromTool(toolName, argsMap);
+    if (!effect) {
+      return;
+    }
+    if (toolName === 'double_click') {
+      this.playEffect(effect);
+      setTimeout(() => {
+        this.playEffect(effect);
+      }, 80);
+      return;
+    }
+    this.playEffect(effect);
+  }
+
+  private buildEffectFromTool(toolName: string, args: A2AToolTraceArgs): AgentSpaceViewerEffect | null {
+    if (toolName === 'click' || toolName === 'double_click') {
+      const point = this.readPointFromArgs(args, 'point');
+      if (!point) {
+        return null;
+      }
+      return { kind: 'tap', xNorm: point[0], yNorm: point[1] };
+    }
+    if (toolName === 'long_click') {
+      const point = this.readPointFromArgs(args, 'point');
+      if (!point) {
+        return null;
+      }
+      const duration = this.readNumberFromArgs(args, 'duration_ms', 1500);
+      return { kind: 'long_press', xNorm: point[0], yNorm: point[1], durationMs: duration };
+    }
+    if (toolName === 'swipe') {
+      const start = this.readPointFromArgs(args, 'start') ?? this.readPointFromArgs(args, 'start_point');
+      const end = this.readPointFromArgs(args, 'end') ?? this.readPointFromArgs(args, 'end_point');
+      if (!start || !end) {
+        return null;
+      }
+      const duration = this.readNumberFromArgs(args, 'duration_ms', 300);
+      return {
+        kind: 'swipe',
+        startXNorm: start[0],
+        startYNorm: start[1],
+        endXNorm: end[0],
+        endYNorm: end[1],
+        durationMs: duration,
+      };
+    }
+    if (toolName === 'type') {
+      const point = this.readPointFromArgs(args, 'point');
+      if (!point) {
+        return null;
+      }
+      return { kind: 'tap', xNorm: point[0], yNorm: point[1] };
+    }
+    return null;
+  }
+
+  private readToolTraceRecord(update: A2AStreamUpdate): A2AToolTraceRecord | null {
+    const artifactUpdate = update.artifactUpdate;
+    const artifact = artifactUpdate?.artifact;
+    const parts = artifact?.parts;
+    if (!Array.isArray(parts)) {
+      return null;
+    }
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (!part || part.kind !== 'data') {
+        continue;
+      }
+      const data = part.data as A2AToolTraceRecord;
+      if (data && typeof data === 'object') {
+        return data;
+      }
+    }
+    return null;
+  }
+
+  private readPointFromArgs(args: A2AToolTraceArgs, key: string): Array<number> | null {
+    const raw = args[key];
+    if (!Array.isArray(raw) || raw.length < 2) {
+      return null;
+    }
+    const x = raw[0];
+    const y = raw[1];
+    if (typeof x !== 'number' || typeof y !== 'number') {
+      return null;
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return null;
+    }
+    return [x, y];
+  }
+
+  private readNumberFromArgs(args: A2AToolTraceArgs, key: string, fallback: number): number {
+    const raw = args[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw;
+    }
+    return fallback;
   }
 
   private async flushViewerEffects(): Promise<void> {

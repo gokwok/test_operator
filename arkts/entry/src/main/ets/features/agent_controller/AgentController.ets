@@ -78,6 +78,14 @@ interface A2AStreamStatusMessage {
   parts?: Array<A2AStreamStatusMessagePart>;
 }
 
+interface A2ATaskPayload {
+  id?: string;
+}
+
+interface A2AStreamEnvelope {
+  task?: A2ATaskPayload;
+}
+
 class A2AStreamListenerImpl implements A2AStreamListener {
   private readonly onEventFn: (payload: Object) => void;
   private readonly onErrorFn: (message: string) => void;
@@ -131,6 +139,8 @@ export class AgentController {
   private a2aClient: A2AClient | null = null;
   private a2aStream: A2AStreamSession | null = null;
   private a2aEventHub: AgentEventHub = new AgentEventHub();
+  private a2aTaskId: string = '';
+  private a2aActive: boolean = false;
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
@@ -220,22 +230,40 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
+    this.applySettings(settings);
+    this.applyEfficiencyResourcesBestEffort();
+    if (settings.a2aBaseUrl.trim().length > 0) {
+      await this.startTaskWithA2A(trimmed, settings);
+      await this.hideFloatWindow();
+      return;
+    }
+    await this.startTaskWithDefaultsLegacy(trimmed, settings, ctx);
+  }
+
+  private async startTaskWithDefaultsLegacy(
+    taskText: string,
+    settings: AgentSettingsData,
+    ctx: common.Context
+  ): Promise<void> {
     const installedApps = await this.safeListAppNames(ctx);
     const appTargets = await this.safeListAppTargets(ctx);
     const request: TaskStartRequest = {
       sessionId: '',
-      taskText: trimmed,
+      taskText,
       installedApps,
       appTargets,
       waitMs: settings.waitMs,
     };
-    this.applySettings(settings);
     if (settings.cloudEndpoint.length > 0) {
       this.setCloudEndpoint(settings.cloudEndpoint);
     }
-    this.applyEfficiencyResourcesBestEffort();
     await this.startTask(request);
     await this.hideFloatWindow();
+  }
+
+  private async startTaskWithA2A(taskText: string, settings: AgentSettingsData): Promise<void> {
+    const request = await this.buildA2ARequest(taskText, '', true);
+    this.startA2AStreamInternal(settings.a2aBaseUrl, request);
   }
 
   private async safeListAppNames(ctx: common.Context): Promise<string[]> {
@@ -289,7 +317,20 @@ export class AgentController {
   }
 
   submitUserReply(reply: UserReply): void {
+    if (this.a2aActive && this.a2aTaskId.length > 0) {
+      void this.resumeA2AWithReply(reply);
+      return;
+    }
     this.taskManager.submitUserReply(reply);
+  }
+
+  private async resumeA2AWithReply(reply: UserReply): Promise<void> {
+    try {
+      await this.a2aResumeStream(this.a2aTaskId, reply.content);
+    } catch (e) {
+      const payload = JSON.stringify({ error: String(e) });
+      this.a2aEventHub.push('error', 'resume_failed', payload);
+    }
   }
 
   requestTakeOver(content: string): void {
@@ -646,24 +687,26 @@ export class AgentController {
     }
     const settings = await AgentSettings.load(ctx);
     const request = await this.buildA2ARequest(text, '', true, contextIdOverride);
-    const session = this.getA2AStreamSession();
-    if (session.isActive()) {
-      throw new Error('stream_active');
+    this.startA2AStreamInternal(settings.a2aBaseUrl, request);
+    return 'ok';
+  }
+
+  async a2aResumeStream(taskId: string, reply: string): Promise<string> {
+    const task = taskId.trim();
+    if (task.length === 0) {
+      throw new Error('task_id_empty');
     }
-    this.a2aEventHub.reset();
-    const listener = new A2AStreamListenerImpl(
-      (payload: Object) => {
-        this.handleA2AStreamUpdate(payload);
-      },
-      (message: string) => {
-        const payload = JSON.stringify({ error: message });
-        this.a2aEventHub.push('error', 'stream_error', payload);
-      },
-      () => {
-        this.a2aEventHub.push('status', 'stream_closed');
-      }
-    );
-    session.start(settings.a2aBaseUrl, request, listener);
+    const text = reply.trim();
+    if (text.length === 0) {
+      throw new Error('reply_empty');
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const settings = await AgentSettings.load(ctx);
+    const request = await this.buildA2ARequest(text, task, false);
+    this.startA2AStreamInternal(settings.a2aBaseUrl, request);
     return 'ok';
   }
 
@@ -672,7 +715,32 @@ export class AgentController {
       this.a2aStream.stop();
       this.a2aEventHub.push('status', 'stream_stopped');
     }
+    this.a2aActive = false;
     return 'ok';
+  }
+
+  private startA2AStreamInternal(baseUrl: string, request: A2ARequest): void {
+    const session = this.getA2AStreamSession();
+    if (session.isActive()) {
+      session.stop();
+    }
+    this.a2aEventHub.reset();
+    this.a2aTaskId = '';
+    this.a2aActive = true;
+    const listener = new A2AStreamListenerImpl(
+      (payload: Object) => {
+        this.handleA2AStreamUpdate(payload);
+      },
+      (message: string) => {
+        const payload = JSON.stringify({ error: message });
+        this.a2aEventHub.push('error', 'stream_error', payload);
+        this.a2aActive = false;
+      },
+      () => {
+        this.a2aEventHub.push('status', 'stream_closed');
+      }
+    );
+    session.start(baseUrl, request, listener);
   }
 
   a2aPullEventsJson(lastSequence: number): string {
@@ -1344,6 +1412,12 @@ export class AgentController {
     const update = payload as A2AStreamUpdate;
     let handled = false;
 
+    const task = (payload as A2AStreamEnvelope).task;
+    if (task && typeof task.id === 'string' && task.id.length > 0) {
+      this.a2aTaskId = task.id;
+      this.a2aActive = true;
+    }
+
     const statusUpdate = update.statusUpdate;
     if (statusUpdate) {
       const state = typeof statusUpdate.state === 'string' ? statusUpdate.state : '';
@@ -1351,6 +1425,9 @@ export class AgentController {
       const eventType = state === 'input-required' ? 'input_required' : 'status';
       const message = messageText.length > 0 ? messageText : state;
       this.a2aEventHub.push(eventType, message.length > 0 ? message : 'statusUpdate', raw);
+      if (state === 'completed' || state === 'failed') {
+        this.a2aActive = false;
+      }
       handled = true;
     }
 
