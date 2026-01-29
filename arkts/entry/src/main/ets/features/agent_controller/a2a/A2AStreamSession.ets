@@ -56,7 +56,7 @@ export class A2AStreamSession {
   private listener: A2AStreamListener | null = null;
   private parser: SseLineParser;
   private active: boolean = false;
-  private receivedAny: boolean = false;
+  private parsedAny: boolean = false;
 
   constructor() {
     this.parser = new SseLineParser((data: string) => {
@@ -80,13 +80,12 @@ export class A2AStreamSession {
     this.client = client;
     this.listener = listener;
     this.active = true;
-    this.receivedAny = false;
+    this.parsedAny = false;
     this.parser.reset();
 
     client.on('dataReceive', (data: Object) => {
       const text = this.decodeChunk(data);
       if (text.length > 0) {
-        this.receivedAny = true;
         this.parser.feed(text);
       }
     });
@@ -101,9 +100,9 @@ export class A2AStreamSession {
       extraData: body,
       connectTimeout: 10000,
       readTimeout: 600000,
-    }).then((response) => {
-      if (!this.receivedAny) {
-        this.handleBufferedResult(response.result);
+    }).then((response: http.HttpResponse) => {
+      if (!this.parsedAny) {
+        this.handleNonSseResponse(response);
       }
       this.active = false;
       if (this.listener) {
@@ -133,24 +132,41 @@ export class A2AStreamSession {
     }
   }
 
-  private handleBufferedResult(result: string | Object): void {
-    const text = this.decodeChunk(result as Object);
-    if (text.length > 0) {
-      this.parser.feed(text);
-    }
-  }
-
   private handleData(data: string): void {
     if (!this.listener) {
       return;
     }
     try {
+      this.parsedAny = true;
       const parsed = JSON.parse(data) as Object;
       if (parsed && typeof parsed === 'object') {
         this.listener.onEvent(parsed);
       }
     } catch (e) {
       this.listener.onError(`invalid_sse_json:${String(e)}`);
+    }
+  }
+
+  private handleNonSseResponse(response: http.HttpResponse): void {
+    const status = response.responseCode;
+    const raw = this.decodeChunk(response.result as Object);
+    if (raw.length > 0) {
+      this.parser.feed(raw);
+      if (this.parsedAny) {
+        return;
+      }
+      const snippet = raw.length > 400 ? raw.slice(0, 400) : raw;
+      this.emitError(`non_sse_response:${status}:${snippet}`);
+      return;
+    }
+    if (status !== 200) {
+      this.emitError(`http_${status}`);
+    }
+  }
+
+  private emitError(message: string): void {
+    if (this.listener) {
+      this.listener.onError(message);
     }
   }
 
