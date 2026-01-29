@@ -78,6 +78,34 @@ interface A2AStreamStatusMessage {
   parts?: Array<A2AStreamStatusMessagePart>;
 }
 
+class A2AStreamListenerImpl implements A2AStreamListener {
+  private readonly onEventFn: (payload: Object) => void;
+  private readonly onErrorFn: (message: string) => void;
+  private readonly onCompleteFn: () => void;
+
+  constructor(
+    onEventFn: (payload: Object) => void,
+    onErrorFn: (message: string) => void,
+    onCompleteFn: () => void
+  ) {
+    this.onEventFn = onEventFn;
+    this.onErrorFn = onErrorFn;
+    this.onCompleteFn = onCompleteFn;
+  }
+
+  onEvent(payload: Object): void {
+    this.onEventFn(payload);
+  }
+
+  onError(message: string): void {
+    this.onErrorFn(message);
+  }
+
+  onComplete(): void {
+    this.onCompleteFn();
+  }
+}
+
 interface A2AStreamStatusUpdate {
   state?: string;
   message?: A2AStreamStatusMessage;
@@ -623,18 +651,18 @@ export class AgentController {
       throw new Error('stream_active');
     }
     this.a2aEventHub.reset();
-    const listener: A2AStreamListener = {
-      onEvent: (payload: Object) => {
+    const listener = new A2AStreamListenerImpl(
+      (payload: Object) => {
         this.handleA2AStreamUpdate(payload);
       },
-      onError: (message: string) => {
+      (message: string) => {
         const payload = JSON.stringify({ error: message });
         this.a2aEventHub.push('error', 'stream_error', payload);
       },
-      onComplete: () => {
+      () => {
         this.a2aEventHub.push('status', 'stream_closed');
-      },
-    };
+      }
+    );
     session.start(settings.a2aBaseUrl, request, listener);
     return 'ok';
   }
