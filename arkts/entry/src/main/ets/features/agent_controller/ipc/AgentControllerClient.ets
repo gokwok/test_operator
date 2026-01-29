@@ -330,8 +330,8 @@ export class AgentControllerClient {
     return await this.sendRequestWithTwoStrings(AgentControllerRequestCode.A2A_RESUME_BLOCKING, taskId, reply);
   }
 
-  async a2aStartStream(prompt: string): Promise<string> {
-    return await this.sendRequestWithString(AgentControllerRequestCode.A2A_START_STREAM, prompt);
+  async a2aStartStream(prompt: string, contextId: string = ''): Promise<string> {
+    return await this.sendRequestWithTwoStrings(AgentControllerRequestCode.A2A_START_STREAM, prompt, contextId);
   }
 
   async a2aStopStream(): Promise<void> {

@@ -356,7 +356,8 @@ export class AgentControllerStub extends rpc.RemoteObject {
       }
       if (code === AgentControllerRequestCode.A2A_START_STREAM) {
         const prompt = data.readString();
-        const payload = await this.service.a2aStartStream(prompt);
+        const contextId = data.readString();
+        const payload = await this.service.a2aStartStream(prompt, contextId);
         reply.writeString(payload);
         return true;
       }

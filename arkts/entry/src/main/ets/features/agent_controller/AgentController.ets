@@ -635,7 +635,7 @@ export class AgentController {
     return await client.messageSend(request);
   }
 
-  async a2aStartStream(prompt: string): Promise<string> {
+  async a2aStartStream(prompt: string, contextIdOverride: string): Promise<string> {
     const text = prompt.trim();
     if (text.length === 0) {
       throw new Error('prompt_empty');
@@ -645,7 +645,7 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
-    const request = await this.buildA2ARequest(text, '', true);
+    const request = await this.buildA2ARequest(text, '', true, contextIdOverride);
     const session = this.getA2AStreamSession();
     if (session.isActive()) {
       throw new Error('stream_active');
@@ -1426,13 +1426,21 @@ export class AgentController {
     }
   }
 
-  private async buildA2ARequest(text: string, taskId: string, includeApps: boolean): Promise<A2ARequest> {
+  private async buildA2ARequest(
+    text: string,
+    taskId: string,
+    includeApps: boolean,
+    contextIdOverride: string = ''
+  ): Promise<A2ARequest> {
     const ctx = this.ctx;
     if (!ctx) {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
-    const contextId = settings.contextId.trim().length > 0 ? settings.contextId.trim() : settings.deviceId.trim();
+    const override = contextIdOverride.trim();
+    const contextId = override.length > 0
+      ? override
+      : (settings.contextId.trim().length > 0 ? settings.contextId.trim() : settings.deviceId.trim());
     if (contextId.length === 0) {
       throw new Error('context_id_empty');
     }

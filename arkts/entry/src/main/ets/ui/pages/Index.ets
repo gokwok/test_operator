@@ -161,6 +161,7 @@ struct Index {
   @State a2aResultInfo: string = '';
   @State a2aResult: string = '';
   @State a2aStreamPrompt: string = '';
+  @State a2aStreamContextId: string = '';
   @State a2aStreamInfo: string = '';
   @State a2aStreamEvents: Array<TaskEvent> = [];
 
@@ -590,6 +591,18 @@ struct Index {
             .padding({ left: 10, right: 10 })
             .onChange((value: string) => {
               this.a2aStreamPrompt = value;
+            })
+
+          TextInput({ placeholder: 'stream contextId（可选）', text: this.a2aStreamContextId })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.a2aStreamContextId = value;
             })
 
           Row({ space: 8 }) {
@@ -2907,9 +2920,10 @@ struct Index {
       this.a2aStreamInfo = '请输入 stream prompt';
       return;
     }
+    const contextId = this.a2aStreamContextId.trim();
     try {
       await this.ensureAgentServiceConnected();
-      const payload = await this.agentServiceClient.a2aStartStream(prompt);
+      const payload = await this.agentServiceClient.a2aStartStream(prompt, contextId);
       this.a2aStreamInfo = payload.length > 0 ? payload : 'stream started';
     } catch (e) {
       this.a2aStreamInfo = `启动失败: ${String(e)}`;
