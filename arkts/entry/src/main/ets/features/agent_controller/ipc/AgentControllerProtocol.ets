@@ -50,4 +50,6 @@ export enum AgentControllerRequestCode {
   MCP_STATUS = 62,
   MCP_LOGS = 63,
   MCP_CLEAR_LOGS = 64,
+  A2A_SEND_BLOCKING = 70,
+  A2A_RESUME_BLOCKING = 71,
 }

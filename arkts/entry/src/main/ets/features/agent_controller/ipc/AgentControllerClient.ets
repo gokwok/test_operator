@@ -322,6 +322,14 @@ export class AgentControllerClient {
     await this.sendRequest(AgentControllerRequestCode.MCP_CLEAR_LOGS);
   }
 
+  async a2aSendBlocking(prompt: string): Promise<string> {
+    return await this.sendRequestWithString(AgentControllerRequestCode.A2A_SEND_BLOCKING, prompt);
+  }
+
+  async a2aResumeBlocking(taskId: string, reply: string): Promise<string> {
+    return await this.sendRequestWithTwoStrings(AgentControllerRequestCode.A2A_RESUME_BLOCKING, taskId, reply);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {

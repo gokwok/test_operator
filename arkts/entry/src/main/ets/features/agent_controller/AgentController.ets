@@ -22,6 +22,7 @@ import { ToolKit } from './toolkit/ToolKit';
 import { ToolCallDispatcher } from './tool_call/ToolCallDispatcher';
 import { DeviceToolsEndpoint } from './mcp/DeviceToolsEndpoint';
 import type { DeviceToolsConfig, McpStatus } from './mcp/DeviceToolsEndpoint';
+import { A2AClient, A2AConfiguration, A2AFile, A2AFilePart, A2AMessage, A2AMessagePart, A2AMetadata, A2ARequest, A2ATextPart } from './a2a/A2AClient';
 import type {
   AppTargetDescriptor,
   TaskEventBatch,
@@ -67,6 +68,7 @@ export class AgentController {
   private deviceToolsEndpoint: DeviceToolsEndpoint | null = null;
   private deviceToolsToolKit: ToolKit | null = null;
   private agentProxy: AgentProxy | null = null;
+  private a2aClient: A2AClient | null = null;
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
@@ -535,6 +537,40 @@ export class AgentController {
     }
     const status = endpoint.getStatus();
     return JSON.stringify(status);
+  }
+
+  async a2aSendBlocking(prompt: string): Promise<string> {
+    const text = prompt.trim();
+    if (text.length === 0) {
+      throw new Error('prompt_empty');
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const settings = await AgentSettings.load(ctx);
+    const request = await this.buildA2ARequest(text, '', true);
+    const client = this.getA2AClient(settings.a2aBaseUrl);
+    return await client.messageSend(request);
+  }
+
+  async a2aResumeBlocking(taskId: string, reply: string): Promise<string> {
+    const task = taskId.trim();
+    if (task.length === 0) {
+      throw new Error('task_id_empty');
+    }
+    const text = reply.trim();
+    if (text.length === 0) {
+      throw new Error('reply_empty');
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const settings = await AgentSettings.load(ctx);
+    const request = await this.buildA2ARequest(text, task, false);
+    const client = this.getA2AClient(settings.a2aBaseUrl);
+    return await client.messageSend(request);
   }
 
   mcpLogs(): string {
@@ -1175,6 +1211,52 @@ export class AgentController {
       this.deviceToolsToolKit = toolKit;
     }
     return this.deviceToolsEndpoint;
+  }
+
+  private getA2AClient(baseUrl: string): A2AClient {
+    if (!this.a2aClient) {
+      this.a2aClient = new A2AClient(baseUrl);
+      return this.a2aClient;
+    }
+    this.a2aClient.setBaseUrl(baseUrl);
+    return this.a2aClient;
+  }
+
+  private async buildA2ARequest(text: string, taskId: string, includeApps: boolean): Promise<A2ARequest> {
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const settings = await AgentSettings.load(ctx);
+    const contextId = settings.contextId.trim().length > 0 ? settings.contextId.trim() : settings.deviceId.trim();
+    if (contextId.length === 0) {
+      throw new Error('context_id_empty');
+    }
+    const screenshot = await this.requireToolKit().screenshotBase64();
+    if (screenshot.length === 0) {
+      throw new Error('screenshot_empty');
+    }
+    const textPart: A2ATextPart = { kind: 'text', text };
+    const file: A2AFile = { name: 'screenshot.jpeg', mimeType: 'image/jpeg', bytes: screenshot };
+    const filePart: A2AFilePart = { kind: 'file', file };
+    const parts: Array<A2AMessagePart> = [textPart, filePart];
+    const message: A2AMessage = {
+      messageId: `m_${Date.now()}`,
+      role: 'user',
+      contextId,
+      parts,
+    };
+    if (taskId.trim().length > 0) {
+      message.taskId = taskId.trim();
+    }
+    const config: A2AConfiguration = { blocking: true };
+    const request: A2ARequest = { message, configuration: config };
+    if (includeApps) {
+      const apps = await this.safeListAppNames(ctx);
+      const metadata: A2AMetadata = { installed_apps: apps };
+      request.metadata = metadata;
+    }
+    return request;
   }
 
   private appendMcpLog(message: string): void {

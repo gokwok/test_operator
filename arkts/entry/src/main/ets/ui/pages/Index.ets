@@ -90,6 +90,31 @@ interface McpStatusSnapshot {
   error?: string;
 }
 
+interface A2AStatusMessagePartSnapshot {
+  text?: string;
+}
+
+interface A2AStatusMessageSnapshot {
+  parts?: Array<A2AStatusMessagePartSnapshot>;
+}
+
+interface A2AStatusSnapshot {
+  state?: string;
+  message?: A2AStatusMessageSnapshot;
+}
+
+interface A2ATaskSnapshot {
+  id?: string;
+  contextId?: string;
+  status?: A2AStatusSnapshot;
+}
+
+interface A2AResponseSnapshot {
+  task?: A2ATaskSnapshot;
+  id?: string;
+  status?: A2AStatusSnapshot;
+}
+
 interface ServiceExtensionStarter {
   startServiceExtensionAbility?: (want: Want) => Promise<void>;
 }
@@ -130,6 +155,11 @@ struct Index {
   @State mcpStatusInfo: string = '';
   @State mcpLogInfo: string = '';
   @State mcpLogLines: Array<string> = [];
+  @State a2aPrompt: string = '';
+  @State a2aTaskId: string = '';
+  @State a2aReply: string = '';
+  @State a2aResultInfo: string = '';
+  @State a2aResult: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -458,6 +488,85 @@ struct Index {
             .backgroundColor(DETAIL_SECTION_BG)
             .borderRadius(10)
             .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
+        }
+
+        Column({ space: 8 }) {
+          Text('A2A Blocking')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          TextInput({ placeholder: '任务指令（prompt）', text: this.a2aPrompt })
+            .height(36)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.a2aPrompt = value;
+            })
+
+          Row({ space: 8 }) {
+            Button('Send')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.a2aSendBlocking();
+              })
+
+            Button('Resume')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.a2aResumeBlocking();
+              })
+          }
+
+          TextInput({ placeholder: 'taskId（续跑）', text: this.a2aTaskId })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.a2aTaskId = value;
+            })
+
+          TextInput({ placeholder: '用户回复（reply）', text: this.a2aReply })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.a2aReply = value;
+            })
+
+          if (this.a2aResultInfo.length > 0) {
+            Text(this.a2aResultInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.a2aResult.length > 0) {
+            Text(this.formatA2AResult(this.a2aResult))
+              .fontSize(10)
+              .fontColor(THEME_TEXT_MUTED)
           }
         }
 
@@ -2647,6 +2756,123 @@ struct Index {
     } catch (_e) {
       return [trimmed];
     }
+  }
+
+  private async a2aSendBlocking(): Promise<void> {
+    this.a2aResultInfo = '';
+    this.a2aResult = '';
+    const prompt = this.a2aPrompt.trim();
+    if (prompt.length === 0) {
+      this.a2aResultInfo = '请输入任务指令';
+      return;
+    }
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.a2aSendBlocking(prompt);
+      this.applyA2AResponse(payload);
+    } catch (e) {
+      this.a2aResultInfo = `发送失败: ${String(e)}`;
+    }
+  }
+
+  private async a2aResumeBlocking(): Promise<void> {
+    this.a2aResultInfo = '';
+    this.a2aResult = '';
+    const taskId = this.a2aTaskId.trim();
+    if (taskId.length === 0) {
+      this.a2aResultInfo = '请输入 taskId';
+      return;
+    }
+    const reply = this.a2aReply.trim();
+    if (reply.length === 0) {
+      this.a2aResultInfo = '请输入回复内容';
+      return;
+    }
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.a2aResumeBlocking(taskId, reply);
+      this.applyA2AResponse(payload);
+    } catch (e) {
+      this.a2aResultInfo = `续跑失败: ${String(e)}`;
+    }
+  }
+
+  private applyA2AResponse(payload: string): void {
+    this.a2aResult = payload;
+    const task = this.parseA2ATask(payload);
+    if (!task) {
+      this.a2aResultInfo = '返回解析失败';
+      return;
+    }
+    const taskId = task.id ?? '';
+    const state = task.status?.state ?? '';
+    const msg = this.extractA2AMessage(task);
+    const parts: Array<string> = [];
+    if (taskId.length > 0) {
+      parts.push(`taskId=${taskId}`);
+    }
+    if (state.length > 0) {
+      parts.push(`state=${state}`);
+    }
+    if (msg.length > 0) {
+      parts.push(`message=${msg}`);
+    }
+    if (parts.length > 0) {
+      this.a2aResultInfo = parts.join(' / ');
+    }
+    if (this.a2aTaskId.trim().length === 0 && taskId.length > 0) {
+      this.a2aTaskId = taskId;
+    }
+  }
+
+  private parseA2ATask(payload: string): A2ATaskSnapshot | null {
+    const trimmed = payload.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as A2AResponseSnapshot;
+      if (!parsed || typeof parsed !== 'object') {
+        return null;
+      }
+      if (parsed.task && typeof parsed.task === 'object') {
+        return parsed.task as A2ATaskSnapshot;
+      }
+      const taskCandidate = parsed as A2ATaskSnapshot;
+      if (taskCandidate.id || taskCandidate.status) {
+        return taskCandidate;
+      }
+      return null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  private extractA2AMessage(task: A2ATaskSnapshot): string {
+    const parts = task.status?.message?.parts;
+    if (!parts || parts.length === 0) {
+      return '';
+    }
+    const first = parts[0];
+    if (first && typeof first.text === 'string') {
+      return this.truncateText(first.text.trim(), 80);
+    }
+    return '';
+  }
+
+  private formatA2AResult(payload: string): string {
+    const maxLen = 260;
+    if (payload.length <= maxLen) {
+      return payload;
+    }
+    return `${payload.slice(0, maxLen)}...`;
+  }
+
+  private truncateText(text: string, maxLen: number): string {
+    if (text.length <= maxLen) {
+      return text;
+    }
+    return `${text.slice(0, maxLen)}...`;
   }
 
   private async initAgentSpace(): Promise<void> {
