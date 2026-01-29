@@ -232,6 +232,7 @@ export class AgentController {
     const settings = await AgentSettings.load(ctx);
     this.applySettings(settings);
     this.applyEfficiencyResourcesBestEffort();
+    await this.ensureMcpConnected(settings);
     if (settings.a2aBaseUrl.trim().length > 0) {
       await this.startTaskWithA2A(trimmed, settings);
       await this.hideFloatWindow();
@@ -1563,35 +1564,47 @@ export class AgentController {
     this.mcpLogLines = next;
   }
 
+  private buildDeviceToolsConfig(settings: AgentSettingsData): DeviceToolsConfig {
+    return {
+      wsUrl: settings.mcpWsUrl,
+      deviceId: settings.deviceId,
+      sessionId: settings.contextId,
+      waitAfterActionMs: settings.waitMs,
+    };
+  }
+
+  private async ensureMcpConnected(settings: AgentSettingsData): Promise<void> {
+    const config = this.buildDeviceToolsConfig(settings);
+    const targetUrl = config.wsUrl.trim();
+    if (targetUrl.length === 0) {
+      return;
+    }
+    try {
+      const endpoint = this.requireDeviceToolsEndpoint();
+      const status = endpoint.getStatus();
+      if ((status.state === 'connected' || status.state === 'connecting') && status.url === targetUrl) {
+        return;
+      }
+      if (status.state === 'connected' || status.state === 'connecting') {
+        await endpoint.disconnect();
+      }
+      await endpoint.connect(config);
+    } catch (e) {
+      this.appendMcpLog(`auto_connect_error: ${String(e)}`);
+    }
+  }
+
   private async loadDeviceToolsConfig(): Promise<DeviceToolsConfig> {
     const ctx = this.ctx;
     const fallbackSettings = AgentSettings.defaults();
     if (!ctx) {
-      const fallback: DeviceToolsConfig = {
-        wsUrl: fallbackSettings.mcpWsUrl,
-        deviceId: fallbackSettings.deviceId,
-        sessionId: fallbackSettings.contextId,
-        waitAfterActionMs: fallbackSettings.waitMs,
-      };
-      return fallback;
+      return this.buildDeviceToolsConfig(fallbackSettings);
     }
     try {
       const settings = await AgentSettings.load(ctx);
-      const config: DeviceToolsConfig = {
-        wsUrl: settings.mcpWsUrl,
-        deviceId: settings.deviceId,
-        sessionId: settings.contextId,
-        waitAfterActionMs: settings.waitMs,
-      };
-      return config;
+      return this.buildDeviceToolsConfig(settings);
     } catch (_e) {
-      const fallback: DeviceToolsConfig = {
-        wsUrl: fallbackSettings.mcpWsUrl,
-        deviceId: fallbackSettings.deviceId,
-        sessionId: fallbackSettings.contextId,
-        waitAfterActionMs: fallbackSettings.waitMs,
-      };
-      return fallback;
+      return this.buildDeviceToolsConfig(fallbackSettings);
     }
   }
 
