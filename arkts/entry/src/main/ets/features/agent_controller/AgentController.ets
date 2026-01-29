@@ -47,6 +47,13 @@ const EFFICIENCY_RESOURCE_REASON: string = 'agent_task';
 const HILOG_DOMAIN: number = 0x0000;
 const HILOG_TAG: string = 'AgentController';
 
+interface DebugToolCallSummary {
+  name: string;
+  status: string;
+  error: string;
+  screenshot_len: number;
+}
+
 export class AgentController {
   private static instance: AgentController | null = null;
   private ctx: common.Context | null = null;
@@ -482,7 +489,7 @@ export class AgentController {
     const waitMs = await this.resolveToolWaitMs();
     const dispatcher = new ToolCallDispatcher(this.requireToolKit(), waitMs);
     const result = await dispatcher.execute(name, argsJson);
-    const summary = {
+    const summary: DebugToolCallSummary = {
       name: name.trim(),
       status: result.status,
       error: result.error,

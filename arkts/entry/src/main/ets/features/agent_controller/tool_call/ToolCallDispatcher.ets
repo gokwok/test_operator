@@ -152,14 +152,14 @@ export class ToolCallDispatcher {
       return {};
     }
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed: ToolCallArgs = JSON.parse(trimmed) as ToolCallArgs;
       if (!parsed || typeof parsed !== 'object') {
         return null;
       }
       if (Array.isArray(parsed)) {
         return null;
       }
-      return parsed as ToolCallArgs;
+      return parsed;
     } catch (_e) {
       return null;
     }
