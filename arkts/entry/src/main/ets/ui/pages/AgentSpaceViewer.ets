@@ -62,6 +62,7 @@ interface A2AStatusUpdate {
 interface A2AArtifactPart {
   kind?: string;
   data?: Object;
+  text?: string;
 }
 
 interface A2AArtifact {
@@ -619,7 +620,17 @@ struct AgentSpaceViewer {
     }
     for (let i = 0; i < parts.length; i += 1) {
       const part = parts[i];
-      if (!part || part.kind !== 'data') {
+      if (!part) {
+        continue;
+      }
+      if (part.kind === 'text') {
+        const text = part.text;
+        if (typeof text === 'string' && text.trim().length > 0) {
+          return text.trim();
+        }
+        continue;
+      }
+      if (part.kind !== 'data') {
         continue;
       }
       const data = part.data as A2ADeltaData;

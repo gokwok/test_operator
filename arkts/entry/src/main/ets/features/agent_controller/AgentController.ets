@@ -1436,7 +1436,7 @@ export class AgentController {
     if (artifactUpdate) {
       const artifactId = this.readArtifactId(update);
       let eventType: TaskEventType = 'delta';
-      if (artifactId === 'thinkflow.delta') {
+      if (artifactId === 'thinkflow.delta' || artifactId === 'assistant.text') {
         eventType = 'assistant.delta';
       } else if (artifactId === 'tool.trace') {
         eventType = 'tool.trace';
