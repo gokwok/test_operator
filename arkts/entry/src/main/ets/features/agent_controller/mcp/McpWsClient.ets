@@ -7,9 +7,11 @@ export interface McpWsClientListener {
   onError(message: string): void;
 }
 
+type WsPayloadData = string | ArrayBuffer | Uint8Array | null;
+
 interface WsMessageValue {
-  data?: Object;
-  message?: Object;
+  data?: WsPayloadData;
+  message?: WsPayloadData;
   code?: number;
   reason?: string;
 }
@@ -190,10 +192,11 @@ export class McpWsClient {
     if (data instanceof Uint8Array) {
       return this.decodeUint8Array(data);
     }
-    if (data) {
-      return String(data);
+    const raw = this.safeStringify(value);
+    if (raw.length > 0) {
+      return `__ws_raw__${raw}`;
     }
-    return '';
+    return data ? String(data) : '';
   }
 
   private decodeArrayBuffer(buffer: ArrayBuffer): string {
@@ -213,6 +216,15 @@ export class McpWsClient {
       result += String.fromCharCode(...slice);
     }
     return result;
+  }
+
+  private safeStringify(value: Object): string {
+    try {
+      const raw = JSON.stringify(value);
+      return typeof raw === 'string' ? raw : '';
+    } catch (_e) {
+      return '';
+    }
   }
 
   private readError(err: Object): string {
