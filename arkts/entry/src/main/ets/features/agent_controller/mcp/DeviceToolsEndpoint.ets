@@ -160,7 +160,7 @@ export class DeviceToolsEndpoint {
   }
 
   private parseToolCall(raw: string): McpToolCall | null {
-    const trimmed = raw.trim();
+    const trimmed = this.normalizeRawMessage(raw);
     if (trimmed.length === 0) {
       return null;
     }
@@ -179,6 +179,35 @@ export class DeviceToolsEndpoint {
     } catch (_e) {
       return null;
     }
+  }
+
+  private normalizeRawMessage(raw: string): string {
+    let trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      return '';
+    }
+    if (this.hasWsRawPrefix(trimmed)) {
+      trimmed = this.stripWsRawPrefix(trimmed).trim();
+    }
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      try {
+        const inner = JSON.parse(trimmed) as string;
+        if (typeof inner === 'string') {
+          trimmed = inner.trim();
+        }
+      } catch (_e) {
+        // ignore
+      }
+    }
+    return trimmed;
+  }
+
+  private hasWsRawPrefix(value: string): boolean {
+    return value.startsWith('__ws_raw__') || value.startsWith('_ws_raw_');
+  }
+
+  private stripWsRawPrefix(value: string): string {
+    return value.replace(/^_+ws_raw_+/, '');
   }
 
   private serializeArgs(args?: Object): string {
