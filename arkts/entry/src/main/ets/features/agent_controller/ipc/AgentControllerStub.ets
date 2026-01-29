@@ -316,6 +316,21 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentControllerRequestCode.MCP_CONNECT) {
+        const payload = await this.service.mcpConnect();
+        reply.writeString(payload);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.MCP_DISCONNECT) {
+        const payload = await this.service.mcpDisconnect();
+        reply.writeString(payload);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.MCP_STATUS) {
+        const payload = this.service.mcpStatus();
+        reply.writeString(payload);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

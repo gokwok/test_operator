@@ -302,6 +302,18 @@ export class AgentControllerClient {
     );
   }
 
+  async mcpConnect(): Promise<string> {
+    return await this.sendRequest(AgentControllerRequestCode.MCP_CONNECT);
+  }
+
+  async mcpDisconnect(): Promise<string> {
+    return await this.sendRequest(AgentControllerRequestCode.MCP_DISCONNECT);
+  }
+
+  async mcpStatus(): Promise<string> {
+    return await this.sendRequest(AgentControllerRequestCode.MCP_STATUS);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {

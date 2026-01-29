@@ -84,6 +84,12 @@ interface StepParamLine {
   value: string;
 }
 
+interface McpStatusSnapshot {
+  state?: string;
+  url?: string;
+  error?: string;
+}
+
 interface ServiceExtensionStarter {
   startServiceExtensionAbility?: (want: Want) => Promise<void>;
 }
@@ -121,6 +127,7 @@ struct Index {
   @State debugToolName: string = 'screenshot';
   @State debugToolArgs: string = '{}';
   @State debugToolResult: string = '';
+  @State mcpStatusInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -347,6 +354,54 @@ struct Index {
           Text(`deviceId: ${this.deviceId} / contextId: ${this.contextId}`)
             .fontSize(11)
             .fontColor(THEME_TEXT_PRIMARY)
+        }
+
+        Column({ space: 8 }) {
+          Text('MCP WS')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Row({ space: 8 }) {
+            Button('连接')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.connectMcp();
+              })
+
+            Button('断开')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.disconnectMcp();
+              })
+
+            Button('状态')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.refreshMcpStatus();
+              })
+          }
+
+          if (this.mcpStatusInfo.length > 0) {
+            Text(this.mcpStatusInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
         }
 
         Column({ space: 8 }) {
@@ -2417,6 +2472,71 @@ struct Index {
       return payload;
     }
     return `${payload.slice(0, maxLen)}...`;
+  }
+
+  private async connectMcp(): Promise<void> {
+    this.mcpStatusInfo = '正在连接...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.mcpConnect();
+      this.mcpStatusInfo = this.formatMcpStatus(payload);
+    } catch (e) {
+      this.mcpStatusInfo = `连接失败: ${String(e)}`;
+    }
+  }
+
+  private async disconnectMcp(): Promise<void> {
+    this.mcpStatusInfo = '正在断开...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.mcpDisconnect();
+      this.mcpStatusInfo = this.formatMcpStatus(payload);
+    } catch (e) {
+      this.mcpStatusInfo = `断开失败: ${String(e)}`;
+    }
+  }
+
+  private async refreshMcpStatus(): Promise<void> {
+    this.mcpStatusInfo = '正在读取状态...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.mcpStatus();
+      this.mcpStatusInfo = this.formatMcpStatus(payload);
+    } catch (e) {
+      this.mcpStatusInfo = `状态读取失败: ${String(e)}`;
+    }
+  }
+
+  private formatMcpStatus(payload: string): string {
+    const trimmed = payload.trim();
+    if (trimmed.length === 0) {
+      return '无状态';
+    }
+    if (!trimmed.startsWith('{')) {
+      return trimmed;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as McpStatusSnapshot;
+      const parts: Array<string> = [];
+      const state = parsed.state ?? '';
+      const url = parsed.url ?? '';
+      const error = parsed.error ?? '';
+      if (state.length > 0) {
+        parts.push(`state=${state}`);
+      }
+      if (url.length > 0) {
+        parts.push(`url=${url}`);
+      }
+      if (error.length > 0) {
+        parts.push(`error=${error}`);
+      }
+      if (parts.length > 0) {
+        return parts.join(' / ');
+      }
+      return trimmed;
+    } catch (_e) {
+      return trimmed;
+    }
   }
 
   private async initAgentSpace(): Promise<void> {

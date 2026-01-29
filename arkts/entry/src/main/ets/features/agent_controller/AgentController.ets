@@ -20,6 +20,8 @@ import { AgentProxy } from './AgentProxy';
 import { StateCollector } from './state_collector/StateCollector';
 import { ToolKit } from './toolkit/ToolKit';
 import { ToolCallDispatcher } from './tool_call/ToolCallDispatcher';
+import { DeviceToolsEndpoint } from './mcp/DeviceToolsEndpoint';
+import type { DeviceToolsConfig, McpStatus } from './mcp/DeviceToolsEndpoint';
 import type {
   AppTargetDescriptor,
   TaskEventBatch,
@@ -62,6 +64,8 @@ export class AgentController {
   private taskManager: TaskManager = new TaskManager();
   private agentSpace: AgentSpace | null = null;
   private toolKit: ToolKit | null = null;
+  private deviceToolsEndpoint: DeviceToolsEndpoint | null = null;
+  private deviceToolsToolKit: ToolKit | null = null;
   private agentProxy: AgentProxy | null = null;
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
@@ -496,6 +500,40 @@ export class AgentController {
       screenshot_len: result.screenshot_b64.length,
     };
     return JSON.stringify(summary);
+  }
+
+  async mcpConnect(): Promise<string> {
+    let config: DeviceToolsConfig | null = null;
+    try {
+      const endpoint = this.requireDeviceToolsEndpoint();
+      config = await this.loadDeviceToolsConfig();
+      const status = await endpoint.connect(config);
+      return JSON.stringify(status);
+    } catch (e) {
+      const url = config ? config.wsUrl : '';
+      const status: McpStatus = { state: 'error', url, error: String(e) };
+      return JSON.stringify(status);
+    }
+  }
+
+  async mcpDisconnect(): Promise<string> {
+    const endpoint = this.deviceToolsEndpoint;
+    if (!endpoint) {
+      const status: McpStatus = { state: 'idle', url: '', error: '' };
+      return JSON.stringify(status);
+    }
+    const status = await endpoint.disconnect();
+    return JSON.stringify(status);
+  }
+
+  mcpStatus(): string {
+    const endpoint = this.deviceToolsEndpoint;
+    if (!endpoint) {
+      const status: McpStatus = { state: 'idle', url: '', error: '' };
+      return JSON.stringify(status);
+    }
+    const status = endpoint.getStatus();
+    return JSON.stringify(status);
   }
 
   async setViewerActive(active: boolean): Promise<void> {
@@ -1115,6 +1153,51 @@ export class AgentController {
     return toolKit;
   }
 
+  private requireDeviceToolsEndpoint(): DeviceToolsEndpoint {
+    const toolKit = this.requireToolKit();
+    if (!this.deviceToolsEndpoint || this.deviceToolsToolKit !== toolKit) {
+      const existing = this.deviceToolsEndpoint;
+      if (existing) {
+        void existing.disconnect();
+      }
+      this.deviceToolsEndpoint = new DeviceToolsEndpoint(toolKit);
+      this.deviceToolsToolKit = toolKit;
+    }
+    return this.deviceToolsEndpoint;
+  }
+
+  private async loadDeviceToolsConfig(): Promise<DeviceToolsConfig> {
+    const ctx = this.ctx;
+    const fallbackSettings = AgentSettings.defaults();
+    if (!ctx) {
+      const fallback: DeviceToolsConfig = {
+        wsUrl: fallbackSettings.mcpWsUrl,
+        deviceId: fallbackSettings.deviceId,
+        sessionId: fallbackSettings.contextId,
+        waitAfterActionMs: fallbackSettings.waitMs,
+      };
+      return fallback;
+    }
+    try {
+      const settings = await AgentSettings.load(ctx);
+      const config: DeviceToolsConfig = {
+        wsUrl: settings.mcpWsUrl,
+        deviceId: settings.deviceId,
+        sessionId: settings.contextId,
+        waitAfterActionMs: settings.waitMs,
+      };
+      return config;
+    } catch (_e) {
+      const fallback: DeviceToolsConfig = {
+        wsUrl: fallbackSettings.mcpWsUrl,
+        deviceId: fallbackSettings.deviceId,
+        sessionId: fallbackSettings.contextId,
+        waitAfterActionMs: fallbackSettings.waitMs,
+      };
+      return fallback;
+    }
+  }
+
   private async resolveToolWaitMs(): Promise<number> {
     const ctx = this.ctx;
     if (!ctx) {
@@ -1163,9 +1246,15 @@ export class AgentController {
   private async destroyAgentSpaceInternal(): Promise<void> {
     this.pendingAgentSpaceDestroy = false;
     const space = this.agentSpace;
+    const endpoint = this.deviceToolsEndpoint;
     this.agentSpace = null;
     this.toolKit = null;
+    this.deviceToolsEndpoint = null;
+    this.deviceToolsToolKit = null;
     this.lastScreenshotBase64 = '';
+    if (endpoint) {
+      void endpoint.disconnect();
+    }
     if (!space) {
       return;
     }
