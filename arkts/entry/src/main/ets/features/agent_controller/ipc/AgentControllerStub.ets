@@ -354,6 +354,23 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentControllerRequestCode.A2A_START_STREAM) {
+        const prompt = data.readString();
+        const payload = await this.service.a2aStartStream(prompt);
+        reply.writeString(payload);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.A2A_STOP_STREAM) {
+        const payload = this.service.a2aStopStream();
+        reply.writeString(payload);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.A2A_PULL_EVENTS) {
+        const lastSequence = data.readInt();
+        const payload = this.service.a2aPullEventsJson(lastSequence);
+        reply.writeString(payload);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

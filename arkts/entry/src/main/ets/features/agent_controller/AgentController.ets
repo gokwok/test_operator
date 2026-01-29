@@ -20,12 +20,16 @@ import { AgentProxy } from './AgentProxy';
 import { StateCollector } from './state_collector/StateCollector';
 import { ToolKit } from './toolkit/ToolKit';
 import { ToolCallDispatcher } from './tool_call/ToolCallDispatcher';
+import { AgentEventHub } from './events/AgentEventHub';
 import { DeviceToolsEndpoint } from './mcp/DeviceToolsEndpoint';
 import type { DeviceToolsConfig, McpStatus } from './mcp/DeviceToolsEndpoint';
 import { A2AClient, A2AConfiguration, A2AFile, A2AFilePart, A2AMessage, A2AMessagePart, A2AMetadata, A2ARequest, A2ATextPart } from './a2a/A2AClient';
+import type { A2AStreamListener } from './a2a/A2AStreamSession';
+import { A2AStreamSession } from './a2a/A2AStreamSession';
 import type {
   AppTargetDescriptor,
   TaskEventBatch,
+  TaskEventType,
   TaskSnapshot,
   TaskStartRequest,
   TaskStatus,
@@ -57,6 +61,34 @@ interface DebugToolCallSummary {
   screenshot_len: number;
 }
 
+interface A2AStreamArtifact {
+  artifactId?: string;
+}
+
+interface A2AStreamArtifactUpdate {
+  artifact?: A2AStreamArtifact;
+  artifacts?: Array<A2AStreamArtifact>;
+}
+
+interface A2AStreamStatusMessagePart {
+  text?: string;
+}
+
+interface A2AStreamStatusMessage {
+  parts?: Array<A2AStreamStatusMessagePart>;
+}
+
+interface A2AStreamStatusUpdate {
+  state?: string;
+  message?: A2AStreamStatusMessage;
+}
+
+interface A2AStreamUpdate {
+  statusUpdate?: A2AStreamStatusUpdate;
+  artifactUpdate?: A2AStreamArtifactUpdate;
+  artifacts?: Array<A2AStreamArtifact>;
+}
+
 export class AgentController {
   private static instance: AgentController | null = null;
   private ctx: common.Context | null = null;
@@ -69,6 +101,8 @@ export class AgentController {
   private deviceToolsToolKit: ToolKit | null = null;
   private agentProxy: AgentProxy | null = null;
   private a2aClient: A2AClient | null = null;
+  private a2aStream: A2AStreamSession | null = null;
+  private a2aEventHub: AgentEventHub = new AgentEventHub();
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
@@ -571,6 +605,54 @@ export class AgentController {
     const request = await this.buildA2ARequest(text, task, false);
     const client = this.getA2AClient(settings.a2aBaseUrl);
     return await client.messageSend(request);
+  }
+
+  async a2aStartStream(prompt: string): Promise<string> {
+    const text = prompt.trim();
+    if (text.length === 0) {
+      throw new Error('prompt_empty');
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      throw new Error('context_missing');
+    }
+    const settings = await AgentSettings.load(ctx);
+    const request = await this.buildA2ARequest(text, '', true);
+    const session = this.getA2AStreamSession();
+    if (session.isActive()) {
+      throw new Error('stream_active');
+    }
+    this.a2aEventHub.reset();
+    const listener: A2AStreamListener = {
+      onEvent: (payload: Object) => {
+        this.handleA2AStreamUpdate(payload);
+      },
+      onError: (message: string) => {
+        const payload = JSON.stringify({ error: message });
+        this.a2aEventHub.push('error', 'stream_error', payload);
+      },
+      onComplete: () => {
+        this.a2aEventHub.push('status', 'stream_closed');
+      },
+    };
+    session.start(settings.a2aBaseUrl, request, listener);
+    return 'ok';
+  }
+
+  a2aStopStream(): string {
+    if (this.a2aStream) {
+      this.a2aStream.stop();
+      this.a2aEventHub.push('status', 'stream_stopped');
+    }
+    return 'ok';
+  }
+
+  a2aPullEventsJson(lastSequence: number): string {
+    const batch = this.a2aEventHub.pull(lastSequence);
+    if (!batch) {
+      return '';
+    }
+    return JSON.stringify(batch);
   }
 
   mcpLogs(): string {
@@ -1220,6 +1302,100 @@ export class AgentController {
     }
     this.a2aClient.setBaseUrl(baseUrl);
     return this.a2aClient;
+  }
+
+  private getA2AStreamSession(): A2AStreamSession {
+    if (!this.a2aStream) {
+      this.a2aStream = new A2AStreamSession();
+    }
+    return this.a2aStream;
+  }
+
+  private handleA2AStreamUpdate(payload: Object): void {
+    const raw = this.safeStringify(payload);
+    const update = payload as A2AStreamUpdate;
+    let handled = false;
+
+    const statusUpdate = update.statusUpdate;
+    if (statusUpdate) {
+      const state = typeof statusUpdate.state === 'string' ? statusUpdate.state : '';
+      const messageText = this.readStatusMessage(statusUpdate);
+      const eventType = state === 'input-required' ? 'input_required' : 'status';
+      const message = messageText.length > 0 ? messageText : state;
+      this.a2aEventHub.push(eventType, message.length > 0 ? message : 'statusUpdate', raw);
+      handled = true;
+    }
+
+    const artifactUpdate = update.artifactUpdate;
+    if (artifactUpdate) {
+      const artifactId = this.readArtifactId(update);
+      let eventType: TaskEventType = 'delta';
+      if (artifactId === 'thinkflow.delta') {
+        eventType = 'assistant.delta';
+      } else if (artifactId === 'tool.trace') {
+        eventType = 'tool.trace';
+      }
+      const message = artifactId.length > 0 ? artifactId : 'artifactUpdate';
+      this.a2aEventHub.push(eventType, message, raw);
+      handled = true;
+    }
+
+    if (!handled) {
+      this.a2aEventHub.push('log', 'stream_update', raw);
+    }
+  }
+
+  private readArtifactId(update: A2AStreamUpdate): string {
+    const artifactUpdate = update.artifactUpdate;
+    const artifact = artifactUpdate ? artifactUpdate.artifact : undefined;
+    if (artifact && typeof artifact.artifactId === 'string' && artifact.artifactId.length > 0) {
+      return artifact.artifactId;
+    }
+    const artifacts = artifactUpdate ? artifactUpdate.artifacts : undefined;
+    if (Array.isArray(artifacts)) {
+      for (let i = 0; i < artifacts.length; i += 1) {
+        const item = artifacts[i];
+        if (item && typeof item.artifactId === 'string' && item.artifactId.length > 0) {
+          return item.artifactId;
+        }
+      }
+    }
+    const fallback = update.artifacts;
+    if (Array.isArray(fallback)) {
+      for (let i = 0; i < fallback.length; i += 1) {
+        const item = fallback[i];
+        if (item && typeof item.artifactId === 'string' && item.artifactId.length > 0) {
+          return item.artifactId;
+        }
+      }
+    }
+    return '';
+  }
+
+  private readStatusMessage(statusUpdate: A2AStreamStatusUpdate): string {
+    const message = statusUpdate.message;
+    if (!message) {
+      return '';
+    }
+    const parts = message.parts;
+    if (!Array.isArray(parts) || parts.length === 0) {
+      return '';
+    }
+    const first = parts[0];
+    const text = first ? first.text : undefined;
+    if (typeof text === 'string') {
+      return text.trim();
+    }
+    return '';
+  }
+
+  private safeStringify(value: Object): string {
+    try {
+      const raw = JSON.stringify(value);
+      return typeof raw === 'string' ? raw : '';
+    } catch (_e) {
+      return '';
+    }
   }
 
   private async buildA2ARequest(text: string, taskId: string, includeApps: boolean): Promise<A2ARequest> {

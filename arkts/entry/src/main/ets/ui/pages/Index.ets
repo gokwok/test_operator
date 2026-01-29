@@ -160,6 +160,9 @@ struct Index {
   @State a2aReply: string = '';
   @State a2aResultInfo: string = '';
   @State a2aResult: string = '';
+  @State a2aStreamPrompt: string = '';
+  @State a2aStreamInfo: string = '';
+  @State a2aStreamEvents: Array<TaskEvent> = [];
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -182,6 +185,7 @@ struct Index {
   private stepPixelMapRequestSeq: number = 0;
   private stepImageCacheSeq: number = 0;
   private debugEventSequence: number = 0;
+  private a2aStreamSequence: number = 0;
   private agentServiceClient: AgentControllerClient = new AgentControllerClient();
 
   aboutToAppear(): void {
@@ -567,6 +571,105 @@ struct Index {
             Text(this.formatA2AResult(this.a2aResult))
               .fontSize(10)
               .fontColor(THEME_TEXT_MUTED)
+          }
+        }
+
+        Column({ space: 8 }) {
+          Text('A2A Stream')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          TextInput({ placeholder: 'stream prompt', text: this.a2aStreamPrompt })
+            .height(36)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.a2aStreamPrompt = value;
+            })
+
+          Row({ space: 8 }) {
+            Button('Start Stream')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.startA2AStream();
+              })
+
+            Button('Stop Stream')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.stopA2AStream();
+              })
+          }
+
+          Row({ space: 8 }) {
+            Button('拉取A2A事件')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.pullA2AStreamEvents();
+              })
+
+            Button('清空A2A事件')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.clearA2AStreamEvents();
+              })
+          }
+
+          if (this.a2aStreamInfo.length > 0) {
+            Text(this.a2aStreamInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.a2aStreamEvents.length === 0) {
+            Text('暂无A2A事件')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_SUBTLE)
+          } else {
+            Column({ space: 6 }) {
+              ForEach(this.a2aStreamEvents, (event: TaskEvent) => {
+                Column({ space: 4 }) {
+                  Text(this.formatEventLine(event))
+                    .fontSize(11)
+                    .fontColor(THEME_TEXT_PRIMARY)
+
+                  if (event.payloadJson.length > 0) {
+                    Text(this.formatEventPayload(event.payloadJson))
+                      .fontSize(10)
+                      .fontColor(THEME_TEXT_MUTED)
+                  }
+                }
+                .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+                .backgroundColor(DETAIL_SECTION_BG)
+                .borderRadius(10)
+                .border({ width: 1, color: DETAIL_SECTION_BORDER })
+              }, (event: TaskEvent) => `a2a_${event.seq}`)
+            }
           }
         }
 
@@ -2795,6 +2898,71 @@ struct Index {
     } catch (e) {
       this.a2aResultInfo = `续跑失败: ${String(e)}`;
     }
+  }
+
+  private async startA2AStream(): Promise<void> {
+    this.a2aStreamInfo = '';
+    const prompt = this.a2aStreamPrompt.trim();
+    if (prompt.length === 0) {
+      this.a2aStreamInfo = '请输入 stream prompt';
+      return;
+    }
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.a2aStartStream(prompt);
+      this.a2aStreamInfo = payload.length > 0 ? payload : 'stream started';
+    } catch (e) {
+      this.a2aStreamInfo = `启动失败: ${String(e)}`;
+    }
+  }
+
+  private async stopA2AStream(): Promise<void> {
+    this.a2aStreamInfo = '';
+    try {
+      await this.ensureAgentServiceConnected();
+      await this.agentServiceClient.a2aStopStream();
+      this.a2aStreamInfo = 'stream stopped';
+    } catch (e) {
+      this.a2aStreamInfo = `停止失败: ${String(e)}`;
+    }
+  }
+
+  private async pullA2AStreamEvents(): Promise<void> {
+    this.a2aStreamInfo = '';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.a2aPullEvents(this.a2aStreamSequence);
+      if (payload.length === 0) {
+        if (this.a2aStreamEvents.length === 0) {
+          this.a2aStreamInfo = '暂无A2A事件';
+        }
+        return;
+      }
+      const batch = this.parseEventBatch(payload);
+      if (!batch) {
+        this.a2aStreamInfo = '事件解析失败';
+        return;
+      }
+      this.a2aStreamSequence = batch.sequence;
+      this.a2aStreamEvents = this.mergeA2AEvents(batch.events);
+    } catch (e) {
+      this.a2aStreamInfo = `拉取失败: ${String(e)}`;
+    }
+  }
+
+  private clearA2AStreamEvents(): void {
+    this.a2aStreamEvents = [];
+    this.a2aStreamSequence = 0;
+    this.a2aStreamInfo = '已清空A2A事件';
+  }
+
+  private mergeA2AEvents(incoming: Array<TaskEvent>): Array<TaskEvent> {
+    const combined = this.a2aStreamEvents.concat(incoming);
+    const limit = 80;
+    if (combined.length <= limit) {
+      return combined;
+    }
+    return combined.slice(combined.length - limit);
   }
 
   private applyA2AResponse(payload: string): void {

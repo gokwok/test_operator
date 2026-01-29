@@ -52,4 +52,7 @@ export enum AgentControllerRequestCode {
   MCP_CLEAR_LOGS = 64,
   A2A_SEND_BLOCKING = 70,
   A2A_RESUME_BLOCKING = 71,
+  A2A_START_STREAM = 72,
+  A2A_STOP_STREAM = 73,
+  A2A_PULL_EVENTS = 74,
 }

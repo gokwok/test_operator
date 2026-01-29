@@ -330,6 +330,18 @@ export class AgentControllerClient {
     return await this.sendRequestWithTwoStrings(AgentControllerRequestCode.A2A_RESUME_BLOCKING, taskId, reply);
   }
 
+  async a2aStartStream(prompt: string): Promise<string> {
+    return await this.sendRequestWithString(AgentControllerRequestCode.A2A_START_STREAM, prompt);
+  }
+
+  async a2aStopStream(): Promise<void> {
+    await this.sendRequest(AgentControllerRequestCode.A2A_STOP_STREAM);
+  }
+
+  async a2aPullEvents(lastSequence: number): Promise<string> {
+    return await this.sendRequestWithInt(AgentControllerRequestCode.A2A_PULL_EVENTS, lastSequence);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
