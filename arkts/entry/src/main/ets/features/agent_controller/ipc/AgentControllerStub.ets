@@ -309,6 +309,13 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentControllerRequestCode.DEBUG_SIMULATE_TOOL_CALL) {
+        const name = data.readString();
+        const argsJson = data.readString();
+        const payload = await this.service.debugSimulateToolCall(name, argsJson);
+        reply.writeString(payload);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

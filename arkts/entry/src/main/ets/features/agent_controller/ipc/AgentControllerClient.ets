@@ -294,6 +294,14 @@ export class AgentControllerClient {
     return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_NODE_ATTRS, '');
   }
 
+  async debugSimulateToolCall(name: string, argumentsJson: string): Promise<string> {
+    return await this.sendRequestWithTwoStrings(
+      AgentControllerRequestCode.DEBUG_SIMULATE_TOOL_CALL,
+      name,
+      argumentsJson
+    );
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {

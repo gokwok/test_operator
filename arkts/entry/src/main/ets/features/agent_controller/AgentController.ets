@@ -19,6 +19,7 @@ import type { AppTarget, StartAbilityInvoker } from './agentspace/VTSBackend';
 import { AgentProxy } from './AgentProxy';
 import { StateCollector } from './state_collector/StateCollector';
 import { ToolKit } from './toolkit/ToolKit';
+import { ToolCallDispatcher } from './tool_call/ToolCallDispatcher';
 import type {
   AppTargetDescriptor,
   TaskEventBatch,
@@ -475,6 +476,19 @@ export class AgentController {
   async actionPressEnter(): Promise<string> {
     const action: AgentAction = { name: 'press_enter' };
     return await this.executeAction(action);
+  }
+
+  async debugSimulateToolCall(name: string, argsJson: string): Promise<string> {
+    const waitMs = await this.resolveToolWaitMs();
+    const dispatcher = new ToolCallDispatcher(this.requireToolKit(), waitMs);
+    const result = await dispatcher.execute(name, argsJson);
+    const summary = {
+      name: name.trim(),
+      status: result.status,
+      error: result.error,
+      screenshot_len: result.screenshot_b64.length,
+    };
+    return JSON.stringify(summary);
   }
 
   async setViewerActive(active: boolean): Promise<void> {
@@ -1092,6 +1106,19 @@ export class AgentController {
       throw new Error('toolkit_not_ready');
     }
     return toolKit;
+  }
+
+  private async resolveToolWaitMs(): Promise<number> {
+    const ctx = this.ctx;
+    if (!ctx) {
+      return AgentSettings.defaults().waitMs;
+    }
+    try {
+      const settings = await AgentSettings.load(ctx);
+      return settings.waitMs;
+    } catch (_e) {
+      return AgentSettings.defaults().waitMs;
+    }
   }
 
   private getAgentProxy(): AgentProxy {

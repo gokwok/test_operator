@@ -118,6 +118,9 @@ struct Index {
   @State accessibilityNodeAttrsInfo: string = '';
   @State debugEventInfo: string = '';
   @State debugEvents: Array<TaskEvent> = [];
+  @State debugToolName: string = 'screenshot';
+  @State debugToolArgs: string = '{}';
+  @State debugToolResult: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -406,6 +409,57 @@ struct Index {
                 .border({ width: 1, color: DETAIL_SECTION_BORDER })
               }, (event: TaskEvent) => String(event.seq))
             }
+          }
+        }
+
+        Column({ space: 8 }) {
+          Text('工具模拟')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Row({ space: 8 }) {
+            TextInput({ placeholder: 'tool name', text: this.debugToolName })
+              .layoutWeight(1)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.debugToolName = value;
+              })
+
+            Button('执行')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.simulateToolCall();
+              })
+          }
+
+          TextInput({ placeholder: 'tool arguments JSON', text: this.debugToolArgs })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.debugToolArgs = value;
+            })
+
+          if (this.debugToolResult.length > 0) {
+            Text(this.formatDebugToolResult(this.debugToolResult))
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
           }
         }
 
@@ -2334,6 +2388,31 @@ struct Index {
 
   private formatEventPayload(payload: string): string {
     const maxLen = 180;
+    if (payload.length <= maxLen) {
+      return payload;
+    }
+    return `${payload.slice(0, maxLen)}...`;
+  }
+
+  private async simulateToolCall(): Promise<void> {
+    const name = this.debugToolName.trim();
+    if (name.length === 0) {
+      this.debugToolResult = '请输入工具名';
+      return;
+    }
+    const rawArgs = this.debugToolArgs.trim();
+    const argsJson = rawArgs.length > 0 ? rawArgs : '{}';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.debugSimulateToolCall(name, argsJson);
+      this.debugToolResult = payload.length > 0 ? payload : 'ok';
+    } catch (e) {
+      this.debugToolResult = `执行失败: ${String(e)}`;
+    }
+  }
+
+  private formatDebugToolResult(payload: string): string {
+    const maxLen = 260;
     if (payload.length <= maxLen) {
       return payload;
     }
