@@ -56,6 +56,7 @@ export class A2AStreamSession {
   private listener: A2AStreamListener | null = null;
   private parser: SseLineParser;
   private active: boolean = false;
+  private receivedAny: boolean = false;
 
   constructor() {
     this.parser = new SseLineParser((data: string) => {
@@ -79,11 +80,13 @@ export class A2AStreamSession {
     this.client = client;
     this.listener = listener;
     this.active = true;
+    this.receivedAny = false;
     this.parser.reset();
 
     client.on('dataReceive', (data: Object) => {
       const text = this.decodeChunk(data);
       if (text.length > 0) {
+        this.receivedAny = true;
         this.parser.feed(text);
       }
     });
@@ -91,11 +94,17 @@ export class A2AStreamSession {
     const body = JSON.stringify(request);
     client.request(url, {
       method: http.RequestMethod.POST,
-      header: { 'Content-Type': 'application/json' },
+      header: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
       extraData: body,
       connectTimeout: 10000,
       readTimeout: 600000,
-    }).then(() => {
+    }).then((response) => {
+      if (!this.receivedAny) {
+        this.handleBufferedResult(response.result);
+      }
       this.active = false;
       if (this.listener) {
         this.listener.onComplete();
@@ -121,6 +130,13 @@ export class A2AStreamSession {
     }
     if (this.listener) {
       this.listener.onComplete();
+    }
+  }
+
+  private handleBufferedResult(result: string | Object): void {
+    const text = this.decodeChunk(result as Object);
+    if (text.length > 0) {
+      this.parser.feed(text);
     }
   }
 
