@@ -8,6 +8,7 @@ import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistenc
 import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
 import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
+import type { TaskEvent, TaskEventBatch } from '../../features/agent_controller/types';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 import { ForegroundAppState } from '../../features/agent_controller/state_collector/ForegroundAppState';
 import { LocationState } from '../../features/agent_controller/state_collector/LocationState';
@@ -96,6 +97,10 @@ struct Index {
   @State activeTabIndex: number = 0;
 
   @State cloudEndpoint: string = '';
+  @State a2aBaseUrl: string = '';
+  @State mcpWsUrl: string = '';
+  @State deviceId: string = '';
+  @State contextId: string = '';
   @State waitMsText: string = '';
   @State liveViewEnabled: boolean = true;
   @State historyEnabled: boolean = true;
@@ -111,6 +116,8 @@ struct Index {
   @State accessibilityWindowsInfo: string = '';
   @State accessibilityTreeListInfo: string = '';
   @State accessibilityNodeAttrsInfo: string = '';
+  @State debugEventInfo: string = '';
+  @State debugEvents: Array<TaskEvent> = [];
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -132,6 +139,7 @@ struct Index {
 
   private stepPixelMapRequestSeq: number = 0;
   private stepImageCacheSeq: number = 0;
+  private debugEventSequence: number = 0;
   private agentServiceClient: AgentControllerClient = new AgentControllerClient();
 
   aboutToAppear(): void {
@@ -163,6 +171,63 @@ struct Index {
           .onChange((value: string) => {
             this.cloudEndpoint = value;
           })
+
+        Text('vNext 配置')
+          .fontSize(12)
+          .fontFamily(FONT_DISPLAY)
+          .fontColor(THEME_TEXT_MUTED)
+
+        TextInput({ placeholder: 'A2A Base URL（http://ip:port）', text: this.a2aBaseUrl })
+          .height(32)
+          .fontSize(12)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .backgroundColor(THEME_CARD)
+          .borderRadius(10)
+          .border({ width: 1, color: THEME_BORDER })
+          .padding({ left: 10, right: 10 })
+          .onChange((value: string) => {
+            this.a2aBaseUrl = value;
+          })
+
+        TextInput({ placeholder: 'MCP WS URL（ws://ip:port/ws）', text: this.mcpWsUrl })
+          .height(32)
+          .fontSize(12)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .backgroundColor(THEME_CARD)
+          .borderRadius(10)
+          .border({ width: 1, color: THEME_BORDER })
+          .padding({ left: 10, right: 10 })
+          .onChange((value: string) => {
+            this.mcpWsUrl = value;
+          })
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: 'deviceId', text: this.deviceId })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.deviceId = value;
+            })
+
+          TextInput({ placeholder: 'contextId', text: this.contextId })
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.contextId = value;
+            })
+        }
 
         Row({ space: 8 }) {
           TextInput({ placeholder: 'wait_ms (动作后等待)', text: this.waitMsText })
@@ -261,6 +326,88 @@ struct Index {
           .fontFamily(FONT_DISPLAY)
           .fontColor(THEME_TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
+
+        Column({ space: 6 }) {
+          Text('vNext 配置')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Text(`A2A: ${this.a2aBaseUrl}`)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_PRIMARY)
+
+          Text(`MCP WS: ${this.mcpWsUrl}`)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_PRIMARY)
+
+          Text(`deviceId: ${this.deviceId} / contextId: ${this.contextId}`)
+            .fontSize(11)
+            .fontColor(THEME_TEXT_PRIMARY)
+        }
+
+        Column({ space: 8 }) {
+          Text('事件队列')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Row({ space: 8 }) {
+            Button('拉取事件')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.pullDebugEvents();
+              })
+
+            Button('清空事件')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.clearDebugEvents();
+              })
+          }
+
+          if (this.debugEventInfo.length > 0) {
+            Text(this.debugEventInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.debugEvents.length === 0) {
+            Text('暂无事件')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_SUBTLE)
+          } else {
+            Column({ space: 6 }) {
+              ForEach(this.debugEvents, (event: TaskEvent) => {
+                Column({ space: 4 }) {
+                  Text(this.formatEventLine(event))
+                    .fontSize(11)
+                    .fontColor(THEME_TEXT_PRIMARY)
+
+                  if (event.payloadJson.length > 0) {
+                    Text(this.formatEventPayload(event.payloadJson))
+                      .fontSize(10)
+                      .fontColor(THEME_TEXT_MUTED)
+                  }
+                }
+                .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+                .backgroundColor(DETAIL_SECTION_BG)
+                .borderRadius(10)
+                .border({ width: 1, color: DETAIL_SECTION_BORDER })
+              }, (event: TaskEvent) => String(event.seq))
+            }
+          }
+        }
 
         Row({ space: 8 }) {
           Button('获取壁纸')
@@ -2017,6 +2164,10 @@ struct Index {
       const ctx = this.getUiContext();
       const settings = await AgentSettings.load(ctx);
       this.cloudEndpoint = settings.cloudEndpoint;
+      this.a2aBaseUrl = settings.a2aBaseUrl;
+      this.mcpWsUrl = settings.mcpWsUrl;
+      this.deviceId = settings.deviceId;
+      this.contextId = settings.contextId;
       this.waitMsText = String(settings.waitMs);
       this.liveViewEnabled = settings.liveViewEnabled;
       this.historyEnabled = settings.historyEnabled;
@@ -2036,6 +2187,10 @@ struct Index {
       const maxTasks = this.parseNonNegativeInt(this.historyMaxTasksText, 50);
       const data: AgentSettingsData = {
         cloudEndpoint: this.cloudEndpoint.trim(),
+        a2aBaseUrl: this.a2aBaseUrl.trim(),
+        mcpWsUrl: this.mcpWsUrl.trim(),
+        deviceId: this.deviceId.trim(),
+        contextId: this.contextId.trim(),
         waitMs,
         liveViewEnabled: this.liveViewEnabled,
         historyEnabled: this.historyEnabled,
@@ -2120,6 +2275,69 @@ struct Index {
   private async ensureAgentServiceConnected(): Promise<void> {
     const ctx = this.getUiContext();
     await this.agentServiceClient.connect(ctx);
+  }
+
+  private async pullDebugEvents(): Promise<void> {
+    this.debugEventInfo = '';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.pullEvents(this.debugEventSequence);
+      if (payload.length === 0) {
+        if (this.debugEvents.length === 0) {
+          this.debugEventInfo = '暂无事件';
+        }
+        return;
+      }
+      const batch = this.parseEventBatch(payload);
+      if (!batch) {
+        this.debugEventInfo = '事件解析失败';
+        return;
+      }
+      this.debugEventSequence = batch.sequence;
+      this.debugEvents = this.mergeDebugEvents(batch.events);
+    } catch (e) {
+      this.debugEventInfo = `拉取事件失败: ${String(e)}`;
+    }
+  }
+
+  private clearDebugEvents(): void {
+    this.debugEvents = [];
+    this.debugEventSequence = 0;
+    this.debugEventInfo = '已清空事件';
+  }
+
+  private parseEventBatch(payload: string): TaskEventBatch | null {
+    try {
+      const parsed = JSON.parse(payload) as TaskEventBatch;
+      if (!parsed || !Array.isArray(parsed.events)) {
+        return null;
+      }
+      return parsed;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  private mergeDebugEvents(incoming: Array<TaskEvent>): Array<TaskEvent> {
+    const combined = this.debugEvents.concat(incoming);
+    const limit = 50;
+    if (combined.length <= limit) {
+      return combined;
+    }
+    return combined.slice(combined.length - limit);
+  }
+
+  private formatEventLine(event: TaskEvent): string {
+    const msg = event.message.length > 0 ? event.message : '-';
+    return `#${event.seq} ${event.type}: ${msg}`;
+  }
+
+  private formatEventPayload(payload: string): string {
+    const maxLen = 180;
+    if (payload.length <= maxLen) {
+      return payload;
+    }
+    return `${payload.slice(0, maxLen)}...`;
   }
 
   private async initAgentSpace(): Promise<void> {

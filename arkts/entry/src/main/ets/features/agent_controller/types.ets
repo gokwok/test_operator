@@ -2,7 +2,21 @@ export type TaskStatus = 'idle' | 'running' | 'waiting_user' | 'stopping' | 'fin
 
 export type ActionResultStatus = '' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
 
-export type TaskEventType = 'status' | 'log' | 'action' | 'result' | 'need_user' | 'error';
+export type TaskEventType =
+  | 'status'
+  | 'log'
+  | 'action'
+  | 'result'
+  | 'need_user'
+  | 'error'
+  | 'session'
+  | 'assistant.delta'
+  | 'delta'
+  | 'final'
+  | 'tool.trace'
+  | 'tool.exec'
+  | 'net'
+  | 'input_required';
 
 export interface TaskEvent {
   seq: number;
