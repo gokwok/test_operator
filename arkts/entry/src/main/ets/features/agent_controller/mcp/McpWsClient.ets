@@ -200,6 +200,9 @@ export class McpWsClient {
     }
     const raw = this.safeStringify(value);
     if (raw.length > 0) {
+      if (raw.startsWith('{')) {
+        return raw;
+      }
       return `__ws_raw__${raw}`;
     }
     return data ? String(data) : '';
