@@ -188,8 +188,7 @@ export class McpWsClient {
       return this.decodeArrayBuffer(buffer);
     }
     if (data instanceof Uint8Array) {
-      const view = data as Uint8Array;
-      return this.decodeArrayBuffer(view.buffer);
+      return this.decodeUint8Array(data);
     }
     if (data) {
       return String(data);
@@ -199,6 +198,10 @@ export class McpWsClient {
 
   private decodeArrayBuffer(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
+    return this.decodeUint8Array(bytes);
+  }
+
+  private decodeUint8Array(bytes: Uint8Array): string {
     if (bytes.length === 0) {
       return '';
     }
