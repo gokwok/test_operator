@@ -86,6 +86,7 @@ export class AgentController {
   private viewerActive: boolean = false;
   private viewerOpening: boolean = false;
   private pendingAgentSpaceDestroy: boolean = false;
+  private mcpLogLines: Array<string> = [];
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
   private agentSpaceOp: Promise<void> = Promise.resolve();
 
@@ -534,6 +535,14 @@ export class AgentController {
     }
     const status = endpoint.getStatus();
     return JSON.stringify(status);
+  }
+
+  mcpLogs(): string {
+    return JSON.stringify(this.mcpLogLines);
+  }
+
+  clearMcpLogs(): void {
+    this.mcpLogLines = [];
   }
 
   async setViewerActive(active: boolean): Promise<void> {
@@ -1160,10 +1169,27 @@ export class AgentController {
       if (existing) {
         void existing.disconnect();
       }
-      this.deviceToolsEndpoint = new DeviceToolsEndpoint(toolKit);
+      this.deviceToolsEndpoint = new DeviceToolsEndpoint(toolKit, (line: string) => {
+        this.appendMcpLog(line);
+      });
       this.deviceToolsToolKit = toolKit;
     }
     return this.deviceToolsEndpoint;
+  }
+
+  private appendMcpLog(message: string): void {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const line = `${hh}:${mm}:${ss} ${message}`;
+    const next = this.mcpLogLines.slice();
+    next.push(line);
+    const limit = 120;
+    while (next.length > limit) {
+      next.shift();
+    }
+    this.mcpLogLines = next;
   }
 
   private async loadDeviceToolsConfig(): Promise<DeviceToolsConfig> {

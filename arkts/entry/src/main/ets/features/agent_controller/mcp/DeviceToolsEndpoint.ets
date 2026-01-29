@@ -18,6 +18,8 @@ export interface DeviceToolsConfig {
   waitAfterActionMs: number;
 }
 
+export type McpLogFn = (message: string) => void;
+
 export class DeviceToolsEndpoint {
   private toolKit: ToolKit;
   private client: McpWsClient = new McpWsClient();
@@ -25,9 +27,11 @@ export class DeviceToolsEndpoint {
   private status: McpStatus = { state: 'idle', url: '', error: '' };
   private config: DeviceToolsConfig | null = null;
   private callChain: Promise<void> = Promise.resolve();
+  private logger: McpLogFn | null = null;
 
-  constructor(toolKit: ToolKit) {
+  constructor(toolKit: ToolKit, logger?: McpLogFn) {
     this.toolKit = toolKit;
+    this.logger = logger ?? null;
     this.client.setListener(new DeviceToolsEndpointListener(this));
   }
 
@@ -35,15 +39,18 @@ export class DeviceToolsEndpoint {
     const url = config.wsUrl.trim();
     if (url.length === 0) {
       this.status = { state: 'error', url: '', error: 'ws_url_empty' };
+      this.log('connect_failed: ws_url_empty');
       return this.status;
     }
     this.config = config;
     this.status = { state: 'connecting', url, error: '' };
     this.dispatcher = new ToolCallDispatcher(this.toolKit, config.waitAfterActionMs);
+    this.log(`connecting ws=${url}`);
     try {
       await this.client.connect(url);
     } catch (e) {
       this.status = { state: 'error', url, error: String(e) };
+      this.log(`connect_error: ${String(e)}`);
     }
     return this.status;
   }
@@ -53,8 +60,10 @@ export class DeviceToolsEndpoint {
     try {
       await this.client.disconnect();
       this.status = { state: 'closed', url, error: '' };
+      this.log('disconnected');
     } catch (e) {
       this.status = { state: 'error', url, error: String(e) };
+      this.log(`disconnect_error: ${String(e)}`);
     }
     return this.status;
   }
@@ -65,23 +74,28 @@ export class DeviceToolsEndpoint {
 
   handleOpen(): void {
     this.status = { state: 'connected', url: this.status.url, error: '' };
+    this.log('ws_open');
     void this.sendHello();
   }
 
   handleMessage(message: string): void {
     const call = this.parseToolCall(message);
     if (!call) {
+      this.log(`recv_ignored: ${this.truncate(message, 120)}`);
       return;
     }
+    this.log(`recv_tool_call: name=${call.name} call_id=${call.call_id}`);
     this.enqueueToolCall(call);
   }
 
   handleClose(_code: number, reason: string): void {
     this.status = { state: 'closed', url: this.status.url, error: reason };
+    this.log(`ws_close: ${reason}`);
   }
 
   handleError(message: string): void {
     this.status = { state: 'error', url: this.status.url, error: message };
+    this.log(`ws_error: ${message}`);
   }
 
   private async sendHello(): Promise<void> {
@@ -94,6 +108,7 @@ export class DeviceToolsEndpoint {
       device_id: cfg.deviceId,
       session_id: cfg.sessionId,
     };
+    this.log(`send_hello: device_id=${cfg.deviceId} session_id=${cfg.sessionId}`);
     await this.client.sendText(JSON.stringify(payload));
   }
 
@@ -111,12 +126,21 @@ export class DeviceToolsEndpoint {
   private async handleToolCall(call: McpToolCall): Promise<void> {
     const dispatcher = this.dispatcher;
     if (!dispatcher) {
+      this.log('dispatcher_missing');
       return;
     }
     const argsJson = this.serializeArgs(call.arguments);
+    this.log(`exec_tool: ${call.name} args=${this.truncate(argsJson, 180)}`);
     const result = await dispatcher.execute(call.name, argsJson);
     const payload = this.buildToolResult(call.call_id, result);
-    await this.client.sendText(JSON.stringify(payload));
+    this.log(
+      `send_result: call_id=${call.call_id} status=${result.status} screenshot_len=${result.screenshot_b64.length} error=${this.truncate(result.error, 120)}`
+    );
+    try {
+      await this.client.sendText(JSON.stringify(payload));
+    } catch (e) {
+      this.log(`send_result_error: ${String(e)}`);
+    }
   }
 
   private buildToolResult(callId: string, result: ToolCallResult): McpToolResult {
@@ -166,6 +190,19 @@ export class DeviceToolsEndpoint {
     } catch (_e) {
       return '{}';
     }
+  }
+
+  private log(message: string): void {
+    if (this.logger) {
+      this.logger(message);
+    }
+  }
+
+  private truncate(text: string, limit: number): string {
+    if (text.length <= limit) {
+      return text;
+    }
+    return `${text.slice(0, limit)}...`;
   }
 }
 

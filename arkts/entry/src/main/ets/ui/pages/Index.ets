@@ -128,6 +128,8 @@ struct Index {
   @State debugToolArgs: string = '{}';
   @State debugToolResult: string = '';
   @State mcpStatusInfo: string = '';
+  @State mcpLogInfo: string = '';
+  @State mcpLogLines: Array<string> = [];
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -401,6 +403,61 @@ struct Index {
             Text(this.mcpStatusInfo)
               .fontSize(11)
               .fontColor(THEME_TEXT_MUTED)
+          }
+        }
+
+        Column({ space: 8 }) {
+          Text('MCP 日志')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Row({ space: 8 }) {
+            Button('刷新日志')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.refreshMcpLogs();
+              })
+
+            Button('清空日志')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.clearMcpLogs();
+              })
+          }
+
+          if (this.mcpLogInfo.length > 0) {
+            Text(this.mcpLogInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.mcpLogLines.length === 0) {
+            Text('暂无日志')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_SUBTLE)
+          } else {
+            Column({ space: 4 }) {
+              ForEach(this.mcpLogLines, (line: string, index: number) => {
+                Text(line)
+                  .fontSize(10)
+                  .fontColor(THEME_TEXT_MUTED)
+              }, (line: string, index: number) => `${index}:${line}`)
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
           }
         }
 
@@ -2536,6 +2593,59 @@ struct Index {
       return trimmed;
     } catch (_e) {
       return trimmed;
+    }
+  }
+
+  private async refreshMcpLogs(): Promise<void> {
+    this.mcpLogInfo = '';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.mcpLogs();
+      const lines = this.parseMcpLogLines(payload);
+      this.mcpLogLines = lines;
+      if (lines.length === 0) {
+        this.mcpLogInfo = '暂无日志';
+      }
+    } catch (e) {
+      this.mcpLogInfo = `读取日志失败: ${String(e)}`;
+    }
+  }
+
+  private async clearMcpLogs(): Promise<void> {
+    this.mcpLogInfo = '';
+    try {
+      await this.ensureAgentServiceConnected();
+      await this.agentServiceClient.mcpClearLogs();
+      this.mcpLogLines = [];
+      this.mcpLogInfo = '日志已清空';
+    } catch (e) {
+      this.mcpLogInfo = `清空日志失败: ${String(e)}`;
+    }
+  }
+
+  private parseMcpLogLines(payload: string): Array<string> {
+    const trimmed = payload.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+    if (!trimmed.startsWith('[')) {
+      return [trimmed];
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as Array<string>;
+      if (!Array.isArray(parsed)) {
+        return [trimmed];
+      }
+      const lines: Array<string> = [];
+      for (let i = 0; i < parsed.length; i += 1) {
+        const value = parsed[i];
+        if (typeof value === 'string') {
+          lines.push(value);
+        }
+      }
+      return lines;
+    } catch (_e) {
+      return [trimmed];
     }
   }
 

@@ -314,6 +314,14 @@ export class AgentControllerClient {
     return await this.sendRequest(AgentControllerRequestCode.MCP_STATUS);
   }
 
+  async mcpLogs(): Promise<string> {
+    return await this.sendRequest(AgentControllerRequestCode.MCP_LOGS);
+  }
+
+  async mcpClearLogs(): Promise<void> {
+    await this.sendRequest(AgentControllerRequestCode.MCP_CLEAR_LOGS);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {

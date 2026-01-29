@@ -48,4 +48,6 @@ export enum AgentControllerRequestCode {
   MCP_CONNECT = 60,
   MCP_DISCONNECT = 61,
   MCP_STATUS = 62,
+  MCP_LOGS = 63,
+  MCP_CLEAR_LOGS = 64,
 }
