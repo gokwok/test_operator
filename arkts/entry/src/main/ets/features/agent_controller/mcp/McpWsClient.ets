@@ -183,10 +183,31 @@ export class McpWsClient {
     if (typeof data === 'string') {
       return data;
     }
+    if (data instanceof ArrayBuffer) {
+      return this.decodeArrayBuffer(data);
+    }
+    if (data instanceof Uint8Array) {
+      return this.decodeArrayBuffer(data.buffer);
+    }
     if (data) {
       return String(data);
     }
     return '';
+  }
+
+  private decodeArrayBuffer(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length === 0) {
+      return '';
+    }
+    const chunkSize = 8192;
+    let result = '';
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const end = Math.min(bytes.length, offset + chunkSize);
+      const slice = bytes.subarray(offset, end);
+      result += String.fromCharCode(...slice);
+    }
+    return result;
   }
 
   private readError(err: Object): string {
