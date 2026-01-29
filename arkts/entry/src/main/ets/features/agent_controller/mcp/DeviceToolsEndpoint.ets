@@ -28,7 +28,7 @@ export class DeviceToolsEndpoint {
 
   constructor(toolKit: ToolKit) {
     this.toolKit = toolKit;
-    this.client.setListener(this.createListener());
+    this.client.setListener(new DeviceToolsEndpointListener(this));
   }
 
   async connect(config: DeviceToolsConfig): Promise<McpStatus> {
@@ -63,27 +63,25 @@ export class DeviceToolsEndpoint {
     return this.status;
   }
 
-  private createListener(): McpWsClientListener {
-    const listener: McpWsClientListener = {
-      onOpen: () => {
-        this.status = { state: 'connected', url: this.status.url, error: '' };
-        void this.sendHello();
-      },
-      onMessage: (message: string) => {
-        const call = this.parseToolCall(message);
-        if (!call) {
-          return;
-        }
-        this.enqueueToolCall(call);
-      },
-      onClose: (_code: number, reason: string) => {
-        this.status = { state: 'closed', url: this.status.url, error: reason };
-      },
-      onError: (message: string) => {
-        this.status = { state: 'error', url: this.status.url, error: message };
-      },
-    };
-    return listener;
+  handleOpen(): void {
+    this.status = { state: 'connected', url: this.status.url, error: '' };
+    void this.sendHello();
+  }
+
+  handleMessage(message: string): void {
+    const call = this.parseToolCall(message);
+    if (!call) {
+      return;
+    }
+    this.enqueueToolCall(call);
+  }
+
+  handleClose(_code: number, reason: string): void {
+    this.status = { state: 'closed', url: this.status.url, error: reason };
+  }
+
+  handleError(message: string): void {
+    this.status = { state: 'error', url: this.status.url, error: message };
   }
 
   private async sendHello(): Promise<void> {
@@ -168,5 +166,29 @@ export class DeviceToolsEndpoint {
     } catch (_e) {
       return '{}';
     }
+  }
+}
+
+class DeviceToolsEndpointListener implements McpWsClientListener {
+  private owner: DeviceToolsEndpoint;
+
+  constructor(owner: DeviceToolsEndpoint) {
+    this.owner = owner;
+  }
+
+  onOpen(): void {
+    this.owner.handleOpen();
+  }
+
+  onMessage(message: string): void {
+    this.owner.handleMessage(message);
+  }
+
+  onClose(code: number, reason: string): void {
+    this.owner.handleClose(code, reason);
+  }
+
+  onError(message: string): void {
+    this.owner.handleError(message);
   }
 }

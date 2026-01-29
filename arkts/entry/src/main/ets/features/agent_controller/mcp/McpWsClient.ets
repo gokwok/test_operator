@@ -14,10 +14,6 @@ interface WsMessageValue {
   reason?: string;
 }
 
-interface WsSendOptions {
-  data: string;
-}
-
 export class McpWsClient {
   private socket: webSocket.WebSocket | null = null;
   private listener: McpWsClientListener | null = null;
@@ -74,8 +70,7 @@ export class McpWsClient {
     if (!socket || !this.connected) {
       throw new Error('ws_not_connected');
     }
-    const options: WsSendOptions = { data: text };
-    await this.sendSocket(socket, options);
+    await this.sendSocket(socket, text);
   }
 
   private bindSocket(socket: webSocket.WebSocket): void {
@@ -165,10 +160,10 @@ export class McpWsClient {
     });
   }
 
-  private sendSocket(socket: webSocket.WebSocket, options: WsSendOptions): Promise<void> {
+  private sendSocket(socket: webSocket.WebSocket, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        socket.send(options, (err: Object, _value: Object) => {
+        socket.send(text, (err: Object, _value: Object) => {
           const error = this.readError(err);
           if (error.length > 0) {
             reject(new Error(error));
