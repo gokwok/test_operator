@@ -184,10 +184,12 @@ export class McpWsClient {
       return data;
     }
     if (data instanceof ArrayBuffer) {
-      return this.decodeArrayBuffer(data);
+      const buffer = data as ArrayBuffer;
+      return this.decodeArrayBuffer(buffer);
     }
     if (data instanceof Uint8Array) {
-      return this.decodeArrayBuffer(data.buffer);
+      const view = data as Uint8Array;
+      return this.decodeArrayBuffer(view.buffer);
     }
     if (data) {
       return String(data);
