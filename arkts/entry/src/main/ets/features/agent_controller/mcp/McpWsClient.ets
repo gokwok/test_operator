@@ -185,12 +185,14 @@ export class McpWsClient {
     if (typeof data === 'string') {
       return data;
     }
-    if (data instanceof ArrayBuffer) {
-      const buffer = data as ArrayBuffer;
-      return this.decodeArrayBuffer(buffer);
-    }
-    if (data instanceof Uint8Array) {
-      return this.decodeUint8Array(data);
+    if (data !== null && typeof data === 'object') {
+      const obj = data as Object;
+      if (obj instanceof ArrayBuffer) {
+        return this.decodeArrayBuffer(obj as ArrayBuffer);
+      }
+      if (obj instanceof Uint8Array) {
+        return this.decodeUint8Array(obj as Uint8Array);
+      }
     }
     const raw = this.safeStringify(value);
     if (raw.length > 0) {
