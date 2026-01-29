@@ -96,7 +96,12 @@ interface A2AToolTraceRecord {
 
 interface A2AToolTraceArgs {
   redacted?: boolean;
-  [key: string]: Object;
+  point?: Array<number>;
+  start?: Array<number>;
+  start_point?: Array<number>;
+  end?: Array<number>;
+  end_point?: Array<number>;
+  duration_ms?: number;
 }
 
 @Entry
@@ -661,7 +666,7 @@ struct AgentSpaceViewer {
     }
     const content = message.length > 0 ? message : '任务失败';
     this.statusController.setMode('default');
-    this.statusController.setTerminal('failed', content);
+    this.statusController.setTerminal('stopped', content);
     this.lastStatusText = content;
     this.statusController.setStatus(content);
     this.showFloatWindow();
@@ -706,27 +711,27 @@ struct AgentSpaceViewer {
 
   private buildEffectFromTool(toolName: string, args: A2AToolTraceArgs): AgentSpaceViewerEffect | null {
     if (toolName === 'click' || toolName === 'double_click') {
-      const point = this.readPointFromArgs(args, 'point');
+      const point = this.readPoint(args.point);
       if (!point) {
         return null;
       }
       return { kind: 'tap', xNorm: point[0], yNorm: point[1] };
     }
     if (toolName === 'long_click') {
-      const point = this.readPointFromArgs(args, 'point');
+      const point = this.readPoint(args.point);
       if (!point) {
         return null;
       }
-      const duration = this.readNumberFromArgs(args, 'duration_ms', 1500);
+      const duration = this.readNumber(args.duration_ms, 1500);
       return { kind: 'long_press', xNorm: point[0], yNorm: point[1], durationMs: duration };
     }
     if (toolName === 'swipe') {
-      const start = this.readPointFromArgs(args, 'start') ?? this.readPointFromArgs(args, 'start_point');
-      const end = this.readPointFromArgs(args, 'end') ?? this.readPointFromArgs(args, 'end_point');
+      const start = this.readPoint(args.start) ?? this.readPoint(args.start_point);
+      const end = this.readPoint(args.end) ?? this.readPoint(args.end_point);
       if (!start || !end) {
         return null;
       }
-      const duration = this.readNumberFromArgs(args, 'duration_ms', 300);
+      const duration = this.readNumber(args.duration_ms, 300);
       return {
         kind: 'swipe',
         startXNorm: start[0],
@@ -737,7 +742,7 @@ struct AgentSpaceViewer {
       };
     }
     if (toolName === 'type') {
-      const point = this.readPointFromArgs(args, 'point');
+      const point = this.readPoint(args.point);
       if (!point) {
         return null;
       }
@@ -766,8 +771,7 @@ struct AgentSpaceViewer {
     return null;
   }
 
-  private readPointFromArgs(args: A2AToolTraceArgs, key: string): Array<number> | null {
-    const raw = args[key];
+  private readPoint(raw?: Array<number>): Array<number> | null {
     if (!Array.isArray(raw) || raw.length < 2) {
       return null;
     }
@@ -782,10 +786,9 @@ struct AgentSpaceViewer {
     return [x, y];
   }
 
-  private readNumberFromArgs(args: A2AToolTraceArgs, key: string, fallback: number): number {
-    const raw = args[key];
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-      return raw;
+  private readNumber(value: number | undefined, fallback: number): number {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
     }
     return fallback;
   }
