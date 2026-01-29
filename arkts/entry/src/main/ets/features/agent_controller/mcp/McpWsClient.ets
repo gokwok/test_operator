@@ -193,6 +193,10 @@ export class McpWsClient {
       if (obj instanceof Uint8Array) {
         return this.decodeUint8Array(obj as Uint8Array);
       }
+      const json = this.safeStringifyObject(obj);
+      if (json.length > 0) {
+        return json;
+      }
     }
     const raw = this.safeStringify(value);
     if (raw.length > 0) {
@@ -221,6 +225,15 @@ export class McpWsClient {
   }
 
   private safeStringify(value: Object): string {
+    try {
+      const raw = JSON.stringify(value);
+      return typeof raw === 'string' ? raw : '';
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  private safeStringifyObject(value: Object): string {
     try {
       const raw = JSON.stringify(value);
       return typeof raw === 'string' ? raw : '';
