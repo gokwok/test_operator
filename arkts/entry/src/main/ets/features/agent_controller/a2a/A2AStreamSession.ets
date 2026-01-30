@@ -235,13 +235,6 @@ export class A2AStreamSession {
         const bytes = new Uint8Array(obj.buffer, 0, obj.byteLength);
         return this.decodeUint8Array(bytes);
       }
-      const fn = (data as Object).toString;
-      if (typeof fn === 'function') {
-        const text = String(fn.call(data));
-        if (text.length > 0 && text !== '[object Object]') {
-          return text;
-        }
-      }
     }
     return String(data);
   }
