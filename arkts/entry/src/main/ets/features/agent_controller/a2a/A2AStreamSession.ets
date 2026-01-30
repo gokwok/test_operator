@@ -7,6 +7,11 @@ export interface A2AStreamListener {
   onComplete(): void;
 }
 
+interface ByteBufferLike {
+  buffer?: Object;
+  byteLength?: number;
+}
+
 class SseLineParser {
   private buffer: string = '';
   private onData: (data: string) => void;
@@ -201,7 +206,7 @@ export class A2AStreamSession {
         const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
         return this.decodeUint8Array(bytes);
       }
-      const obj = data as { buffer?: Object; byteLength?: number };
+      const obj = data as ByteBufferLike;
       if (obj.buffer instanceof ArrayBuffer && typeof obj.byteLength === 'number') {
         const bytes = new Uint8Array(obj.buffer, 0, obj.byteLength);
         return this.decodeUint8Array(bytes);
