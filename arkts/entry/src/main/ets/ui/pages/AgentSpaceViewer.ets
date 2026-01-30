@@ -85,6 +85,13 @@ interface A2ADeltaData {
   description?: string;
 }
 
+interface A2AOutputData {
+  description?: string;
+  text?: string;
+  answer?: string;
+  message?: string;
+}
+
 interface A2AToolTracePayload {
   tool_name?: string;
   args?: Object;
@@ -478,7 +485,7 @@ struct AgentSpaceViewer {
   }
 
   private handleA2AEvent(event: TaskEvent): void {
-    if (event.type === 'assistant.delta') {
+    if (event.type === 'assistant.delta' || event.type === 'delta') {
       const update = this.parseA2AUpdate(event.payloadJson);
       if (!update) {
         return;
@@ -633,13 +640,22 @@ struct AgentSpaceViewer {
       if (part.kind !== 'data') {
         continue;
       }
-      const data = part.data as A2ADeltaData;
-      if (!data || data.kind !== 'agent.description') {
-        continue;
+      const delta = part.data as A2ADeltaData;
+      if (delta && delta.kind === 'agent.description') {
+        const desc = delta.description;
+        if (typeof desc === 'string' && desc.trim().length > 0) {
+          return desc.trim();
+        }
       }
-      const desc = data.description;
-      if (typeof desc === 'string' && desc.trim().length > 0) {
-        return desc.trim();
+      const output = part.data as A2AOutputData;
+      if (output) {
+        const candidates = [output.description, output.text, output.answer, output.message];
+        for (let j = 0; j < candidates.length; j += 1) {
+          const value = candidates[j];
+          if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim();
+          }
+        }
       }
     }
     return '';
