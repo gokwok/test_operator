@@ -5,11 +5,17 @@ export interface A2AStreamListener {
   onEvent(payload: Object): void;
   onError(message: string): void;
   onComplete(): void;
+  onChunk?(text: string): void;
 }
 
 interface ByteBufferLike {
   buffer?: Object;
   byteLength?: number;
+}
+
+interface WrappedChunkLike {
+  data?: Object;
+  result?: Object;
 }
 
 class SseLineParser {
@@ -93,6 +99,9 @@ export class A2AStreamSession {
     client.on('dataReceive', (data: Object) => {
       const text = this.decodeChunk(data);
       if (text.length > 0) {
+        if (this.listener && typeof this.listener.onChunk === 'function') {
+          this.listener.onChunk(text);
+        }
         this.parser.feed(text);
       }
     });
@@ -195,6 +204,19 @@ export class A2AStreamSession {
       return data;
     }
     if (data !== null && typeof data === 'object') {
+      const wrapped = data as WrappedChunkLike;
+      if (wrapped.data) {
+        const inner = this.decodeChunk(wrapped.data as Object);
+        if (inner.length > 0 && inner !== '[object Object]') {
+          return inner;
+        }
+      }
+      if (wrapped.result) {
+        const inner = this.decodeChunk(wrapped.result as Object);
+        if (inner.length > 0 && inner !== '[object Object]') {
+          return inner;
+        }
+      }
       if (data instanceof ArrayBuffer) {
         return this.decodeArrayBuffer(data);
       }
@@ -210,6 +232,13 @@ export class A2AStreamSession {
       if (obj.buffer instanceof ArrayBuffer && typeof obj.byteLength === 'number') {
         const bytes = new Uint8Array(obj.buffer, 0, obj.byteLength);
         return this.decodeUint8Array(bytes);
+      }
+      const fn = (data as Object).toString;
+      if (typeof fn === 'function') {
+        const text = String(fn.call(data));
+        if (text.length > 0 && text !== '[object Object]') {
+          return text;
+        }
       }
     }
     return String(data);

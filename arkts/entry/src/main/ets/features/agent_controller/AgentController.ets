@@ -90,15 +90,18 @@ class A2AStreamListenerImpl implements A2AStreamListener {
   private readonly onEventFn: (payload: Object) => void;
   private readonly onErrorFn: (message: string) => void;
   private readonly onCompleteFn: () => void;
+  private readonly onChunkFn: (text: string) => void;
 
   constructor(
     onEventFn: (payload: Object) => void,
     onErrorFn: (message: string) => void,
-    onCompleteFn: () => void
+    onCompleteFn: () => void,
+    onChunkFn?: (text: string) => void
   ) {
     this.onEventFn = onEventFn;
     this.onErrorFn = onErrorFn;
     this.onCompleteFn = onCompleteFn;
+    this.onChunkFn = onChunkFn ?? (() => {});
   }
 
   onEvent(payload: Object): void {
@@ -111,6 +114,10 @@ class A2AStreamListenerImpl implements A2AStreamListener {
 
   onComplete(): void {
     this.onCompleteFn();
+  }
+
+  onChunk(text: string): void {
+    this.onChunkFn(text);
   }
 }
 
@@ -729,6 +736,8 @@ export class AgentController {
     this.a2aEventHub.push('log', 'stream_started');
     this.a2aTaskId = '';
     this.a2aActive = true;
+    let lastChunkLog = 0;
+    let chunkCount = 0;
     const listener = new A2AStreamListenerImpl(
       (payload: Object) => {
         this.handleA2AStreamUpdate(payload);
@@ -740,6 +749,16 @@ export class AgentController {
       },
       () => {
         this.a2aEventHub.push('status', 'stream_closed');
+      },
+      (text: string) => {
+        chunkCount += 1;
+        const now = Date.now();
+        if (chunkCount <= 2 || now - lastChunkLog > 1500) {
+          lastChunkLog = now;
+          const snippet = text.length > 180 ? text.slice(0, 180) : text;
+          const payload = JSON.stringify({ len: text.length, sample: snippet });
+          this.a2aEventHub.push('log', 'sse_chunk', payload);
+        }
       }
     );
     session.start(baseUrl, request, listener);

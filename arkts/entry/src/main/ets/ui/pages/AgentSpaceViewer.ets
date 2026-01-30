@@ -677,7 +677,8 @@ struct AgentSpaceViewer {
     if (this.callUserActive) {
       this.exitCallUser();
     }
-    const content = message.length > 0 ? message : '任务已完成';
+    const fallback = this.lastStatusText.length > 0 ? this.lastStatusText : '任务已完成';
+    const content = message.length > 0 ? message : fallback;
     this.statusController.setMode('default');
     this.statusController.setTerminal('finished', content);
     this.lastStatusText = content;
