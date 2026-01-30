@@ -1,4 +1,5 @@
 import http from '@ohos.net.http';
+import util from '@ohos.util';
 import type { A2ARequest } from './A2AClient';
 
 export interface A2AStreamListener {
@@ -69,6 +70,11 @@ export class A2AStreamSession {
   private active: boolean = false;
   private parsedAny: boolean = false;
   private completed: boolean = false;
+  private decoder: util.TextDecoder | null = null;
+  private responseCode: number = 0;
+  private rawPrefix: string = '';
+  private readonly decodeStreamOptions: util.DecodeToStringOptions = { stream: true };
+  private readonly decodeFinalOptions: util.DecodeToStringOptions = { stream: false };
 
   constructor() {
     this.parser = new SseLineParser((data: string) => {
@@ -94,24 +100,39 @@ export class A2AStreamSession {
     this.active = true;
     this.parsedAny = false;
     this.completed = false;
+    this.decoder = util.TextDecoder.create('utf-8');
+    this.responseCode = 0;
+    this.rawPrefix = '';
     this.parser.reset();
 
-    client.on('dataReceive', (data: Object) => {
-      const text = this.decodeChunk(data);
+    client.on('dataReceive', (data: ArrayBuffer) => {
+      const text = this.decodeArrayBuffer(data);
       if (text.length > 0) {
         if (this.listener && typeof this.listener.onChunk === 'function') {
           this.listener.onChunk(text);
+        }
+        if (!this.parsedAny && this.rawPrefix.length < 400) {
+          const remain = 400 - this.rawPrefix.length;
+          this.rawPrefix += text.length > remain ? text.slice(0, remain) : text;
         }
         this.parser.feed(text);
       }
     });
 
     client.on('dataEnd', () => {
+      this.flushDecoderOnEnd();
+      if (!this.parsedAny && this.rawPrefix.length > 0) {
+        const status = this.responseCode;
+        const snippet = this.rawPrefix.length > 400 ? this.rawPrefix.slice(0, 400) : this.rawPrefix;
+        this.emitError(`non_sse_response:${status}:${snippet}`);
+      } else if (!this.parsedAny && this.responseCode !== 0 && this.responseCode !== 200) {
+        this.emitError(`http_${this.responseCode}`);
+      }
       this.finishOnce();
     });
 
     const body = JSON.stringify(request);
-    client.request(url, {
+    client.requestInStream(url, {
       method: http.RequestMethod.POST,
       header: {
         'Content-Type': 'application/json',
@@ -120,18 +141,16 @@ export class A2AStreamSession {
       extraData: body,
       connectTimeout: 10000,
       readTimeout: 600000,
-      expectDataType: http.HttpDataType.STRING,
+      expectDataType: http.HttpDataType.ARRAY_BUFFER,
       usingCache: false,
-    }).then((response: http.HttpResponse) => {
-      if (!this.parsedAny) {
-        this.handleNonSseResponse(response);
-      }
-      this.finishOnce();
+    }).then((code: number) => {
+      this.responseCode = code;
     }).catch((err: Error) => {
       this.active = false;
       if (this.listener) {
         this.listener.onError(String(err));
       }
+      this.finishOnce();
     });
   }
 
@@ -140,6 +159,7 @@ export class A2AStreamSession {
     this.client = null;
     this.active = false;
     this.completed = true;
+    this.decoder = null;
     if (client) {
       try {
         client.destroy();
@@ -201,6 +221,29 @@ export class A2AStreamSession {
     }
   }
 
+  private flushDecoderOnEnd(): void {
+    const decoder = this.decoder;
+    if (!decoder) {
+      return;
+    }
+    this.decoder = null;
+    try {
+      const tail = decoder.decodeToString(new Uint8Array(), this.decodeFinalOptions);
+      if (tail.length > 0) {
+        if (this.listener && typeof this.listener.onChunk === 'function') {
+          this.listener.onChunk(tail);
+        }
+        if (!this.parsedAny && this.rawPrefix.length < 400) {
+          const remain = 400 - this.rawPrefix.length;
+          this.rawPrefix += tail.length > remain ? tail.slice(0, remain) : tail;
+        }
+        this.parser.feed(tail);
+      }
+    } catch (_e) {
+      // ignore
+    }
+  }
+
   private decodeChunk(data: Object): string {
     if (typeof data === 'string') {
       return data;
@@ -241,6 +284,14 @@ export class A2AStreamSession {
 
   private decodeArrayBuffer(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
+    const decoder = this.decoder;
+    if (decoder) {
+      try {
+        return decoder.decodeToString(bytes, this.decodeStreamOptions);
+      } catch (_e) {
+        // ignore
+      }
+    }
     return this.decodeUint8Array(bytes);
   }
 
