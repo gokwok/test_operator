@@ -78,6 +78,7 @@ interface A2AArtifactUpdate {
 interface A2AStreamUpdate {
   statusUpdate?: A2AStatusUpdate;
   artifactUpdate?: A2AArtifactUpdate;
+  artifacts?: Array<A2AArtifact>;
 }
 
 interface A2ADeltaData {
@@ -98,7 +99,7 @@ interface A2AOutputData {
   description?: string;
   text?: string;
   answer?: string;
-  message?: A2AOutputMessage;
+  message?: string | A2AOutputMessage;
   output?: A2AOutputData;
   final?: A2AOutputData;
   result?: A2AOutputData;
@@ -506,22 +507,17 @@ struct AgentSpaceViewer {
       if (!update) {
         return;
       }
-      const artifactId = this.readA2AArtifactId(update);
-      if (artifactId === 'assistant.text') {
-        const chunk = this.extractAssistantTextChunk(update);
-        if (chunk.length > 0) {
-          this.assistantTextBuffer += chunk;
-          if (!this.hasFinalOutput) {
-            this.lastFinalOutputText = this.assistantTextBuffer.trim();
-          }
-        }
+      const finalText = this.extractFinalOutput(update);
+      if (finalText.length > 0) {
+        this.lastFinalOutputText = finalText;
+        this.hasFinalOutput = true;
         return;
       }
-      if (artifactId === 'thinkflow.output') {
-        const finalText = this.extractFinalOutput(update);
-        if (finalText.length > 0) {
-          this.lastFinalOutputText = finalText;
-          this.hasFinalOutput = true;
+      const chunk = this.extractAssistantTextChunk(update);
+      if (chunk.length > 0) {
+        this.assistantTextBuffer += chunk;
+        if (!this.hasFinalOutput) {
+          this.lastFinalOutputText = this.assistantTextBuffer.trim();
         }
         return;
       }
@@ -598,6 +594,12 @@ struct AgentSpaceViewer {
     }
     if (this.callUserActive) {
       this.exitCallUser();
+    }
+    if (state === 'working') {
+      if (messageText.length > 0) {
+        this.updateStatusText(messageText);
+      }
+      return;
     }
     if (state === 'completed') {
       this.enterA2ATaskFinished(messageText);
@@ -719,55 +721,102 @@ struct AgentSpaceViewer {
         }
       }
     }
+    const fallback = update.artifacts;
+    if (Array.isArray(fallback)) {
+      for (let i = 0; i < fallback.length; i += 1) {
+        const item = fallback[i];
+        if (item && typeof item.artifactId === 'string' && item.artifactId.length > 0) {
+          return item.artifactId;
+        }
+      }
+    }
     return '';
   }
 
-  private extractAssistantTextChunk(update: A2AStreamUpdate): string {
+  private collectA2AArtifacts(update: A2AStreamUpdate): Array<A2AArtifact> {
+    const artifacts: Array<A2AArtifact> = [];
     const artifactUpdate = update.artifactUpdate;
-    const artifact = artifactUpdate?.artifact;
-    const parts = artifact?.parts;
-    if (!Array.isArray(parts)) {
-      return '';
+    const single = artifactUpdate?.artifact;
+    if (single) {
+      artifacts.push(single);
     }
-    for (let i = 0; i < parts.length; i += 1) {
-      const part = parts[i];
-      if (!part || part.kind !== 'text') {
+    const list = artifactUpdate?.artifacts;
+    if (Array.isArray(list)) {
+      for (let i = 0; i < list.length; i += 1) {
+        const item = list[i];
+        if (item) {
+          artifacts.push(item);
+        }
+      }
+    }
+    const fallback = update.artifacts;
+    if (Array.isArray(fallback)) {
+      for (let i = 0; i < fallback.length; i += 1) {
+        const item = fallback[i];
+        if (item) {
+          artifacts.push(item);
+        }
+      }
+    }
+    return artifacts;
+  }
+
+  private extractAssistantTextChunk(update: A2AStreamUpdate): string {
+    const artifacts = this.collectA2AArtifacts(update);
+    for (let i = 0; i < artifacts.length; i += 1) {
+      const artifact = artifacts[i];
+      if (!artifact || artifact.artifactId !== 'assistant.text') {
         continue;
       }
-      const text = part.text;
-      if (typeof text === 'string' && text.length > 0) {
-        return text;
+      const parts = artifact.parts;
+      if (!Array.isArray(parts)) {
+        continue;
+      }
+      for (let j = 0; j < parts.length; j += 1) {
+        const part = parts[j];
+        if (!part || part.kind !== 'text') {
+          continue;
+        }
+        const text = part.text;
+        if (typeof text === 'string' && text.length > 0) {
+          return text;
+        }
       }
     }
     return '';
   }
 
   private extractFinalOutput(update: A2AStreamUpdate): string {
-    const artifactUpdate = update.artifactUpdate;
-    const artifact = artifactUpdate?.artifact;
-    const parts = artifact?.parts;
-    if (!Array.isArray(parts)) {
-      return '';
-    }
-    for (let i = 0; i < parts.length; i += 1) {
-      const part = parts[i];
-      if (!part) {
+    const artifacts = this.collectA2AArtifacts(update);
+    for (let i = 0; i < artifacts.length; i += 1) {
+      const artifact = artifacts[i];
+      if (!artifact || artifact.artifactId !== 'thinkflow.output') {
         continue;
       }
-      if (part.kind === 'text') {
-        const text = part.text;
-        if (typeof text === 'string' && text.trim().length > 0) {
-          return text.trim();
+      const parts = artifact.parts;
+      if (!Array.isArray(parts)) {
+        continue;
+      }
+      for (let j = 0; j < parts.length; j += 1) {
+        const part = parts[j];
+        if (!part) {
+          continue;
         }
-        continue;
-      }
-      if (part.kind !== 'data') {
-        continue;
-      }
-      const output = part.data as A2AOutputData;
-      const text = this.readOutputText(output);
-      if (text.length > 0) {
-        return text;
+        if (part.kind === 'text') {
+          const text = part.text;
+          if (typeof text === 'string' && text.trim().length > 0) {
+            return text.trim();
+          }
+          continue;
+        }
+        if (part.kind !== 'data') {
+          continue;
+        }
+        const output = part.data as A2AOutputData;
+        const text = this.readOutputText(output);
+        if (text.length > 0) {
+          return text;
+        }
       }
     }
     return '';
@@ -783,9 +832,15 @@ struct AgentSpaceViewer {
     if (typeof output.answer === 'string' && output.answer.trim().length > 0) {
       return output.answer.trim();
     }
-    const messageText = this.readOutputMessageText(output.message);
-    if (messageText.length > 0) {
-      return messageText;
+    const messageRaw = output.message;
+    if (typeof messageRaw === 'string' && messageRaw.trim().length > 0) {
+      return messageRaw.trim();
+    }
+    if (messageRaw && typeof messageRaw === 'object' && !Array.isArray(messageRaw)) {
+      const messageText = this.readOutputMessageText(messageRaw as A2AOutputMessage);
+      if (messageText.length > 0) {
+        return messageText;
+      }
     }
     const nestedFinal = output.final;
     if (nestedFinal && typeof nestedFinal === 'object' && !Array.isArray(nestedFinal)) {
