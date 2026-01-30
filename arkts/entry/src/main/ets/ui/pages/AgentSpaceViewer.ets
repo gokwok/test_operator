@@ -95,14 +95,26 @@ interface A2AOutputMessage {
   parts?: Array<A2AOutputMessagePart>;
 }
 
+interface A2AOutputActionParameters {
+  content?: string;
+  message?: string;
+}
+
+interface A2AOutputAction {
+  name?: string;
+  parameters?: A2AOutputActionParameters;
+}
+
 interface A2AOutputData {
+  result?: string;
+  session_id?: string;
   description?: string;
   text?: string;
   answer?: string;
   message?: string | A2AOutputMessage;
+  action?: A2AOutputAction;
   output?: A2AOutputData;
   final?: A2AOutputData;
-  result?: A2AOutputData;
 }
 
 interface A2AToolTracePayload {
@@ -511,6 +523,7 @@ struct AgentSpaceViewer {
       if (finalText.length > 0) {
         this.lastFinalOutputText = finalText;
         this.hasFinalOutput = true;
+        this.applyFinalOutputIfFinished(finalText);
         return;
       }
       const chunk = this.extractAssistantTextChunk(update);
@@ -518,6 +531,7 @@ struct AgentSpaceViewer {
         this.assistantTextBuffer += chunk;
         if (!this.hasFinalOutput) {
           this.lastFinalOutputText = this.assistantTextBuffer.trim();
+          this.applyFinalOutputIfFinished(this.lastFinalOutputText);
         }
         return;
       }
@@ -826,6 +840,10 @@ struct AgentSpaceViewer {
     if (!output) {
       return '';
     }
+    const actionText = this.readOutputActionContent(output.action);
+    if (actionText.length > 0) {
+      return actionText;
+    }
     if (typeof output.text === 'string' && output.text.trim().length > 0) {
       return output.text.trim();
     }
@@ -842,19 +860,36 @@ struct AgentSpaceViewer {
         return messageText;
       }
     }
+    if (typeof output.description === 'string' && output.description.trim().length > 0) {
+      return output.description.trim();
+    }
     const nestedFinal = output.final;
     if (nestedFinal && typeof nestedFinal === 'object' && !Array.isArray(nestedFinal)) {
       return this.readOutputText(nestedFinal);
-    }
-    const nestedResult = output.result;
-    if (nestedResult && typeof nestedResult === 'object' && !Array.isArray(nestedResult)) {
-      return this.readOutputText(nestedResult);
     }
     const nested = output.output;
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
       return this.readOutputText(nested);
     }
     return '';
+  }
+
+  private readOutputActionContent(action?: A2AOutputAction): string {
+    if (!action) {
+      return '';
+    }
+    const nameRaw = action.name;
+    const name = typeof nameRaw === 'string' ? nameRaw.trim().toLowerCase() : '';
+    if (name !== 'finish') {
+      return '';
+    }
+    const params = action.parameters;
+    const contentRaw = params?.content ?? params?.message;
+    if (typeof contentRaw !== 'string') {
+      return '';
+    }
+    const content = contentRaw.trim();
+    return content.length > 0 ? content : '';
   }
 
   private readOutputMessageText(message?: A2AOutputMessage): string {
@@ -912,6 +947,26 @@ struct AgentSpaceViewer {
     this.lastStatusText = content;
     this.statusController.setStatus(content);
     this.showFloatWindow();
+  }
+
+  private applyFinalOutputIfFinished(content: string): void {
+    if (!this.statusController.stopped) {
+      return;
+    }
+    if (this.statusController.terminalKind !== 'finished') {
+      return;
+    }
+    const normalized = content.trim();
+    if (normalized.length === 0) {
+      return;
+    }
+    const current = this.statusController.terminalContent.trim();
+    if (current.length > 0 && current !== '任务已完成') {
+      return;
+    }
+    this.statusController.setTerminal('finished', normalized);
+    this.lastStatusText = normalized;
+    this.statusController.setStatus(normalized);
   }
 
   private handleToolTrace(update: A2AStreamUpdate): void {
