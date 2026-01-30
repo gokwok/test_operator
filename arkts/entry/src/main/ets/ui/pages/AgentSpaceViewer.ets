@@ -641,7 +641,7 @@ struct AgentSpaceViewer {
         continue;
       }
       const delta = part.data as A2ADeltaData;
-      if (delta && delta.kind === 'agent.description') {
+      if (delta && (delta.kind === 'agent.description' || typeof delta.kind !== 'string')) {
         const desc = delta.description;
         if (typeof desc === 'string' && desc.trim().length > 0) {
           return desc.trim();

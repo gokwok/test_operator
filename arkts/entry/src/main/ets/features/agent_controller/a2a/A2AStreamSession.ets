@@ -57,6 +57,7 @@ export class A2AStreamSession {
   private parser: SseLineParser;
   private active: boolean = false;
   private parsedAny: boolean = false;
+  private completed: boolean = false;
 
   constructor() {
     this.parser = new SseLineParser((data: string) => {
@@ -81,6 +82,7 @@ export class A2AStreamSession {
     this.listener = listener;
     this.active = true;
     this.parsedAny = false;
+    this.completed = false;
     this.parser.reset();
 
     client.on('dataReceive', (data: Object) => {
@@ -88,6 +90,10 @@ export class A2AStreamSession {
       if (text.length > 0) {
         this.parser.feed(text);
       }
+    });
+
+    client.on('dataEnd', () => {
+      this.finishOnce();
     });
 
     const body = JSON.stringify(request);
@@ -104,10 +110,7 @@ export class A2AStreamSession {
       if (!this.parsedAny) {
         this.handleNonSseResponse(response);
       }
-      this.active = false;
-      if (this.listener) {
-        this.listener.onComplete();
-      }
+      this.finishOnce();
     }).catch((err: Error) => {
       this.active = false;
       if (this.listener) {
@@ -120,6 +123,7 @@ export class A2AStreamSession {
     const client = this.client;
     this.client = null;
     this.active = false;
+    this.completed = true;
     if (client) {
       try {
         client.destroy();
@@ -170,17 +174,37 @@ export class A2AStreamSession {
     }
   }
 
+  private finishOnce(): void {
+    if (this.completed) {
+      return;
+    }
+    this.completed = true;
+    this.active = false;
+    if (this.listener) {
+      this.listener.onComplete();
+    }
+  }
+
   private decodeChunk(data: Object): string {
     if (typeof data === 'string') {
       return data;
     }
     if (data !== null && typeof data === 'object') {
-      const obj = data as Object;
-      if (obj instanceof ArrayBuffer) {
-        return this.decodeArrayBuffer(obj as ArrayBuffer);
+      if (data instanceof ArrayBuffer) {
+        return this.decodeArrayBuffer(data);
       }
-      if (obj instanceof Uint8Array) {
-        return this.decodeUint8Array(obj as Uint8Array);
+      if (data instanceof Uint8Array) {
+        return this.decodeUint8Array(data);
+      }
+      if (ArrayBuffer.isView(data)) {
+        const view = data as ArrayBufferView;
+        const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+        return this.decodeUint8Array(bytes);
+      }
+      const obj = data as { buffer?: Object; byteLength?: number };
+      if (obj.buffer instanceof ArrayBuffer && typeof obj.byteLength === 'number') {
+        const bytes = new Uint8Array(obj.buffer, 0, obj.byteLength);
+        return this.decodeUint8Array(bytes);
       }
     }
     return String(data);

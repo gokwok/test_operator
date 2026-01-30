@@ -726,6 +726,7 @@ export class AgentController {
       session.stop();
     }
     this.a2aEventHub.reset();
+    this.a2aEventHub.push('log', 'stream_started');
     this.a2aTaskId = '';
     this.a2aActive = true;
     const listener = new A2AStreamListenerImpl(
