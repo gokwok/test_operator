@@ -85,11 +85,23 @@ interface A2ADeltaData {
   description?: string;
 }
 
+interface A2AOutputMessagePart {
+  kind?: string;
+  text?: string;
+}
+
+interface A2AOutputMessage {
+  parts?: Array<A2AOutputMessagePart>;
+}
+
 interface A2AOutputData {
   description?: string;
   text?: string;
   answer?: string;
-  message?: string;
+  message?: A2AOutputMessage;
+  output?: A2AOutputData;
+  final?: A2AOutputData;
+  result?: A2AOutputData;
 }
 
 interface A2AToolTracePayload {
@@ -156,7 +168,11 @@ struct AgentSpaceViewer {
   private statusPolling: boolean = false;
   private a2aEventSequence: number = 0;
   private a2aEventMode: boolean = false;
+  private a2aLastState: string = '';
   private lastStatusText: string = '';
+  private lastFinalOutputText: string = '';
+  private assistantTextBuffer: string = '';
+  private hasFinalOutput: boolean = false;
   private callUserActive: boolean = false;
   private callUserContent: string = '';
   private callUserKind: 'call_user' | 'interact' | 'take_over' = 'call_user';
@@ -490,6 +506,25 @@ struct AgentSpaceViewer {
       if (!update) {
         return;
       }
+      const artifactId = this.readA2AArtifactId(update);
+      if (artifactId === 'assistant.text') {
+        const chunk = this.extractAssistantTextChunk(update);
+        if (chunk.length > 0) {
+          this.assistantTextBuffer += chunk;
+          if (!this.hasFinalOutput) {
+            this.lastFinalOutputText = this.assistantTextBuffer.trim();
+          }
+        }
+        return;
+      }
+      if (artifactId === 'thinkflow.output') {
+        const finalText = this.extractFinalOutput(update);
+        if (finalText.length > 0) {
+          this.lastFinalOutputText = finalText;
+          this.hasFinalOutput = true;
+        }
+        return;
+      }
       const description = this.extractDescription(update);
       if (description.length > 0) {
         this.updateStatusText(description);
@@ -541,6 +576,14 @@ struct AgentSpaceViewer {
       return;
     }
     const state = typeof statusUpdate.state === 'string' ? statusUpdate.state : '';
+    if (state === 'working' && this.a2aLastState !== 'working') {
+      this.lastFinalOutputText = '';
+      this.assistantTextBuffer = '';
+      this.hasFinalOutput = false;
+    }
+    if (state.length > 0) {
+      this.a2aLastState = state;
+    }
     const messageText = this.readStatusMessage(statusUpdate);
     if (state === 'input-required') {
       const interaction = this.extractInteractionFromA2A(statusUpdate, messageText);
@@ -649,13 +692,129 @@ struct AgentSpaceViewer {
       }
       const output = part.data as A2AOutputData;
       if (output) {
-        const candidates = [output.description, output.text, output.answer, output.message];
+        const candidates = [output.description, output.text, output.answer];
         for (let j = 0; j < candidates.length; j += 1) {
           const value = candidates[j];
           if (typeof value === 'string' && value.trim().length > 0) {
             return value.trim();
           }
         }
+      }
+    }
+    return '';
+  }
+
+  private readA2AArtifactId(update: A2AStreamUpdate): string {
+    const artifactUpdate = update.artifactUpdate;
+    const artifact = artifactUpdate?.artifact;
+    if (artifact && typeof artifact.artifactId === 'string' && artifact.artifactId.length > 0) {
+      return artifact.artifactId;
+    }
+    const artifacts = artifactUpdate?.artifacts;
+    if (Array.isArray(artifacts)) {
+      for (let i = 0; i < artifacts.length; i += 1) {
+        const item = artifacts[i];
+        if (item && typeof item.artifactId === 'string' && item.artifactId.length > 0) {
+          return item.artifactId;
+        }
+      }
+    }
+    return '';
+  }
+
+  private extractAssistantTextChunk(update: A2AStreamUpdate): string {
+    const artifactUpdate = update.artifactUpdate;
+    const artifact = artifactUpdate?.artifact;
+    const parts = artifact?.parts;
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (!part || part.kind !== 'text') {
+        continue;
+      }
+      const text = part.text;
+      if (typeof text === 'string' && text.length > 0) {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  private extractFinalOutput(update: A2AStreamUpdate): string {
+    const artifactUpdate = update.artifactUpdate;
+    const artifact = artifactUpdate?.artifact;
+    const parts = artifact?.parts;
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (!part) {
+        continue;
+      }
+      if (part.kind === 'text') {
+        const text = part.text;
+        if (typeof text === 'string' && text.trim().length > 0) {
+          return text.trim();
+        }
+        continue;
+      }
+      if (part.kind !== 'data') {
+        continue;
+      }
+      const output = part.data as A2AOutputData;
+      const text = this.readOutputText(output);
+      if (text.length > 0) {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  private readOutputText(output?: A2AOutputData): string {
+    if (!output) {
+      return '';
+    }
+    if (typeof output.text === 'string' && output.text.trim().length > 0) {
+      return output.text.trim();
+    }
+    if (typeof output.answer === 'string' && output.answer.trim().length > 0) {
+      return output.answer.trim();
+    }
+    const messageText = this.readOutputMessageText(output.message);
+    if (messageText.length > 0) {
+      return messageText;
+    }
+    const nestedFinal = output.final;
+    if (nestedFinal && typeof nestedFinal === 'object' && !Array.isArray(nestedFinal)) {
+      return this.readOutputText(nestedFinal);
+    }
+    const nestedResult = output.result;
+    if (nestedResult && typeof nestedResult === 'object' && !Array.isArray(nestedResult)) {
+      return this.readOutputText(nestedResult);
+    }
+    const nested = output.output;
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      return this.readOutputText(nested);
+    }
+    return '';
+  }
+
+  private readOutputMessageText(message?: A2AOutputMessage): string {
+    const parts = message?.parts;
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (!part || part.kind !== 'text') {
+        continue;
+      }
+      const text = part.text;
+      if (typeof text === 'string' && text.trim().length > 0) {
+        return text.trim();
       }
     }
     return '';
@@ -677,7 +836,7 @@ struct AgentSpaceViewer {
     if (this.callUserActive) {
       this.exitCallUser();
     }
-    const fallback = this.lastStatusText.length > 0 ? this.lastStatusText : '任务已完成';
+    const fallback = this.lastFinalOutputText.length > 0 ? this.lastFinalOutputText : '任务已完成';
     const content = message.length > 0 ? message : fallback;
     this.statusController.setMode('default');
     this.statusController.setTerminal('finished', content);
