@@ -120,6 +120,8 @@ export class A2AStreamSession {
       extraData: body,
       connectTimeout: 10000,
       readTimeout: 600000,
+      expectDataType: http.HttpDataType.STRING,
+      usingCache: false,
     }).then((response: http.HttpResponse) => {
       if (!this.parsedAny) {
         this.handleNonSseResponse(response);
