@@ -2,24 +2,16 @@
 @Component
 struct OperationWidgetCard {
   build() {
-    Column({ space: 10 }) {
-      Text('操作智能体')
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#1F2937');
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        this.ShortcutButton('快捷 1');
+        this.ShortcutButton('快捷 2');
+      }
+      .width('100%');
 
-      Column({ space: 8 }) {
-        Row({ space: 8 }) {
-          this.ShortcutButton('快捷 1');
-          this.ShortcutButton('快捷 2');
-        }
-        .width('100%');
-
-        Row({ space: 8 }) {
-          this.ShortcutButton('快捷 3');
-          this.ShortcutButton('快捷 4');
-        }
-        .width('100%');
+      Row({ space: 8 }) {
+        this.ShortcutButton('快捷 3');
+        this.ShortcutButton('快捷 4');
       }
       .width('100%');
     }
@@ -41,4 +33,3 @@ struct OperationWidgetCard {
       .height(44);
   }
 }
-
