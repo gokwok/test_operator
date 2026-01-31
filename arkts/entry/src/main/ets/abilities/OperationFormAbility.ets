@@ -56,10 +56,23 @@ export default class OperationFormAbility extends FormExtensionAbility {
     const ctx = this.context;
     const trimmed = this.sanitizeFormId(formId);
     if (!ctx || trimmed.length === 0) {
+      if (!ctx) {
+        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites skipped: context missing');
+      } else {
+        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites skipped: formId empty raw=%{public}s', formId);
+      }
       return;
     }
     try {
       const favorites = await this.loadFavoriteSkills(ctx);
+      hilog.info(
+        HILOG_DOMAIN,
+        HILOG_TAG,
+        'updateFormFavorites formId=%{public}s count=%{public}d names=%{public}s',
+        trimmed,
+        favorites.length,
+        JSON.stringify(favorites)
+      );
       const data = this.buildFavoritesData(favorites);
       formProvider.updateForm(trimmed, formBindingData.createFormBindingData(data));
     } catch (e) {
