@@ -45,6 +45,8 @@ const TASK_CARD_SIDE_MARGIN: number = 12;
 const TASK_CARD_PADDING_X: number = 12;
 const TASK_CARD_PADDING_TOP: number = 12;
 const TASK_CARD_PADDING_BOTTOM: number = 10;
+const TASK_SWIPE_ACTION_WIDTH: number = 72;
+const TASK_FAVORITE_COLOR: string = '#F2C94C';
 const NAV_SAFE_SPACER: number = 12;
 const DETAIL_CARD_BG: string = '#FFFFFF';
 const DETAIL_CARD_BORDER: string = '#ECE5F5';
@@ -182,6 +184,10 @@ struct Index {
   @State stepPixelMapLoading: Array<boolean> = [];
   @State showTaskMeta: boolean = false;
   @State showStepMore: boolean = false;
+  @State favoriteDialogVisible: boolean = false;
+  @State favoriteDialogTaskId: string = '';
+  @State favoriteDialogName: string = '';
+  @State favoriteDialogError: string = '';
   @State private viewportHeight: number = 0;
 
   private stepPixelMapRequestSeq: number = 0;
@@ -1804,27 +1810,142 @@ struct Index {
     })
     .swipeAction({
       end: () => {
-        this.taskDeleteAction(task.taskId);
+        this.taskSwipeActions(task);
       }
     })
   }
 
   @Builder
-  private taskDeleteAction(taskId: string): void {
+  private taskSwipeActions(task: HistoryTaskMeta): void {
+    Column({ space: 0 }) {
+      this.taskDeleteAction(task.taskId, '50%');
+      this.taskFavoriteAction(task, '50%');
+    }
+    .width(TASK_SWIPE_ACTION_WIDTH)
+    .height('100%')
+    .backgroundColor('transparent')
+  }
+
+  @Builder
+  private taskDeleteAction(taskId: string, height: string | number = '100%'): void {
     Row() {
       Image($r('app.media.delete'))
         .width(20)
         .height(20)
         .objectFit(ImageFit.Contain)
     }
-    .width(72)
-    .height('100%')
+    .width(TASK_SWIPE_ACTION_WIDTH)
+    .height(height)
     .backgroundColor('transparent')
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       void this.deleteTaskDirect(taskId);
     })
+  }
+
+  @Builder
+  private taskFavoriteAction(task: HistoryTaskMeta, height: string | number = '100%'): void {
+    const favorited = this.isTaskFavorited(task);
+    const symbolName: 'star' | 'star_fill' = favorited ? 'star_fill' : 'star';
+    const color = favorited ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED;
+
+    Row() {
+      Text() {
+        SymbolSpan(this.getTaskFavoriteSymbolResource(symbolName))
+          .fontSize(20)
+          .fontColor([color])
+      }
+      .width(28)
+      .height(28)
+      .textAlign(TextAlign.Center)
+      .hitTestBehavior(HitTestMode.None)
+    }
+    .width(TASK_SWIPE_ACTION_WIDTH)
+    .height(height)
+    .backgroundColor('transparent')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      if (favorited) {
+        void this.setTaskSkillName(task.taskId, '');
+      } else {
+        this.openFavoriteDialog(task);
+      }
+    })
+  }
+
+  private getTaskFavoriteSymbolResource(symbolName: 'star' | 'star_fill'): Resource {
+    if (symbolName === 'star_fill') {
+      return $r('sys.symbol.star_fill');
+    }
+    return $r('sys.symbol.star');
+  }
+
+  private isTaskFavorited(task: HistoryTaskMeta): boolean {
+    const name = typeof task.skill_name === 'string' ? task.skill_name : '';
+    return name.trim().length > 0;
+  }
+
+  private openFavoriteDialog(task: HistoryTaskMeta): void {
+    this.favoriteDialogTaskId = task.taskId;
+    this.favoriteDialogName = typeof task.skill_name === 'string' ? task.skill_name : '';
+    this.favoriteDialogError = '';
+    this.favoriteDialogVisible = true;
+  }
+
+  private closeFavoriteDialog(): void {
+    this.favoriteDialogVisible = false;
+    this.favoriteDialogTaskId = '';
+    this.favoriteDialogName = '';
+    this.favoriteDialogError = '';
+  }
+
+  private async confirmFavoriteDialog(): Promise<void> {
+    const taskId = this.favoriteDialogTaskId.trim();
+    if (taskId.length === 0) {
+      this.closeFavoriteDialog();
+      return;
+    }
+    const name = this.favoriteDialogName.trim();
+    if (name.length === 0) {
+      this.favoriteDialogError = '请填写名称';
+      return;
+    }
+    try {
+      await this.setTaskSkillName(taskId, name);
+      this.closeFavoriteDialog();
+    } catch (e) {
+      this.favoriteDialogError = `保存失败: ${String(e)}`;
+    }
+  }
+
+  private async setTaskSkillName(taskId: string, skillName: string): Promise<void> {
+    const id = taskId.trim();
+    if (id.length === 0) {
+      return;
+    }
+    const ctx = this.getUiContext();
+    const store = TaskHistoryStore.getInstance();
+    store.init(ctx);
+    await store.updateTaskMeta(id, { skill_name: skillName });
+
+    this.historyTasks = this.historyTasks.map((t) => {
+      if (t.taskId !== id) {
+        return t;
+      }
+      return {
+        ...t,
+        skill_name: skillName,
+      };
+    });
+
+    if (this.selectedTaskId === id && this.selectedTask) {
+      this.selectedTask = {
+        ...this.selectedTask,
+        skill_name: skillName,
+      };
+    }
   }
 
   private resolveTaskIcon(name: 'correct' | 'wrong'): Resource {
@@ -2491,6 +2612,10 @@ struct Index {
       .height('100%')
 
       this.bottomNav()
+
+      if (this.favoriteDialogVisible) {
+        this.favoriteNameDialog();
+      }
     }
     .width('100%')
     .height('100%')
@@ -2499,6 +2624,77 @@ struct Index {
     .onAreaChange((_oldValue, newValue) => {
       this.viewportHeight = Number(newValue.height);
     })
+  }
+
+  @Builder
+  private favoriteNameDialog(): void {
+    Stack() {
+      Row()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0, 0, 0, 0.35)')
+
+      Column({ space: 10 }) {
+        Text('收藏为技能')
+          .fontSize(14)
+          .fontFamily(FONT_DISPLAY)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+
+        TextInput({ placeholder: '请输入名称', text: this.favoriteDialogName })
+          .height(36)
+          .fontSize(12)
+          .fontColor(THEME_TEXT_PRIMARY)
+          .backgroundColor(THEME_CARD)
+          .borderRadius(10)
+          .border({ width: 1, color: THEME_BORDER })
+          .padding({ left: 10, right: 10 })
+          .onChange((value: string) => {
+            this.favoriteDialogName = value;
+            if (this.favoriteDialogError.length > 0) {
+              this.favoriteDialogError = '';
+            }
+          })
+
+        if (this.favoriteDialogError.length > 0) {
+          Text(this.favoriteDialogError)
+            .fontSize(11)
+            .fontColor(THEME_ERROR)
+        }
+
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor('rgba(0, 0, 0, 0.06)')
+            .borderRadius(10)
+            .onClick(() => {
+              this.closeFavoriteDialog();
+            })
+
+          Button('保存')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(12)
+            .fontColor(Color.White)
+            .backgroundColor(THEME_ACCENT)
+            .borderRadius(10)
+            .onClick(() => {
+              void this.confirmFavoriteDialog();
+            })
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(14)
+      .backgroundColor(THEME_PANEL)
+      .borderRadius(16)
+      .border({ width: 1, color: THEME_BORDER })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   private getUiContext(): common.UIAbilityContext {
@@ -3210,16 +3406,16 @@ struct Index {
           if (this.selectedSteps.length > 0) {
             const target = this.selectedSteps.find((step) => step.stepIndex === this.selectedStepIndex);
             await this.selectStep(target ?? this.selectedSteps[0]);
-		          } else {
-		            this.selectedStep = null;
-		            this.selectedStepPixelMap = null;
-		            this.selectedStepParamLines = [];
-		            this.showStepMore = false;
-		            this.selectedStepIndex = 0;
-		            this.selectedStepPosition = 0;
-		          }
-		        }
-		      }
+          } else {
+            this.selectedStep = null;
+            this.selectedStepPixelMap = null;
+            this.selectedStepParamLines = [];
+            this.showStepMore = false;
+            this.selectedStepIndex = 0;
+            this.selectedStepPosition = 0;
+          }
+        }
+      }
     } catch (e) {
       this.historyError = `加载历史失败: ${String(e)}`;
     } finally {

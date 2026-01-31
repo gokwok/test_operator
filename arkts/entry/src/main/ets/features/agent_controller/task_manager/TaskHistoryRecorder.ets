@@ -40,6 +40,7 @@ export class TaskHistoryRecorder {
       stepCount: 0,
       finishContent: '',
       error: '',
+      skill_name: '',
     };
     void this.store.createTask(meta);
   }

@@ -29,6 +29,7 @@ export interface HistoryTaskMeta {
   stepCount: number;
   finishContent: string;
   error: string;
+  skill_name: string;
 }
 
 export interface HistoryTaskMetaPatch {
@@ -42,6 +43,7 @@ export interface HistoryTaskMetaPatch {
   stepCount?: number;
   finishContent?: string;
   error?: string;
+  skill_name?: string;
 }
 
 export interface HistoryStepImageMeta {
@@ -408,7 +410,11 @@ export class TaskHistoryStore {
       return null;
     }
     try {
-      return JSON.parse(raw) as HistoryTaskMeta;
+      const parsed = JSON.parse(raw) as Partial<HistoryTaskMeta>;
+      return {
+        ...(parsed as HistoryTaskMeta),
+        skill_name: typeof parsed.skill_name === 'string' ? parsed.skill_name : '',
+      };
     } catch {
       return null;
     }
@@ -533,6 +539,7 @@ export class TaskHistoryStore {
       stepCount: meta.stepCount,
       finishContent: meta.finishContent,
       error: meta.error,
+      skill_name: meta.skill_name ?? '',
     };
   }
 
@@ -561,6 +568,9 @@ export class TaskHistoryStore {
     }
     if (typeof patch.stepCount === 'number' && Number.isFinite(patch.stepCount)) {
       next.stepCount = Math.max(0, Math.floor(patch.stepCount));
+    }
+    if (typeof patch.skill_name === 'string') {
+      next.skill_name = patch.skill_name;
     }
     if (typeof patch.finishContent === 'string') {
       next.finishContent = patch.finishContent;
