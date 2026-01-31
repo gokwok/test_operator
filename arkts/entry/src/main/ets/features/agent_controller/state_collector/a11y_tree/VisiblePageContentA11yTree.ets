@@ -59,6 +59,16 @@ interface Rect {
   bottom: number;
 }
 
+class EvalDecision {
+  keepSelf: boolean;
+  rect: Rect | null;
+
+  constructor(keepSelf: boolean, rect: Rect | null) {
+    this.keepSelf = keepSelf;
+    this.rect = rect;
+  }
+}
+
 interface FilteredNode {
   node: VisiblePageContentNode;
   rect: Rect | null;
@@ -135,7 +145,7 @@ export class VisiblePageContentA11yTree {
         i += 1;
         continue;
       }
-      if (ch === '\\\\') {
+      if (ch === '\\') {
         escaped = true;
         i += 1;
         continue;
@@ -148,6 +158,11 @@ export class VisiblePageContentA11yTree {
     return '';
   }
 
+  private static createRect(left: number, top: number, right: number, bottom: number): Rect {
+    const rect: Rect = { left, top, right, bottom };
+    return rect;
+  }
+
   private static resolveScreenRect(root: VisiblePageContentNode, screenWidthPx: number, screenHeightPx: number): Rect {
     const rect = VisiblePageContentA11yTree.parseRect(root.$rect);
     if (rect) {
@@ -155,7 +170,7 @@ export class VisiblePageContentA11yTree {
     }
     const width = Math.max(1, Math.floor(screenWidthPx));
     const height = Math.max(1, Math.floor(screenHeightPx));
-    return { left: 0, top: 0, right: width, bottom: height };
+    return VisiblePageContentA11yTree.createRect(0, 0, width, height);
   }
 
   private static filterNode(node: VisiblePageContentNode, screen: Rect, options: A11yTreeListOptions): FilteredNode | null {
@@ -194,20 +209,20 @@ export class VisiblePageContentA11yTree {
     node: VisiblePageContentNode,
     screen: Rect,
     options: A11yTreeListOptions
-  ): { keepSelf: boolean; rect: Rect | null } {
+  ): EvalDecision {
     const rectRaw = VisiblePageContentA11yTree.parseRect(node.$rect);
     if (!rectRaw) {
       const hasChildren = Array.isArray(node.$children) && node.$children.length > 0;
-      return { keepSelf: hasChildren, rect: null };
+      return new EvalDecision(hasChildren, null);
     }
     const rect = options.clipBounds ? VisiblePageContentA11yTree.clipRect(rectRaw, screen) : rectRaw;
     const width = rect.right - rect.left;
     const height = rect.bottom - rect.top;
     if (width <= options.minElementSizePx || height <= options.minElementSizePx) {
-      return { keepSelf: false, rect };
+      return new EvalDecision(false, rect);
     }
     if (node.visible === 'false') {
-      return { keepSelf: false, rect };
+      return new EvalDecision(false, rect);
     }
     const ignoreBoundsFiltering = VisiblePageContentA11yTree.isIgnoreBoundsFiltering(node.$attrs?.ignoreBoundsFiltering);
     if (!ignoreBoundsFiltering) {
@@ -216,10 +231,10 @@ export class VisiblePageContentA11yTree {
       const totalArea = VisiblePageContentA11yTree.area(rect);
       const ratio = totalArea > 0 ? visibleArea / totalArea : 0;
       if (ratio < options.visibilityThreshold) {
-        return { keepSelf: false, rect };
+        return new EvalDecision(false, rect);
       }
     }
-    return { keepSelf: true, rect };
+    return new EvalDecision(true, rect);
   }
 
   private static isIgnoreBoundsFiltering(value: boolean | string | undefined): boolean {
@@ -357,18 +372,42 @@ export class VisiblePageContentA11yTree {
     if (raw.length === 0) {
       return null;
     }
-    const match = raw.match(/\\[\\s*([0-9.+-]+)\\s*,\\s*([0-9.+-]+)\\s*\\]\\s*,\\s*\\[\\s*([0-9.+-]+)\\s*,\\s*([0-9.+-]+)\\s*\\]/);
-    if (!match || match.length < 5) {
+    const numbers: Array<number> = [];
+    let token: string = '';
+    const flush = (): void => {
+      if (token.length === 0) {
+        return;
+      }
+      const value = parseFloat(token);
+      token = '';
+      if (Number.isFinite(value)) {
+        numbers.push(value);
+      }
+    };
+    for (let i = 0; i < raw.length; i += 1) {
+      const ch = raw.charAt(i);
+      const isDigit = ch >= '0' && ch <= '9';
+      if (isDigit || ch === '.' || ch === '-' || ch === '+') {
+        token += ch;
+        continue;
+      }
+      flush();
+      if (numbers.length >= 4) {
+        break;
+      }
+    }
+    flush();
+    if (numbers.length < 4) {
       return null;
     }
-    const left = parseFloat(match[1]);
-    const top = parseFloat(match[2]);
-    const right = parseFloat(match[3]);
-    const bottom = parseFloat(match[4]);
+    const left = numbers[0];
+    const top = numbers[1];
+    const right = numbers[2];
+    const bottom = numbers[3];
     if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
       return null;
     }
-    return { left, top, right, bottom };
+    return VisiblePageContentA11yTree.createRect(left, top, right, bottom);
   }
 
   private static clipRect(rect: Rect, screen: Rect): Rect {
@@ -376,7 +415,7 @@ export class VisiblePageContentA11yTree {
     const top = Math.max(rect.top, screen.top);
     const right = Math.min(rect.right, screen.right);
     const bottom = Math.min(rect.bottom, screen.bottom);
-    return { left, top, right, bottom };
+    return VisiblePageContentA11yTree.createRect(left, top, right, bottom);
   }
 
   private static intersect(a: Rect, b: Rect): Rect | null {
@@ -387,7 +426,7 @@ export class VisiblePageContentA11yTree {
     if (right <= left || bottom <= top) {
       return null;
     }
-    return { left, top, right, bottom };
+    return VisiblePageContentA11yTree.createRect(left, top, right, bottom);
   }
 
   private static area(rect: Rect): number {
@@ -399,4 +438,3 @@ export class VisiblePageContentA11yTree {
     return width * height;
   }
 }
-
