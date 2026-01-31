@@ -80,6 +80,10 @@ export interface HistoryStepMeta {
   image: HistoryStepImageMeta;
 }
 
+interface HistoryTaskMetaCompat {
+  skill_name?: string;
+}
+
 export class TaskHistoryStore {
   private static instance: TaskHistoryStore | null = null;
 
@@ -411,9 +415,9 @@ export class TaskHistoryStore {
     }
     try {
       const parsed = JSON.parse(raw) as HistoryTaskMeta;
-      const skillName = (parsed as { skill_name?: string }).skill_name;
-      if (typeof skillName !== 'string') {
-        (parsed as { skill_name?: string }).skill_name = '';
+      const compat = parsed as HistoryTaskMetaCompat;
+      if (typeof compat.skill_name !== 'string') {
+        compat.skill_name = '';
       }
       return parsed;
     } catch {

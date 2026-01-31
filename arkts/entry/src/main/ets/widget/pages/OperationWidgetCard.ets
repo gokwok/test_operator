@@ -1,17 +1,22 @@
 @Entry
 @Component
 struct OperationWidgetCard {
+  @LocalStorageProp('shortcut1') shortcut1: string = '快捷键1';
+  @LocalStorageProp('shortcut2') shortcut2: string = '快捷键2';
+  @LocalStorageProp('shortcut3') shortcut3: string = '快捷键3';
+  @LocalStorageProp('shortcut4') shortcut4: string = '快捷键4';
+
   build() {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
-        this.ShortcutButton('快捷 1');
-        this.ShortcutButton('快捷 2');
+        this.ShortcutButton(this.shortcut1);
+        this.ShortcutButton(this.shortcut2);
       }
       .width('100%');
 
       Row({ space: 8 }) {
-        this.ShortcutButton('快捷 3');
-        this.ShortcutButton('快捷 4');
+        this.ShortcutButton(this.shortcut3);
+        this.ShortcutButton(this.shortcut4);
       }
       .width('100%');
     }
@@ -23,7 +28,11 @@ struct OperationWidgetCard {
 
   @Builder
   private ShortcutButton(label: string) {
-    Button(label)
+    Button() {
+      Text(label)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
       .type(ButtonType.Normal)
       .fontSize(14)
       .fontColor('#111827')

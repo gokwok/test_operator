@@ -1,7 +1,9 @@
-import type { Want } from '@kit.AbilityKit';
+import type { common, Want } from '@kit.AbilityKit';
 import { FormExtensionAbility, formBindingData, formProvider } from '@kit.FormKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
+import { TaskHistoryStore } from '../features/persistence/history/TaskHistoryStore';
+import type { HistoryTaskMeta } from '../features/persistence/history/TaskHistoryStore';
 import { WidgetFormStore, WidgetFormRecord } from '../features/persistence/widget/WidgetFormStore';
 
 const HILOG_DOMAIN: number = 0x0000;
@@ -20,14 +22,17 @@ interface OperationWidgetFormData {
 export default class OperationFormAbility extends FormExtensionAbility {
   onAddForm(want: Want): formBindingData.FormBindingData {
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'onAddForm want=%{public}s', JSON.stringify(want));
+    const formId = this.resolveFormId(want);
+    if (formId.length > 0) {
+      void this.updateFormFavoritesBestEffort(formId);
+    }
     void this.trackFormAdded(want);
     return formBindingData.createFormBindingData(this.buildDefaultData());
   }
 
   onUpdateForm(formId: string): void {
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'onUpdateForm formId=%{public}s', formId);
-    const data = this.buildDefaultData();
-    formProvider.updateForm(formId, formBindingData.createFormBindingData(data));
+    void this.updateFormFavoritesBestEffort(formId);
     void this.trackFormUpdated(formId);
   }
 
@@ -38,11 +43,61 @@ export default class OperationFormAbility extends FormExtensionAbility {
 
   private buildDefaultData(): OperationWidgetFormData {
     const data: OperationWidgetFormData = {
-      title: '操作智能体',
-      shortcut1: '快捷 1',
-      shortcut2: '快捷 2',
-      shortcut3: '快捷 3',
-      shortcut4: '快捷 4',
+      title: '',
+      shortcut1: '快捷键1',
+      shortcut2: '快捷键2',
+      shortcut3: '快捷键3',
+      shortcut4: '快捷键4',
+    };
+    return data;
+  }
+
+  private async updateFormFavoritesBestEffort(formId: string): Promise<void> {
+    const ctx = this.context;
+    const trimmed = this.sanitizeFormId(formId);
+    if (!ctx || trimmed.length === 0) {
+      return;
+    }
+    try {
+      const favorites = await this.loadFavoriteSkills(ctx);
+      const data = this.buildFavoritesData(favorites);
+      formProvider.updateForm(trimmed, formBindingData.createFormBindingData(data));
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites failed: %{public}s', String(e));
+    }
+  }
+
+  private async loadFavoriteSkills(ctx: common.Context): Promise<Array<string>> {
+    const store = TaskHistoryStore.getInstance();
+    store.init(ctx);
+    const tasks = await store.listTasks(200);
+    const favorites: Array<HistoryTaskMeta> = tasks.filter((t) => {
+      const name = typeof t.skill_name === 'string' ? t.skill_name : '';
+      return name.trim().length > 0 && t.status !== 'running';
+    });
+    favorites.sort((a, b) => {
+      const aTs = a.endAtMs > 0 ? a.endAtMs : a.startAtMs;
+      const bTs = b.endAtMs > 0 ? b.endAtMs : b.startAtMs;
+      return bTs - aTs;
+    });
+    const picked: Array<string> = [];
+    for (let i = 0; i < favorites.length && picked.length < 4; i += 1) {
+      const name = favorites[i].skill_name.trim();
+      if (name.length > 0) {
+        picked.push(name);
+      }
+    }
+    return picked;
+  }
+
+  private buildFavoritesData(favorites: Array<string>): OperationWidgetFormData {
+    const fallback = this.buildDefaultData();
+    const data: OperationWidgetFormData = {
+      title: fallback.title,
+      shortcut1: favorites.length >= 1 ? favorites[0] : fallback.shortcut1,
+      shortcut2: favorites.length >= 2 ? favorites[1] : fallback.shortcut2,
+      shortcut3: favorites.length >= 3 ? favorites[2] : fallback.shortcut3,
+      shortcut4: favorites.length >= 4 ? favorites[3] : fallback.shortcut4,
     };
     return data;
   }
