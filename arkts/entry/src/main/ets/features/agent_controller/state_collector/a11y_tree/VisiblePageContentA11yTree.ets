@@ -215,7 +215,21 @@ export class VisiblePageContentA11yTree {
     if (VisiblePageContentA11yTree.shouldFilterKeyboard(node, options.keyboardResourceIdPrefixes)) {
       return null;
     }
-    const cloned: VisiblePageContentNode = { ...node, $children: filteredChildren };
+    const cloned: VisiblePageContentNode = {
+      appInfo: node.appInfo,
+      $type: node.$type,
+      $ID: node.$ID,
+      type: node.type,
+      compid: node.compid,
+      $rect: node.$rect,
+      $attrs: node.$attrs,
+      clickable: node.clickable,
+      longClickable: node.longClickable,
+      scrollable: node.scrollable,
+      editable: node.editable,
+      visible: node.visible,
+      $children: filteredChildren,
+    };
     return cloned;
   }
 
