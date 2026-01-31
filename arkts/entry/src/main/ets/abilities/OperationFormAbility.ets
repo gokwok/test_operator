@@ -29,10 +29,6 @@ export default class OperationFormAbility extends FormExtensionAbility {
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'onRemoveForm formId=%{public}s', formId);
   }
 
-  onAcquireFormState(_want: Want): formProvider.FormState {
-    return formProvider.FormState.READY;
-  }
-
   private buildDefaultData(): OperationWidgetFormData {
     const data: OperationWidgetFormData = {
       title: '操作智能体',
@@ -44,4 +40,3 @@ export default class OperationFormAbility extends FormExtensionAbility {
     return data;
   }
 }
-
