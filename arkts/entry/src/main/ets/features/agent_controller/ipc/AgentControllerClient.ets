@@ -155,6 +155,27 @@ export class AgentControllerClient {
     return parts.join('');
   }
 
+  async longScreenshot(): Promise<string> {
+    const lengthText = await this.sendRequest(AgentControllerRequestCode.LONG_SCREENSHOT);
+    const total = parseInt(lengthText, 10);
+    if (!Number.isFinite(total) || total <= 0) {
+      return '';
+    }
+    const chunkSize = 16384;
+    let offset = 0;
+    const parts: Array<string> = [];
+    while (offset < total) {
+      const size = Math.min(chunkSize, total - offset);
+      const chunk = await this.sendRequestWithTwoInts(AgentControllerRequestCode.LONG_SCREENSHOT_CHUNK, offset, size);
+      if (chunk.length === 0) {
+        break;
+      }
+      parts.push(chunk);
+      offset += chunk.length;
+    }
+    return parts.join('');
+  }
+
   async destroyVts(): Promise<void> {
     await this.sendRequest(AgentControllerRequestCode.DESTROY_VTS);
   }
@@ -248,6 +269,87 @@ export class AgentControllerClient {
     return await this.sendRequest(AgentControllerRequestCode.ACTION_PRESS_ENTER);
   }
 
+  async actionPressBackspace(): Promise<string> {
+    return await this.sendRequest(AgentControllerRequestCode.ACTION_PRESS_BACKSPACE);
+  }
+
+  async actionPressKey(code: string): Promise<string> {
+    return await this.sendRequestWithString(AgentControllerRequestCode.ACTION_PRESS_KEY, code);
+  }
+
+  async actionPressComboKey(codes: Array<string>): Promise<string> {
+    const payload = JSON.stringify(codes);
+    return await this.sendRequestWithString(AgentControllerRequestCode.ACTION_PRESS_COMBO_KEY, payload);
+  }
+
+  async actionRequestFocus(): Promise<string> {
+    return await this.sendRequest(AgentControllerRequestCode.ACTION_REQUEST_FOCUS);
+  }
+
+  async getVisiblePageContent(windowId: number = 0): Promise<string> {
+    const wid = Math.max(0, Math.floor(windowId));
+    const lengthText = await this.sendRequestWithInt(AgentControllerRequestCode.GET_VISIBLE_PAGE_CONTENT_LEN, wid);
+    if (lengthText.startsWith('ERR_')) {
+      throw new Error(lengthText);
+    }
+    const total = parseInt(lengthText, 10);
+    if (!Number.isFinite(total) || total <= 0) {
+      return '';
+    }
+    const chunkSize = 16384;
+    let offset = 0;
+    const parts: Array<string> = [];
+    while (offset < total) {
+      const size = Math.min(chunkSize, total - offset);
+      const chunk = await this.sendRequestWithTwoInts(
+        AgentControllerRequestCode.GET_VISIBLE_PAGE_CONTENT_CHUNK,
+        offset,
+        size
+      );
+      if (chunk.startsWith('ERR_')) {
+        throw new Error(chunk);
+      }
+      if (chunk.length === 0) {
+        break;
+      }
+      parts.push(chunk);
+      offset += chunk.length;
+    }
+    return parts.join('');
+  }
+
+  async getPageContent(windowId: number = 0): Promise<string> {
+    const wid = Math.max(0, Math.floor(windowId));
+    const lengthText = await this.sendRequestWithInt(AgentControllerRequestCode.GET_PAGE_CONTENT_LEN, wid);
+    if (lengthText.startsWith('ERR_')) {
+      throw new Error(lengthText);
+    }
+    const total = parseInt(lengthText, 10);
+    if (!Number.isFinite(total) || total <= 0) {
+      return '';
+    }
+    const chunkSize = 16384;
+    let offset = 0;
+    const parts: Array<string> = [];
+    while (offset < total) {
+      const size = Math.min(chunkSize, total - offset);
+      const chunk = await this.sendRequestWithTwoInts(
+        AgentControllerRequestCode.GET_PAGE_CONTENT_CHUNK,
+        offset,
+        size
+      );
+      if (chunk.startsWith('ERR_')) {
+        throw new Error(chunk);
+      }
+      if (chunk.length === 0) {
+        break;
+      }
+      parts.push(chunk);
+      offset += chunk.length;
+    }
+    return parts.join('');
+  }
+
   async setCloudEndpoint(endpoint: string): Promise<void> {
     await this.sendRequestWithString(AgentControllerRequestCode.SET_CLOUD_ENDPOINT, endpoint);
   }
@@ -278,20 +380,32 @@ export class AgentControllerClient {
     await this.sendRequestWithString(AgentControllerRequestCode.DEBUG_INTERACT, text);
   }
 
-  async dumpAccessibilityTree(): Promise<string> {
-    return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_TREE, '');
-  }
-
-  async dumpAccessibilityWindows(): Promise<string> {
-    return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_WINDOWS, '');
-  }
-
-  async dumpAccessibilityTreeList(): Promise<string> {
-    return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_TREE_LIST, '');
-  }
-
-  async dumpAccessibilityNodeAttributes(): Promise<string> {
-    return await this.sendRequestWithString(AgentControllerRequestCode.DUMP_ACCESSIBILITY_NODE_ATTRS, '');
+  async getA11yTreeList(windowId: number = 0): Promise<string> {
+    const wid = Math.max(0, Math.floor(windowId));
+    const lengthText = await this.sendRequestWithInt(AgentControllerRequestCode.GET_A11Y_TREE_LIST_LEN, wid);
+    if (lengthText.startsWith('ERR_')) {
+      throw new Error(lengthText);
+    }
+    const total = parseInt(lengthText, 10);
+    if (!Number.isFinite(total) || total <= 0) {
+      return '';
+    }
+    const chunkSize = 16384;
+    let offset = 0;
+    const parts: Array<string> = [];
+    while (offset < total) {
+      const size = Math.min(chunkSize, total - offset);
+      const chunk = await this.sendRequestWithTwoInts(AgentControllerRequestCode.GET_A11Y_TREE_LIST_CHUNK, offset, size);
+      if (chunk.startsWith('ERR_')) {
+        throw new Error(chunk);
+      }
+      if (chunk.length === 0) {
+        break;
+      }
+      parts.push(chunk);
+      offset += chunk.length;
+    }
+    return parts.join('');
   }
 
   async debugSimulateToolCall(name: string, argumentsJson: string): Promise<string> {

@@ -3,9 +3,8 @@ import { ToolKit } from '../toolkit/ToolKit';
 import { ForegroundAppState } from './ForegroundAppState';
 import type { GpsInfo } from './LocationState';
 import { LocationState } from './LocationState';
-import { AccessibilityTreeClient } from './accessibility/AccessibilityTreeClient';
-import { AccessibilityTreeFormatter } from './accessibility/AccessibilityTreeFormatter';
-import type { AccessibilityTreeRequestOptions } from './accessibility/AccessibilityTreeProtocol';
+import type { A11yTreeListItem } from './a11y_tree/VisiblePageContentA11yTree';
+import { VisiblePageContentA11yTree } from './a11y_tree/VisiblePageContentA11yTree';
 
 export class StateCollector {
   private toolKit: ToolKit;
@@ -53,119 +52,10 @@ export class StateCollector {
     return state;
   }
 
-  async dumpAccessibilityTreeForAgentSpace(): Promise<string> {
-    try {
-      let runtime = await this.toolKit.getRuntimeInfo();
-      if (runtime.screenId < 0) {
-        runtime = await this.toolKit.ensureVts();
-      }
-      let displayId: number | undefined = undefined;
-      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
-        displayId = runtime.displayId;
-      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
-        displayId = runtime.screenId;
-      }
-      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
-      if (targetBundle.length === 0) {
-        return 'ERR:agentspace_bundle_missing';
-      }
-      const request: AccessibilityTreeRequestOptions = {
-        displayId,
-        bundleName: targetBundle,
-        maxDepth: 10,
-        maxNodes: 120,
-        includeAttributes: false
-      };
-      const response = await AccessibilityTreeClient.requestTreeJson(request);
-      return response;
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
-  }
-
-  async dumpAccessibilityWindowsForAgentSpace(): Promise<string> {
-    try {
-      let runtime = await this.toolKit.getRuntimeInfo();
-      if (runtime.screenId < 0) {
-        runtime = await this.toolKit.ensureVts();
-      }
-      let displayId: number | undefined = undefined;
-      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
-        displayId = runtime.displayId;
-      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
-        displayId = runtime.screenId;
-      }
-      const request: AccessibilityTreeRequestOptions = {
-        displayId,
-        windowsOnly: true
-      };
-      const response = await AccessibilityTreeClient.requestWindowsJson(request);
-      return response;
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
-  }
-
-  async dumpAccessibilityTreeListForAgentSpace(): Promise<string> {
-    try {
-      let runtime = await this.toolKit.getRuntimeInfo();
-      if (runtime.screenId < 0) {
-        runtime = await this.toolKit.ensureVts();
-      }
-      let displayId: number | undefined = undefined;
-      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
-        displayId = runtime.displayId;
-      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
-        displayId = runtime.screenId;
-      }
-      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
-      if (targetBundle.length === 0) {
-        return 'ERR:agentspace_bundle_missing';
-      }
-      const request: AccessibilityTreeRequestOptions = {
-        displayId,
-        bundleName: targetBundle,
-        maxDepth: 100,
-        maxNodes: 1000
-      };
-      const listJson = await AccessibilityTreeClient.requestTreeListJson(request);
-      return listJson;
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
-  }
-
-  async dumpAccessibilityNodeAttributesForAgentSpace(): Promise<string> {
-    try {
-      let runtime = await this.toolKit.getRuntimeInfo();
-      if (runtime.screenId < 0) {
-        runtime = await this.toolKit.ensureVts();
-      }
-      let displayId: number | undefined = undefined;
-      if (typeof runtime.displayId === 'number' && Number.isFinite(runtime.displayId) && runtime.displayId >= 0) {
-        displayId = runtime.displayId;
-      } else if (Number.isFinite(runtime.screenId) && runtime.screenId >= 0) {
-        displayId = runtime.screenId;
-      }
-      const targetBundle = this.toolKit.getCurrentAppBundleFromAgentSpace().trim();
-      if (targetBundle.length === 0) {
-        return 'ERR:agentspace_bundle_missing';
-      }
-      const request: AccessibilityTreeRequestOptions = {
-        displayId,
-        bundleName: targetBundle,
-        maxDepth: 10,
-        maxNodes: 80,
-        includeAttributes: true
-      };
-      const raw = await AccessibilityTreeClient.requestTreeJson(request);
-      const lines = AccessibilityTreeFormatter.toDebugLines(raw);
-      if (!lines) {
-        return 'ERR:accessibility_tree_parse_failed';
-      }
-      return lines.join('\n');
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
+  async getA11yTreeListForAgentSpace(windowId: number = 0): Promise<Array<A11yTreeListItem>> {
+    const runtime = await this.toolKit.ensureVts();
+    const wid = Math.max(0, Math.floor(windowId));
+    const dump = await this.toolKit.getVisiblePageContent(wid);
+    return VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
   }
 }

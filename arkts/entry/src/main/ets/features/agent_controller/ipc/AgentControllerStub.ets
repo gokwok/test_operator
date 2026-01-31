@@ -112,6 +112,18 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(chunk);
         return true;
       }
+      if (code === AgentControllerRequestCode.LONG_SCREENSHOT) {
+        const lengthText = await this.service.captureLongScreenshotLength();
+        reply.writeString(lengthText);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.LONG_SCREENSHOT_CHUNK) {
+        const offset = data.readInt();
+        const size = data.readInt();
+        const chunk = this.service.readLongScreenshotChunk(offset, size);
+        reply.writeString(chunk);
+        return true;
+      }
       if (code === AgentControllerRequestCode.DESTROY_VTS) {
         await this.service.destroyVts();
         reply.writeString('ok');
@@ -236,6 +248,69 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(result);
         return true;
       }
+      if (code === AgentControllerRequestCode.ACTION_PRESS_BACKSPACE) {
+        const result = await this.service.actionPressBackspace();
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.ACTION_PRESS_KEY) {
+        const key = data.readString();
+        const result = await this.service.actionPressKey(key);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.ACTION_PRESS_COMBO_KEY) {
+        const payload = data.readString();
+        const parsed = JSON.parse(payload) as Array<string>;
+        const keys = Array.isArray(parsed) ? parsed.map((item: string) => String(item)) : [];
+        const result = await this.service.actionPressComboKey(keys);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.ACTION_REQUEST_FOCUS) {
+        const result = await this.service.actionRequestFocus();
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.GET_A11Y_TREE_LIST_LEN) {
+        const windowId = data.readInt();
+        const result = await this.service.prepareA11yTreeList(windowId);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.GET_A11Y_TREE_LIST_CHUNK) {
+        const offset = data.readInt();
+        const size = data.readInt();
+        const result = this.service.readA11yTreeListChunk(offset, size);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.GET_VISIBLE_PAGE_CONTENT_LEN) {
+        const windowId = data.readInt();
+        const result = await this.service.prepareVisiblePageContent(windowId);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.GET_VISIBLE_PAGE_CONTENT_CHUNK) {
+        const offset = data.readInt();
+        const size = data.readInt();
+        const result = this.service.readVisiblePageContentChunk(offset, size);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.GET_PAGE_CONTENT_LEN) {
+        const windowId = data.readInt();
+        const result = await this.service.preparePageContent(windowId);
+        reply.writeString(result);
+        return true;
+      }
+      if (code === AgentControllerRequestCode.GET_PAGE_CONTENT_CHUNK) {
+        const offset = data.readInt();
+        const size = data.readInt();
+        const result = this.service.readPageContentChunk(offset, size);
+        reply.writeString(result);
+        return true;
+      }
       if (code === AgentControllerRequestCode.SET_CLOUD_ENDPOINT) {
         const endpoint = data.readString();
         this.service.setCloudEndpoint(endpoint);
@@ -279,34 +354,6 @@ export class AgentControllerStub extends rpc.RemoteObject {
         const options = Array.isArray(parsed?.options) ? parsed.options : [];
         this.service.debugInteract(content, options);
         reply.writeString('ok');
-        return true;
-      }
-      if (code === AgentControllerRequestCode.DUMP_ACCESSIBILITY_TREE) {
-        const _ignored = data.readString();
-        void _ignored;
-        const payload = await this.service.dumpAccessibilityTree();
-        reply.writeString(payload);
-        return true;
-      }
-      if (code === AgentControllerRequestCode.DUMP_ACCESSIBILITY_WINDOWS) {
-        const _ignored = data.readString();
-        void _ignored;
-        const payload = await this.service.dumpAccessibilityWindows();
-        reply.writeString(payload);
-        return true;
-      }
-      if (code === AgentControllerRequestCode.DUMP_ACCESSIBILITY_TREE_LIST) {
-        const _ignored = data.readString();
-        void _ignored;
-        const payload = await this.service.dumpAccessibilityTreeList();
-        reply.writeString(payload);
-        return true;
-      }
-      if (code === AgentControllerRequestCode.DUMP_ACCESSIBILITY_NODE_ATTRS) {
-        const _ignored = data.readString();
-        void _ignored;
-        const payload = await this.service.dumpAccessibilityNodeAttributes();
-        reply.writeString(payload);
         return true;
       }
       if (code === AgentControllerRequestCode.DEBUG_SIMULATE_TOOL_CALL) {

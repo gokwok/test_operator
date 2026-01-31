@@ -45,6 +45,21 @@ export class ToolKit {
     return await this.agentSpace.screenshotBase64();
   }
 
+  async screenshotLongBase64(): Promise<string> {
+    await this.agentSpace.ensureVts();
+    return await this.agentSpace.screenshotLongBase64();
+  }
+
+  async getVisiblePageContent(windowId: number): Promise<string> {
+    await this.agentSpace.ensureVts();
+    return await this.agentSpace.getVisiblePageContent(windowId);
+  }
+
+  async getPageContent(windowId: number): Promise<string> {
+    await this.agentSpace.ensureVts();
+    return await this.agentSpace.getPageContent(windowId);
+  }
+
   getCurrentAppBundleFromAgentSpace(): string {
     const target = this.agentSpace.get_current_app_bundle();
     return target ? target.bundleName : '';

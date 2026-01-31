@@ -248,6 +248,10 @@ export class AgentController {
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
+  private lastLongScreenshotBase64: string = '';
+  private lastA11yTreeList: string = '';
+  private lastVisiblePageContent: string = '';
+  private lastPageContent: string = '';
   private liveViewController: LiveViewController = LiveViewController.getInstance();
   private liveViewEnabled: boolean = true;
   private liveViewStarted: boolean = false;
@@ -692,44 +696,73 @@ export class AgentController {
     this.taskManager.debugInteract(content, options);
   }
 
-  async dumpAccessibilityTree(): Promise<string> {
+  async prepareA11yTreeList(windowId: number = 0): Promise<string> {
     try {
       const toolKit = this.requireToolKit();
       const collector = new StateCollector(toolKit);
-      return await collector.dumpAccessibilityTreeForAgentSpace();
+      const wid = Math.max(0, Math.floor(windowId));
+      const list = await collector.getA11yTreeListForAgentSpace(wid);
+      this.lastA11yTreeList = JSON.stringify(list);
+      return String(this.lastA11yTreeList.length);
     } catch (e) {
-      return `ERR:${String(e)}`;
+      this.lastA11yTreeList = '';
+      return `ERR_${String(e)}`;
     }
   }
 
-  async dumpAccessibilityWindows(): Promise<string> {
-    try {
-      const toolKit = this.requireToolKit();
-      const collector = new StateCollector(toolKit);
-      return await collector.dumpAccessibilityWindowsForAgentSpace();
-    } catch (e) {
-      return `ERR:${String(e)}`;
+  readA11yTreeListChunk(offset: number, size: number): string {
+    const off = Math.max(0, Math.floor(offset));
+    const len = this.lastA11yTreeList.length;
+    if (off >= len) {
+      return '';
     }
+    const sz = Math.max(0, Math.floor(size));
+    if (sz <= 0) {
+      return '';
+    }
+    return this.lastA11yTreeList.substring(off, Math.min(len, off + sz));
   }
 
-  async dumpAccessibilityTreeList(): Promise<string> {
-    try {
-      const toolKit = this.requireToolKit();
-      const collector = new StateCollector(toolKit);
-      return await collector.dumpAccessibilityTreeListForAgentSpace();
-    } catch (e) {
-      return `ERR:${String(e)}`;
-    }
+  async prepareVisiblePageContent(windowId: number = 0): Promise<string> {
+    const toolKit = this.requireToolKit();
+    await toolKit.ensureVts();
+    const wid = Math.max(0, Math.floor(windowId));
+    this.lastVisiblePageContent = await toolKit.getVisiblePageContent(wid);
+    return String(this.lastVisiblePageContent.length);
   }
 
-  async dumpAccessibilityNodeAttributes(): Promise<string> {
-    try {
-      const toolKit = this.requireToolKit();
-      const collector = new StateCollector(toolKit);
-      return await collector.dumpAccessibilityNodeAttributesForAgentSpace();
-    } catch (e) {
-      return `ERR:${String(e)}`;
+  readVisiblePageContentChunk(offset: number, size: number): string {
+    const off = Math.max(0, Math.floor(offset));
+    const len = this.lastVisiblePageContent.length;
+    if (off >= len) {
+      return '';
     }
+    const sz = Math.max(0, Math.floor(size));
+    if (sz <= 0) {
+      return '';
+    }
+    return this.lastVisiblePageContent.substring(off, Math.min(len, off + sz));
+  }
+
+  async preparePageContent(windowId: number = 0): Promise<string> {
+    const toolKit = this.requireToolKit();
+    await toolKit.ensureVts();
+    const wid = Math.max(0, Math.floor(windowId));
+    this.lastPageContent = await toolKit.getPageContent(wid);
+    return String(this.lastPageContent.length);
+  }
+
+  readPageContentChunk(offset: number, size: number): string {
+    const off = Math.max(0, Math.floor(offset));
+    const len = this.lastPageContent.length;
+    if (off >= len) {
+      return '';
+    }
+    const sz = Math.max(0, Math.floor(size));
+    if (sz <= 0) {
+      return '';
+    }
+    return this.lastPageContent.substring(off, Math.min(len, off + sz));
   }
 
   setCloudEndpoint(endpoint: string): void {
@@ -794,6 +827,25 @@ export class AgentController {
     }
     const end = Math.min(this.lastScreenshotBase64.length, safeOffset + safeSize);
     return this.lastScreenshotBase64.substring(safeOffset, end);
+  }
+
+  async captureLongScreenshotLength(): Promise<string> {
+    const base64 = await this.requireToolKit().screenshotLongBase64();
+    this.lastLongScreenshotBase64 = base64;
+    return String(base64.length);
+  }
+
+  readLongScreenshotChunk(offset: number, size: number): string {
+    if (this.lastLongScreenshotBase64.length === 0) {
+      return '';
+    }
+    const safeOffset = Math.max(0, Math.floor(offset));
+    const safeSize = Math.max(0, Math.floor(size));
+    if (safeSize === 0 || safeOffset >= this.lastLongScreenshotBase64.length) {
+      return '';
+    }
+    const end = Math.min(this.lastLongScreenshotBase64.length, safeOffset + safeSize);
+    return this.lastLongScreenshotBase64.substring(safeOffset, end);
   }
 
   async destroyVts(): Promise<void> {
@@ -1157,6 +1209,28 @@ export class AgentController {
       error: result.error,
     };
     this.a2aEventHub.push('tool.exec', 'tool.call.completed', JSON.stringify(meta));
+  }
+
+  async actionPressBackspace(): Promise<string> {
+    const action: AgentAction = { name: 'press_backspace' };
+    return await this.executeAction(action);
+  }
+
+  async actionPressKey(key: string): Promise<string> {
+    const params: ActionParameters = { key };
+    const action: AgentAction = { name: 'press_key', parameters: params };
+    return await this.executeAction(action);
+  }
+
+  async actionPressComboKey(keys: Array<string>): Promise<string> {
+    const params: ActionParameters = { keys };
+    const action: AgentAction = { name: 'press_combo_key', parameters: params };
+    return await this.executeAction(action);
+  }
+
+  async actionRequestFocus(): Promise<string> {
+    const action: AgentAction = { name: 'request_focus' };
+    return await this.executeAction(action);
   }
 
   async setViewerActive(active: boolean): Promise<void> {
@@ -2420,6 +2494,7 @@ export class AgentController {
     this.deviceToolsEndpoint = null;
     this.deviceToolsToolKit = null;
     this.lastScreenshotBase64 = '';
+    this.lastLongScreenshotBase64 = '';
     this.mcpSessionId = '';
     if (endpoint) {
       void endpoint.disconnect();

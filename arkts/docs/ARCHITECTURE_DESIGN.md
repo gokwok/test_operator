@@ -2,6 +2,8 @@
 
 本文档用于规范化与模块化当前项目架构，目标是在**保留现有功能**的前提下，为后续“目录结构整改 + 模块边界收敛 + MVVM 结合”提供统一标准与对齐依据。
 
+> vNext（A2A-first + MCP Tools）整改方案见：`docs/ARCHITECTURE_VNEXT_A2A_MCP.md`。
+
 ---
 
 ## 0. 目标与约束

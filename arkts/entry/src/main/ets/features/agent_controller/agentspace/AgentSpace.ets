@@ -47,6 +47,8 @@ export interface ActionParameters {
   content?: string;
   app?: string;
   options?: Array<string>;
+  key?: string;
+  keys?: Array<string>;
 }
 
 export type AgentSpaceViewerMode = 'display' | 'control';
@@ -182,7 +184,15 @@ export class AgentSpace {
   }
 
   async setViewerMode(mode: AgentSpaceViewerMode): Promise<void> {
+    if (this.viewerMode === mode) {
+      return;
+    }
     this.viewerMode = mode;
+    try {
+      this.backend.setUserTakeover(mode === 'control');
+    } catch (e) {
+      console.warn(`[AgentSpace] setUserTakeover failed: ${String(e)}`);
+    }
   }
 
   async getViewerMode(): Promise<AgentSpaceViewerMode> {
@@ -209,6 +219,11 @@ export class AgentSpace {
 
   async startViewer(mode: AgentSpaceViewerMode): Promise<void> {
     this.viewerMode = mode;
+    try {
+      this.backend.setUserTakeover(mode === 'control');
+    } catch (e) {
+      console.warn(`[AgentSpace] setUserTakeover failed: ${String(e)}`);
+    }
     const host = this.host;
     if (!host) {
       return;
@@ -250,6 +265,21 @@ export class AgentSpace {
     return await this.backend.screenshotBase64();
   }
 
+  async screenshotLongBase64(): Promise<string> {
+    await this.ensureVts();
+    return await this.backend.screenshotLongBase64();
+  }
+
+  async getVisiblePageContent(windowId: number): Promise<string> {
+    await this.ensureVts();
+    return await this.backend.getVisiblePageContent(windowId);
+  }
+
+  async getPageContent(windowId: number): Promise<string> {
+    await this.ensureVts();
+    return await this.backend.getPageContent(windowId);
+  }
+
   async transferToMain(): Promise<number> {
     await this.ensureVts();
     const transferred = await this.backend.transferToMain();
@@ -287,6 +317,18 @@ export class AgentSpace {
     }
     if (name === 'press_enter') {
       return await this.handlePressEnter();
+    }
+    if (name === 'press_backspace') {
+      return await this.handlePressBackspace();
+    }
+    if (name === 'press_key') {
+      return await this.handlePressKey(action.parameters);
+    }
+    if (name === 'press_combo_key') {
+      return await this.handlePressComboKey(action.parameters);
+    }
+    if (name === 'request_focus') {
+      return await this.handleRequestFocus();
     }
     if (name === 'screenshot') {
       return await this.handleScreenshot();
@@ -414,8 +456,36 @@ export class AgentSpace {
     return { status: 'SUCCESS' };
   }
 
+  private async handlePressBackspace(): Promise<ActionResult> {
+    await this.ensureVts();
+    await this.backend.pressBackspace();
+    return { status: 'SUCCESS' };
+  }
+
   private async handlePressBack(): Promise<ActionResult> {
-    return { status: 'SKIPPED', error: 'press_back_not_implemented' };
+    await this.ensureVts();
+    await this.backend.pressBack();
+    return { status: 'SUCCESS' };
+  }
+
+  private async handlePressKey(params?: ActionParameters): Promise<ActionResult> {
+    const key = (params?.key ?? '').trim();
+    await this.ensureVts();
+    const ok = await this.backend.pressKey(key);
+    return ok ? { status: 'SUCCESS' } : { status: 'FAILED', error: 'press_key_failed' };
+  }
+
+  private async handlePressComboKey(params?: ActionParameters): Promise<ActionResult> {
+    const keys: Array<string> = params?.keys ?? [];
+    await this.ensureVts();
+    const ok = await this.backend.pressComboKey(keys);
+    return ok ? { status: 'SUCCESS' } : { status: 'FAILED', error: 'press_combo_key_failed' };
+  }
+
+  private async handleRequestFocus(): Promise<ActionResult> {
+    await this.ensureVts();
+    const ok = await this.backend.requestFocus();
+    return ok ? { status: 'SUCCESS' } : { status: 'FAILED', error: 'request_focus_failed' };
   }
 
   private async handleScreenshot(): Promise<ActionResult> {

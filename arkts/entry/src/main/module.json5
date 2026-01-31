@@ -26,16 +26,13 @@
         "name": "ohos.permission.SYSTEM_FLOAT_WINDOW"
       },
       {
-        "name": "ohos.permission.ACCESSIBILITY_EXTENSION_ABILITY"
-      },
-      {
-        "name": "ohos.permission.WRITE_ACCESSIBILITY_CONFIG"
-      },
-      {
         "name": "ohos.permission.START_ABILITIES_FROM_BACKGROUND"
       },
       {
         "name": "ohos.permission.START_INVISIBLE_ABILITY"
+      },
+      {
+        "name": "ohos.permission.INJECT_INPUT_EVENT"
       },
       {
         "name": "ohos.permission.GET_BUNDLE_INFO_PRIVILEGED"
@@ -165,20 +162,6 @@
         "srcEntry": "./ets/abilities/AgentServiceExtAbility.ets",
         "type": "service",
         "exported": false
-      },
-      {
-        "name": "AgentAccessibilityExtAbility",
-        "srcEntry": "./ets/abilities/AgentAccessibilityExtAbility.ets",
-        "type": "accessibility",
-        "exported": true,
-        "label": "$string:EntryAbility_label",
-        "description": "$string:EntryAbility_desc",
-        "metadata": [
-          {
-            "name": "ohos.accessibleability",
-            "resource": "$profile:accessibility_config"
-          }
-        ]
       },
       {
         "name": "FloatWindowAbility",

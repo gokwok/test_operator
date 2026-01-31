@@ -24,6 +24,8 @@ import type {
 
 const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
 
+type InteractionKind = 'call_user' | 'interact' | 'take_over';
+
 interface ParsedInteractionParams {
   content?: string;
   options?: Array<string>;
@@ -35,7 +37,7 @@ interface ParsedInteractionAction {
 }
 
 interface InteractionPayload {
-  kind: 'call_user' | 'interact' | 'take_over';
+  kind: InteractionKind;
   content: string;
   options: Array<string>;
 }
@@ -188,7 +190,7 @@ struct AgentSpaceViewer {
   private hasFinalOutput: boolean = false;
   private callUserActive: boolean = false;
   private callUserContent: string = '';
-  private callUserKind: 'call_user' | 'interact' | 'take_over' = 'call_user';
+  private callUserKind: InteractionKind = 'call_user';
   private supplementActive: boolean = false;
   private takeOverIdleTimerId: number = -1;
   private takeOverCountdownTimerId: number = -1;
@@ -1219,7 +1221,7 @@ struct AgentSpaceViewer {
       }
       const options = name === 'interact' ? this.normalizeOptions(action?.parameters?.options) : [];
       const payload: InteractionPayload = {
-        kind: name === 'interact' ? 'interact' : name === 'take_over' ? 'take_over' : 'call_user',
+        kind: name as InteractionKind,
         content: normalizedContent,
         options,
       };
@@ -1248,7 +1250,7 @@ struct AgentSpaceViewer {
     return result;
   }
 
-  private isTakeOverKind(kind: 'call_user' | 'interact' | 'take_over'): boolean {
+  private isTakeOverKind(kind: InteractionKind): boolean {
     return kind === 'take_over';
   }
 
@@ -1431,8 +1433,14 @@ struct AgentSpaceViewer {
       await this.ensureServiceConnected();
       if (this.statusController.stopped) {
         await this.getServiceClient().closeLiveViewNow();
+        await this.getServiceClient().transferToMain();
+        await this.getServiceClient().destroyVts();
+      } else {
+        // This branch is hit only when collapsing while NOT in `stopped` state (e.g. system back press triggers
+        // `onBackPress` -> `onCollapseRequested` without the StatusFloatWindow "Collapse" button).
+        // It transfers the app to the main screen; AgentSpace is released only if the task is `finished`.
+        await this.getServiceClient().transferToMainAndReleaseIfFinished();
       }
-      await this.getServiceClient().transferToMainAndReleaseIfFinished();
     } catch (e) {
       console.error(`[AgentSpaceViewer] transfer to main failed: ${String(e)}`);
     }
@@ -1521,7 +1529,7 @@ struct AgentSpaceViewer {
   }
 
   private async submitUserReply(
-    kind: 'call_user' | 'interact' | 'take_over',
+    kind: InteractionKind,
     text: string,
     displayOverride?: string
   ): Promise<void> {

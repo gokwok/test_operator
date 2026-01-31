@@ -145,10 +145,7 @@ struct Index {
   @State locationInfo: string = '';
   @State agentSpaceInfo: string = '';
   @State agentSpaceAppName: string = '';
-  @State accessibilityTreeInfo: string = '';
-  @State accessibilityWindowsInfo: string = '';
-  @State accessibilityTreeListInfo: string = '';
-  @State accessibilityNodeAttrsInfo: string = '';
+  @State a11yTreeListInfo: string = '';
   @State debugEventInfo: string = '';
   @State debugEvents: Array<TaskEvent> = [];
   @State debugToolName: string = 'screenshot';
@@ -945,7 +942,7 @@ struct Index {
         }
 
         Row({ space: 8 }) {
-          Button('获取无障碍树')
+          Button('获取 UI 树列表')
             .fontSize(12)
             .fontColor(THEME_TEXT_PRIMARY)
             .backgroundColor(THEME_CARD)
@@ -953,40 +950,7 @@ struct Index {
             .border({ width: 1, color: THEME_BORDER })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .onClick(() => {
-              void this.debugDumpAccessibilityTree();
-            })
-
-          Button('获取无障碍窗口')
-            .fontSize(12)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .backgroundColor(THEME_CARD)
-            .borderRadius(14)
-            .border({ width: 1, color: THEME_BORDER })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              void this.debugDumpAccessibilityWindows();
-            })
-
-          Button('获取无障碍树列表')
-            .fontSize(12)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .backgroundColor(THEME_CARD)
-            .borderRadius(14)
-            .border({ width: 1, color: THEME_BORDER })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              void this.debugDumpAccessibilityTreeList();
-            })
-
-          Button('获取无障碍属性')
-            .fontSize(12)
-            .fontColor(THEME_TEXT_PRIMARY)
-            .backgroundColor(THEME_CARD)
-            .borderRadius(14)
-            .border({ width: 1, color: THEME_BORDER })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .onClick(() => {
-              void this.debugDumpAccessibilityNodeAttrs();
+              void this.debugGetA11yTreeList();
             })
         }
 
@@ -1027,26 +991,8 @@ struct Index {
             .fontColor(THEME_TEXT_MUTED)
         }
 
-        if (this.accessibilityTreeInfo.length > 0) {
-          Text(this.accessibilityTreeInfo)
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-        }
-
-        if (this.accessibilityWindowsInfo.length > 0) {
-          Text(this.accessibilityWindowsInfo)
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-        }
-
-        if (this.accessibilityTreeListInfo.length > 0) {
-          Text(this.accessibilityTreeListInfo)
-            .fontSize(11)
-            .fontColor(THEME_TEXT_MUTED)
-        }
-
-        if (this.accessibilityNodeAttrsInfo.length > 0) {
-          Text(this.accessibilityNodeAttrsInfo)
+        if (this.a11yTreeListInfo.length > 0) {
+          Text(this.a11yTreeListInfo)
             .fontSize(11)
             .fontColor(THEME_TEXT_MUTED)
         }
@@ -3189,63 +3135,14 @@ struct Index {
     }
   }
 
-  private async debugDumpAccessibilityTree(): Promise<void> {
-    this.accessibilityTreeInfo = '正在获取无障碍树...';
+  private async debugGetA11yTreeList(): Promise<void> {
+    this.a11yTreeListInfo = '正在获取 UI 树列表...';
     try {
       await this.ensureAgentServiceConnected();
-      const payload = await this.agentServiceClient.dumpAccessibilityTree();
-      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
-        this.accessibilityTreeInfo = `获取无障碍树失败: ${payload}`;
-        return;
-      }
-      this.accessibilityTreeInfo = payload.length > 0 ? payload : '无障碍树为空';
+      const payload = await this.agentServiceClient.getA11yTreeList(0);
+      this.a11yTreeListInfo = payload.length > 0 ? payload : 'UI 树列表为空';
     } catch (e) {
-      this.accessibilityTreeInfo = `获取无障碍树失败: ${String(e)}`;
-    }
-  }
-
-  private async debugDumpAccessibilityWindows(): Promise<void> {
-    this.accessibilityWindowsInfo = '正在获取无障碍窗口...';
-    try {
-      await this.ensureAgentServiceConnected();
-      const payload = await this.agentServiceClient.dumpAccessibilityWindows();
-      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
-        this.accessibilityWindowsInfo = `获取无障碍窗口失败: ${payload}`;
-        return;
-      }
-      this.accessibilityWindowsInfo = payload.length > 0 ? payload : '无障碍窗口为空';
-    } catch (e) {
-      this.accessibilityWindowsInfo = `获取无障碍窗口失败: ${String(e)}`;
-    }
-  }
-
-  private async debugDumpAccessibilityTreeList(): Promise<void> {
-    this.accessibilityTreeListInfo = '正在获取无障碍树列表...';
-    try {
-      await this.ensureAgentServiceConnected();
-      const payload = await this.agentServiceClient.dumpAccessibilityTreeList();
-      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
-        this.accessibilityTreeListInfo = `获取无障碍树列表失败: ${payload}`;
-        return;
-      }
-      this.accessibilityTreeListInfo = payload.length > 0 ? payload : '无障碍树列表为空';
-    } catch (e) {
-      this.accessibilityTreeListInfo = `获取无障碍树列表失败: ${String(e)}`;
-    }
-  }
-
-  private async debugDumpAccessibilityNodeAttrs(): Promise<void> {
-    this.accessibilityNodeAttrsInfo = '正在获取无障碍属性...';
-    try {
-      await this.ensureAgentServiceConnected();
-      const payload = await this.agentServiceClient.dumpAccessibilityNodeAttributes();
-      if (payload.startsWith('ERR:') || payload.startsWith('ERR_EXCEPTION:')) {
-        this.accessibilityNodeAttrsInfo = `获取无障碍属性失败: ${payload}`;
-        return;
-      }
-      this.accessibilityNodeAttrsInfo = payload.length > 0 ? payload : '无障碍属性为空';
-    } catch (e) {
-      this.accessibilityNodeAttrsInfo = `获取无障碍属性失败: ${String(e)}`;
+      this.a11yTreeListInfo = `获取 UI 树列表失败: ${String(e)}`;
     }
   }
 
