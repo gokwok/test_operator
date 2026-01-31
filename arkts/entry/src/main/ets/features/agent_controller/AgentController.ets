@@ -61,8 +61,18 @@ interface DebugToolCallSummary {
   screenshot_len: number;
 }
 
+interface ErrorPayload {
+  error: string;
+}
+
+interface SseChunkLogPayload {
+  len: number;
+  sample: string;
+}
+
 interface A2AStreamArtifact {
   artifactId?: string;
+  parts?: Array<A2AStreamArtifactPart>;
 }
 
 interface A2AStreamArtifactUpdate {
@@ -70,12 +80,34 @@ interface A2AStreamArtifactUpdate {
   artifacts?: Array<A2AStreamArtifact>;
 }
 
+interface A2AStreamArtifactPart {
+  kind?: string;
+  data?: Object;
+  text?: string;
+}
+
 interface A2AStreamStatusMessagePart {
   text?: string;
 }
 
+interface A2AStreamStatusMessageMetadataActionParams {
+  content?: string;
+  options?: Array<string>;
+}
+
+interface A2AStreamStatusMessageMetadataAction {
+  name?: string;
+  parameters?: A2AStreamStatusMessageMetadataActionParams;
+}
+
+interface A2AStreamStatusMessageMetadata {
+  action?: A2AStreamStatusMessageMetadataAction;
+  options?: Array<string>;
+}
+
 interface A2AStreamStatusMessage {
   parts?: Array<A2AStreamStatusMessagePart>;
+  metadata?: A2AStreamStatusMessageMetadata;
 }
 
 interface A2ATaskPayload {
@@ -132,6 +164,42 @@ interface A2AStreamUpdate {
   artifacts?: Array<A2AStreamArtifact>;
 }
 
+interface A2ADeltaData {
+  kind?: string;
+  description?: string;
+}
+
+interface A2AOutputMessagePart {
+  kind?: string;
+  text?: string;
+}
+
+interface A2AOutputMessage {
+  parts?: Array<A2AOutputMessagePart>;
+}
+
+interface A2AOutputActionParameters {
+  content?: string;
+  message?: string;
+}
+
+interface A2AOutputAction {
+  name?: string;
+  parameters?: A2AOutputActionParameters;
+}
+
+interface A2AOutputData {
+  result?: string;
+  session_id?: string;
+  description?: string;
+  text?: string;
+  answer?: string;
+  message?: string | A2AOutputMessage;
+  action?: A2AOutputAction;
+  output?: A2AOutputData;
+  final?: A2AOutputData;
+}
+
 export class AgentController {
   private static instance: AgentController | null = null;
   private ctx: common.Context | null = null;
@@ -148,6 +216,17 @@ export class AgentController {
   private a2aEventHub: AgentEventHub = new AgentEventHub();
   private a2aTaskId: string = '';
   private a2aActive: boolean = false;
+  private a2aSnapshot: TaskSnapshot = {
+    sessionId: '',
+    status: 'idle',
+    stepIndex: 0,
+    lastDescription: '',
+    lastActionName: '',
+    lastActionJson: '',
+    lastResultStatus: '',
+    lastError: '',
+    installedAppsSent: false,
+  };
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
@@ -168,6 +247,7 @@ export class AgentController {
   private viewerOpening: boolean = false;
   private pendingAgentSpaceDestroy: boolean = false;
   private mcpLogLines: Array<string> = [];
+  private mcpSessionId: string = '';
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
   private agentSpaceOp: Promise<void> = Promise.resolve();
 
@@ -194,10 +274,115 @@ export class AgentController {
   }
 
   getSnapshotJson(): string {
-    const snapshot = this.taskManager.getSnapshot();
+    const snapshot = this.resolveActiveSnapshot();
     const appLaunched = this.agentSpace ? this.agentSpace.isAppLaunched() : false;
     snapshot.appLaunched = appLaunched;
     return JSON.stringify(snapshot);
+  }
+
+  private resolveActiveSnapshot(): TaskSnapshot {
+    if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
+      return this.a2aSnapshot;
+    }
+    return this.taskManager.getSnapshot();
+  }
+
+  private isA2AFlowActive(): boolean {
+    if (this.a2aActive) {
+      return true;
+    }
+    const status = this.a2aSnapshot.status;
+    return status === 'running' || status === 'waiting_user' || status === 'stopping';
+  }
+
+  private stopA2AFlow(reason: string): void {
+    try {
+      this.a2aStopStream();
+    } catch (e) {
+      const meta: ErrorPayload = { error: String(e) };
+      const payload = JSON.stringify(meta);
+      this.a2aEventHub.push('error', 'stop_stream_failed', payload);
+    }
+
+    this.a2aSnapshot.status = 'stopping';
+    this.a2aSnapshot.lastError = reason.trim();
+    void this.publishStoppedLiveView(reason.trim());
+    this.releaseEfficiencyResourcesBestEffort();
+
+    const endpoint = this.deviceToolsEndpoint;
+    if (endpoint) {
+      void endpoint.disconnect();
+      this.mcpSessionId = '';
+    }
+
+    if (this.agentSpace) {
+      if (this.viewerActive) {
+        this.pendingAgentSpaceDestroy = true;
+      } else {
+        this.pendingAgentSpaceDestroy = false;
+        void this.runAgentSpaceOp(async () => {
+          await this.destroyAgentSpaceInternal();
+        });
+      }
+    }
+  }
+
+  private resetA2ASnapshotForStream(request: A2ARequest): void {
+    const sessionId = request.message.contextId.trim();
+    const metadata = request.metadata;
+    const installedApps = metadata ? metadata.installed_apps : undefined;
+    const installedAppsSent = Array.isArray(installedApps) && installedApps.length > 0;
+
+    const resumeTaskId = request.message.taskId;
+    const isResume = typeof resumeTaskId === 'string' && resumeTaskId.trim().length > 0;
+    const sameSession = sessionId.length > 0 && sessionId === this.a2aSnapshot.sessionId;
+    if (isResume && sameSession && this.a2aSnapshot.status !== 'idle') {
+      this.a2aSnapshot.status = 'running';
+      this.a2aSnapshot.lastError = '';
+      this.a2aSnapshot.lastResultStatus = '';
+      if (installedAppsSent) {
+        this.a2aSnapshot.installedAppsSent = true;
+      }
+      return;
+    }
+
+    const snapshot: TaskSnapshot = {
+      sessionId,
+      status: 'running',
+      stepIndex: 0,
+      lastDescription: '',
+      lastActionName: '',
+      lastActionJson: '',
+      lastResultStatus: '',
+      lastError: '',
+      installedAppsSent,
+    };
+    this.a2aSnapshot = snapshot;
+  }
+
+  private resetA2AStateForLegacy(): void {
+    const session = this.a2aStream;
+    if (session && session.isActive()) {
+      try {
+        session.stop();
+      } catch (_e) {
+        // ignore
+      }
+    }
+    this.a2aActive = false;
+    this.a2aTaskId = '';
+    const snapshot: TaskSnapshot = {
+      sessionId: '',
+      status: 'idle',
+      stepIndex: 0,
+      lastDescription: '',
+      lastActionName: '',
+      lastActionJson: '',
+      lastResultStatus: '',
+      lastError: '',
+      installedAppsSent: false,
+    };
+    this.a2aSnapshot = snapshot;
   }
 
   getContext(): common.Context | null {
@@ -207,6 +392,7 @@ export class AgentController {
   async startTask(request: TaskStartRequest): Promise<void> {
     this.ensureListenerBound();
     this.bindLiveViewCancelListener();
+    this.resetA2AStateForLegacy();
     const normalized = this.normalizeStartRequest(request);
     await this.resetAgentSpaceForNewTask();
     const toolKit = this.requireToolKit();
@@ -239,13 +425,24 @@ export class AgentController {
     const settings = await AgentSettings.load(ctx);
     this.applySettings(settings);
     this.applyEfficiencyResourcesBestEffort();
+    this.bindLiveViewCancelListener();
+    await this.resetAgentSpaceForNewTask();
     await this.ensureMcpConnected(settings);
-    if (settings.a2aBaseUrl.trim().length > 0) {
-      await this.startTaskWithA2A(trimmed, settings);
-      await this.hideFloatWindow();
-      return;
+
+    const a2aBaseUrl = settings.a2aBaseUrl.trim();
+    if (a2aBaseUrl.length === 0) {
+      throw new Error('a2a_base_url_empty');
     }
-    await this.startTaskWithDefaultsLegacy(trimmed, settings, ctx);
+    this.liveViewTaskText = trimmed;
+    this.liveViewPhase = 'running';
+    this.liveViewStarted = false;
+    this.liveViewAppName = '';
+    this.liveViewIcon = null;
+    this.liveViewNotificationId = this.allocateLiveViewId();
+    void this.publishRunningLiveView();
+
+    await this.startTaskWithA2A(trimmed, settings);
+    await this.hideFloatWindow();
   }
 
   private async startTaskWithDefaultsLegacy(
@@ -293,6 +490,10 @@ export class AgentController {
   }
 
   stopTask(reason: string): void {
+    if (this.isA2AFlowActive()) {
+      this.stopA2AFlow(reason);
+      return;
+    }
     this.taskManager.stopTask(reason);
   }
 
@@ -325,7 +526,7 @@ export class AgentController {
   }
 
   submitUserReply(reply: UserReply): void {
-    if (this.a2aActive && this.a2aTaskId.length > 0) {
+    if (this.a2aTaskId.length > 0 && this.a2aSnapshot.status === 'waiting_user') {
       void this.resumeA2AWithReply(reply);
       return;
     }
@@ -336,20 +537,43 @@ export class AgentController {
     try {
       await this.a2aResumeStream(this.a2aTaskId, reply.content);
     } catch (e) {
-      const payload = JSON.stringify({ error: String(e) });
+      const meta: ErrorPayload = { error: String(e) };
+      const payload = JSON.stringify(meta);
       this.a2aEventHub.push('error', 'resume_failed', payload);
     }
   }
 
+  private async submitA2AUserNote(content: string): Promise<void> {
+    const trimmed = content.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    // A2A does not support injecting user_note mid-run (SESSION_BUSY); keep it observable for now.
+    this.a2aEventHub.push('log', 'user_note', trimmed);
+  }
+
   requestTakeOver(content: string): void {
+    if (this.isA2AFlowActive()) {
+      this.stopA2AFlow('take_over');
+      return;
+    }
     this.taskManager.requestTakeOver(content);
   }
 
   requestSupplement(content: string): void {
+    if (this.isA2AFlowActive()) {
+      // UI already enters supplement mode; server-side "pause" is not supported in A2A.
+      this.a2aEventHub.push('log', 'supplement_requested');
+      return;
+    }
     this.taskManager.requestSupplement(content);
   }
 
   submitUserNote(content: string): void {
+    if (this.isA2AFlowActive()) {
+      void this.submitA2AUserNote(content);
+      return;
+    }
     this.taskManager.submitUserNote(content);
   }
 
@@ -514,7 +738,7 @@ export class AgentController {
   }
 
   async releaseAgentSpaceIfFinished(): Promise<boolean> {
-    const snapshot = this.taskManager.getSnapshot();
+    const snapshot = this.resolveActiveSnapshot();
     if (snapshot.status !== 'finished') {
       return false;
     }
@@ -622,6 +846,7 @@ export class AgentController {
       const endpoint = this.requireDeviceToolsEndpoint();
       config = await this.loadDeviceToolsConfig();
       const status = await endpoint.connect(config);
+      this.mcpSessionId = config.sessionId.trim();
       return JSON.stringify(status);
     } catch (e) {
       const url = config ? config.wsUrl : '';
@@ -637,6 +862,7 @@ export class AgentController {
       return JSON.stringify(status);
     }
     const status = await endpoint.disconnect();
+    this.mcpSessionId = '';
     return JSON.stringify(status);
   }
 
@@ -660,6 +886,7 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
+    await this.ensureMcpConnected(settings);
     const request = await this.buildA2ARequest(text, '', true);
     const client = this.getA2AClient(settings.a2aBaseUrl);
     return await client.messageSend(request);
@@ -679,6 +906,7 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
+    await this.ensureMcpConnected(settings);
     const request = await this.buildA2ARequest(text, task, false);
     const client = this.getA2AClient(settings.a2aBaseUrl);
     return await client.messageSend(request);
@@ -694,6 +922,11 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
+    const override = contextIdOverride.trim();
+    const contextId = override.length > 0
+      ? override
+      : (settings.contextId.trim().length > 0 ? settings.contextId.trim() : settings.deviceId.trim());
+    await this.ensureMcpConnected(settings, contextId);
     const request = await this.buildA2ARequest(text, '', true, contextIdOverride);
     this.startA2AStreamInternal(settings.a2aBaseUrl, request);
     return 'ok';
@@ -713,6 +946,7 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
+    await this.ensureMcpConnected(settings);
     const request = await this.buildA2ARequest(text, task, false);
     this.startA2AStreamInternal(settings.a2aBaseUrl, request);
     return 'ok';
@@ -734,7 +968,9 @@ export class AgentController {
     }
     this.a2aEventHub.reset();
     this.a2aEventHub.push('log', 'stream_started');
-    this.a2aTaskId = '';
+    const taskId = request.message.taskId;
+    this.a2aTaskId = typeof taskId === 'string' ? taskId.trim() : '';
+    this.resetA2ASnapshotForStream(request);
     this.a2aActive = true;
     let lastChunkLog = 0;
     let chunkCount = 0;
@@ -743,12 +979,14 @@ export class AgentController {
         this.handleA2AStreamUpdate(payload);
       },
       (message: string) => {
-        const payload = JSON.stringify({ error: message });
+        const meta: ErrorPayload = { error: message };
+        const payload = JSON.stringify(meta);
         this.a2aEventHub.push('error', 'stream_error', payload);
         this.a2aActive = false;
       },
       () => {
         this.a2aEventHub.push('status', 'stream_closed');
+        this.a2aActive = false;
       },
       (text: string) => {
         chunkCount += 1;
@@ -756,7 +994,8 @@ export class AgentController {
         if (chunkCount <= 2 || now - lastChunkLog > 1500) {
           lastChunkLog = now;
           const snippet = text.length > 180 ? text.slice(0, 180) : text;
-          const payload = JSON.stringify({ len: text.length, sample: snippet });
+          const meta: SseChunkLogPayload = { len: text.length, sample: snippet };
+          const payload = JSON.stringify(meta);
           this.a2aEventHub.push('log', 'sse_chunk', payload);
         }
       }
@@ -1263,7 +1502,7 @@ export class AgentController {
     if (this.liveViewSelfStopping) {
       return;
     }
-    const snapshot = this.taskManager.getSnapshot();
+    const snapshot = this.resolveActiveSnapshot();
     if (snapshot.status === 'running' || snapshot.status === 'waiting_user') {
       this.stopTask('liveview_closed');
     }
@@ -1446,6 +1685,7 @@ export class AgentController {
       const eventType = state === 'input-required' ? 'input_required' : 'status';
       const message = messageText.length > 0 ? messageText : state;
       this.a2aEventHub.push(eventType, message.length > 0 ? message : 'statusUpdate', raw);
+      this.applyA2AStatusUpdate(statusUpdate);
       if (state === 'completed' || state === 'failed') {
         this.a2aActive = false;
       }
@@ -1463,6 +1703,7 @@ export class AgentController {
       }
       const message = artifactId.length > 0 ? artifactId : 'artifactUpdate';
       this.a2aEventHub.push(eventType, message, raw);
+      this.applyA2AArtifactUpdate(update);
       handled = true;
     }
 
@@ -1513,6 +1754,334 @@ export class AgentController {
       return text.trim();
     }
     return '';
+  }
+
+  private applyA2AStatusUpdate(statusUpdate: A2AStreamStatusUpdate): void {
+    const rawState = typeof statusUpdate.state === 'string' ? statusUpdate.state.trim() : '';
+    if (rawState.length === 0) {
+      return;
+    }
+    const state = rawState.toLowerCase();
+    const previous = this.a2aSnapshot.status;
+    const messageText = this.readStatusMessage(statusUpdate);
+
+    if (state === 'working') {
+      this.a2aSnapshot.status = 'running';
+      this.a2aSnapshot.lastError = '';
+      if (previous !== this.a2aSnapshot.status) {
+        void this.handleA2AStatusChanged(this.a2aSnapshot.status, messageText);
+      }
+      return;
+    }
+
+    if (state === 'input-required') {
+      this.a2aSnapshot.status = 'waiting_user';
+      this.a2aSnapshot.lastError = '';
+      if (messageText.length > 0) {
+        this.a2aSnapshot.lastDescription = messageText;
+      }
+      const action = this.readInteractionAction(statusUpdate, messageText);
+      if (action) {
+        this.a2aSnapshot.lastActionName = action.name;
+        this.a2aSnapshot.lastActionJson = JSON.stringify(action);
+      }
+      void this.handleA2AStatusChanged(this.a2aSnapshot.status, messageText);
+      return;
+    }
+
+    if (state === 'completed') {
+      this.a2aSnapshot.status = 'finished';
+      this.a2aSnapshot.lastError = '';
+      if (previous !== this.a2aSnapshot.status) {
+        void this.handleA2AStatusChanged(this.a2aSnapshot.status, messageText);
+      }
+      return;
+    }
+
+    if (state === 'failed') {
+      this.a2aSnapshot.status = 'failed';
+      const reason = messageText.length > 0 ? messageText : rawState;
+      this.a2aSnapshot.lastError = reason;
+      if (previous !== this.a2aSnapshot.status) {
+        void this.handleA2AStatusChanged(this.a2aSnapshot.status, reason);
+      }
+    }
+  }
+
+  private readInteractionAction(statusUpdate: A2AStreamStatusUpdate, fallbackContent: string): AgentAction | null {
+    const message = statusUpdate.message;
+    const metadata = message ? message.metadata : undefined;
+    const metaAction = metadata ? metadata.action : undefined;
+    const rawName = metaAction && typeof metaAction.name === 'string' ? metaAction.name.trim() : '';
+    if (rawName.length === 0) {
+      return null;
+    }
+    const name = rawName.toLowerCase();
+    if (name !== 'call_user' && name !== 'interact' && name !== 'take_over') {
+      return null;
+    }
+    const params: ActionParameters = {};
+    const rawContent = metaAction?.parameters?.content;
+    const content = typeof rawContent === 'string' && rawContent.trim().length > 0 ? rawContent.trim() : fallbackContent;
+    if (content.trim().length > 0) {
+      params.content = content.trim();
+    }
+    const rawOptions = metaAction?.parameters?.options;
+    const metaOptions = metadata?.options;
+    const options = Array.isArray(rawOptions) && rawOptions.length > 0 ? rawOptions : Array.isArray(metaOptions) ? metaOptions : [];
+    if (options.length > 0) {
+      params.options = options;
+    }
+    const action: AgentAction = { name, parameters: params };
+    return action;
+  }
+
+  private async handleA2AStatusChanged(status: TaskStatus, messageText: string): Promise<void> {
+    if (status === 'finished' || status === 'failed' || status === 'stopping' || status === 'idle') {
+      this.releaseEfficiencyResourcesBestEffort();
+    }
+
+    if (status === 'finished') {
+      // Keep AgentSpace alive for transferToMain() after completion.
+      this.pendingAgentSpaceDestroy = false;
+    } else if (status === 'failed' || status === 'idle') {
+      if (this.viewerActive) {
+        this.pendingAgentSpaceDestroy = true;
+      } else {
+        this.pendingAgentSpaceDestroy = false;
+        void this.runAgentSpaceOp(async () => {
+          await this.destroyAgentSpaceInternal();
+        });
+      }
+    }
+
+    if (!this.liveViewEnabled) {
+      return;
+    }
+    if (status === this.liveViewPhase && status !== 'waiting_user') {
+      return;
+    }
+    this.liveViewPhase = status;
+    if (status === 'running') {
+      await this.publishRunningLiveView();
+      return;
+    }
+    if (status === 'waiting_user') {
+      await this.publishInteractionLiveView(messageText);
+      return;
+    }
+    if (status === 'finished') {
+      const content = this.resolveA2AFinishContent(messageText);
+      await this.publishFinishedLiveView(content);
+      return;
+    }
+    if (status === 'failed') {
+      await this.publishFailedLiveView(messageText);
+      return;
+    }
+    if (status === 'stopping') {
+      await this.publishStoppedLiveView(messageText);
+    }
+  }
+
+  private resolveA2AFinishContent(fallback: string): string {
+    const resolved = LiveViewPresenter.resolveFinishContent(this.a2aSnapshot);
+    if (resolved.trim().length > 0) {
+      return resolved;
+    }
+    return fallback.trim();
+  }
+
+  private applyA2AArtifactUpdate(update: A2AStreamUpdate): void {
+    const description = this.extractA2ADescription(update);
+    if (description.length > 0) {
+      this.a2aSnapshot.lastDescription = description;
+    }
+    const finalText = this.extractA2AFinalOutputText(update);
+    if (finalText.length > 0) {
+      this.applyA2AFinalOutputText(finalText);
+    }
+  }
+
+  private applyA2AFinalOutputText(text: string): void {
+    const content = text.trim();
+    if (content.length === 0) {
+      return;
+    }
+    const params: ActionParameters = { content };
+    const action: AgentAction = { name: 'finish', parameters: params };
+    this.a2aSnapshot.lastActionName = 'finish';
+    this.a2aSnapshot.lastActionJson = JSON.stringify(action);
+
+    if (this.a2aSnapshot.status === 'finished' && this.liveViewEnabled) {
+      void this.publishFinishedLiveView(content);
+    }
+  }
+
+  private extractA2ADescription(update: A2AStreamUpdate): string {
+    const artifacts = this.collectA2AArtifacts(update);
+    for (let i = 0; i < artifacts.length; i += 1) {
+      const artifact = artifacts[i];
+      if (!artifact || artifact.artifactId !== 'thinkflow.delta') {
+        continue;
+      }
+      const parts = artifact.parts;
+      if (!Array.isArray(parts)) {
+        continue;
+      }
+      for (let j = 0; j < parts.length; j += 1) {
+        const part = parts[j];
+        if (!part || part.kind !== 'data' || !part.data) {
+          continue;
+        }
+        const delta = part.data as A2ADeltaData;
+        if (delta.kind === 'agent.description' && typeof delta.description === 'string') {
+          const desc = delta.description.trim();
+          if (desc.length > 0) {
+            return desc;
+          }
+        }
+      }
+    }
+    return '';
+  }
+
+  private extractA2AFinalOutputText(update: A2AStreamUpdate): string {
+    const artifacts = this.collectA2AArtifacts(update);
+    for (let i = 0; i < artifacts.length; i += 1) {
+      const artifact = artifacts[i];
+      if (!artifact || artifact.artifactId !== 'thinkflow.output') {
+        continue;
+      }
+      const parts = artifact.parts;
+      if (!Array.isArray(parts)) {
+        continue;
+      }
+      for (let j = 0; j < parts.length; j += 1) {
+        const part = parts[j];
+        if (!part || part.kind !== 'data' || !part.data) {
+          continue;
+        }
+        const output = part.data as A2AOutputData;
+        const text = this.readOutputText(output);
+        if (text.trim().length > 0) {
+          return text.trim();
+        }
+      }
+    }
+    return '';
+  }
+
+  private readOutputText(output?: A2AOutputData): string {
+    if (!output) {
+      return '';
+    }
+    const direct = output.text;
+    if (typeof direct === 'string' && direct.trim().length > 0) {
+      return direct.trim();
+    }
+    const answer = output.answer;
+    if (typeof answer === 'string' && answer.trim().length > 0) {
+      return answer.trim();
+    }
+    const result = output.result;
+    if (typeof result === 'string' && result.trim().length > 0) {
+      return result.trim();
+    }
+    const description = output.description;
+    if (typeof description === 'string' && description.trim().length > 0) {
+      return description.trim();
+    }
+
+    const messageRaw = output.message;
+    if (typeof messageRaw === 'string' && messageRaw.trim().length > 0) {
+      return messageRaw.trim();
+    }
+    if (messageRaw && typeof messageRaw === 'object') {
+      const messageText = this.readOutputMessageText(messageRaw as A2AOutputMessage);
+      if (messageText.length > 0) {
+        return messageText;
+      }
+    }
+
+    const actionText = this.readOutputActionContent(output.action);
+    if (actionText.length > 0) {
+      return actionText;
+    }
+
+    const nested = this.readOutputText(output.output);
+    if (nested.length > 0) {
+      return nested;
+    }
+    const nestedFinal = this.readOutputText(output.final);
+    if (nestedFinal.length > 0) {
+      return nestedFinal;
+    }
+    return '';
+  }
+
+  private readOutputActionContent(action?: A2AOutputAction): string {
+    if (!action) {
+      return '';
+    }
+    const params = action.parameters;
+    const content = params?.content;
+    if (typeof content === 'string' && content.trim().length > 0) {
+      return content.trim();
+    }
+    const message = params?.message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message.trim();
+    }
+    return '';
+  }
+
+  private readOutputMessageText(message?: A2AOutputMessage): string {
+    if (!message) {
+      return '';
+    }
+    const parts = message.parts;
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      if (!part || part.kind !== 'text') {
+        continue;
+      }
+      if (typeof part.text === 'string' && part.text.trim().length > 0) {
+        return part.text.trim();
+      }
+    }
+    return '';
+  }
+
+  private collectA2AArtifacts(update: A2AStreamUpdate): Array<A2AStreamArtifact> {
+    const artifacts: Array<A2AStreamArtifact> = [];
+    const artifactUpdate = update.artifactUpdate;
+    const single = artifactUpdate ? artifactUpdate.artifact : undefined;
+    if (single) {
+      artifacts.push(single);
+    }
+    const list = artifactUpdate ? artifactUpdate.artifacts : undefined;
+    if (Array.isArray(list)) {
+      for (let i = 0; i < list.length; i += 1) {
+        const item = list[i];
+        if (item) {
+          artifacts.push(item);
+        }
+      }
+    }
+    const fallback = update.artifacts;
+    if (Array.isArray(fallback)) {
+      for (let i = 0; i < fallback.length; i += 1) {
+        const item = fallback[i];
+        if (item) {
+          artifacts.push(item);
+        }
+      }
+    }
+    return artifacts;
   }
 
   private safeStringify(value: Object): string {
@@ -1585,30 +2154,49 @@ export class AgentController {
   }
 
   private buildDeviceToolsConfig(settings: AgentSettingsData): DeviceToolsConfig {
+    const contextId = settings.contextId.trim().length > 0 ? settings.contextId.trim() : settings.deviceId.trim();
     return {
       wsUrl: settings.mcpWsUrl,
       deviceId: settings.deviceId,
-      sessionId: settings.contextId,
+      sessionId: contextId,
       waitAfterActionMs: settings.waitMs,
     };
   }
 
-  private async ensureMcpConnected(settings: AgentSettingsData): Promise<void> {
+  private async ensureMcpConnected(settings: AgentSettingsData, sessionIdOverride: string = ''): Promise<void> {
     const config = this.buildDeviceToolsConfig(settings);
+    const override = sessionIdOverride.trim();
+    if (override.length > 0) {
+      config.sessionId = override;
+    }
     const targetUrl = config.wsUrl.trim();
     if (targetUrl.length === 0) {
       return;
     }
+    const sessionId = config.sessionId.trim();
+    if (sessionId.length === 0) {
+      this.appendMcpLog('auto_connect_error: session_id_empty');
+      return;
+    }
     try {
+      const ctx = this.ctx;
+      if (ctx) {
+        const toolKit = this.requireToolKit();
+        const targets = await this.safeListAppTargets(ctx);
+        toolKit.setAppTargets(targets);
+        this.appTargetMap = this.buildAppTargetMap(targets);
+      }
       const endpoint = this.requireDeviceToolsEndpoint();
       const status = endpoint.getStatus();
-      if ((status.state === 'connected' || status.state === 'connecting') && status.url === targetUrl) {
+      const sessionMatch = this.mcpSessionId === sessionId;
+      if ((status.state === 'connected' || status.state === 'connecting') && status.url === targetUrl && sessionMatch) {
         return;
       }
       if (status.state === 'connected' || status.state === 'connecting') {
         await endpoint.disconnect();
       }
       await endpoint.connect(config);
+      this.mcpSessionId = sessionId;
     } catch (e) {
       this.appendMcpLog(`auto_connect_error: ${String(e)}`);
     }
@@ -1682,6 +2270,7 @@ export class AgentController {
     this.deviceToolsEndpoint = null;
     this.deviceToolsToolKit = null;
     this.lastScreenshotBase64 = '';
+    this.mcpSessionId = '';
     if (endpoint) {
       void endpoint.disconnect();
     }
