@@ -7,6 +7,7 @@ export interface ToolCallResult {
   status: ToolCallStatus;
   error: string;
   screenshot_b64: string;
+  action: AgentAction | null;
 }
 
 interface ToolCallArgs {
@@ -35,26 +36,27 @@ export class ToolCallDispatcher {
   async execute(name: string, argsJson: string): Promise<ToolCallResult> {
     const toolName = name.trim().toLowerCase();
     if (toolName.length === 0) {
-      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '' };
+      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', action: null };
     }
     const args = this.parseArgs(argsJson);
     if (!args) {
       const snapshot = await this.safeScreenshot();
-      return { status: 'FAILED', error: 'invalid_arguments_json', screenshot_b64: snapshot };
+      return { status: 'FAILED', error: 'invalid_arguments_json', screenshot_b64: snapshot, action: null };
     }
     if (toolName === 'screenshot') {
       const snapshot = await this.safeScreenshot();
       if (snapshot.length === 0) {
-        return { status: 'FAILED', error: 'screenshot_failed', screenshot_b64: snapshot };
+        return { status: 'FAILED', error: 'screenshot_failed', screenshot_b64: snapshot, action: { name: 'screenshot' } };
       }
-      return { status: 'SUCCESS', error: '', screenshot_b64: snapshot };
+      return { status: 'SUCCESS', error: '', screenshot_b64: snapshot, action: { name: 'screenshot' } };
     }
 
     let status: ToolCallStatus = 'SUCCESS';
     let error: string = '';
     let actionExecuted = false;
+    let action: AgentAction | null = null;
     try {
-      const action = this.buildAction(toolName, args);
+      action = this.buildAction(toolName, args);
       if (!action) {
         status = 'FAILED';
         error = 'invalid_arguments';
@@ -80,7 +82,7 @@ export class ToolCallDispatcher {
       status = 'FAILED';
       error = error.length > 0 ? error : 'screenshot_failed';
     }
-    return { status, error, screenshot_b64: snapshot };
+    return { status, error, screenshot_b64: snapshot, action };
   }
 
   private buildAction(name: string, args: ToolCallArgs): AgentAction | null {

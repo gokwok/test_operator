@@ -20,6 +20,11 @@ export interface DeviceToolsConfig {
 
 export type McpLogFn = (message: string) => void;
 
+export interface DeviceToolsEndpointObserver {
+  onToolCallStarted(call: McpToolCall): void;
+  onToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void;
+}
+
 export class DeviceToolsEndpoint {
   private toolKit: ToolKit;
   private client: McpWsClient = new McpWsClient();
@@ -28,11 +33,17 @@ export class DeviceToolsEndpoint {
   private config: DeviceToolsConfig | null = null;
   private callChain: Promise<void> = Promise.resolve();
   private logger: McpLogFn | null = null;
+  private observer: DeviceToolsEndpointObserver | null = null;
 
-  constructor(toolKit: ToolKit, logger?: McpLogFn) {
+  constructor(toolKit: ToolKit, logger?: McpLogFn, observer?: DeviceToolsEndpointObserver) {
     this.toolKit = toolKit;
     this.logger = logger ?? null;
+    this.observer = observer ?? null;
     this.client.setListener(new DeviceToolsEndpointListener(this));
+  }
+
+  setObserver(observer: DeviceToolsEndpointObserver | null): void {
+    this.observer = observer;
   }
 
   async connect(config: DeviceToolsConfig): Promise<McpStatus> {
@@ -129,9 +140,18 @@ export class DeviceToolsEndpoint {
       this.log('dispatcher_missing');
       return;
     }
+    const observer = this.observer;
     const argsJson = this.serializeArgs(call.arguments);
     this.log(`exec_tool: ${call.name} args=${this.truncate(argsJson, 180)}`);
+    const startedAt = Date.now();
+    if (observer) {
+      observer.onToolCallStarted(call);
+    }
     const result = await dispatcher.execute(call.name, argsJson);
+    const elapsedMs = Math.max(0, Date.now() - startedAt);
+    if (observer) {
+      observer.onToolCallCompleted(call, result, elapsedMs);
+    }
     const payload = this.buildToolResult(call.call_id, result);
     this.log(
       `send_result: call_id=${call.call_id} status=${result.status} screenshot_len=${result.screenshot_b64.length} error=${this.truncate(result.error, 120)}`

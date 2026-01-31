@@ -22,7 +22,9 @@ import { ToolKit } from './toolkit/ToolKit';
 import { ToolCallDispatcher } from './tool_call/ToolCallDispatcher';
 import { AgentEventHub } from './events/AgentEventHub';
 import { DeviceToolsEndpoint } from './mcp/DeviceToolsEndpoint';
-import type { DeviceToolsConfig, McpStatus } from './mcp/DeviceToolsEndpoint';
+import type { DeviceToolsConfig, DeviceToolsEndpointObserver, McpStatus } from './mcp/DeviceToolsEndpoint';
+import type { McpToolCall } from './mcp/McpProtocol';
+import type { ToolCallResult } from './tool_call/ToolCallDispatcher';
 import { A2AClient, A2AConfiguration, A2AFile, A2AFilePart, A2AMessage, A2AMessagePart, A2AMetadata, A2ARequest, A2ATextPart } from './a2a/A2AClient';
 import type { A2AStreamListener } from './a2a/A2AStreamSession';
 import { A2AStreamSession } from './a2a/A2AStreamSession';
@@ -36,6 +38,7 @@ import type {
   UserReply
 } from './types';
 import { TaskManager, TaskManagerListener } from './task_manager/TaskManager';
+import { TaskHistoryRecorder } from './task_manager/TaskHistoryRecorder';
 import { LiveViewController, LiveViewContents, LiveViewType } from './live_view/LiveViewController';
 import { LiveViewPresenter, LiveViewPresenterContext } from './live_view/LiveViewPresenter';
 import type { AgentSettingsData } from '../persistence/settings/AgentSettings';
@@ -43,6 +46,7 @@ import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
+import type { HistoryTaskStatus } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -68,6 +72,20 @@ interface ErrorPayload {
 interface SseChunkLogPayload {
   len: number;
   sample: string;
+}
+
+interface A2AStreamStartPayload {
+  context_id: string;
+  task_id: string;
+}
+
+interface ToolExecEventPayload {
+  call_id: string;
+  tool_name: string;
+  phase: string;
+  elapsed_ms?: number;
+  status?: string;
+  error?: string;
 }
 
 interface A2AStreamArtifact {
@@ -249,6 +267,9 @@ export class AgentController {
   private mcpLogLines: Array<string> = [];
   private mcpSessionId: string = '';
   private historyStore: TaskHistoryStore = TaskHistoryStore.getInstance();
+  private a2aHistoryRecorder: TaskHistoryRecorder = new TaskHistoryRecorder(TaskHistoryStore.getInstance());
+  private a2aHistoryTaskId: string = '';
+  private a2aHistoryStepIndex: number = 0;
   private agentSpaceOp: Promise<void> = Promise.resolve();
 
   static getInstance(): AgentController {
@@ -306,6 +327,7 @@ export class AgentController {
 
     this.a2aSnapshot.status = 'stopping';
     this.a2aSnapshot.lastError = reason.trim();
+    this.finalizeA2AHistoryTask('stopped', this.a2aSnapshot.lastError);
     void this.publishStoppedLiveView(reason.trim());
     this.releaseEfficiencyResourcesBestEffort();
 
@@ -325,6 +347,80 @@ export class AgentController {
         });
       }
     }
+  }
+
+  private stopA2AForNewTask(): void {
+    const status = this.a2aSnapshot.status;
+    if ((status === 'running' || status === 'waiting_user') && this.a2aHistoryTaskId.trim().length > 0) {
+      this.finalizeA2AHistoryTask('stopped', 'replaced_by_new_task');
+    }
+    const session = this.a2aStream;
+    if (session && session.isActive()) {
+      try {
+        session.stop();
+      } catch (_e) {
+        // ignore
+      }
+    }
+    this.a2aActive = false;
+    this.a2aTaskId = '';
+  }
+
+  private startA2AHistoryTask(taskText: string, a2aBaseUrl: string, contextId: string, waitMs: number): void {
+    this.a2aHistoryTaskId = this.a2aHistoryRecorder.createTaskId();
+    this.a2aHistoryStepIndex = 0;
+    this.a2aHistoryRecorder.recordTaskStart(
+      this.a2aHistoryTaskId,
+      taskText,
+      a2aBaseUrl.trim(),
+      contextId.trim(),
+      waitMs
+    );
+  }
+
+  private finalizeA2AHistoryTask(status: HistoryTaskStatus, detail: string): void {
+    const taskId = this.a2aHistoryTaskId.trim();
+    if (taskId.length === 0) {
+      return;
+    }
+    this.a2aHistoryRecorder.finalizeTask(taskId, status, detail);
+  }
+
+  private generateA2AContextId(deviceId: string): string {
+    const base = deviceId.trim().length > 0 ? deviceId.trim() : 'device';
+    const rand = Math.floor(Math.random() * 1_000_000);
+    return `${base}_${Date.now()}_${String(rand).padStart(6, '0')}`;
+  }
+
+  private recordA2AToolHistory(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
+    const taskId = this.a2aHistoryTaskId.trim();
+    if (taskId.length === 0) {
+      return;
+    }
+    const a2aSession = this.a2aSnapshot.sessionId.trim();
+    const mcpSession = this.mcpSessionId.trim();
+    if (a2aSession.length > 0 && mcpSession.length > 0 && a2aSession !== mcpSession) {
+      return;
+    }
+
+    this.a2aHistoryStepIndex += 1;
+    const stepIndex = this.a2aHistoryStepIndex;
+    this.a2aSnapshot.stepIndex = stepIndex;
+
+    const description = this.a2aSnapshot.lastDescription.trim();
+    const resolvedDescription = description.length > 0 ? description : call.name.trim();
+    const action: AgentAction = result.action ?? { name: call.name.trim().toLowerCase() };
+    this.a2aHistoryRecorder.recordStep(taskId, stepIndex, resolvedDescription, action, result.screenshot_b64);
+
+    const mapped: ActionResult = { status: result.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED' };
+    const err = result.error.trim();
+    if (err.length > 0) {
+      mapped.error = err;
+    }
+    if (elapsedMs > 0) {
+      mapped.output = `elapsed_ms=${elapsedMs}`;
+    }
+    this.a2aHistoryRecorder.recordStepResult(taskId, stepIndex, mapped);
   }
 
   private resetA2ASnapshotForStream(request: A2ARequest): void {
@@ -361,6 +457,10 @@ export class AgentController {
   }
 
   private resetA2AStateForLegacy(): void {
+    const status = this.a2aSnapshot.status;
+    if ((status === 'running' || status === 'waiting_user') && this.a2aHistoryTaskId.trim().length > 0) {
+      this.finalizeA2AHistoryTask('stopped', 'replaced_by_legacy_task');
+    }
     const session = this.a2aStream;
     if (session && session.isActive()) {
       try {
@@ -426,8 +526,11 @@ export class AgentController {
     this.applySettings(settings);
     this.applyEfficiencyResourcesBestEffort();
     this.bindLiveViewCancelListener();
+    this.stopA2AForNewTask();
     await this.resetAgentSpaceForNewTask();
-    await this.ensureMcpConnected(settings);
+    const contextId = this.generateA2AContextId(settings.deviceId);
+    this.startA2AHistoryTask(trimmed, settings.a2aBaseUrl, contextId, settings.waitMs);
+    await this.ensureMcpConnected(settings, contextId);
 
     const a2aBaseUrl = settings.a2aBaseUrl.trim();
     if (a2aBaseUrl.length === 0) {
@@ -441,7 +544,7 @@ export class AgentController {
     this.liveViewNotificationId = this.allocateLiveViewId();
     void this.publishRunningLiveView();
 
-    await this.startTaskWithA2A(trimmed, settings);
+    await this.startTaskWithA2A(trimmed, settings, contextId);
     await this.hideFloatWindow();
   }
 
@@ -466,8 +569,8 @@ export class AgentController {
     await this.hideFloatWindow();
   }
 
-  private async startTaskWithA2A(taskText: string, settings: AgentSettingsData): Promise<void> {
-    const request = await this.buildA2ARequest(taskText, '', true);
+  private async startTaskWithA2A(taskText: string, settings: AgentSettingsData, contextId: string): Promise<void> {
+    const request = await this.buildA2ARequest(taskText, '', true, contextId);
     this.startA2AStreamInternal(settings.a2aBaseUrl, request);
   }
 
@@ -946,8 +1049,12 @@ export class AgentController {
       throw new Error('context_missing');
     }
     const settings = await AgentSettings.load(ctx);
-    await this.ensureMcpConnected(settings);
-    const request = await this.buildA2ARequest(text, task, false);
+    const storedSession = this.a2aSnapshot.sessionId.trim();
+    const contextId = storedSession.length > 0
+      ? storedSession
+      : (settings.contextId.trim().length > 0 ? settings.contextId.trim() : settings.deviceId.trim());
+    await this.ensureMcpConnected(settings, contextId);
+    const request = await this.buildA2ARequest(text, task, false, contextId);
     this.startA2AStreamInternal(settings.a2aBaseUrl, request);
     return 'ok';
   }
@@ -968,6 +1075,11 @@ export class AgentController {
     }
     this.a2aEventHub.reset();
     this.a2aEventHub.push('log', 'stream_started');
+    const startMeta: A2AStreamStartPayload = {
+      context_id: request.message.contextId,
+      task_id: typeof request.message.taskId === 'string' ? request.message.taskId : '',
+    };
+    this.a2aEventHub.push('log', 'stream_meta', JSON.stringify(startMeta));
     const taskId = request.message.taskId;
     this.a2aTaskId = typeof taskId === 'string' ? taskId.trim() : '';
     this.resetA2ASnapshotForStream(request);
@@ -983,6 +1095,9 @@ export class AgentController {
         const payload = JSON.stringify(meta);
         this.a2aEventHub.push('error', 'stream_error', payload);
         this.a2aActive = false;
+        this.a2aSnapshot.status = 'failed';
+        this.a2aSnapshot.lastError = message;
+        void this.handleA2AStatusChanged('failed', message);
       },
       () => {
         this.a2aEventHub.push('status', 'stream_closed');
@@ -1017,6 +1132,31 @@ export class AgentController {
 
   clearMcpLogs(): void {
     this.mcpLogLines = [];
+  }
+
+  handleDeviceToolCallStarted(call: McpToolCall): void {
+    if (this.a2aHistoryTaskId.trim().length === 0) {
+      return;
+    }
+    const meta: ToolExecEventPayload = {
+      call_id: call.call_id,
+      tool_name: call.name,
+      phase: 'started',
+    };
+    this.a2aEventHub.push('tool.exec', 'tool.call.started', JSON.stringify(meta));
+  }
+
+  handleDeviceToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
+    this.recordA2AToolHistory(call, result, elapsedMs);
+    const meta: ToolExecEventPayload = {
+      call_id: call.call_id,
+      tool_name: call.name,
+      phase: 'completed',
+      elapsed_ms: elapsedMs,
+      status: result.status,
+      error: result.error,
+    };
+    this.a2aEventHub.push('tool.exec', 'tool.call.completed', JSON.stringify(meta));
   }
 
   async setViewerActive(active: boolean): Promise<void> {
@@ -1645,7 +1785,7 @@ export class AgentController {
       }
       this.deviceToolsEndpoint = new DeviceToolsEndpoint(toolKit, (line: string) => {
         this.appendMcpLog(line);
-      });
+      }, new AgentControllerDeviceToolsObserver(this));
       this.deviceToolsToolKit = toolKit;
     }
     return this.deviceToolsEndpoint;
@@ -1842,6 +1982,15 @@ export class AgentController {
     }
 
     if (status === 'finished') {
+      const content = this.resolveA2AFinishContent(messageText);
+      this.finalizeA2AHistoryTask('finished', content);
+    } else if (status === 'failed') {
+      this.finalizeA2AHistoryTask('failed', messageText);
+    } else if (status === 'stopping') {
+      this.finalizeA2AHistoryTask('stopped', messageText);
+    }
+
+    if (status === 'finished') {
       // Keep AgentSpace alive for transferToMain() after completion.
       this.pendingAgentSpaceDestroy = false;
     } else if (status === 'failed' || status === 'idle') {
@@ -1912,6 +2061,7 @@ export class AgentController {
     const action: AgentAction = { name: 'finish', parameters: params };
     this.a2aSnapshot.lastActionName = 'finish';
     this.a2aSnapshot.lastActionJson = JSON.stringify(action);
+    this.finalizeA2AHistoryTask('finished', content);
 
     if (this.a2aSnapshot.status === 'finished' && this.liveViewEnabled) {
       void this.publishFinishedLiveView(content);
@@ -2298,5 +2448,21 @@ class AgentControllerTaskListener implements TaskManagerListener {
 
   onAction(action: AgentAction, description: string): void {
     void this.owner.handleTaskAction(action, description);
+  }
+}
+
+class AgentControllerDeviceToolsObserver implements DeviceToolsEndpointObserver {
+  private readonly owner: AgentController;
+
+  constructor(owner: AgentController) {
+    this.owner = owner;
+  }
+
+  onToolCallStarted(call: McpToolCall): void {
+    this.owner.handleDeviceToolCallStarted(call);
+  }
+
+  onToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
+    this.owner.handleDeviceToolCallCompleted(call, result, elapsedMs);
   }
 }
