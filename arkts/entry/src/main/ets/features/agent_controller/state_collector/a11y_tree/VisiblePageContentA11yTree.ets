@@ -18,6 +18,8 @@ export interface A11yTreeListOptions {
   minElementSizePx: number;
   visibilityThreshold: number;
   clipBounds: boolean;
+  filterKeyboard: boolean;
+  keyboardResourceIdPrefixes: Array<string>;
 }
 
 interface VisiblePageContentAppInfo {
@@ -84,6 +86,8 @@ export class VisiblePageContentA11yTree {
     minElementSizePx: DEFAULT_MIN_ELEMENT_SIZE_PX,
     visibilityThreshold: DEFAULT_VISIBILITY_THRESHOLD,
     clipBounds: false,
+    filterKeyboard: false,
+    keyboardResourceIdPrefixes: [],
   };
 
   static buildListFromDump(
@@ -97,7 +101,9 @@ export class VisiblePageContentA11yTree {
       return [];
     }
     const screenRect = VisiblePageContentA11yTree.resolveScreenRect(root, screenWidthPx, screenHeightPx);
-    const filtered = VisiblePageContentA11yTree.filterNode(root, screenRect, options);
+    const filtered = options.mode === A11yTreeFilterMode.CONCISE
+      ? VisiblePageContentA11yTree.filterConcise(root, screenRect, options)
+      : VisiblePageContentA11yTree.filterDetailed(root, screenRect, options);
     if (!filtered) {
       return [];
     }
@@ -173,39 +179,103 @@ export class VisiblePageContentA11yTree {
     return VisiblePageContentA11yTree.createRect(0, 0, width, height);
   }
 
-  private static filterNode(node: VisiblePageContentNode, screen: Rect, options: A11yTreeListOptions): FilteredNode | null {
-    if (options.mode === A11yTreeFilterMode.CONCISE) {
-      const decision = VisiblePageContentA11yTree.evaluateNode(node, screen, options);
-      if (!decision.keepSelf) {
-        return null;
+  private static filterConcise(node: VisiblePageContentNode, screen: Rect, options: A11yTreeListOptions): FilteredNode | null {
+    const decision = VisiblePageContentA11yTree.evaluateConciseNode(node, screen, options);
+    if (!decision.keepSelf) {
+      return null;
+    }
+    const filteredChildren: Array<FilteredNode> = [];
+    const children = Array.isArray(node.$children) ? node.$children : [];
+    for (const child of children) {
+      const filtered = VisiblePageContentA11yTree.filterConcise(child, screen, options);
+      if (filtered) {
+        filteredChildren.push(filtered);
       }
-      const filteredChildren: Array<FilteredNode> = [];
-      const children = Array.isArray(node.$children) ? node.$children : [];
-      for (const child of children) {
-        const filtered = VisiblePageContentA11yTree.filterNode(child, screen, options);
-        if (filtered) {
-          filteredChildren.push(filtered);
-        }
+    }
+    return { node, rect: decision.rect, children: filteredChildren };
+  }
+
+  private static filterDetailed(node: VisiblePageContentNode, screen: Rect, options: A11yTreeListOptions): FilteredNode | null {
+    const input = options.filterKeyboard ? VisiblePageContentA11yTree.filterKeyboardElements(node, options) : node;
+    if (!input) {
+      return null;
+    }
+    return VisiblePageContentA11yTree.filterOutOfBoundsDetailed(input, screen, options);
+  }
+
+  private static filterKeyboardElements(node: VisiblePageContentNode, options: A11yTreeListOptions): VisiblePageContentNode | null {
+    const filteredChildren: Array<VisiblePageContentNode> = [];
+    const children = Array.isArray(node.$children) ? node.$children : [];
+    for (const child of children) {
+      const filteredChild = VisiblePageContentA11yTree.filterKeyboardElements(child, options);
+      if (filteredChild) {
+        filteredChildren.push(filteredChild);
       }
-      return { node, rect: decision.rect, children: filteredChildren };
+    }
+    if (VisiblePageContentA11yTree.shouldFilterKeyboard(node, options.keyboardResourceIdPrefixes)) {
+      return null;
+    }
+    const cloned: VisiblePageContentNode = { ...node, $children: filteredChildren };
+    return cloned;
+  }
+
+  private static shouldFilterKeyboard(node: VisiblePageContentNode, prefixes: Array<string>): boolean {
+    if (!prefixes || prefixes.length === 0) {
+      return false;
+    }
+    const resourceId = (node.compid ?? '').trim();
+    if (resourceId.length === 0) {
+      return false;
+    }
+    for (const prefix of prefixes) {
+      const p = prefix.trim();
+      if (p.length > 0 && resourceId.startsWith(p)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static filterOutOfBoundsDetailed(node: VisiblePageContentNode, screen: Rect, options: A11yTreeListOptions): FilteredNode | null {
+    const ignoreBoundsFiltering = VisiblePageContentA11yTree.isIgnoreBoundsFiltering(node.$attrs?.ignoreBoundsFiltering);
+    if (ignoreBoundsFiltering) {
+      return VisiblePageContentA11yTree.buildFullSubtree(node, screen, options);
     }
 
     const filteredChildren: Array<FilteredNode> = [];
     const children = Array.isArray(node.$children) ? node.$children : [];
     for (const child of children) {
-      const filtered = VisiblePageContentA11yTree.filterNode(child, screen, options);
+      const filtered = VisiblePageContentA11yTree.filterOutOfBoundsDetailed(child, screen, options);
       if (filtered) {
         filteredChildren.push(filtered);
       }
     }
-    const decision = VisiblePageContentA11yTree.evaluateNode(node, screen, options);
-    if (!decision.keepSelf && filteredChildren.length === 0) {
+
+    const rectRaw = VisiblePageContentA11yTree.parseRect(node.$rect);
+    const rect = rectRaw && options.clipBounds ? VisiblePageContentA11yTree.clipRect(rectRaw, screen) : rectRaw;
+    const visiblePercentage = rect ? VisiblePageContentA11yTree.getVisiblePercentage(rect, screen) : 0;
+    const keepSelf = visiblePercentage >= options.visibilityThreshold;
+    if (!keepSelf && filteredChildren.length === 0) {
       return null;
     }
-    return { node, rect: decision.rect, children: filteredChildren };
+    if (node.visible === 'false' && filteredChildren.length === 0) {
+      return null;
+    }
+    return { node, rect: rect ?? null, children: filteredChildren };
   }
 
-  private static evaluateNode(
+  private static buildFullSubtree(node: VisiblePageContentNode, screen: Rect, options: A11yTreeListOptions): FilteredNode {
+    const rectRaw = VisiblePageContentA11yTree.parseRect(node.$rect);
+    const rect = rectRaw && options.clipBounds ? VisiblePageContentA11yTree.clipRect(rectRaw, screen) : rectRaw;
+    const fullChildren: Array<FilteredNode> = [];
+    const children = Array.isArray(node.$children) ? node.$children : [];
+    for (const child of children) {
+      fullChildren.push(VisiblePageContentA11yTree.buildFullSubtree(child, screen, options));
+    }
+    return { node, rect: rect ?? null, children: fullChildren };
+  }
+
+  private static evaluateConciseNode(
     node: VisiblePageContentNode,
     screen: Rect,
     options: A11yTreeListOptions
@@ -224,15 +294,9 @@ export class VisiblePageContentA11yTree {
     if (node.visible === 'false') {
       return new EvalDecision(false, rect);
     }
-    const ignoreBoundsFiltering = VisiblePageContentA11yTree.isIgnoreBoundsFiltering(node.$attrs?.ignoreBoundsFiltering);
-    if (!ignoreBoundsFiltering) {
-      const intersection = VisiblePageContentA11yTree.intersect(rect, screen);
-      const visibleArea = intersection ? VisiblePageContentA11yTree.area(intersection) : 0;
-      const totalArea = VisiblePageContentA11yTree.area(rect);
-      const ratio = totalArea > 0 ? visibleArea / totalArea : 0;
-      if (ratio < options.visibilityThreshold) {
-        return new EvalDecision(false, rect);
-      }
+    const intersection = VisiblePageContentA11yTree.intersect(rect, screen);
+    if (!intersection) {
+      return new EvalDecision(false, rect);
     }
     return new EvalDecision(true, rect);
   }
@@ -436,5 +500,22 @@ export class VisiblePageContentA11yTree {
       return 0;
     }
     return width * height;
+  }
+
+  private static getVisiblePercentage(rect: Rect, screen: Rect): number {
+    const width = rect.right - rect.left;
+    const height = rect.bottom - rect.top;
+    if (width === 0 && height === 0) {
+      return 0;
+    }
+    const overflow = rect.left <= screen.left && rect.top <= screen.top && rect.right >= screen.right && rect.bottom >= screen.bottom;
+    if (overflow) {
+      return 1;
+    }
+    const visibleX = Math.max(0, Math.min(rect.right, screen.right) - Math.max(rect.left, screen.left));
+    const visibleY = Math.max(0, Math.min(rect.bottom, screen.bottom) - Math.max(rect.top, screen.top));
+    const visibleArea = visibleX * visibleY;
+    const totalArea = width * height;
+    return totalArea > 0 ? visibleArea / totalArea : 0;
   }
 }
