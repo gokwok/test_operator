@@ -1846,15 +1846,11 @@ struct Index {
 
   @Builder
   private taskFavoriteAction(task: HistoryTaskMeta, height: string | number = '100%'): void {
-    const favorited = this.isTaskFavorited(task);
-    const symbolName: 'star' | 'star_fill' = favorited ? 'star_fill' : 'star';
-    const color = favorited ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED;
-
     Row() {
       Text() {
-        SymbolSpan(this.getTaskFavoriteSymbolResource(symbolName))
+        SymbolSpan(this.getTaskFavoriteSymbolResource(this.isTaskFavorited(task) ? 'star_fill' : 'star'))
           .fontSize(20)
-          .fontColor([color])
+          .fontColor([this.isTaskFavorited(task) ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED])
       }
       .width(28)
       .height(28)
@@ -1867,7 +1863,7 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      if (favorited) {
+      if (this.isTaskFavorited(task)) {
         void this.setTaskSkillName(task.taskId, '');
       } else {
         this.openFavoriteDialog(task);
@@ -1934,17 +1930,40 @@ struct Index {
       if (t.taskId !== id) {
         return t;
       }
-      return {
-        ...t,
+      const updated: HistoryTaskMeta = {
+        taskId: t.taskId,
+        sessionId: t.sessionId,
+        taskText: t.taskText,
+        cloudEndpoint: t.cloudEndpoint,
+        waitAfterActionMs: t.waitAfterActionMs,
+        status: t.status,
+        startAtMs: t.startAtMs,
+        endAtMs: t.endAtMs,
+        stepCount: t.stepCount,
+        finishContent: t.finishContent,
+        error: t.error,
         skill_name: skillName,
       };
+      return updated;
     });
 
     if (this.selectedTaskId === id && this.selectedTask) {
-      this.selectedTask = {
-        ...this.selectedTask,
+      const current = this.selectedTask;
+      const updated: HistoryTaskMeta = {
+        taskId: current.taskId,
+        sessionId: current.sessionId,
+        taskText: current.taskText,
+        cloudEndpoint: current.cloudEndpoint,
+        waitAfterActionMs: current.waitAfterActionMs,
+        status: current.status,
+        startAtMs: current.startAtMs,
+        endAtMs: current.endAtMs,
+        stepCount: current.stepCount,
+        finishContent: current.finishContent,
+        error: current.error,
         skill_name: skillName,
       };
+      this.selectedTask = updated;
     }
   }
 

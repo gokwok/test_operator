@@ -410,11 +410,12 @@ export class TaskHistoryStore {
       return null;
     }
     try {
-      const parsed = JSON.parse(raw) as Partial<HistoryTaskMeta>;
-      return {
-        ...(parsed as HistoryTaskMeta),
-        skill_name: typeof parsed.skill_name === 'string' ? parsed.skill_name : '',
-      };
+      const parsed = JSON.parse(raw) as HistoryTaskMeta;
+      const skillName = (parsed as { skill_name?: string }).skill_name;
+      if (typeof skillName !== 'string') {
+        (parsed as { skill_name?: string }).skill_name = '';
+      }
+      return parsed;
     } catch {
       return null;
     }
