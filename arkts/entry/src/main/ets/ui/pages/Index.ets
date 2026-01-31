@@ -1926,6 +1926,11 @@ struct Index {
     return this.activeTabIndex === 0 ? 0 : 16;
   }
 
+  private resolvePanelBottomPadding(): number {
+    // Keep the bottom navigation from covering scrollable contents.
+    return NAV_HEIGHT + 16;
+  }
+
   private resolveNavY(): number {
     if (!Number.isFinite(this.viewportHeight) || this.viewportHeight <= 0) {
       return 0;
@@ -2453,7 +2458,7 @@ struct Index {
           left: this.resolvePanelSidePadding(),
           right: this.resolvePanelSidePadding(),
           top: this.resolvePanelTopPadding(),
-          bottom: 0
+          bottom: this.resolvePanelBottomPadding()
         })
         .backgroundColor(THEME_PANEL)
         .borderRadius(26)
