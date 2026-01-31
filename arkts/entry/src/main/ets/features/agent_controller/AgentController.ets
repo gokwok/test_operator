@@ -46,7 +46,7 @@ import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
-import type { HistoryTaskStatus } from '../persistence/history/TaskHistoryStore';
+import type { HistoryStepMeta, HistoryTaskStatus } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -275,6 +275,7 @@ export class AgentController {
   private a2aHistoryTaskId: string = '';
   private a2aHistoryStepIndex: number = 0;
   private agentSpaceOp: Promise<void> = Promise.resolve();
+  private replayActive: boolean = false;
 
   static getInstance(): AgentController {
     if (!AgentController.instance) {
@@ -1183,6 +1184,144 @@ export class AgentController {
       return '';
     }
     return JSON.stringify(batch);
+  }
+
+  async replaySkill(skillName: string): Promise<string> {
+    const name = skillName.trim();
+    if (name.length === 0) {
+      return 'ERR_skill_name_empty';
+    }
+    if (this.replayActive) {
+      return 'ERR_replay_busy';
+    }
+    if (this.isA2AFlowActive() || this.taskManager.getSnapshot().status === 'running') {
+      return 'ERR_task_running';
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return 'ERR_context_missing';
+    }
+    const settings = await AgentSettings.load(ctx);
+    this.applySettings(settings);
+    this.applyEfficiencyResourcesBestEffort();
+    this.ensureListenerBound();
+    this.bindLiveViewCancelListener();
+    await this.resetAgentSpaceForNewTask();
+
+    const taskId = await this.findLatestTaskIdBySkillName(name);
+    if (taskId.length === 0) {
+      return 'ERR_skill_not_found';
+    }
+    const steps = await this.historyStore.listSteps(taskId);
+    if (steps.length === 0) {
+      return 'ERR_skill_steps_empty';
+    }
+
+    this.liveViewTaskText = `回放技能: ${name}`;
+    this.liveViewPhase = 'running';
+    this.liveViewStarted = false;
+    this.liveViewAppName = '';
+    this.liveViewIcon = null;
+    this.liveViewNotificationId = this.allocateLiveViewId();
+    void this.publishRunningLiveView();
+
+    this.replayActive = true;
+    const delayMs = 500;
+    void this.runReplaySteps(steps, delayMs).finally(() => {
+      this.replayActive = false;
+    });
+    return JSON.stringify({ status: 'started', skill_name: name, taskId });
+  }
+
+  private async runReplaySteps(steps: Array<HistoryStepMeta>, delayMs: number): Promise<void> {
+    try {
+      await this.openViewerBestEffort();
+      const toolKit = this.requireToolKit();
+      await toolKit.ensureVts();
+      const ordered = steps.slice().sort((a, b) => a.stepIndex - b.stepIndex);
+      for (const step of ordered) {
+        const action = this.parseHistoryAction(step.actionJson);
+        if (!action) {
+          continue;
+        }
+        const result = await toolKit.executeAction(action);
+        if (result.status !== 'SUCCESS') {
+          const err = result.error && result.error.length > 0 ? result.error : result.status;
+          throw new Error(`action_failed:${action.name}:${err}`);
+        }
+        await this.sleepMs(delayMs);
+      }
+      await this.publishFinishedLiveView('回放完成');
+    } catch (e) {
+      await this.publishFailedLiveView(`回放失败: ${String(e)}`);
+    }
+  }
+
+  private parseHistoryAction(actionJson: string): AgentAction | null {
+    const raw = actionJson.trim();
+    if (raw.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw) as AgentAction;
+      const name = (parsed?.name ?? '').trim();
+      if (name.length === 0) {
+        return null;
+      }
+      return { name, parameters: parsed.parameters };
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  private async findLatestTaskIdBySkillName(skillName: string): Promise<string> {
+    const ctx = this.ctx;
+    if (!ctx) {
+      return '';
+    }
+    this.historyStore.init(ctx);
+    const tasks = await this.historyStore.listTasks(200);
+    let bestTaskId: string = '';
+    let bestTs: number = 0;
+    for (const task of tasks) {
+      const name = typeof task.skill_name === 'string' ? task.skill_name.trim() : '';
+      if (name.length === 0 || name !== skillName) {
+        continue;
+      }
+      const ts = task.endAtMs > 0 ? task.endAtMs : task.startAtMs;
+      if (ts > bestTs) {
+        bestTs = ts;
+        bestTaskId = task.taskId;
+      }
+    }
+    return bestTaskId;
+  }
+
+  private async openViewerBestEffort(): Promise<void> {
+    if (this.viewerActive || this.viewerOpening) {
+      return;
+    }
+    const invoker = this.startAbilityInvoker;
+    if (!invoker) {
+      return;
+    }
+    const want: Want = {
+      bundleName: SELF_BUNDLE_NAME,
+      abilityName: VIEWER_ABILITY_NAME,
+    };
+    this.viewerOpening = true;
+    try {
+      await invoker(want);
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'open viewer (replay) failed: %{public}s', String(e));
+    } finally {
+      this.viewerOpening = false;
+    }
+  }
+
+  private async sleepMs(ms: number): Promise<void> {
+    const delay = Math.max(0, Math.floor(ms));
+    await new Promise<void>((resolve) => setTimeout(resolve, delay));
   }
 
   mcpLogs(): string {

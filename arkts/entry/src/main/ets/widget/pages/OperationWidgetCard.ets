@@ -1,5 +1,21 @@
 @Entry
 @Component
+declare function postCardAction(action: OperationWidgetCardAction): void;
+
+interface OperationWidgetCardActionParams {
+  message: string;
+}
+
+interface OperationWidgetCardAction {
+  action: string;
+  params: OperationWidgetCardActionParams;
+}
+
+interface OperationWidgetCardMessage {
+  type: string;
+  skill_name: string;
+}
+
 struct OperationWidgetCard {
   @LocalStorageLink('shortcut1') shortcut1: string = '快捷键1';
   @LocalStorageLink('shortcut2') shortcut2: string = '快捷键2';
@@ -39,6 +55,23 @@ struct OperationWidgetCard {
       .backgroundColor('#F3F4F6')
       .borderRadius(10)
       .layoutWeight(1)
-      .height(44);
+      .height(44)
+      .onClick(() => {
+        this.handleShortcutClick(label);
+      });
+  }
+
+  private handleShortcutClick(label: string): void {
+    const trimmed = label.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    if (trimmed.startsWith('快捷键')) {
+      return;
+    }
+    const message: OperationWidgetCardMessage = { type: 'replay_skill', skill_name: trimmed };
+    const params: OperationWidgetCardActionParams = { message: JSON.stringify(message) };
+    const action: OperationWidgetCardAction = { action: 'message', params };
+    postCardAction(action);
   }
 }

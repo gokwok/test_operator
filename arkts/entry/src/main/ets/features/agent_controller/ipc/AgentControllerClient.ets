@@ -456,6 +456,10 @@ export class AgentControllerClient {
     return await this.sendRequestWithInt(AgentControllerRequestCode.A2A_PULL_EVENTS, lastSequence);
   }
 
+  async replaySkill(skillName: string): Promise<string> {
+    return await this.sendRequestWithString(AgentControllerRequestCode.REPLAY_SKILL, skillName);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {

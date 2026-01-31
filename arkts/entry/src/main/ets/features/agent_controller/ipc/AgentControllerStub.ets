@@ -419,6 +419,12 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentControllerRequestCode.REPLAY_SKILL) {
+        const skillName = data.readString();
+        const payload = await this.service.replaySkill(skillName);
+        reply.writeString(payload);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

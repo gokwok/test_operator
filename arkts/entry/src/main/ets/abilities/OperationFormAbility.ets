@@ -5,6 +5,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { TaskHistoryStore } from '../features/persistence/history/TaskHistoryStore';
 import type { HistoryTaskMeta } from '../features/persistence/history/TaskHistoryStore';
 import { WidgetFormStore, WidgetFormRecord } from '../features/persistence/widget/WidgetFormStore';
+import { AgentControllerClient } from '../features/agent_controller/ipc/AgentControllerClient';
 
 const HILOG_DOMAIN: number = 0x0000;
 const HILOG_TAG: string = 'OperationFormAbility';
@@ -17,6 +18,11 @@ interface OperationWidgetFormData {
   shortcut2: string;
   shortcut3: string;
   shortcut4: string;
+}
+
+interface OperationWidgetEventPayload {
+  type?: string;
+  skill_name?: string;
 }
 
 export default class OperationFormAbility extends FormExtensionAbility {
@@ -39,6 +45,16 @@ export default class OperationFormAbility extends FormExtensionAbility {
   onRemoveForm(formId: string): void {
     hilog.info(HILOG_DOMAIN, HILOG_TAG, 'onRemoveForm formId=%{public}s', formId);
     void this.trackFormRemoved(formId);
+  }
+
+  onFormEvent(formId: string, message: string): void {
+    hilog.info(HILOG_DOMAIN, HILOG_TAG, 'onFormEvent formId=%{public}s message=%{public}s', formId, message);
+    const skillName = this.extractSkillName(message);
+    if (skillName.length === 0) {
+      return;
+    }
+    void this.replaySkillBestEffort(skillName);
+    void this.updateFormFavoritesBestEffort(formId);
   }
 
   private buildDefaultData(): OperationWidgetFormData {
@@ -113,6 +129,42 @@ export default class OperationFormAbility extends FormExtensionAbility {
       shortcut4: favorites.length >= 4 ? favorites[3] : fallback.shortcut4,
     };
     return data;
+  }
+
+  private extractSkillName(message: string): string {
+    const trimmed = message.trim();
+    if (trimmed.length === 0) {
+      return '';
+    }
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed) as OperationWidgetEventPayload;
+        const type = typeof parsed?.type === 'string' ? parsed.type : '';
+        const skill = typeof parsed?.skill_name === 'string' ? parsed.skill_name : '';
+        if (type.trim() === 'replay_skill') {
+          return skill.trim();
+        }
+      } catch (_e) {
+        // ignore
+      }
+      return '';
+    }
+    return trimmed;
+  }
+
+  private async replaySkillBestEffort(skillName: string): Promise<void> {
+    try {
+      const ctx = this.context;
+      if (!ctx) {
+        return;
+      }
+      const client = new AgentControllerClient();
+      await client.connectFromExtension(ctx as common.UIExtensionContext);
+      await client.replaySkill(skillName);
+      await client.disconnectFromExtension(ctx as common.UIExtensionContext);
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replaySkill failed: %{public}s', String(e));
+    }
   }
 
   private async trackFormAdded(want: Want): Promise<void> {

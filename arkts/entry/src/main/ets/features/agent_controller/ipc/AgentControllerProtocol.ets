@@ -67,4 +67,5 @@ export enum AgentControllerRequestCode {
   A2A_START_STREAM = 72,
   A2A_STOP_STREAM = 73,
   A2A_PULL_EVENTS = 74,
+  REPLAY_SKILL = 75,
 }
