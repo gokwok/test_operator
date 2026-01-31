@@ -7,6 +7,8 @@ import { TaskHistoryStore } from '../../features/persistence/history/TaskHistory
 import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistence/history/TaskHistoryStore';
 import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
+import { WidgetFormStore } from '../../features/persistence/widget/WidgetFormStore';
+import type { WidgetFormRecord } from '../../features/persistence/widget/WidgetFormStore';
 import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
 import type { TaskEvent, TaskEventBatch } from '../../features/agent_controller/types';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
@@ -164,6 +166,8 @@ struct Index {
   @State a2aStreamContextId: string = '';
   @State a2aStreamInfo: string = '';
   @State a2aStreamEvents: Array<TaskEvent> = [];
+  @State widgetFormInfo: string = '';
+  @State widgetForms: Array<WidgetFormRecord> = [];
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -391,6 +395,61 @@ struct Index {
           Text(`deviceId: ${this.deviceId} / contextId: ${this.contextId}`)
             .fontSize(11)
             .fontColor(THEME_TEXT_PRIMARY)
+        }
+
+        Column({ space: 8 }) {
+          Text('桌面卡片')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Row({ space: 8 }) {
+            Button('刷新 formId')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.refreshWidgetForms();
+              })
+
+            Button('清空 formId')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.clearWidgetForms();
+              })
+          }
+
+          if (this.widgetFormInfo.length > 0) {
+            Text(this.widgetFormInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.widgetForms.length === 0) {
+            Text('暂无 formId')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_SUBTLE)
+          } else {
+            Column({ space: 4 }) {
+              ForEach(this.widgetForms, (record: WidgetFormRecord) => {
+                Text(this.formatWidgetFormLine(record))
+                  .fontSize(10)
+                  .fontColor(THEME_TEXT_MUTED)
+              }, (record: WidgetFormRecord) => record.formId)
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
         }
 
         Column({ space: 8 }) {
@@ -2824,6 +2883,47 @@ struct Index {
     } catch (_e) {
       return trimmed;
     }
+  }
+
+  private async refreshWidgetForms(): Promise<void> {
+    this.widgetFormInfo = '正在读取...';
+    try {
+      const records = await WidgetFormStore.list(this.getUiContext());
+      this.widgetForms = records;
+      this.widgetFormInfo = `formId 数量: ${records.length}`;
+    } catch (e) {
+      this.widgetForms = [];
+      this.widgetFormInfo = `读取失败: ${String(e)}`;
+    }
+  }
+
+  private async clearWidgetForms(): Promise<void> {
+    this.widgetFormInfo = '';
+    try {
+      await WidgetFormStore.clear(this.getUiContext());
+      this.widgetForms = [];
+      this.widgetFormInfo = '已清空';
+    } catch (e) {
+      this.widgetFormInfo = `清空失败: ${String(e)}`;
+    }
+  }
+
+  private formatWidgetFormLine(record: WidgetFormRecord): string {
+    const dim = record.dimension.trim().length > 0 ? record.dimension.trim() : '-';
+    const ts = this.formatWidgetFormTime(record.updatedAtMs);
+    const name = record.widgetName.trim().length > 0 ? record.widgetName.trim() : '-';
+    return `${record.formId} / ${name} / ${dim} / ${ts}`;
+  }
+
+  private formatWidgetFormTime(tsMs: number): string {
+    if (!Number.isFinite(tsMs) || tsMs <= 0) {
+      return '-';
+    }
+    const date = new Date(tsMs);
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
   }
 
   private async refreshMcpLogs(): Promise<void> {
