@@ -10,9 +10,9 @@
       "isDynamic": true,
       "updateEnabled": false,
       "updateDuration": 0,
-      "defaultDimension": 24,
+      "defaultDimension": "2*4",
       "supportDimensions": [
-        24
+        "2*4"
       ]
     }
   ]
