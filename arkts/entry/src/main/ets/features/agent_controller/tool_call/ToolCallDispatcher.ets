@@ -1,5 +1,7 @@
 import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
 import { ToolKit } from '../toolkit/ToolKit';
+import { normToPx } from '../toolkit/CoordinateUtils';
+import { VisiblePageContentA11yTree } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
 
 export type ToolCallStatus = 'SUCCESS' | 'FAILED';
 
@@ -7,6 +9,7 @@ export interface ToolCallResult {
   status: ToolCallStatus;
   error: string;
   screenshot_b64: string;
+  uiTargetText: string;
   action: AgentAction | null;
 }
 
@@ -36,31 +39,39 @@ export class ToolCallDispatcher {
   async execute(name: string, argsJson: string): Promise<ToolCallResult> {
     const toolName = name.trim().toLowerCase();
     if (toolName.length === 0) {
-      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', action: null };
+      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', uiTargetText: '', action: null };
     }
     const args = this.parseArgs(argsJson);
     if (!args) {
       const snapshot = await this.safeScreenshot();
-      return { status: 'FAILED', error: 'invalid_arguments_json', screenshot_b64: snapshot, action: null };
+      return { status: 'FAILED', error: 'invalid_arguments_json', screenshot_b64: snapshot, uiTargetText: '', action: null };
     }
     if (toolName === 'screenshot') {
       const snapshot = await this.safeScreenshot();
       if (snapshot.length === 0) {
-        return { status: 'FAILED', error: 'screenshot_failed', screenshot_b64: snapshot, action: { name: 'screenshot' } };
+        return {
+          status: 'FAILED',
+          error: 'screenshot_failed',
+          screenshot_b64: snapshot,
+          uiTargetText: '',
+          action: { name: 'screenshot' }
+        };
       }
-      return { status: 'SUCCESS', error: '', screenshot_b64: snapshot, action: { name: 'screenshot' } };
+      return { status: 'SUCCESS', error: '', screenshot_b64: snapshot, uiTargetText: '', action: { name: 'screenshot' } };
     }
 
     let status: ToolCallStatus = 'SUCCESS';
     let error: string = '';
     let actionExecuted = false;
     let action: AgentAction | null = null;
+    let uiTargetText: string = '';
     try {
       action = this.buildAction(toolName, args);
       if (!action) {
         status = 'FAILED';
         error = 'invalid_arguments';
       } else {
+        uiTargetText = await this.resolveUiTargetTextBestEffort(toolName, action);
         actionExecuted = true;
         const result = await this.toolKit.executeAction(action);
         if (result.status !== 'SUCCESS') {
@@ -82,7 +93,49 @@ export class ToolCallDispatcher {
       status = 'FAILED';
       error = error.length > 0 ? error : 'screenshot_failed';
     }
-    return { status, error, screenshot_b64: snapshot, action };
+    return { status, error, screenshot_b64: snapshot, uiTargetText, action };
+  }
+
+  private isScreenPointAction(toolName: string, action: AgentAction): boolean {
+    if (toolName === 'click') {
+      return true;
+    }
+    if (toolName === 'long_click') {
+      return true;
+    }
+    if (toolName === 'type') {
+      const pt = action.parameters?.point;
+      return Array.isArray(pt) && pt.length >= 2;
+    }
+    return false;
+  }
+
+  private async resolveUiTargetTextBestEffort(toolName: string, action: AgentAction): Promise<string> {
+    if (!this.isScreenPointAction(toolName, action)) {
+      return '';
+    }
+    const pt = action.parameters?.point;
+    if (!pt || pt.length < 2) {
+      return '';
+    }
+    const xNorm = Number(pt[0]);
+    const yNorm = Number(pt[1]);
+    if (!Number.isFinite(xNorm) || !Number.isFinite(yNorm)) {
+      return '';
+    }
+    try {
+      const runtime = await this.toolKit.ensureVts();
+      const dump = await this.toolKit.getVisiblePageContent(0);
+      if (dump.trim().length === 0) {
+        return '';
+      }
+      const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
+      const xPx = normToPx(runtime.widthPx, xNorm);
+      const yPx = normToPx(runtime.heightPx, yNorm);
+      return VisiblePageContentA11yTree.hitTextAtPoint(list, xPx, yPx);
+    } catch (_e) {
+      return '';
+    }
   }
 
   private buildAction(name: string, args: ToolCallArgs): AgentAction | null {

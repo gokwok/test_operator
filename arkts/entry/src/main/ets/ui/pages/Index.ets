@@ -1350,6 +1350,24 @@ struct Index {
         .fontColor(THEME_TEXT_PRIMARY)
         .lineHeight(20)
 
+      if ((step.uiTargetText ?? '').trim().length > 0) {
+        Column({ space: 6 }) {
+          Text('命中文本')
+            .fontSize(DETAIL_TITLE_SIZE)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .fontWeight(FontWeight.Medium)
+
+          Text((step.uiTargetText ?? '').trim())
+            .fontSize(DETAIL_TEXT_SIZE)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .lineHeight(18)
+        }
+        .padding(12)
+        .borderRadius(DETAIL_SECTION_RADIUS)
+        .backgroundColor(DETAIL_SECTION_BG)
+        .border({ width: 1, color: DETAIL_SECTION_BORDER })
+      }
+
       if (!this.showStepMore && this.selectedStepParamLines.length > 0) {
         Column({ space: 6 }) {
           Text('关键参数')

@@ -51,7 +51,14 @@ export class TaskHistoryRecorder {
     void this.store.updateTaskMeta(taskId, { sessionId });
   }
 
-  recordStep(taskId: string, stepIndex: number, description: string, action: AgentAction, screenshot: string): void {
+  recordStep(
+    taskId: string,
+    stepIndex: number,
+    description: string,
+    action: AgentAction,
+    screenshot: string,
+    uiTargetText: string = ''
+  ): void {
     if (taskId.length === 0 || stepIndex <= 0) {
       return;
     }
@@ -60,6 +67,7 @@ export class TaskHistoryRecorder {
       stepIndex,
       tsMs: Date.now(),
       description,
+      uiTargetText,
       actionName: action.name,
       actionJson: JSON.stringify(action),
       resultStatus: '',

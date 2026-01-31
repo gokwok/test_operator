@@ -9,11 +9,13 @@ import {
 } from '../AgentProxy';
 import { StateCollector } from '../state_collector/StateCollector';
 import { ToolKit } from '../toolkit/ToolKit';
+import { normToPx } from '../toolkit/CoordinateUtils';
 import type { DeviceState, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from '../types';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { TaskHistoryStore } from '../../persistence/history/TaskHistoryStore';
 import { TaskEventQueue } from './TaskEventQueue';
 import { TaskHistoryRecorder } from './TaskHistoryRecorder';
+import { VisiblePageContentA11yTree } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
@@ -347,7 +349,15 @@ export class TaskManager {
           }
           pendingDescription = output?.description ?? '';
           const outcome = this.handleIncomingAction(action, pendingDescription);
-          this.historyRecorder.recordStep(this.historyTaskId, this.snapshot.stepIndex, pendingDescription, action, screenshot);
+          const uiTargetText = await this.resolveUiTargetTextBestEffort(toolKit, action);
+          this.historyRecorder.recordStep(
+            this.historyTaskId,
+            this.snapshot.stepIndex,
+            pendingDescription,
+            action,
+            screenshot,
+            uiTargetText
+          );
           if (outcome !== 'continue') {
             break;
           }
@@ -403,7 +413,15 @@ export class TaskManager {
         }
         pendingDescription = output?.description ?? '';
         const outcome = this.handleIncomingAction(action, pendingDescription);
-        this.historyRecorder.recordStep(this.historyTaskId, this.snapshot.stepIndex, pendingDescription, action, screenshot);
+        const uiTargetText = await this.resolveUiTargetTextBestEffort(toolKit, action);
+        this.historyRecorder.recordStep(
+          this.historyTaskId,
+          this.snapshot.stepIndex,
+          pendingDescription,
+          action,
+          screenshot,
+          uiTargetText
+        );
         if (outcome !== 'continue') {
           break;
         }
@@ -667,6 +685,57 @@ export class TaskManager {
 
   private pushEvent(type: TaskEventType, message: string, payloadJson?: string): void {
     this.eventQueue.push(type, message, payloadJson);
+  }
+
+  private isScreenPointAction(action: AgentAction): boolean {
+    const name = action.name.trim().toLowerCase();
+    if (name === 'click') {
+      return true;
+    }
+    if (name === 'long_click') {
+      return true;
+    }
+    if (name === 'type') {
+      const pt = action.parameters?.point;
+      return Array.isArray(pt) && pt.length >= 2;
+    }
+    return false;
+  }
+
+  private readActionPoint(action: AgentAction): Array<number> | null {
+    const pt = action.parameters?.point;
+    if (!pt || pt.length < 2) {
+      return null;
+    }
+    const x = Number(pt[0]);
+    const y = Number(pt[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return null;
+    }
+    return [x, y];
+  }
+
+  private async resolveUiTargetTextBestEffort(toolKit: ToolKit, action: AgentAction): Promise<string> {
+    if (!this.isScreenPointAction(action)) {
+      return '';
+    }
+    const pt = this.readActionPoint(action);
+    if (!pt) {
+      return '';
+    }
+    try {
+      const runtime = await toolKit.ensureVts();
+      const dump = await toolKit.getVisiblePageContent(0);
+      if (dump.trim().length === 0) {
+        return '';
+      }
+      const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
+      const xPx = normToPx(runtime.widthPx, pt[0]);
+      const yPx = normToPx(runtime.heightPx, pt[1]);
+      return VisiblePageContentA11yTree.hitTextAtPoint(list, xPx, yPx);
+    } catch (_e) {
+      return '';
+    }
   }
 }
 

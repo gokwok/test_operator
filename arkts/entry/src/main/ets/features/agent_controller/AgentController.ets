@@ -414,7 +414,14 @@ export class AgentController {
     const description = this.a2aSnapshot.lastDescription.trim();
     const resolvedDescription = description.length > 0 ? description : call.name.trim();
     const action: AgentAction = result.action ?? { name: call.name.trim().toLowerCase() };
-    this.a2aHistoryRecorder.recordStep(taskId, stepIndex, resolvedDescription, action, result.screenshot_b64);
+    this.a2aHistoryRecorder.recordStep(
+      taskId,
+      stepIndex,
+      resolvedDescription,
+      action,
+      result.screenshot_b64,
+      result.uiTargetText
+    );
 
     const mapped: ActionResult = { status: result.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED' };
     const err = result.error.trim();

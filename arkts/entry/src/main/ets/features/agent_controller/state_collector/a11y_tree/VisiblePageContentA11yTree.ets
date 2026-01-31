@@ -110,6 +110,35 @@ export class VisiblePageContentA11yTree {
     return VisiblePageContentA11yTree.flatten(filtered);
   }
 
+  static hitTextAtPoint(list: Array<A11yTreeListItem>, xPx: number, yPx: number): string {
+    let bestText: string = '';
+    let bestArea: number = Number.POSITIVE_INFINITY;
+    for (const item of list) {
+      const rect = VisiblePageContentA11yTree.parseBounds(item.bounds);
+      if (!rect) {
+        continue;
+      }
+      if (xPx < rect.left || xPx > rect.right || yPx < rect.top || yPx > rect.bottom) {
+        continue;
+      }
+      const area = Math.max(0, rect.right - rect.left) * Math.max(0, rect.bottom - rect.top);
+      const text = (item.text ?? '').trim();
+      if (bestText.length === 0 && text.length > 0) {
+        bestText = text;
+        bestArea = area;
+        continue;
+      }
+      if (text.length === 0 && bestText.length > 0) {
+        continue;
+      }
+      if (area > 0 && area < bestArea) {
+        bestText = text;
+        bestArea = area;
+      }
+    }
+    return bestText;
+  }
+
   private static parseDumpRoot(dumpJson: string): VisiblePageContentNode | null {
     const encoded = VisiblePageContentA11yTree.extractFirstObjectStringValue(dumpJson);
     if (encoded.length === 0) {
@@ -482,6 +511,25 @@ export class VisiblePageContentA11yTree {
     const top = numbers[1];
     const right = numbers[2];
     const bottom = numbers[3];
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+      return null;
+    }
+    return VisiblePageContentA11yTree.createRect(left, top, right, bottom);
+  }
+
+  private static parseBounds(bounds: string): Rect | null {
+    const trimmed = bounds.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    const parts = trimmed.split(',');
+    if (parts.length < 4) {
+      return null;
+    }
+    const left = parseFloat(parts[0]);
+    const top = parseFloat(parts[1]);
+    const right = parseFloat(parts[2]);
+    const bottom = parseFloat(parts[3]);
     if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
       return null;
     }
