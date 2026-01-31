@@ -31,7 +31,7 @@ export class WidgetFormStore {
 
   static async remove(ctx: common.Context, formId: string): Promise<void> {
     const trimmed = formId.trim();
-    if (trimmed.length === 0) {
+    if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
       return;
     }
     const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
@@ -56,7 +56,7 @@ export class WidgetFormStore {
 
   private static upsertInto(current: Array<WidgetFormRecord>, record: WidgetFormRecord): Array<WidgetFormRecord> {
     const formId = record.formId.trim();
-    if (formId.length === 0) {
+    if (formId.length === 0 || formId === 'undefined' || formId === 'null') {
       return current;
     }
     const now = Date.now();
@@ -140,15 +140,18 @@ export class WidgetFormStore {
     return record;
   }
 
-  private static safeGet(obj: Object, key: string): Object {
+  private static safeGet(obj: Object, key: string): Object | null | undefined {
     try {
-      return Reflect.get(obj, key) as Object;
+      return Reflect.get(obj, key) as Object | null | undefined;
     } catch (_e) {
-      return '';
+      return null;
     }
   }
 
-  private static parseMs(raw: Object, fallback: number): number {
+  private static parseMs(raw: Object | null | undefined, fallback: number): number {
+    if (raw === null || raw === undefined) {
+      return fallback;
+    }
     if (typeof raw === 'number' && Number.isFinite(raw)) {
       return Math.max(0, Math.floor(raw));
     }
@@ -159,9 +162,15 @@ export class WidgetFormStore {
     return Math.max(0, parsed);
   }
 
-  private static normalizeText(raw: Object, fallback: string): string {
+  private static normalizeText(raw: Object | null | undefined, fallback: string): string {
+    if (raw === null || raw === undefined) {
+      return fallback;
+    }
     const text = typeof raw === 'string' ? raw : String(raw);
     const trimmed = text.trim();
-    return trimmed.length > 0 ? trimmed : fallback;
+    if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
+      return fallback;
+    }
+    return trimmed;
   }
 }

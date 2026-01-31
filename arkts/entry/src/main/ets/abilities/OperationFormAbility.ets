@@ -71,7 +71,7 @@ export default class OperationFormAbility extends FormExtensionAbility {
   private async trackFormUpdated(formId: string): Promise<void> {
     try {
       const ctx = this.context;
-      const trimmed = formId.trim();
+      const trimmed = this.sanitizeFormId(formId);
       if (!ctx || trimmed.length === 0) {
         return;
       }
@@ -113,18 +113,19 @@ export default class OperationFormAbility extends FormExtensionAbility {
       'ohos.extra.formId',
     ]);
     if (formId.length > 0) {
-      return formId;
+      return this.sanitizeFormId(formId);
     }
     const raw = this.safeStringify(want as Object);
     if (raw.length === 0) {
       return '';
     }
-    return this.extractFirstJsonField(raw, [
+    const extracted = this.extractFirstJsonField(raw, [
       'formId',
       'form_id',
       'ohos.extra.param.key.form_id',
       'ohos.extra.form_id',
     ]);
+    return this.sanitizeFormId(extracted);
   }
 
   private readFirstParamText(params: Object, keys: Array<string>): string {
@@ -146,29 +147,48 @@ export default class OperationFormAbility extends FormExtensionAbility {
     for (let i = 0; i < keys.length; i += 1) {
       const key = keys[i];
       const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(`\"${escaped}\"\\s*:\\s*\"([^\"]+)\"`);
+      const pattern = new RegExp(`\"${escaped}\"\\s*:\\s*(\"([^\"]+)\"|(\\d+))`);
       const match = raw.match(pattern);
-      if (match && match.length >= 2) {
-        const value = match[1].trim();
-        if (value.length > 0) {
-          return value;
+      if (match) {
+        const textValue = match.length >= 3 ? match[2] : '';
+        if (typeof textValue === 'string' && textValue.trim().length > 0) {
+          return textValue.trim();
+        }
+        const numberValue = match.length >= 4 ? match[3] : '';
+        if (typeof numberValue === 'string' && numberValue.trim().length > 0) {
+          return numberValue.trim();
         }
       }
     }
     return '';
   }
 
-  private safeGet(obj: Object, key: string): Object {
+  private safeGet(obj: Object, key: string): Object | null | undefined {
     try {
-      return Reflect.get(obj, key) as Object;
+      return Reflect.get(obj, key) as Object | null | undefined;
     } catch (_e) {
-      return '';
+      return null;
     }
   }
 
-  private normalizeText(raw: Object): string {
+  private normalizeText(raw: Object | null | undefined): string {
+    if (raw === null || raw === undefined) {
+      return '';
+    }
     const text = typeof raw === 'string' ? raw : String(raw);
-    return text.trim();
+    const trimmed = text.trim();
+    if (trimmed === 'undefined' || trimmed === 'null') {
+      return '';
+    }
+    return trimmed;
+  }
+
+  private sanitizeFormId(candidate: string): string {
+    const trimmed = candidate.trim();
+    if (trimmed === 'undefined' || trimmed === 'null') {
+      return '';
+    }
+    return trimmed;
   }
 
   private safeStringify(value: Object): string {
