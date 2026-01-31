@@ -1,0 +1,19 @@
+{
+  "forms": [
+    {
+      "name": "operation_widget",
+      "displayName": "$string:operation_widget_display_name",
+      "description": "$string:operation_widget_desc",
+      "src": "./ets/widget/pages/OperationWidgetCard.ets",
+      "uiSyntax": "arkts",
+      "isDefault": true,
+      "isDynamic": true,
+      "updateDuration": 0,
+      "defaultDimension": "4*2",
+      "supportDimensions": [
+        "4*2"
+      ]
+    }
+  ]
+}
+

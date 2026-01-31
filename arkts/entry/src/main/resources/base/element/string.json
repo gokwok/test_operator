@@ -35,6 +35,14 @@
     {
       "name": "permission_location_reason",
       "value": "Read device location for task execution."
+    },
+    {
+      "name": "operation_widget_display_name",
+      "value": "操作智能体快捷"
+    },
+    {
+      "name": "operation_widget_desc",
+      "value": "操作智能体桌面卡片"
     }
   ]
 }
