@@ -1,3 +1,5 @@
+let storage = new LocalStorage();
+
 interface OperationWidgetCardActionParams {
   message: string;
 }
@@ -14,7 +16,7 @@ interface OperationWidgetCardMessage {
 
 declare function postCardAction(action: OperationWidgetCardAction): void;
 
-@Entry
+@Entry(storage)
 @Component
 struct OperationWidgetCard {
   @LocalStorageProp('shortcut1') shortcut1: string = '快捷键1';

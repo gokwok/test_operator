@@ -90,7 +90,7 @@ export default class OperationFormAbility extends FormExtensionAbility {
         JSON.stringify(favorites)
       );
       const data = this.buildFavoritesData(favorites);
-      formProvider.updateForm(trimmed, this.createFormBindingDataWithProxies(data));
+      await formProvider.updateForm(trimmed, this.createFormBindingDataWithProxies(data));
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites failed: %{public}s', String(e));
     }

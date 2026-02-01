@@ -44,9 +44,9 @@ export class OperationWidgetUpdater {
       }
       try {
         const binding = OperationWidgetUpdater.createFormBindingDataWithProxies(data);
-        formProvider.updateForm(formId, binding);
-      } catch {
-        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateForm failed formId=%{public}s', formId);
+        await formProvider.updateForm(formId, binding);
+      } catch (e) {
+        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateForm failed formId=%{public}s err=%{public}s', formId, String(e));
       }
     }
   }
