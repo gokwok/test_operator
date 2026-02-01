@@ -1868,12 +1868,11 @@ struct Index {
 
   @Builder
   private taskFavoriteAction(task: HistoryTaskMeta, height: string | number = '100%'): void {
-    const favorited = this.isTaskFavoritedById(task.taskId);
     Row() {
       Text() {
-        SymbolSpan(this.getTaskFavoriteSymbolResource(favorited ? 'star_fill' : 'star'))
+        SymbolSpan(this.getTaskFavoriteSymbolResource(this.isTaskFavoritedById(task.taskId) ? 'star_fill' : 'star'))
           .fontSize(20)
-          .fontColor([favorited ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED])
+          .fontColor([this.isTaskFavoritedById(task.taskId) ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED])
       }
       .width(28)
       .height(28)
