@@ -21,8 +21,6 @@ const HILOG_DOMAIN: number = 0x0000;
 const HILOG_TAG: string = 'OperationWidgetUpdater';
 
 export class OperationWidgetUpdater {
-  private static loggedFormProviderKeys: boolean = false;
-
   static async refreshOperationWidgetFavorites(ctx: common.Context): Promise<void> {
     const records = await WidgetFormStore.list(ctx);
     const formIds = OperationWidgetUpdater.pickOperationWidgetFormIds(records);
@@ -74,45 +72,9 @@ export class OperationWidgetUpdater {
   }
 
   private static requestRefreshBestEffort(formId: string): void {
-    const trimmed = formId.trim();
-    if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
-      return;
-    }
-    try {
-      const fnNames: Array<string> = [
-        'requestFormUpdate',
-        'requestUpdateForm',
-        'requestFormRefresh',
-        'requestForm',
-        'notifyFormUpdate',
-      ];
-      let invoked = false;
-      for (let i = 0; i < fnNames.length; i += 1) {
-        const name = fnNames[i];
-        const candidate = Reflect.get(formProvider as Object, name) as Object | null | undefined;
-        if (typeof candidate === 'function') {
-          const fn = candidate as (id: string) => void;
-          try {
-            fn(trimmed);
-            invoked = true;
-            break;
-          } catch {
-            // ignore
-          }
-        }
-      }
-      if (!invoked && !OperationWidgetUpdater.loggedFormProviderKeys) {
-        OperationWidgetUpdater.loggedFormProviderKeys = true;
-        const keys = Reflect.ownKeys(formProvider as Object);
-        const names: Array<string> = [];
-        for (let i = 0; i < keys.length; i += 1) {
-          names.push(String(keys[i]));
-        }
-        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'formProvider keys=%{public}s', JSON.stringify(names));
-      }
-    } catch {
-      // ignore
-    }
+    // Some SDKs expose request-update APIs under formProvider, but ArkTS doesn't allow
+    // reflection on namespaces. We rely on updateForm/updateDuration instead.
+    void formId;
   }
 
   private static pickOperationWidgetFormIds(records: Array<WidgetFormRecord>): Array<string> {
