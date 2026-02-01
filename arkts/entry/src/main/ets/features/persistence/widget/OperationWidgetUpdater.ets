@@ -28,6 +28,14 @@ export class OperationWidgetUpdater {
       return;
     }
     const favorites = await OperationWidgetUpdater.loadFavoriteSkills(ctx);
+    hilog.info(
+      HILOG_DOMAIN,
+      HILOG_TAG,
+      'refresh formIds=%{public}d favorites=%{public}d names=%{public}s',
+      formIds.length,
+      favorites.length,
+      JSON.stringify(favorites)
+    );
     const data = OperationWidgetUpdater.buildFavoritesData(favorites);
     for (let i = 0; i < formIds.length; i += 1) {
       const formId = formIds[i].trim();

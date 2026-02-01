@@ -1,5 +1,6 @@
-import preferences from '@ohos.data.preferences';
 import type { common } from '@kit.AbilityKit';
+import distributedKVStore from '@ohos.data.distributedKVStore';
+import preferences from '@ohos.data.preferences';
 
 export interface WidgetFormRecord {
   formId: string;
@@ -9,24 +10,44 @@ export interface WidgetFormRecord {
   updatedAtMs: number;
 }
 
+const STORE_ID: string = 'widget_form_store';
+const STORE_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
+const KEY_RECORDS: string = 'W1:records';
 const PREFS_NAME: string = 'widget_form_store';
-const KEY_RECORDS: string = 'records';
+const PREFS_KEY_RECORDS: string = 'records';
 const MAX_RECORDS: number = 32;
 
 export class WidgetFormStore {
+  private static manager: distributedKVStore.KVManager | null = null;
+  private static store: distributedKVStore.SingleKVStore | null = null;
+  private static storePromise: Promise<distributedKVStore.SingleKVStore> | null = null;
+  private static writeChain: Promise<void> = Promise.resolve();
+
   static async list(ctx: common.Context): Promise<Array<WidgetFormRecord>> {
-    const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
-    const raw = await prefs.get(KEY_RECORDS, '[]');
-    return WidgetFormStore.parseRecords(raw);
+    const store = await WidgetFormStore.getStore(ctx);
+    const raw = await store.get(KEY_RECORDS);
+    const records = WidgetFormStore.parseRecords(raw);
+    if (records.length > 0) {
+      return records;
+    }
+    // Backward-compatible fallback (older versions used preferences).
+    const legacy = await WidgetFormStore.listFromPrefsBestEffort(ctx);
+    if (legacy.length > 0) {
+      void WidgetFormStore.migrateFromPrefsBestEffort(ctx, legacy);
+      return legacy;
+    }
+    return [];
   }
 
   static async upsert(ctx: common.Context, record: WidgetFormRecord): Promise<void> {
-    const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
-    const raw = await prefs.get(KEY_RECORDS, '[]');
-    const current = WidgetFormStore.parseRecords(raw);
-    const next: Array<WidgetFormRecord> = WidgetFormStore.upsertInto(current, record);
-    await prefs.put(KEY_RECORDS, JSON.stringify(next));
-    await prefs.flush();
+    await WidgetFormStore.enqueueWrite(async () => {
+      const store = await WidgetFormStore.getStore(ctx);
+      const raw = await store.get(KEY_RECORDS);
+      const current = WidgetFormStore.parseRecords(raw);
+      const next: Array<WidgetFormRecord> = WidgetFormStore.upsertInto(current, record);
+      await store.put(KEY_RECORDS, JSON.stringify(next));
+      await WidgetFormStore.writePrefsBestEffort(ctx, next);
+    });
   }
 
   static async remove(ctx: common.Context, formId: string): Promise<void> {
@@ -34,24 +55,101 @@ export class WidgetFormStore {
     if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
       return;
     }
-    const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
-    const raw = await prefs.get(KEY_RECORDS, '[]');
-    const current = WidgetFormStore.parseRecords(raw);
-    const next: Array<WidgetFormRecord> = [];
-    for (let i = 0; i < current.length; i += 1) {
-      const item = current[i];
-      if (item.formId !== trimmed) {
-        next.push(item);
+    await WidgetFormStore.enqueueWrite(async () => {
+      const store = await WidgetFormStore.getStore(ctx);
+      const raw = await store.get(KEY_RECORDS);
+      const current = WidgetFormStore.parseRecords(raw);
+      const next: Array<WidgetFormRecord> = [];
+      for (let i = 0; i < current.length; i += 1) {
+        const item = current[i];
+        if (item.formId !== trimmed) {
+          next.push(item);
+        }
       }
-    }
-    await prefs.put(KEY_RECORDS, JSON.stringify(next));
-    await prefs.flush();
+      await store.put(KEY_RECORDS, JSON.stringify(next));
+      await WidgetFormStore.writePrefsBestEffort(ctx, next);
+    });
   }
 
   static async clear(ctx: common.Context): Promise<void> {
-    const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
-    await prefs.put(KEY_RECORDS, '[]');
-    await prefs.flush();
+    await WidgetFormStore.enqueueWrite(async () => {
+      const store = await WidgetFormStore.getStore(ctx);
+      await store.put(KEY_RECORDS, '[]');
+      await WidgetFormStore.writePrefsBestEffort(ctx, []);
+    });
+  }
+
+  private static async getStore(ctx: common.Context): Promise<distributedKVStore.SingleKVStore> {
+    if (WidgetFormStore.store) {
+      return WidgetFormStore.store;
+    }
+    if (WidgetFormStore.storePromise) {
+      return await WidgetFormStore.storePromise;
+    }
+    WidgetFormStore.storePromise = WidgetFormStore.openStore(ctx);
+    try {
+      const store = await WidgetFormStore.storePromise;
+      WidgetFormStore.store = store;
+      return store;
+    } finally {
+      WidgetFormStore.storePromise = null;
+    }
+  }
+
+  private static async openStore(ctx: common.Context): Promise<distributedKVStore.SingleKVStore> {
+    if (!WidgetFormStore.manager) {
+      WidgetFormStore.manager = distributedKVStore.createKVManager({
+        context: ctx,
+        bundleName: STORE_BUNDLE_NAME,
+      });
+    }
+    const options: distributedKVStore.Options = {
+      createIfMissing: true,
+      encrypt: false,
+      backup: false,
+      autoSync: false,
+      kvStoreType: distributedKVStore.KVStoreType.SINGLE_VERSION,
+      securityLevel: distributedKVStore.SecurityLevel.S1,
+    };
+    return await WidgetFormStore.manager.getKVStore(STORE_ID, options) as distributedKVStore.SingleKVStore;
+  }
+
+  private static async enqueueWrite(fn: () => Promise<void>): Promise<void> {
+    WidgetFormStore.writeChain = WidgetFormStore.writeChain
+      .then(fn)
+      .catch((_e) => {
+        // swallow errors to avoid breaking chain
+      });
+    await WidgetFormStore.writeChain;
+  }
+
+  private static async listFromPrefsBestEffort(ctx: common.Context): Promise<Array<WidgetFormRecord>> {
+    try {
+      const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
+      const raw = await prefs.get(PREFS_KEY_RECORDS, '[]');
+      return WidgetFormStore.parseRecords(raw);
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  private static async writePrefsBestEffort(ctx: common.Context, records: Array<WidgetFormRecord>): Promise<void> {
+    try {
+      const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
+      await prefs.put(PREFS_KEY_RECORDS, JSON.stringify(records));
+      await prefs.flush();
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  private static async migrateFromPrefsBestEffort(ctx: common.Context, legacy: Array<WidgetFormRecord>): Promise<void> {
+    try {
+      const store = await WidgetFormStore.getStore(ctx);
+      await store.put(KEY_RECORDS, JSON.stringify(legacy));
+    } catch (_e) {
+      // ignore
+    }
   }
 
   private static upsertInto(current: Array<WidgetFormRecord>, record: WidgetFormRecord): Array<WidgetFormRecord> {
