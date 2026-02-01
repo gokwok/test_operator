@@ -33,7 +33,8 @@ export default class OperationFormAbility extends FormExtensionAbility {
       void this.updateFormFavoritesBestEffort(formId);
     }
     void this.trackFormAdded(want);
-    return formBindingData.createFormBindingData(this.buildDefaultData());
+    const proxies: Array<formBindingData.FormDataProxy> = [];
+    return formBindingData.createFormBindingData(this.buildDefaultData(), proxies);
   }
 
   onUpdateForm(formId: string): void {
@@ -90,7 +91,8 @@ export default class OperationFormAbility extends FormExtensionAbility {
         JSON.stringify(favorites)
       );
       const data = this.buildFavoritesData(favorites);
-      formProvider.updateForm(trimmed, formBindingData.createFormBindingData(data));
+      const proxies: Array<formBindingData.FormDataProxy> = [];
+      formProvider.updateForm(trimmed, formBindingData.createFormBindingData(data, proxies));
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites failed: %{public}s', String(e));
     }
@@ -226,9 +228,11 @@ export default class OperationFormAbility extends FormExtensionAbility {
       'formId',
       'form_id',
       'formID',
+      'form_identity',
       'ohos.extra.param.key.form_id',
       'ohos.extra.param.key.formId',
       'ohos.extra.param.key.FORM_ID',
+      'ohos.extra.param.key.form_identity',
       'ohos.extra.form_id',
       'ohos.extra.formId',
     ]);
@@ -242,7 +246,9 @@ export default class OperationFormAbility extends FormExtensionAbility {
     const extracted = this.extractFirstJsonField(raw, [
       'formId',
       'form_id',
+      'form_identity',
       'ohos.extra.param.key.form_id',
+      'ohos.extra.param.key.form_identity',
       'ohos.extra.form_id',
     ]);
     return this.sanitizeFormId(extracted);

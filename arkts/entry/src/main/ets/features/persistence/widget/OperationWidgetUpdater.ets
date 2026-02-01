@@ -37,13 +37,14 @@ export class OperationWidgetUpdater {
       JSON.stringify(favorites)
     );
     const data = OperationWidgetUpdater.buildFavoritesData(favorites);
+    const proxies: Array<formBindingData.FormDataProxy> = [];
     for (let i = 0; i < formIds.length; i += 1) {
       const formId = formIds[i].trim();
       if (formId.length === 0) {
         continue;
       }
       try {
-        formProvider.updateForm(formId, formBindingData.createFormBindingData(data));
+        formProvider.updateForm(formId, formBindingData.createFormBindingData(data, proxies));
       } catch {
         hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateForm failed formId=%{public}s', formId);
       }
