@@ -1,5 +1,6 @@
 import type { common } from '@kit.AbilityKit';
 import { formBindingData, formProvider } from '@kit.FormKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 import { TaskHistoryStore } from '../history/TaskHistoryStore';
 import type { HistoryTaskMeta } from '../history/TaskHistoryStore';
@@ -15,12 +16,15 @@ interface OperationWidgetFormData {
 }
 
 const OP_WIDGET_NAME: string = 'operation_widget';
+const HILOG_DOMAIN: number = 0x0000;
+const HILOG_TAG: string = 'OperationWidgetUpdater';
 
 export class OperationWidgetUpdater {
   static async refreshOperationWidgetFavorites(ctx: common.Context): Promise<void> {
     const records = await WidgetFormStore.list(ctx);
     const formIds = OperationWidgetUpdater.pickOperationWidgetFormIds(records);
     if (formIds.length === 0) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'refresh skipped: no formId records');
       return;
     }
     const favorites = await OperationWidgetUpdater.loadFavoriteSkills(ctx);
@@ -33,7 +37,7 @@ export class OperationWidgetUpdater {
       try {
         formProvider.updateForm(formId, formBindingData.createFormBindingData(data));
       } catch {
-        // ignore update errors
+        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateForm failed formId=%{public}s', formId);
       }
     }
   }
@@ -87,4 +91,3 @@ export class OperationWidgetUpdater {
     return data;
   }
 }
-

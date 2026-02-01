@@ -1,3 +1,8 @@
+import type { common } from '@kit.AbilityKit';
+
+import { TaskHistoryStore } from '../../features/persistence/history/TaskHistoryStore';
+import type { HistoryTaskMeta } from '../../features/persistence/history/TaskHistoryStore';
+
 interface OperationWidgetCardActionParams {
   message: string;
 }
@@ -17,10 +22,14 @@ declare function postCardAction(action: OperationWidgetCardAction): void;
 @Entry
 @Component
 struct OperationWidgetCard {
-  @StorageProp('shortcut1') shortcut1: string = '快捷键1';
-  @StorageProp('shortcut2') shortcut2: string = '快捷键2';
-  @StorageProp('shortcut3') shortcut3: string = '快捷键3';
-  @StorageProp('shortcut4') shortcut4: string = '快捷键4';
+  @State shortcut1: string = '快捷键1';
+  @State shortcut2: string = '快捷键2';
+  @State shortcut3: string = '快捷键3';
+  @State shortcut4: string = '快捷键4';
+
+  aboutToAppear(): void {
+    void this.refreshFavoritesBestEffort();
+  }
 
   build() {
     Column({ space: 8 }) {
@@ -73,5 +82,49 @@ struct OperationWidgetCard {
     const params: OperationWidgetCardActionParams = { message: JSON.stringify(message) };
     const action: OperationWidgetCardAction = { action: 'message', params };
     postCardAction(action);
+  }
+
+  private async refreshFavoritesBestEffort(): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.Context;
+      const favorites = await this.loadFavoriteSkills(ctx);
+      this.shortcut1 = favorites.length >= 1 ? favorites[0] : '快捷键1';
+      this.shortcut2 = favorites.length >= 2 ? favorites[1] : '快捷键2';
+      this.shortcut3 = favorites.length >= 3 ? favorites[2] : '快捷键3';
+      this.shortcut4 = favorites.length >= 4 ? favorites[3] : '快捷键4';
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  private async loadFavoriteSkills(ctx: common.Context): Promise<Array<string>> {
+    const store = TaskHistoryStore.getInstance();
+    store.init(ctx);
+    const tasks = await store.listTasks(200);
+    const favorites: Array<HistoryTaskMeta> = [];
+    for (let i = 0; i < tasks.length; i += 1) {
+      const task = tasks[i];
+      const name = typeof task.skill_name === 'string' ? task.skill_name.trim() : '';
+      if (name.length === 0) {
+        continue;
+      }
+      if (task.status === 'running') {
+        continue;
+      }
+      favorites.push(task);
+    }
+    favorites.sort((a, b) => {
+      const aTs = a.endAtMs > 0 ? a.endAtMs : a.startAtMs;
+      const bTs = b.endAtMs > 0 ? b.endAtMs : b.startAtMs;
+      return bTs - aTs;
+    });
+    const picked: Array<string> = [];
+    for (let i = 0; i < favorites.length && picked.length < 4; i += 1) {
+      const name = favorites[i].skill_name.trim();
+      if (name.length > 0) {
+        picked.push(name);
+      }
+    }
+    return picked;
   }
 }
