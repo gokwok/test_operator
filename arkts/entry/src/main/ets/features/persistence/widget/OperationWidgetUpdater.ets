@@ -37,18 +37,29 @@ export class OperationWidgetUpdater {
       JSON.stringify(favorites)
     );
     const data = OperationWidgetUpdater.buildFavoritesData(favorites);
-    const proxies: Array<formBindingData.FormDataProxy> = [];
     for (let i = 0; i < formIds.length; i += 1) {
       const formId = formIds[i].trim();
       if (formId.length === 0) {
         continue;
       }
       try {
-        formProvider.updateForm(formId, formBindingData.createFormBindingData(data, proxies));
+        const binding = OperationWidgetUpdater.createFormBindingDataWithProxies(data);
+        formProvider.updateForm(formId, binding);
       } catch {
         hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateForm failed formId=%{public}s', formId);
       }
     }
+  }
+
+  private static createFormBindingDataWithProxies(data: OperationWidgetFormData): formBindingData.FormBindingData {
+    const binding = formBindingData.createFormBindingData(data);
+    const proxies: Array<Object> = [];
+    try {
+      Reflect.set(binding as Object, 'formDataProxies', proxies);
+    } catch (_e: Object) {
+      // ignore
+    }
+    return binding;
   }
 
   private static pickOperationWidgetFormIds(records: Array<WidgetFormRecord>): Array<string> {

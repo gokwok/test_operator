@@ -33,8 +33,7 @@ export default class OperationFormAbility extends FormExtensionAbility {
       void this.updateFormFavoritesBestEffort(formId);
     }
     void this.trackFormAdded(want);
-    const proxies: Array<formBindingData.FormDataProxy> = [];
-    return formBindingData.createFormBindingData(this.buildDefaultData(), proxies);
+    return this.createFormBindingDataWithProxies(this.buildDefaultData());
   }
 
   onUpdateForm(formId: string): void {
@@ -91,11 +90,21 @@ export default class OperationFormAbility extends FormExtensionAbility {
         JSON.stringify(favorites)
       );
       const data = this.buildFavoritesData(favorites);
-      const proxies: Array<formBindingData.FormDataProxy> = [];
-      formProvider.updateForm(trimmed, formBindingData.createFormBindingData(data, proxies));
+      formProvider.updateForm(trimmed, this.createFormBindingDataWithProxies(data));
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites failed: %{public}s', String(e));
     }
+  }
+
+  private createFormBindingDataWithProxies(data: OperationWidgetFormData): formBindingData.FormBindingData {
+    const binding = formBindingData.createFormBindingData(data);
+    const proxies: Array<Object> = [];
+    try {
+      Reflect.set(binding as Object, 'formDataProxies', proxies);
+    } catch (_e: Object) {
+      // ignore
+    }
+    return binding;
   }
 
   private async loadFavoriteSkills(ctx: common.Context): Promise<Array<string>> {
