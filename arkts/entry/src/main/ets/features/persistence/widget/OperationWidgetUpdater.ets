@@ -56,7 +56,7 @@ export class OperationWidgetUpdater {
     const proxies: Array<Object> = [];
     try {
       Reflect.set(binding as Object, 'formDataProxies', proxies);
-    } catch (_e: Object) {
+    } catch {
       // ignore
     }
     return binding;
