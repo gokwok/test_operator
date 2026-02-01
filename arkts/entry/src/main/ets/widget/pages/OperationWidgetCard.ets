@@ -1,5 +1,3 @@
-let storage = new LocalStorage();
-
 interface OperationWidgetCardActionParams {
   message: string;
 }
@@ -15,6 +13,13 @@ interface OperationWidgetCardMessage {
 }
 
 declare function postCardAction(action: OperationWidgetCardAction): void;
+
+let storage = new LocalStorage({
+  shortcut1: '快捷键1',
+  shortcut2: '快捷键2',
+  shortcut3: '快捷键3',
+  shortcut4: '快捷键4',
+});
 
 @Entry(storage)
 @Component

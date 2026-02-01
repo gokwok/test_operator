@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 
 import { TaskHistoryStore } from '../features/persistence/history/TaskHistoryStore';
 import type { HistoryTaskMeta } from '../features/persistence/history/TaskHistoryStore';
+import { OperationWidgetDataStore } from '../features/persistence/widget/OperationWidgetDataStore';
 import { WidgetFormStore, WidgetFormRecord } from '../features/persistence/widget/WidgetFormStore';
 import { AgentControllerClient } from '../features/agent_controller/ipc/AgentControllerClient';
 
@@ -91,6 +92,7 @@ export default class OperationFormAbility extends FormExtensionAbility {
       );
       const data = this.buildFavoritesData(favorites);
       await formProvider.updateForm(trimmed, this.createFormBindingDataWithProxies(data));
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, 'updateForm ok formId=%{public}s', trimmed);
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'updateFormFavorites failed: %{public}s', String(e));
     }
@@ -101,6 +103,7 @@ export default class OperationFormAbility extends FormExtensionAbility {
     const proxies: Array<Object> = [];
     try {
       Reflect.set(binding as Object, 'formDataProxies', proxies);
+      Reflect.set(binding as Object, 'dataProxies', proxies);
     } catch {
       // ignore
     }
@@ -108,6 +111,10 @@ export default class OperationFormAbility extends FormExtensionAbility {
   }
 
   private async loadFavoriteSkills(ctx: common.Context): Promise<Array<string>> {
+    const snapshot = await OperationWidgetDataStore.getSnapshot(ctx);
+    if (snapshot.updatedAtMs > 0) {
+      return snapshot.favorites;
+    }
     const store = TaskHistoryStore.getInstance();
     store.init(ctx);
     const tasks = await store.listTasks(200);
