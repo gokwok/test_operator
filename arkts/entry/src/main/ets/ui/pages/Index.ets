@@ -168,6 +168,7 @@ struct Index {
   @State a2aStreamEvents: Array<TaskEvent> = [];
   @State widgetFormInfo: string = '';
   @State widgetForms: Array<WidgetFormRecord> = [];
+  @State widgetFavoritesInfo: string = '';
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
@@ -432,8 +433,27 @@ struct Index {
               })
           }
 
+          Row({ space: 8 }) {
+            Button('刷新卡片内容')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.refreshWidgetFavorites();
+              })
+          }
+
           if (this.widgetFormInfo.length > 0) {
             Text(this.widgetFormInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.widgetFavoritesInfo.length > 0) {
+            Text(this.widgetFavoritesInfo)
               .fontSize(11)
               .fontColor(THEME_TEXT_MUTED)
           }
@@ -1848,11 +1868,12 @@ struct Index {
 
   @Builder
   private taskFavoriteAction(task: HistoryTaskMeta, height: string | number = '100%'): void {
+    const favorited = this.isTaskFavoritedById(task.taskId);
     Row() {
       Text() {
-        SymbolSpan(this.getTaskFavoriteSymbolResource(this.isTaskFavorited(task) ? 'star_fill' : 'star'))
+        SymbolSpan(this.getTaskFavoriteSymbolResource(favorited ? 'star_fill' : 'star'))
           .fontSize(20)
-          .fontColor([this.isTaskFavorited(task) ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED])
+          .fontColor([favorited ? TASK_FAVORITE_COLOR : THEME_TEXT_MUTED])
       }
       .width(28)
       .height(28)
@@ -1865,7 +1886,7 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      if (this.isTaskFavorited(task)) {
+      if (this.isTaskFavoritedById(task.taskId)) {
         void this.setTaskSkillName(task.taskId, '');
       } else {
         this.openFavoriteDialog(task);
@@ -1883,6 +1904,20 @@ struct Index {
   private isTaskFavorited(task: HistoryTaskMeta): boolean {
     const name = typeof task.skill_name === 'string' ? task.skill_name : '';
     return name.trim().length > 0;
+  }
+
+  private isTaskFavoritedById(taskId: string): boolean {
+    const id = taskId.trim();
+    if (id.length === 0) {
+      return false;
+    }
+    for (let i = 0; i < this.historyTasks.length; i += 1) {
+      const task = this.historyTasks[i];
+      if (task.taskId === id) {
+        return this.isTaskFavorited(task);
+      }
+    }
+    return false;
   }
 
   private openFavoriteDialog(task: HistoryTaskMeta): void {
@@ -3094,6 +3129,16 @@ struct Index {
       this.widgetFormInfo = '已清空';
     } catch (e) {
       this.widgetFormInfo = `清空失败: ${String(e)}`;
+    }
+  }
+
+  private async refreshWidgetFavorites(): Promise<void> {
+    this.widgetFavoritesInfo = '正在刷新卡片内容...';
+    try {
+      await OperationWidgetUpdater.refreshOperationWidgetFavorites(this.getUiContext());
+      this.widgetFavoritesInfo = '已触发桌面卡片刷新';
+    } catch (e) {
+      this.widgetFavoritesInfo = `刷新失败: ${String(e)}`;
     }
   }
 

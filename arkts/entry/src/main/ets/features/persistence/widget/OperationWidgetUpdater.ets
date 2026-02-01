@@ -2,9 +2,7 @@ import type { common } from '@kit.AbilityKit';
 import { formBindingData, formProvider } from '@kit.FormKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
-import { TaskHistoryStore } from '../history/TaskHistoryStore';
-import type { HistoryTaskMeta } from '../history/TaskHistoryStore';
-import { OperationWidgetDataStore } from './OperationWidgetDataStore';
+import { FavoriteSkillPicker } from './FavoriteSkillPicker';
 import { WidgetFormStore } from './WidgetFormStore';
 import type { WidgetFormRecord } from './WidgetFormStore';
 
@@ -28,20 +26,22 @@ export class OperationWidgetUpdater {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'refresh skipped: no formId records');
       return;
     }
-    const favorites = await OperationWidgetUpdater.loadFavoriteSkills(ctx);
+    let favorites: Array<string> = [];
+    try {
+      favorites = await FavoriteSkillPicker.pick(ctx, 4);
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'load favorites failed: %{public}s', String(e));
+      favorites = [];
+    }
     hilog.info(
       HILOG_DOMAIN,
       HILOG_TAG,
-      'refresh formIds=%{public}d favorites=%{public}d names=%{public}s',
+      'refresh formIds=%{public}d favorites=%{public}d ids=%{public}s names=%{public}s',
       formIds.length,
       favorites.length,
+      JSON.stringify(formIds),
       JSON.stringify(favorites)
     );
-    try {
-      await OperationWidgetDataStore.setFavorites(ctx, favorites);
-    } catch {
-      // ignore
-    }
     const data = OperationWidgetUpdater.buildFavoritesData(favorites);
     for (let i = 0; i < formIds.length; i += 1) {
       const formId = formIds[i].trim();
@@ -60,15 +60,7 @@ export class OperationWidgetUpdater {
   }
 
   private static createFormBindingDataWithProxies(data: OperationWidgetFormData): formBindingData.FormBindingData {
-    const binding = formBindingData.createFormBindingData(data);
-    const proxies: Array<Object> = [];
-    try {
-      Reflect.set(binding as Object, 'formDataProxies', proxies);
-      Reflect.set(binding as Object, 'dataProxies', proxies);
-    } catch {
-      // ignore
-    }
-    return binding;
+    return formBindingData.createFormBindingData(data);
   }
 
   private static requestRefreshBestEffort(formId: string): void {
@@ -90,29 +82,6 @@ export class OperationWidgetUpdater {
       }
     }
     return ids;
-  }
-
-  private static async loadFavoriteSkills(ctx: common.Context): Promise<Array<string>> {
-    const store = TaskHistoryStore.getInstance();
-    store.init(ctx);
-    const tasks = await store.listTasks(200);
-    const favorites: Array<HistoryTaskMeta> = tasks.filter((t) => {
-      const name = typeof t.skill_name === 'string' ? t.skill_name : '';
-      return name.trim().length > 0 && t.status !== 'running';
-    });
-    favorites.sort((a, b) => {
-      const aTs = a.endAtMs > 0 ? a.endAtMs : a.startAtMs;
-      const bTs = b.endAtMs > 0 ? b.endAtMs : b.startAtMs;
-      return bTs - aTs;
-    });
-    const picked: Array<string> = [];
-    for (let i = 0; i < favorites.length && picked.length < 4; i += 1) {
-      const name = favorites[i].skill_name.trim();
-      if (name.length > 0) {
-        picked.push(name);
-      }
-    }
-    return picked;
   }
 
   private static buildFavoritesData(favorites: Array<string>): OperationWidgetFormData {

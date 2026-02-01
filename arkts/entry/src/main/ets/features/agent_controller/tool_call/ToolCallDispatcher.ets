@@ -99,9 +99,6 @@ export class ToolCallDispatcher {
     if (toolName === 'click') {
       return true;
     }
-    if (toolName === 'double_click') {
-      return true;
-    }
     if (toolName === 'long_click') {
       return true;
     }
