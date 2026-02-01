@@ -117,7 +117,7 @@ export class WidgetFormStore {
   private static async enqueueWrite(fn: () => Promise<void>): Promise<void> {
     WidgetFormStore.writeChain = WidgetFormStore.writeChain
       .then(fn)
-      .catch((_e) => {
+      .catch((_e: Object) => {
         // swallow errors to avoid breaking chain
       });
     await WidgetFormStore.writeChain;
