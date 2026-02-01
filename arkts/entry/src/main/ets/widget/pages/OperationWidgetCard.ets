@@ -17,10 +17,10 @@ declare function postCardAction(action: OperationWidgetCardAction): void;
 @Entry
 @Component
 struct OperationWidgetCard {
-  @LocalStorageProp('shortcut1') shortcut1: string = '快捷键1';
-  @LocalStorageProp('shortcut2') shortcut2: string = '快捷键2';
-  @LocalStorageProp('shortcut3') shortcut3: string = '快捷键3';
-  @LocalStorageProp('shortcut4') shortcut4: string = '快捷键4';
+  @StorageProp('shortcut1') shortcut1: string = '快捷键1';
+  @StorageProp('shortcut2') shortcut2: string = '快捷键2';
+  @StorageProp('shortcut3') shortcut3: string = '快捷键3';
+  @StorageProp('shortcut4') shortcut4: string = '快捷键4';
 
   build() {
     Column({ space: 8 }) {

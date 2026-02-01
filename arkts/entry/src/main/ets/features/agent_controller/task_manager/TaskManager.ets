@@ -9,7 +9,6 @@ import {
 } from '../AgentProxy';
 import { StateCollector } from '../state_collector/StateCollector';
 import { ToolKit } from '../toolkit/ToolKit';
-import { normToPx } from '../toolkit/CoordinateUtils';
 import type { DeviceState, TaskEventBatch, TaskEventType, TaskSnapshot, TaskStartRequest, UserReply } from '../types';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { TaskHistoryStore } from '../../persistence/history/TaskHistoryStore';
@@ -692,6 +691,9 @@ export class TaskManager {
     if (name === 'click') {
       return true;
     }
+    if (name === 'double_click') {
+      return true;
+    }
     if (name === 'long_click') {
       return true;
     }
@@ -730,12 +732,37 @@ export class TaskManager {
         return '';
       }
       const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
-      const xPx = normToPx(runtime.widthPx, pt[0]);
-      const yPx = normToPx(runtime.heightPx, pt[1]);
+      const px = this.resolvePointPx(runtime.widthPx, runtime.heightPx, pt[0], pt[1]);
+      const xPx = px[0];
+      const yPx = px[1];
       return VisiblePageContentA11yTree.hitTextAtPoint(list, xPx, yPx);
     } catch (_e) {
       return '';
     }
+  }
+
+  private resolvePointPx(widthPx: number, heightPx: number, x: number, y: number): Array<number> {
+    const w = Math.max(1, Math.floor(widthPx));
+    const h = Math.max(1, Math.floor(heightPx));
+    const clampPx = (value: number, limit: number): number => {
+      const safe = Number.isFinite(value) ? value : 0;
+      const clamped = Math.min(Math.max(safe, 0), Math.max(0, limit - 1));
+      return Math.round(clamped);
+    };
+    const ratioToPx = (value: number, limit: number): number => {
+      const safe = Number.isFinite(value) ? value : 0;
+      const clamped = Math.min(Math.max(safe, 0), 1);
+      return Math.round(clamped * (Math.max(1, limit) - 1));
+    };
+    const normToPx1000 = (value: number, limit: number): number => {
+      const safe = Number.isFinite(value) ? value : 0;
+      const clamped = Math.min(Math.max(safe, 0), 1000);
+      return Math.round((clamped / 1000) * (Math.max(1, limit) - 1));
+    };
+
+    const xPx = (x >= 0 && x <= 1) ? ratioToPx(x, w) : (x > 1000 ? clampPx(x, w) : normToPx1000(x, w));
+    const yPx = (y >= 0 && y <= 1) ? ratioToPx(y, h) : (y > 1000 ? clampPx(y, h) : normToPx1000(y, h));
+    return [xPx, yPx];
   }
 }
 

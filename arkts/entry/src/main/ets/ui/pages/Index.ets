@@ -9,6 +9,7 @@ import { AgentSettings } from '../../features/persistence/settings/AgentSettings
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
 import { WidgetFormStore } from '../../features/persistence/widget/WidgetFormStore';
 import type { WidgetFormRecord } from '../../features/persistence/widget/WidgetFormStore';
+import { OperationWidgetUpdater } from '../../features/persistence/widget/OperationWidgetUpdater';
 import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
 import type { TaskEvent, TaskEventBatch } from '../../features/agent_controller/types';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
@@ -171,6 +172,7 @@ struct Index {
   @State historyLoading: boolean = false;
   @State historyError: string = '';
   @State historyTasks: Array<HistoryTaskMeta> = [];
+  @State historyListNonce: number = 0;
 
   @State selectedTaskId: string = '';
   @State selectedTask: HistoryTaskMeta | null = null;
@@ -1063,7 +1065,7 @@ struct Index {
       List({ space: 14 }) {
         ForEach(this.historyTasks, (task: HistoryTaskMeta) => {
           this.taskCardItem(task);
-        }, (task: HistoryTaskMeta) => task.taskId)
+        }, (task: HistoryTaskMeta) => `${task.taskId}:${task.skill_name}:${this.historyListNonce}`)
       }
       .width('100%')
     }
@@ -1925,6 +1927,11 @@ struct Index {
     const store = TaskHistoryStore.getInstance();
     store.init(ctx);
     await store.updateTaskMeta(id, { skill_name: skillName });
+    try {
+      await OperationWidgetUpdater.refreshOperationWidgetFavorites(ctx);
+    } catch (_e) {
+      // ignore widget refresh errors
+    }
 
     this.historyTasks = this.historyTasks.map((t) => {
       if (t.taskId !== id) {
@@ -1965,6 +1972,9 @@ struct Index {
       };
       this.selectedTask = updated;
     }
+
+    // Force ListItem + swipeAction rebind (ArkUI caches swipe closures).
+    this.historyListNonce += 1;
   }
 
   private resolveTaskIcon(name: 'correct' | 'wrong'): Resource {
