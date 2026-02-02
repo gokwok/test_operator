@@ -425,6 +425,12 @@ export class AgentControllerStub extends rpc.RemoteObject {
         reply.writeString(payload);
         return true;
       }
+      if (code === AgentControllerRequestCode.REPLAY_TASK) {
+        const taskId = data.readString();
+        const payload = await this.service.replayTask(taskId);
+        reply.writeString(payload);
+        return true;
+      }
       reply.writeString('ERR_UNKNOWN_CODE');
       return false;
     } catch (e) {

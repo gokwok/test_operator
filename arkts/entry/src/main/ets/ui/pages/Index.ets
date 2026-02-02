@@ -172,6 +172,7 @@ struct Index {
 
   @State historyLoading: boolean = false;
   @State historyError: string = '';
+  @State historyNotice: string = '';
   @State historyTasks: Array<HistoryTaskMeta> = [];
   @State historyListNonce: number = 0;
 
@@ -1058,6 +1059,12 @@ struct Index {
               .fontColor(THEME_ERROR)
           }
 
+          if (this.historyNotice.length > 0) {
+            Text(this.historyNotice)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
           if (this.selectedTask && this.selectedTaskId.length > 0) {
             this.taskDetailView();
           } else {
@@ -1138,6 +1145,22 @@ struct Index {
       Row({ space: 8 }) {
         this.detailTag(`步骤 ${task.stepCount}`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
         this.detailTag(`wait ${task.waitAfterActionMs}ms`, THEME_TEXT_MUTED, DETAIL_SECTION_BG)
+      }
+
+      Row({ space: 8 }) {
+        Button('回放任务')
+          .fontSize(12)
+          .fontColor(Color.White)
+          .backgroundColor(THEME_ACCENT)
+          .borderRadius(14)
+          .border({ width: 1, color: THEME_ACCENT })
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .onClick(() => {
+            void this.replayHistoryTask(task.taskId);
+          })
+
+        Row()
+          .layoutWeight(1)
       }
 
       Row() {
@@ -3128,6 +3151,28 @@ struct Index {
       this.widgetFormInfo = '已清空';
     } catch (e) {
       this.widgetFormInfo = `清空失败: ${String(e)}`;
+    }
+  }
+
+  private async replayHistoryTask(taskId: string): Promise<void> {
+    const id = taskId.trim();
+    if (id.length === 0) {
+      return;
+    }
+    this.historyError = '';
+    this.historyNotice = '正在启动回放...';
+    try {
+      await this.ensureAgentServiceConnected();
+      const payload = await this.agentServiceClient.replayTask(id);
+      if (payload.startsWith('ERR_')) {
+        this.historyNotice = '';
+        this.historyError = `回放失败: ${payload}`;
+        return;
+      }
+      this.historyNotice = '回放已启动';
+    } catch (e) {
+      this.historyNotice = '';
+      this.historyError = `回放失败: ${String(e)}`;
     }
   }
 

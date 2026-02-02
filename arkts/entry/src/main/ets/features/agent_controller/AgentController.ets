@@ -46,7 +46,7 @@ import { AgentSettings } from '../persistence/settings/AgentSettings';
 import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
-import type { HistoryStepMeta, HistoryTaskStatus } from '../persistence/history/TaskHistoryStore';
+import type { HistoryStepMeta, HistoryTaskMeta, HistoryTaskStatus } from '../persistence/history/TaskHistoryStore';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -1231,6 +1231,68 @@ export class AgentController {
       this.replayActive = false;
     });
     return JSON.stringify({ status: 'started', skill_name: name, taskId });
+  }
+
+  async replayTask(taskId: string): Promise<string> {
+    const id = taskId.trim();
+    if (id.length === 0) {
+      return 'ERR_task_id_empty';
+    }
+    if (this.replayActive) {
+      return 'ERR_replay_busy';
+    }
+    if (this.isA2AFlowActive() || this.taskManager.getSnapshot().status === 'running') {
+      return 'ERR_task_running';
+    }
+    const ctx = this.ctx;
+    if (!ctx) {
+      return 'ERR_context_missing';
+    }
+    const settings = await AgentSettings.load(ctx);
+    this.applySettings(settings);
+    this.applyEfficiencyResourcesBestEffort();
+    this.ensureListenerBound();
+    this.bindLiveViewCancelListener();
+    await this.resetAgentSpaceForNewTask();
+
+    this.historyStore.init(ctx);
+    const meta = await this.historyStore.getTask(id);
+    if (!meta) {
+      return 'ERR_task_not_found';
+    }
+    const steps = await this.historyStore.listSteps(id);
+    if (steps.length === 0) {
+      return 'ERR_task_steps_empty';
+    }
+
+    this.liveViewTaskText = this.buildReplayTitle(meta);
+    this.liveViewPhase = 'running';
+    this.liveViewStarted = false;
+    this.liveViewAppName = '';
+    this.liveViewIcon = null;
+    this.liveViewNotificationId = this.allocateLiveViewId();
+    void this.publishRunningLiveView();
+
+    this.replayActive = true;
+    const delayMs = 500;
+    void this.runReplaySteps(steps, delayMs).finally(() => {
+      this.replayActive = false;
+    });
+    return JSON.stringify({ status: 'started', taskId: id, skill_name: meta.skill_name });
+  }
+
+  private buildReplayTitle(meta: HistoryTaskMeta): string {
+    const name = typeof meta.skill_name === 'string' ? meta.skill_name.trim() : '';
+    if (name.length > 0) {
+      return `回放技能: ${name}`;
+    }
+    const taskText = typeof meta.taskText === 'string' ? meta.taskText.trim() : '';
+    if (taskText.length > 0) {
+      const maxLen = 24;
+      const preview = taskText.length > maxLen ? `${taskText.slice(0, maxLen)}...` : taskText;
+      return `回放任务: ${preview}`;
+    }
+    return '回放任务';
   }
 
   private async runReplaySteps(steps: Array<HistoryStepMeta>, delayMs: number): Promise<void> {

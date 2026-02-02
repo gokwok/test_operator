@@ -460,6 +460,10 @@ export class AgentControllerClient {
     return await this.sendRequestWithString(AgentControllerRequestCode.REPLAY_SKILL, skillName);
   }
 
+  async replayTask(taskId: string): Promise<string> {
+    return await this.sendRequestWithString(AgentControllerRequestCode.REPLAY_TASK, taskId);
+  }
+
   private async sendRequest(code: number): Promise<string> {
     const remote = this.remote;
     if (!remote) {
