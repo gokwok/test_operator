@@ -1337,12 +1337,6 @@ export class AgentController {
           const err = result.error && result.error.length > 0 ? result.error : result.status;
           throw new Error(`action_failed:${action.name}:${err}`);
         }
-        if (actionName === 'launch_app') {
-          const appName = this.resolveAppName(action);
-          if (appName.length > 0) {
-            await this.handleLaunchAppUiSideEffects(appName);
-          }
-        }
         await this.sleepMs(delayMs);
       }
       await this.publishFinishedLiveView('回放完成');
@@ -1419,7 +1413,6 @@ export class AgentController {
   }
 
   handleDeviceToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
-    this.handleLaunchAppToolCallBestEffort(call, result);
     this.recordA2AToolHistory(call, result, elapsedMs);
     const meta: ToolExecEventPayload = {
       call_id: call.call_id,
@@ -1625,9 +1618,6 @@ export class AgentController {
     }
     await this.updateLiveViewIcon(target.bundleName);
     await this.openViewerIfForegroundMatch(target);
-    this.scheduleOpenViewerRetry(target, 600);
-    this.scheduleOpenViewerRetry(target, 1800);
-    this.scheduleOpenViewerRetry(target, 3500);
   }
 
   private shouldApplyLaunchAppUiSideEffects(): boolean {
@@ -1642,13 +1632,6 @@ export class AgentController {
     }
     const status = this.taskManager.getSnapshot().status;
     return status === 'running' || status === 'waiting_user';
-  }
-
-  private scheduleOpenViewerRetry(target: AppTarget, delayMs: number): void {
-    const delay = Math.max(0, Math.floor(delayMs));
-    setTimeout(() => {
-      void this.openViewerIfForegroundMatch(target);
-    }, delay);
   }
 
   private updateLastLaunchTarget(action: AgentAction): void {
