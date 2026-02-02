@@ -1211,6 +1211,7 @@ export class AgentController {
       const toolKit = this.requireToolKit();
       const targets = await this.safeListAppTargets(ctx);
       toolKit.setAppTargets(targets);
+      this.appTargetMap = this.buildAppTargetMap(targets);
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replaySkill load appTargets failed: %{public}s', String(e));
     }
@@ -1233,7 +1234,7 @@ export class AgentController {
     void this.publishRunningLiveView();
 
     this.replayActive = true;
-    const delayMs = 500;
+    const delayMs = 1000;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
     });
@@ -1265,6 +1266,7 @@ export class AgentController {
       const toolKit = this.requireToolKit();
       const targets = await this.safeListAppTargets(ctx);
       toolKit.setAppTargets(targets);
+      this.appTargetMap = this.buildAppTargetMap(targets);
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replayTask load appTargets failed: %{public}s', String(e));
     }
@@ -1288,7 +1290,7 @@ export class AgentController {
     void this.publishRunningLiveView();
 
     this.replayActive = true;
-    const delayMs = 500;
+    const delayMs = 1000;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
     });
@@ -1311,7 +1313,6 @@ export class AgentController {
 
   private async runReplaySteps(steps: Array<HistoryStepMeta>, delayMs: number): Promise<void> {
     try {
-      await this.openViewerBestEffort();
       const toolKit = this.requireToolKit();
       await toolKit.ensureVts();
       const ordered = steps.slice().sort((a, b) => a.stepIndex - b.stepIndex);
@@ -1323,11 +1324,24 @@ export class AgentController {
           hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replay skip step=%{public}d invalid_action=%{public}s', step.stepIndex, snippet);
           continue;
         }
+        const actionName = action.name.trim().toLowerCase();
+        if (actionName === 'launch_app') {
+          const appName = this.resolveAppName(action);
+          if (appName.length > 0) {
+            await this.handleLaunchAppUiSideEffects(appName);
+          }
+        }
         hilog.info(HILOG_DOMAIN, HILOG_TAG, 'replay step=%{public}d action=%{public}s', step.stepIndex, action.name);
         const result = await toolKit.executeAction(action);
         if (result.status !== 'SUCCESS') {
           const err = result.error && result.error.length > 0 ? result.error : result.status;
           throw new Error(`action_failed:${action.name}:${err}`);
+        }
+        if (actionName === 'launch_app') {
+          const appName = this.resolveAppName(action);
+          if (appName.length > 0) {
+            await this.handleLaunchAppUiSideEffects(appName);
+          }
         }
         await this.sleepMs(delayMs);
       }
@@ -1378,28 +1392,6 @@ export class AgentController {
     return bestTaskId;
   }
 
-  private async openViewerBestEffort(): Promise<void> {
-    if (this.viewerActive || this.viewerOpening) {
-      return;
-    }
-    const invoker = this.startAbilityInvoker;
-    if (!invoker) {
-      return;
-    }
-    const want: Want = {
-      bundleName: SELF_BUNDLE_NAME,
-      abilityName: VIEWER_ABILITY_NAME,
-    };
-    this.viewerOpening = true;
-    try {
-      await invoker(want);
-    } catch (e) {
-      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'open viewer (replay) failed: %{public}s', String(e));
-    } finally {
-      this.viewerOpening = false;
-    }
-  }
-
   private async sleepMs(ms: number): Promise<void> {
     const delay = Math.max(0, Math.floor(ms));
     await new Promise<void>((resolve) => setTimeout(resolve, delay));
@@ -1414,6 +1406,7 @@ export class AgentController {
   }
 
   handleDeviceToolCallStarted(call: McpToolCall): void {
+    this.handleLaunchAppToolCallBestEffort(call, null);
     if (this.a2aHistoryTaskId.trim().length === 0) {
       return;
     }
@@ -1426,6 +1419,7 @@ export class AgentController {
   }
 
   handleDeviceToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
+    this.handleLaunchAppToolCallBestEffort(call, result);
     this.recordA2AToolHistory(call, result, elapsedMs);
     const meta: ToolExecEventPayload = {
       call_id: call.call_id,
@@ -1563,19 +1557,15 @@ export class AgentController {
 
   async handleTaskAction(action: AgentAction, description: string): Promise<void> {
     this.updateLastLaunchTarget(action);
-    if (!this.liveViewEnabled) {
-      return;
-    }
     const name = action.name.trim().toLowerCase();
     if (name === 'launch_app') {
       const appName = this.resolveAppName(action);
       if (appName.length > 0) {
-        await this.updateLiveViewIcon(appName);
-        const target = this.resolveAppTarget(appName);
-        if (target) {
-          await this.openViewerIfForegroundMatch(target);
-        }
+        await this.handleLaunchAppUiSideEffects(appName);
       }
+      return;
+    }
+    if (!this.liveViewEnabled) {
       return;
     }
     if (name === 'call_user' || name === 'interact' || name === 'take_over') {
@@ -1590,6 +1580,75 @@ export class AgentController {
       return '';
     }
     return name.trim();
+  }
+
+  private handleLaunchAppToolCallBestEffort(call: McpToolCall, result: ToolCallResult | null): void {
+    const name = call.name.trim().toLowerCase();
+    if (name !== 'launch_app') {
+      return;
+    }
+    if (result && result.status !== 'SUCCESS') {
+      return;
+    }
+    const appName = this.resolveToolCallAppName(call);
+    if (appName.length === 0) {
+      return;
+    }
+    void this.handleLaunchAppUiSideEffects(appName);
+  }
+
+  private resolveToolCallAppName(call: McpToolCall): string {
+    const args = call.arguments;
+    if (!args) {
+      return '';
+    }
+    const raw = Reflect.get(args, 'app') as Object | null | undefined;
+    if (typeof raw !== 'string') {
+      return '';
+    }
+    return raw.trim();
+  }
+
+  private async handleLaunchAppUiSideEffects(appName: string): Promise<void> {
+    if (!this.shouldApplyLaunchAppUiSideEffects()) {
+      return;
+    }
+    const trimmed = appName.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    hilog.info(HILOG_DOMAIN, HILOG_TAG, 'launch_app ui: %{public}s', trimmed);
+    const target = this.resolveAppTarget(trimmed);
+    if (!target) {
+      await this.updateLiveViewIcon(trimmed);
+      return;
+    }
+    await this.updateLiveViewIcon(target.bundleName);
+    await this.openViewerIfForegroundMatch(target);
+    this.scheduleOpenViewerRetry(target, 600);
+    this.scheduleOpenViewerRetry(target, 1800);
+    this.scheduleOpenViewerRetry(target, 3500);
+  }
+
+  private shouldApplyLaunchAppUiSideEffects(): boolean {
+    if (!this.liveViewEnabled) {
+      return false;
+    }
+    if (this.replayActive) {
+      return true;
+    }
+    if (this.isA2AFlowActive()) {
+      return true;
+    }
+    const status = this.taskManager.getSnapshot().status;
+    return status === 'running' || status === 'waiting_user';
+  }
+
+  private scheduleOpenViewerRetry(target: AppTarget, delayMs: number): void {
+    const delay = Math.max(0, Math.floor(delayMs));
+    setTimeout(() => {
+      void this.openViewerIfForegroundMatch(target);
+    }, delay);
   }
 
   private updateLastLaunchTarget(action: AgentAction): void {
