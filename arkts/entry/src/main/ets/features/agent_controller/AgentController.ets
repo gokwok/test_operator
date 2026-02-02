@@ -1207,6 +1207,13 @@ export class AgentController {
     this.ensureListenerBound();
     this.bindLiveViewCancelListener();
     await this.resetAgentSpaceForNewTask();
+    try {
+      const toolKit = this.requireToolKit();
+      const targets = await this.safeListAppTargets(ctx);
+      toolKit.setAppTargets(targets);
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replaySkill load appTargets failed: %{public}s', String(e));
+    }
 
     const taskId = await this.findLatestTaskIdBySkillName(name);
     if (taskId.length === 0) {
@@ -1254,6 +1261,13 @@ export class AgentController {
     this.ensureListenerBound();
     this.bindLiveViewCancelListener();
     await this.resetAgentSpaceForNewTask();
+    try {
+      const toolKit = this.requireToolKit();
+      const targets = await this.safeListAppTargets(ctx);
+      toolKit.setAppTargets(targets);
+    } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replayTask load appTargets failed: %{public}s', String(e));
+    }
 
     this.historyStore.init(ctx);
     const meta = await this.historyStore.getTask(id);
@@ -1304,8 +1318,12 @@ export class AgentController {
       for (const step of ordered) {
         const action = this.parseHistoryAction(step.actionJson);
         if (!action) {
+          const raw = step.actionJson.trim();
+          const snippet = raw.length > 120 ? `${raw.slice(0, 120)}...` : raw;
+          hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replay skip step=%{public}d invalid_action=%{public}s', step.stepIndex, snippet);
           continue;
         }
+        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'replay step=%{public}d action=%{public}s', step.stepIndex, action.name);
         const result = await toolKit.executeAction(action);
         if (result.status !== 'SUCCESS') {
           const err = result.error && result.error.length > 0 ? result.error : result.status;
@@ -1315,6 +1333,7 @@ export class AgentController {
       }
       await this.publishFinishedLiveView('回放完成');
     } catch (e) {
+      hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replay failed: %{public}s', String(e));
       await this.publishFailedLiveView(`回放失败: ${String(e)}`);
     }
   }
