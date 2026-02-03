@@ -501,9 +501,8 @@ export class AgentSpace {
       if (dump.trim().length === 0) {
         return '';
       }
-      const list = VisiblePageContentA11yTree.buildListFromDump(dump, screenWidth, screenHeight);
-      const hit = VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx);
-      return normalizeUiText(hit.text ?? '');
+      const hitText = VisiblePageContentA11yTree.hitTextAtPointFromDump(dump, screenWidth, screenHeight, xPx, yPx);
+      return normalizeUiText(hitText);
     };
 
     const truncate = (text: string, limit: number): string => {

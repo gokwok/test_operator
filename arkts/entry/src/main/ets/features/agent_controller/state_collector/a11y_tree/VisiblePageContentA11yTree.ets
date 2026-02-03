@@ -66,6 +66,12 @@ interface Rect {
   bottom: number;
 }
 
+interface RawHitCandidate {
+  text: string;
+  area: number;
+  depth: number;
+}
+
 class EvalDecision {
   keepSelf: boolean;
   rect: Rect | null;
@@ -149,6 +155,22 @@ export class VisiblePageContentA11yTree {
 
   static hitTextAtPoint(list: Array<A11yTreeListItem>, xPx: number, yPx: number): string {
     return VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx).text;
+  }
+
+  static hitTextAtPointFromDump(
+    dumpJson: string,
+    screenWidthPx: number,
+    screenHeightPx: number,
+    xPx: number,
+    yPx: number
+  ): string {
+    const root = VisiblePageContentA11yTree.parseDumpRoot(dumpJson);
+    if (!root) {
+      return '';
+    }
+    const screenRect = VisiblePageContentA11yTree.resolveScreenRect(root, screenWidthPx, screenHeightPx);
+    const candidate = VisiblePageContentA11yTree.hitRawTextCandidate(root, xPx, yPx, 0, screenRect);
+    return candidate ? candidate.text : '';
   }
 
   private static parseDumpRoot(dumpJson: string): VisiblePageContentNode | null {
@@ -586,6 +608,56 @@ export class VisiblePageContentA11yTree {
       return null;
     }
     return VisiblePageContentA11yTree.createRect(left, top, right, bottom);
+  }
+
+  private static hitRawTextCandidate(node: VisiblePageContentNode, xPx: number, yPx: number, depth: number, screen: Rect): RawHitCandidate | null {
+    const rectRaw = VisiblePageContentA11yTree.parseRect(node.$rect);
+    const rect = rectRaw ?? (depth === 0 ? screen : null);
+    if (node.visible === 'false') {
+      return null;
+    }
+
+    if (rect) {
+      if (xPx < rect.left || xPx > rect.right || yPx < rect.top || yPx > rect.bottom) {
+        return null;
+      }
+    }
+
+    let best: RawHitCandidate | null = null;
+    const children = Array.isArray(node.$children) ? node.$children : [];
+    for (const child of children) {
+      const cand = VisiblePageContentA11yTree.hitRawTextCandidate(child, xPx, yPx, depth + 1, screen);
+      best = VisiblePageContentA11yTree.pickBetterRawCandidate(best, cand);
+    }
+
+    if (rect) {
+      const text = VisiblePageContentA11yTree.pickPrimaryText(node);
+      if (text.length > 0) {
+        const width = Math.max(0, rect.right - rect.left);
+        const height = Math.max(0, rect.bottom - rect.top);
+        const area = width > 0 && height > 0 ? width * height : Number.POSITIVE_INFINITY;
+        const selfCand: RawHitCandidate = { text, area, depth };
+        best = VisiblePageContentA11yTree.pickBetterRawCandidate(best, selfCand);
+      }
+    }
+
+    return best;
+  }
+
+  private static pickBetterRawCandidate(a: RawHitCandidate | null, b: RawHitCandidate | null): RawHitCandidate | null {
+    if (!a) {
+      return b;
+    }
+    if (!b) {
+      return a;
+    }
+    if (b.area < a.area) {
+      return b;
+    }
+    if (a.area < b.area) {
+      return a;
+    }
+    return b.depth >= a.depth ? b : a;
   }
 
   private static parseBounds(bounds: string): Rect | null {
