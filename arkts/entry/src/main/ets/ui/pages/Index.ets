@@ -1292,6 +1292,15 @@ struct Index {
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
+      if ((step.uiTargetText ?? '').trim().length > 0) {
+        Text(`命中：${(step.uiTargetText ?? '').trim()}`)
+          .fontSize(11)
+          .fontColor(THEME_TEXT_MUTED)
+          .lineHeight(16)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+
       Text(this.resolveStepFooterText(step))
         .fontSize(11)
         .fontColor(THEME_TEXT_MUTED)
@@ -1562,6 +1571,14 @@ struct Index {
                   .fontSize(11)
                   .fontColor(THEME_TEXT_MUTED)
                   .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+
+              if ((step.uiTargetText ?? '').trim().length > 0) {
+                Text(`命中：${(step.uiTargetText ?? '').trim()}`)
+                  .fontSize(10)
+                  .fontColor(THEME_TEXT_SUBTLE)
+                  .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
             }
