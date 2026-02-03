@@ -151,6 +151,10 @@ struct Index {
   @State debugToolName: string = 'screenshot';
   @State debugToolArgs: string = '{}';
   @State debugToolResult: string = '';
+  @State debugSetScrollX: string = '500';
+  @State debugSetScrollY: string = '500';
+  @State debugSetScrollDirection: string = 'down';
+  @State debugSetScrollValue: string = '';
   @State mcpStatusInfo: string = '';
   @State mcpLogInfo: string = '';
   @State mcpLogLines: Array<string> = [];
@@ -797,6 +801,77 @@ struct Index {
             .onChange((value: string) => {
               this.debugToolArgs = value;
             })
+
+          Text('set_scroll_value 快捷下发')
+            .fontSize(11)
+            .fontColor(THEME_TEXT_SUBTLE)
+
+          Row({ space: 8 }) {
+            TextInput({ placeholder: 'x(0..1000)', text: this.debugSetScrollX })
+              .layoutWeight(1)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.debugSetScrollX = value;
+              })
+
+            TextInput({ placeholder: 'y(0..1000)', text: this.debugSetScrollY })
+              .layoutWeight(1)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.debugSetScrollY = value;
+              })
+          }
+
+          Row({ space: 8 }) {
+            TextInput({ placeholder: 'direction(up/down)', text: this.debugSetScrollDirection })
+              .layoutWeight(1)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.debugSetScrollDirection = value;
+              })
+
+            TextInput({ placeholder: 'value', text: this.debugSetScrollValue })
+              .layoutWeight(2)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.debugSetScrollValue = value;
+              })
+
+            Button('下发')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.debugSendSetScrollValueTool();
+              })
+          }
 
           if (this.debugToolResult.length > 0) {
             Text(this.formatDebugToolResult(this.debugToolResult))
@@ -3028,6 +3103,29 @@ struct Index {
     } catch (e) {
       this.debugToolResult = `执行失败: ${String(e)}`;
     }
+  }
+
+  private async debugSendSetScrollValueTool(): Promise<void> {
+    const xRaw = parseInt(this.debugSetScrollX.trim(), 10);
+    const yRaw = parseInt(this.debugSetScrollY.trim(), 10);
+    const x = Number.isFinite(xRaw) ? Math.min(1000, Math.max(0, xRaw)) : 500;
+    const y = Number.isFinite(yRaw) ? Math.min(1000, Math.max(0, yRaw)) : 500;
+
+    const direction = this.debugSetScrollDirection.trim().toLowerCase();
+    if (direction !== 'up' && direction !== 'down') {
+      this.debugToolResult = 'direction 仅支持 up/down（值变化方向）';
+      return;
+    }
+    const value = this.debugSetScrollValue.trim();
+    if (value.length === 0) {
+      this.debugToolResult = '请输入 value';
+      return;
+    }
+
+    const args = { point: [x, y], direction, value };
+    this.debugToolName = 'set_scroll_value';
+    this.debugToolArgs = JSON.stringify(args);
+    await this.simulateToolCall();
   }
 
   private formatDebugToolResult(payload: string): string {
