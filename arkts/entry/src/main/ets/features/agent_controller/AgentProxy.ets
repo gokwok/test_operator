@@ -31,6 +31,8 @@ export interface CloudActionParameters {
   content?: string;
   app?: string;
   options?: Array<string>;
+  direction?: string;
+  value?: string;
 }
 
 export interface CloudAction {
@@ -148,6 +150,15 @@ export class AgentProxy {
     }
     if (params.options && params.options.length > 0) {
       normalized.options = params.options;
+    }
+    if (typeof params.direction === 'string') {
+      const normalizedDir = params.direction.trim().toLowerCase();
+      if (normalizedDir === 'up' || normalizedDir === 'down') {
+        normalized.direction = normalizedDir;
+      }
+    }
+    if (typeof params.value === 'string') {
+      normalized.value = params.value;
     }
     const resolved: AgentAction = { name, parameters: normalized };
     return resolved;

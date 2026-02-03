@@ -4,6 +4,7 @@ import fs from '@ohos.file.fs';
 import image from '@ohos.multimedia.image';
 import { VTSBackend } from './VTSBackend';
 import type { AppTarget, StartAbilityInvoker, VTSBackendPort } from './VTSBackend';
+import { VisiblePageContentA11yTree } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
 
 const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
 
@@ -49,6 +50,8 @@ export interface ActionParameters {
   options?: Array<string>;
   key?: string;
   keys?: Array<string>;
+  direction?: 'up' | 'down';
+  value?: string;
 }
 
 export type AgentSpaceViewerMode = 'display' | 'control';
@@ -314,6 +317,9 @@ export class AgentSpace {
     if (name === 'wait') {
       return await this.handleWait(action.parameters);
     }
+    if (name === 'set_scroll_value') {
+      return await this.handleSetScrollValue(action.parameters);
+    }
     if (name === 'press_back') {
       return await this.handlePressBack();
     }
@@ -450,6 +456,126 @@ export class AgentSpace {
     const seconds = this.readNumber(params?.seconds, 1);
     await sleep(Math.max(0, Math.floor(seconds * 1000)));
     return { status: 'SUCCESS' };
+  }
+
+  private async handleSetScrollValue(params?: ActionParameters): Promise<ActionResult> {
+    const pt = this.readPoint(params, 'point');
+    if (!pt) {
+      return { status: 'FAILED', error: 'missing_point' };
+    }
+    const expected = normalizeUiText(params?.value ?? '');
+    if (expected.length === 0) {
+      return { status: 'FAILED', error: 'empty_value' };
+    }
+    const rawDir = String(params?.direction ?? '').trim().toLowerCase();
+    if (rawDir !== 'up' && rawDir !== 'down') {
+      return { status: 'FAILED', error: 'invalid_direction' };
+    }
+    const valueDirection: 'up' | 'down' = rawDir;
+
+    const runtime = await this.ensureVts();
+    const screenWidth = Math.max(1, Math.floor(runtime.widthPx));
+    const screenHeight = Math.max(1, Math.floor(runtime.heightPx));
+    if (screenWidth <= 1 || screenHeight <= 1) {
+      return { status: 'FAILED', error: 'invalid_screen_size' };
+    }
+
+    const xPx = this.normToPx(screenWidth, pt[0]);
+    const yPx = this.normToPx(screenHeight, pt[1]);
+
+    const startedAt = Date.now();
+    const maxSteps = 40;
+    const timeoutMs = 15000;
+    const settleDelayMs = 220;
+    const swipeDurationMs = 180;
+    const stuckThreshold = 3;
+    const emptyThreshold = 6;
+
+    const clampY = (value: number): number => {
+      const max = Math.max(0, screenHeight - 1);
+      return Math.min(Math.max(0, Math.round(value)), max);
+    };
+
+    const readHitText = async (): Promise<string> => {
+      const dump = await this.getVisiblePageContent(0);
+      if (dump.trim().length === 0) {
+        return '';
+      }
+      const list = VisiblePageContentA11yTree.buildListFromDump(dump, screenWidth, screenHeight);
+      const hit = VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx);
+      return normalizeUiText(hit.text ?? '');
+    };
+
+    const truncate = (text: string, limit: number): string => {
+      if (text.length <= limit) {
+        return text;
+      }
+      return `${text.slice(0, limit)}...`;
+    };
+
+    const fingerSwipeUp = valueDirection === 'down';
+    let swipeDistancePx = Math.max(12, Math.min(120, Math.round(screenHeight * 0.035)));
+    const maxSwipeDistancePx = Math.max(swipeDistancePx, Math.round(screenHeight * 0.18));
+
+    let currentText = await readHitText();
+    if (currentText === expected) {
+      return { status: 'SUCCESS', output: currentText };
+    }
+
+    let consecutiveStuck = 0;
+    let consecutiveEmpty = currentText.length === 0 ? 1 : 0;
+
+    for (let step = 0; step < maxSteps; step += 1) {
+      if (Date.now() - startedAt > timeoutMs) {
+        const last = currentText.length > 0 ? truncate(currentText, 80) : '';
+        return { status: 'FAILED', error: last.length > 0 ? `set_scroll_value_timeout:last=${last}` : 'set_scroll_value_timeout' };
+      }
+
+      const half = Math.max(2, Math.floor(swipeDistancePx / 2));
+      const startY = clampY(fingerSwipeUp ? (yPx + half) : (yPx - half));
+      const endY = clampY(fingerSwipeUp ? (yPx - half) : (yPx + half));
+      if (startY === endY) {
+        return { status: 'FAILED', error: 'invalid_swipe_range' };
+      }
+
+      await this.backend.swipePx(xPx, startY, xPx, endY, swipeDurationMs);
+      this.emitViewerSwipeFromPx(xPx, startY, xPx, endY, swipeDurationMs, runtime);
+      await sleep(settleDelayMs);
+
+      const updatedText = await readHitText();
+      if (updatedText === expected) {
+        return { status: 'SUCCESS', output: updatedText };
+      }
+
+      if (updatedText.length === 0) {
+        consecutiveEmpty += 1;
+        if (consecutiveEmpty >= emptyThreshold) {
+          return { status: 'FAILED', error: 'set_scroll_value_empty_hit_text' };
+        }
+      } else {
+        consecutiveEmpty = 0;
+      }
+
+      if (updatedText === currentText) {
+        consecutiveStuck += 1;
+        if (consecutiveStuck >= stuckThreshold) {
+          if (swipeDistancePx < maxSwipeDistancePx) {
+            swipeDistancePx = Math.min(maxSwipeDistancePx, Math.max(swipeDistancePx + 1, Math.round(swipeDistancePx * 1.6)));
+            consecutiveStuck = 0;
+          } else {
+            const last = currentText.length > 0 ? truncate(currentText, 80) : '';
+            return { status: 'FAILED', error: last.length > 0 ? `set_scroll_value_stuck:last=${last}` : 'set_scroll_value_stuck' };
+          }
+        }
+      } else {
+        consecutiveStuck = 0;
+      }
+
+      currentText = updatedText;
+    }
+
+    const last = currentText.length > 0 ? truncate(currentText, 80) : '';
+    return { status: 'FAILED', error: last.length > 0 ? `set_scroll_value_max_steps:last=${last}` : 'set_scroll_value_max_steps' };
   }
 
   private async handlePressEnter(): Promise<ActionResult> {
@@ -733,4 +859,27 @@ export class AgentSpace {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeUiText(value: string): string {
+  const raw = value.trim();
+  if (raw.length === 0) {
+    return '';
+  }
+  let out = '';
+  let lastSpace = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw.charAt(i);
+    const isSpace = ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r';
+    if (isSpace) {
+      if (!lastSpace) {
+        out += ' ';
+        lastSpace = true;
+      }
+      continue;
+    }
+    out += ch;
+    lastSpace = false;
+  }
+  return out.trim();
 }

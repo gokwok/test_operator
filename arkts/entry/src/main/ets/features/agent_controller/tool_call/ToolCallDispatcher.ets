@@ -22,6 +22,8 @@ interface ToolCallArgs {
   seconds?: number;
   content?: string;
   app?: string;
+  direction?: string;
+  value?: string;
 }
 
 const DEFAULT_LONG_CLICK_MS: number = 1500;
@@ -120,6 +122,9 @@ export class ToolCallDispatcher {
       return true;
     }
     if (toolName === 'long_click') {
+      return true;
+    }
+    if (toolName === 'set_scroll_value') {
       return true;
     }
     if (toolName === 'type') {
@@ -237,6 +242,26 @@ export class ToolCallDispatcher {
         return null;
       }
       const params: ActionParameters = { app };
+      return { name, parameters: params };
+    }
+    if (name === 'set_scroll_value') {
+      const point = this.readPoint(args.point);
+      if (!point) {
+        return null;
+      }
+      const direction = this.readText(args.direction).toLowerCase();
+      if (direction !== 'up' && direction !== 'down') {
+        return null;
+      }
+      const value = this.readText(args.value);
+      if (value.length === 0) {
+        return null;
+      }
+      const params: ActionParameters = {
+        point,
+        direction: direction as 'up' | 'down',
+        value,
+      };
       return { name, parameters: params };
     }
     if (name === 'press_back' || name === 'press_enter') {
