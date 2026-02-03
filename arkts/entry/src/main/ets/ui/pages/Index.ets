@@ -1292,18 +1292,8 @@ struct Index {
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      const hitText = (step.uiTargetText ?? '').trim();
-      const hitHash = (step.uiTargetHashCode ?? '').trim();
-      if (hitText.length > 0 || hitHash.length > 0) {
-        let hitLabel: string = '';
-        if (hitText.length > 0 && hitHash.length > 0) {
-          hitLabel = `命中：${hitText} #${hitHash}`;
-        } else if (hitText.length > 0) {
-          hitLabel = `命中：${hitText}`;
-        } else {
-          hitLabel = `命中：#${hitHash}`;
-        }
-        Text(hitLabel)
+      if (this.stepHasHit(step)) {
+        Text(this.resolveStepHitLabel(step))
           .fontSize(11)
           .fontColor(THEME_TEXT_MUTED)
           .lineHeight(16)
@@ -1420,24 +1410,22 @@ struct Index {
         .fontColor(THEME_TEXT_PRIMARY)
         .lineHeight(20)
 
-      const detailHitText = (step.uiTargetText ?? '').trim();
-      const detailHitHash = (step.uiTargetHashCode ?? '').trim();
-      if (detailHitText.length > 0 || detailHitHash.length > 0) {
+      if (this.stepHasHit(step)) {
         Column({ space: 6 }) {
           Text('命中元素')
             .fontSize(DETAIL_TITLE_SIZE)
             .fontColor(THEME_TEXT_PRIMARY)
             .fontWeight(FontWeight.Medium)
 
-          if (detailHitText.length > 0) {
-            Text(detailHitText)
+          if (this.resolveStepHitText(step).length > 0) {
+            Text(this.resolveStepHitText(step))
               .fontSize(DETAIL_TEXT_SIZE)
               .fontColor(THEME_TEXT_PRIMARY)
               .lineHeight(18)
           }
 
-          if (detailHitHash.length > 0) {
-            Text(`hashCode: ${detailHitHash}`)
+          if (this.resolveStepHitHash(step).length > 0) {
+            Text(`hashCode: ${this.resolveStepHitHash(step)}`)
               .fontSize(DETAIL_TEXT_SIZE)
               .fontColor(THEME_TEXT_MUTED)
               .lineHeight(18)
@@ -1595,18 +1583,8 @@ struct Index {
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
 
-              const listHitText = (step.uiTargetText ?? '').trim();
-              const listHitHash = (step.uiTargetHashCode ?? '').trim();
-              if (listHitText.length > 0 || listHitHash.length > 0) {
-                let listHitLabel: string = '';
-                if (listHitText.length > 0 && listHitHash.length > 0) {
-                  listHitLabel = `命中：${listHitText} #${listHitHash}`;
-                } else if (listHitText.length > 0) {
-                  listHitLabel = `命中：${listHitText}`;
-                } else {
-                  listHitLabel = `命中：#${listHitHash}`;
-                }
-                Text(listHitLabel)
+              if (this.stepHasHit(step)) {
+                Text(this.resolveStepHitLabel(step))
                   .fontSize(10)
                   .fontColor(THEME_TEXT_SUBTLE)
                   .maxLines(1)
@@ -2390,6 +2368,33 @@ struct Index {
       return `关键参数: ${paramSummary} / 格式: ${formatText} / 大小: ${sizeText}`;
     }
     return `格式: ${formatText} / 大小: ${sizeText}`;
+  }
+
+  private resolveStepHitText(step: HistoryStepMeta): string {
+    return (step.uiTargetText ?? '').trim();
+  }
+
+  private resolveStepHitHash(step: HistoryStepMeta): string {
+    return (step.uiTargetHashCode ?? '').trim();
+  }
+
+  private stepHasHit(step: HistoryStepMeta): boolean {
+    return this.resolveStepHitText(step).length > 0 || this.resolveStepHitHash(step).length > 0;
+  }
+
+  private resolveStepHitLabel(step: HistoryStepMeta): string {
+    const text = this.resolveStepHitText(step);
+    const hash = this.resolveStepHitHash(step);
+    if (text.length > 0 && hash.length > 0) {
+      return `命中：${text} #${hash}`;
+    }
+    if (text.length > 0) {
+      return `命中：${text}`;
+    }
+    if (hash.length > 0) {
+      return `命中：#${hash}`;
+    }
+    return '';
   }
 
   private resolveStepParamSummary(actionJson: string): string {
