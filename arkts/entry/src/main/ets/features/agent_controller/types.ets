@@ -2,6 +2,8 @@ export type TaskStatus = 'idle' | 'running' | 'waiting_user' | 'stopping' | 'fin
 
 export type ActionResultStatus = '' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
 
+export type TaskFlowKind = 'legacy' | 'a2a' | 'replay';
+
 export type TaskEventType =
   | 'status'
   | 'log'
@@ -32,6 +34,7 @@ export interface TaskEventBatch {
 
 export interface TaskSnapshot {
   sessionId: string;
+  flow?: TaskFlowKind;
   status: TaskStatus;
   stepIndex: number;
   lastDescription: string;

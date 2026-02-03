@@ -180,6 +180,8 @@ export class AgentSpace {
     if (!active) {
       this.surfaceId = '';
       this.surfaceAttached = false;
+      this.viewerEffectSequence = 0;
+      this.viewerEffects = [];
     }
   }
 

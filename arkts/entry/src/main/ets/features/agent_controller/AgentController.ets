@@ -33,6 +33,7 @@ import type {
   AppTargetDescriptor,
   TaskEventBatch,
   TaskEventType,
+  TaskFlowKind,
   TaskSnapshot,
   TaskStartRequest,
   TaskStatus,
@@ -315,9 +316,20 @@ export class AgentController {
 
   getSnapshotJson(): string {
     const snapshot = this.resolveActiveSnapshot();
+    snapshot.flow = this.resolveActiveFlowKind();
     const appLaunched = this.agentSpace ? this.agentSpace.isAppLaunched() : false;
     snapshot.appLaunched = appLaunched;
     return JSON.stringify(snapshot);
+  }
+
+  private resolveActiveFlowKind(): TaskFlowKind {
+    if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
+      return 'a2a';
+    }
+    if (this.replayActive && this.replaySnapshot.status !== 'idle') {
+      return 'replay';
+    }
+    return 'legacy';
   }
 
   private resolveActiveSnapshot(): TaskSnapshot {
