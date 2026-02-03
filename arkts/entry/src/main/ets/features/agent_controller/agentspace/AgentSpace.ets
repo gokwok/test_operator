@@ -486,7 +486,7 @@ export class AgentSpace {
     const startedAt = Date.now();
     const maxSteps = 80;
     const timeoutMs = 60000;
-    const settleDelayMs = 750;
+    const settleDelayMs = 1000;
     const swipeDurationMs = 180;
     const stuckThreshold = 5;
     const emptyThreshold = 6;
@@ -514,7 +514,7 @@ export class AgentSpace {
     };
 
     const fingerSwipeUp = valueDirection === 'down';
-    let swipeDistancePx = Math.max(12, Math.min(120, Math.round(screenHeight * 0.035)));
+    let swipeDistancePx = Math.max(12, Math.min(120, Math.round(screenHeight * 0.05)));
     const maxSwipeDistancePx = Math.max(swipeDistancePx, Math.round(screenHeight * 0.18));
 
     let currentText = await readHitText();
