@@ -416,34 +416,39 @@ struct AgentSpaceViewer {
     this.statusPolling = true;
     try {
       await this.ensureServiceConnected();
-      let snapshot: TaskSnapshot | null = null;
-      if (!this.a2aEventMode) {
-        const snapshotText = await this.getServiceClient().getSnapshot();
-        snapshot = this.readSnapshot(snapshotText);
-        if (snapshot) {
-          this.updateDisplayVisibility(snapshot);
-          if (snapshot.status === 'finished') {
-            this.enterTaskFinished(snapshot);
-            return;
-          }
-        }
-      }
-
-      const allowA2A = this.a2aEventMode || (snapshot ? snapshot.flow === 'a2a' : false);
-      const gotEvents = allowA2A ? await this.flushA2AEvents() : false;
-      if (allowA2A && (this.a2aEventMode || gotEvents)) {
-        await this.refreshDisplayVisibility();
-        return;
-      }
-
-      if (!snapshot) {
-        const snapshotText = await this.getServiceClient().getSnapshot();
-        snapshot = this.readSnapshot(snapshotText);
-      }
+      const snapshotText = await this.getServiceClient().getSnapshot();
+      const snapshot = this.readSnapshot(snapshotText);
       if (!snapshot) {
         return;
       }
       this.updateDisplayVisibility(snapshot);
+
+      const flowRaw = snapshot.flow;
+      const flow = typeof flowRaw === 'string' ? flowRaw : '';
+      const isA2AFlow = flow === 'a2a';
+
+      if (!isA2AFlow && this.a2aEventMode) {
+        this.a2aEventMode = false;
+        this.a2aEventSequence = 0;
+        this.startEffectPolling();
+      }
+
+      if (!isA2AFlow) {
+        if (snapshot.status === 'finished') {
+          this.enterTaskFinished(snapshot);
+          return;
+        }
+      } else if (!this.a2aEventMode && snapshot.status === 'finished') {
+        this.enterTaskFinished(snapshot);
+        return;
+      } else {
+        const gotEvents = await this.flushA2AEvents();
+        if (this.a2aEventMode || gotEvents) {
+          await this.refreshDisplayVisibility();
+          return;
+        }
+      }
+
       const interaction = this.extractInteraction(snapshot);
       if (interaction) {
         if (!this.callUserActive ||

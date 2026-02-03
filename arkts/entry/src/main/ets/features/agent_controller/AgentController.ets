@@ -326,7 +326,11 @@ export class AgentController {
     if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
       return 'a2a';
     }
-    if (this.replayActive && this.replaySnapshot.status !== 'idle') {
+    const legacySnapshot = this.taskManager.getSnapshot();
+    if (legacySnapshot.status !== 'idle') {
+      return 'legacy';
+    }
+    if (this.replaySnapshot.status !== 'idle') {
       return 'replay';
     }
     return 'legacy';
@@ -336,10 +340,14 @@ export class AgentController {
     if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
       return this.a2aSnapshot;
     }
-    if (this.replayActive && this.replaySnapshot.status !== 'idle') {
+    const legacySnapshot = this.taskManager.getSnapshot();
+    if (legacySnapshot.status !== 'idle') {
+      return legacySnapshot;
+    }
+    if (this.replaySnapshot.status !== 'idle') {
       return this.replaySnapshot;
     }
-    return this.taskManager.getSnapshot();
+    return legacySnapshot;
   }
 
   private isA2AFlowActive(): boolean {
@@ -1318,13 +1326,6 @@ export class AgentController {
     const delayMs = 1000;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
-      this.replaySnapshot.status = 'idle';
-      this.replaySnapshot.stepIndex = 0;
-      this.replaySnapshot.lastDescription = '';
-      this.replaySnapshot.lastActionName = '';
-      this.replaySnapshot.lastActionJson = '';
-      this.replaySnapshot.lastResultStatus = '';
-      this.replaySnapshot.lastError = '';
     });
     return JSON.stringify({ status: 'started', skill_name: name, taskId });
   }
@@ -1390,13 +1391,6 @@ export class AgentController {
     const delayMs = 1000;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
-      this.replaySnapshot.status = 'idle';
-      this.replaySnapshot.stepIndex = 0;
-      this.replaySnapshot.lastDescription = '';
-      this.replaySnapshot.lastActionName = '';
-      this.replaySnapshot.lastActionJson = '';
-      this.replaySnapshot.lastResultStatus = '';
-      this.replaySnapshot.lastError = '';
     });
     return JSON.stringify({ status: 'started', taskId: id, skill_name: meta.skill_name });
   }
