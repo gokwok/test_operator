@@ -486,7 +486,7 @@ export class AgentSpace {
     const startedAt = Date.now();
     const maxSteps = 40;
     const timeoutMs = 15000;
-    const settleDelayMs = 220;
+    const settleDelayMs = 500;
     const swipeDurationMs = 180;
     const stuckThreshold = 3;
     const emptyThreshold = 6;
