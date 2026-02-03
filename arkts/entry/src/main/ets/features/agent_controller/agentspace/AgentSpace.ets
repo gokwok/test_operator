@@ -484,11 +484,11 @@ export class AgentSpace {
     const yPx = this.normToPx(screenHeight, pt[1]);
 
     const startedAt = Date.now();
-    const maxSteps = 40;
-    const timeoutMs = 15000;
-    const settleDelayMs = 500;
+    const maxSteps = 80;
+    const timeoutMs = 60000;
+    const settleDelayMs = 750;
     const swipeDurationMs = 180;
-    const stuckThreshold = 3;
+    const stuckThreshold = 5;
     const emptyThreshold = 6;
 
     const clampY = (value: number): number => {
