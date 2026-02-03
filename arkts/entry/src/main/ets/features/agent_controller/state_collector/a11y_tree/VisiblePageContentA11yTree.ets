@@ -359,23 +359,82 @@ export class VisiblePageContentA11yTree {
     let index = 1;
     const walk = (entry: FilteredNode): void => {
       const node = entry.node;
-      const item: A11yTreeListItem = {
-        index,
-        resourceId: VisiblePageContentA11yTree.pickResourceId(node),
-        className: VisiblePageContentA11yTree.pickClassName(node),
-        text: VisiblePageContentA11yTree.pickText(node),
-        bounds: VisiblePageContentA11yTree.formatBounds(entry.rect),
-        textCandidates: VisiblePageContentA11yTree.buildTextCandidates(node),
-        children: [],
-      };
-      results.push(item);
-      index += 1;
+      if (VisiblePageContentA11yTree.isOperable(node)) {
+        const item: A11yTreeListItem = {
+          index,
+          resourceId: VisiblePageContentA11yTree.pickResourceId(node),
+          className: VisiblePageContentA11yTree.pickClassName(node),
+          text: VisiblePageContentA11yTree.pickOperableText(entry),
+          bounds: VisiblePageContentA11yTree.formatBounds(entry.rect),
+          textCandidates: VisiblePageContentA11yTree.buildTextCandidates(node),
+          children: [],
+        };
+        results.push(item);
+        index += 1;
+      }
       for (const child of entry.children) {
         walk(child);
       }
     };
     walk(root);
     return results;
+  }
+
+  private static isOperable(node: VisiblePageContentNode): boolean {
+    return node.clickable === true ||
+      node.longClickable === true ||
+      node.scrollable === true ||
+      node.editable === true;
+  }
+
+  private static pickOperableText(entry: FilteredNode): string {
+    const node = entry.node;
+    if (node.clickable === true || node.longClickable === true) {
+      return VisiblePageContentA11yTree.pickMergedText(entry);
+    }
+    return VisiblePageContentA11yTree.pickText(node);
+  }
+
+  private static pickMergedText(entry: FilteredNode): string {
+    const direct = VisiblePageContentA11yTree.pickPrimaryText(entry.node);
+    if (direct.length > 0) {
+      return direct;
+    }
+    const merged = VisiblePageContentA11yTree.findPrimaryTextInSubtree(entry);
+    if (merged.length > 0) {
+      return merged;
+    }
+    return VisiblePageContentA11yTree.pickText(entry.node);
+  }
+
+  private static pickPrimaryText(node: VisiblePageContentNode): string {
+    const text = (node.$attrs?.content ?? '').trim();
+    if (text.length > 0) {
+      return text;
+    }
+    const desc = (node.$attrs?.accessibilityText ?? node.$attrs?.description ?? '').trim();
+    if (desc.length > 0) {
+      return desc;
+    }
+    const hint = (node.$attrs?.hintText ?? '').trim();
+    if (hint.length > 0) {
+      return hint;
+    }
+    return '';
+  }
+
+  private static findPrimaryTextInSubtree(entry: FilteredNode): string {
+    for (const child of entry.children) {
+      const direct = VisiblePageContentA11yTree.pickPrimaryText(child.node);
+      if (direct.length > 0) {
+        return direct;
+      }
+      const nested = VisiblePageContentA11yTree.findPrimaryTextInSubtree(child);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+    return '';
   }
 
   private static pickResourceId(node: VisiblePageContentNode): string {
