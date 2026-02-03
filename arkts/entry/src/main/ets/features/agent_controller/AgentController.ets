@@ -1329,7 +1329,7 @@ export class AgentController {
     this.replaySnapshot.lastError = '';
 
     this.replayActive = true;
-    const delayMs = 1000;
+    const delayMs = 1500;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
     });
@@ -1394,7 +1394,7 @@ export class AgentController {
     this.replaySnapshot.lastError = '';
 
     this.replayActive = true;
-    const delayMs = 1000;
+    const delayMs = 1500;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
     });
