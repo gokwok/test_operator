@@ -18,6 +18,7 @@ import type {
 import type { AppTarget, StartAbilityInvoker } from './agentspace/VTSBackend';
 import { AgentProxy } from './AgentProxy';
 import { StateCollector } from './state_collector/StateCollector';
+import { VisiblePageContentA11yTree } from './state_collector/a11y_tree/VisiblePageContentA11yTree';
 import { ToolKit } from './toolkit/ToolKit';
 import { ToolCallDispatcher } from './tool_call/ToolCallDispatcher';
 import { AgentEventHub } from './events/AgentEventHub';
@@ -708,15 +709,57 @@ export class AgentController {
   async prepareA11yTreeList(windowId: number = 0): Promise<string> {
     try {
       const toolKit = this.requireToolKit();
-      const collector = new StateCollector(toolKit);
+      const runtime = await toolKit.ensureVts();
       const wid = Math.max(0, Math.floor(windowId));
-      const list = await collector.getA11yTreeListForAgentSpace(wid);
+      const dump = await toolKit.getVisiblePageContent(wid);
+      this.lastVisiblePageContent = dump;
+      this.logDebugLarge('debug_a11y_raw', dump);
+      const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
       this.lastA11yTreeList = JSON.stringify(list);
+      this.logDebugLarge('debug_a11y_list', this.lastA11yTreeList);
       return String(this.lastA11yTreeList.length);
     } catch (e) {
       this.lastA11yTreeList = '';
       return `ERR_${String(e)}`;
     }
+  }
+
+  private logDebugLarge(label: string, payload: string): void {
+    const trimmedLabel = label.trim();
+    if (trimmedLabel.length === 0) {
+      return;
+    }
+    const normalized = this.normalizeDebugPayload(payload);
+    const total = normalized.length;
+    hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s len=%{public}d', trimmedLabel, total);
+    if (total === 0) {
+      return;
+    }
+    const chunkSize = 900;
+    const maxChars = 24000;
+    const limit = Math.min(total, maxChars);
+    let offset = 0;
+    let part = 0;
+    while (offset < limit) {
+      const end = Math.min(limit, offset + chunkSize);
+      const chunk = normalized.slice(offset, end);
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s[%{public}d] %{public}s', trimmedLabel, part, chunk);
+      offset = end;
+      part += 1;
+    }
+    if (total > limit) {
+      hilog.info(HILOG_DOMAIN, HILOG_TAG, '%{public}s truncated=%{public}d', trimmedLabel, total - limit);
+    }
+  }
+
+  private normalizeDebugPayload(payload: string): string {
+    if (payload.length === 0) {
+      return '';
+    }
+    let normalized = payload;
+    normalized = normalized.split('\r').join('\\r');
+    normalized = normalized.split('\n').join('\\n');
+    return normalized;
   }
 
   readA11yTreeListChunk(offset: number, size: number): string {
