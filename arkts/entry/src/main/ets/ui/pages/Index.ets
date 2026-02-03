@@ -121,6 +121,12 @@ interface ServiceExtensionStarter {
   startServiceExtensionAbility?: (want: Want) => Promise<void>;
 }
 
+interface DebugSetScrollValueArgs {
+  point: Array<number>;
+  direction: 'up' | 'down';
+  value: string;
+}
+
 type NavSymbolName = 'house_fill' | 'gearshape' | 'bolt_filled_on_circle';
 type TaskBarSymbolName = 'arrow_clockwise' | 'clean' | 'chevron_left' | 'trash';
 
@@ -3122,7 +3128,8 @@ struct Index {
       return;
     }
 
-    const args = { point: [x, y], direction, value };
+    const dir: 'up' | 'down' = direction === 'up' ? 'up' : 'down';
+    const args: DebugSetScrollValueArgs = { point: [x, y], direction: dir, value };
     this.debugToolName = 'set_scroll_value';
     this.debugToolArgs = JSON.stringify(args);
     await this.simulateToolCall();
