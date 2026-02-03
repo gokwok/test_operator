@@ -48,6 +48,8 @@ import { AppState } from './state_collector/AppState';
 import { ForegroundAppState } from './state_collector/ForegroundAppState';
 import { TaskHistoryStore } from '../persistence/history/TaskHistoryStore';
 import type { HistoryStepMeta, HistoryTaskMeta, HistoryTaskStatus } from '../persistence/history/TaskHistoryStore';
+import type { ActionExecutionObserver, ActionExpectedResult, ActionSequenceStep, UiTreeExpectedTarget } from './execution/ActionExecutionEngine';
+import { ActionExecutionEngine } from './execution/ActionExecutionEngine';
 
 const DEFAULT_CLOUD_ENDPOINT: string = 'http://114.55.173.20:8005';
 const FLOAT_WINDOW_ABILITY_NAME: string = 'FloatWindowAbility';
@@ -246,6 +248,17 @@ export class AgentController {
     lastError: '',
     installedAppsSent: false,
   };
+  private replaySnapshot: TaskSnapshot = {
+    sessionId: '',
+    status: 'idle',
+    stepIndex: 0,
+    lastDescription: '',
+    lastActionName: '',
+    lastActionJson: '',
+    lastResultStatus: '',
+    lastError: '',
+    installedAppsSent: false,
+  };
   private appTargetMap: Map<string, AppTarget> = new Map<string, AppTarget>();
   private lastLaunchTarget: AppTarget | null = null;
   private lastScreenshotBase64: string = '';
@@ -310,6 +323,9 @@ export class AgentController {
   private resolveActiveSnapshot(): TaskSnapshot {
     if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
       return this.a2aSnapshot;
+    }
+    if (this.replayActive && this.replaySnapshot.status !== 'idle') {
+      return this.replaySnapshot;
     }
     return this.taskManager.getSnapshot();
   }
@@ -423,7 +439,7 @@ export class AgentController {
       action,
       result.screenshot_b64,
       result.uiTargetText,
-      result.uiTargetHashCode
+      result.uiTargetIndex
     );
 
     const mapped: ActionResult = { status: result.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED' };
@@ -1277,10 +1293,26 @@ export class AgentController {
     this.liveViewNotificationId = this.allocateLiveViewId();
     void this.publishRunningLiveView();
 
+    this.replaySnapshot.sessionId = taskId;
+    this.replaySnapshot.status = 'running';
+    this.replaySnapshot.stepIndex = 0;
+    this.replaySnapshot.lastDescription = this.liveViewTaskText;
+    this.replaySnapshot.lastActionName = '';
+    this.replaySnapshot.lastActionJson = '';
+    this.replaySnapshot.lastResultStatus = '';
+    this.replaySnapshot.lastError = '';
+
     this.replayActive = true;
     const delayMs = 1000;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
+      this.replaySnapshot.status = 'idle';
+      this.replaySnapshot.stepIndex = 0;
+      this.replaySnapshot.lastDescription = '';
+      this.replaySnapshot.lastActionName = '';
+      this.replaySnapshot.lastActionJson = '';
+      this.replaySnapshot.lastResultStatus = '';
+      this.replaySnapshot.lastError = '';
     });
     return JSON.stringify({ status: 'started', skill_name: name, taskId });
   }
@@ -1333,10 +1365,26 @@ export class AgentController {
     this.liveViewNotificationId = this.allocateLiveViewId();
     void this.publishRunningLiveView();
 
+    this.replaySnapshot.sessionId = id;
+    this.replaySnapshot.status = 'running';
+    this.replaySnapshot.stepIndex = 0;
+    this.replaySnapshot.lastDescription = this.liveViewTaskText;
+    this.replaySnapshot.lastActionName = '';
+    this.replaySnapshot.lastActionJson = '';
+    this.replaySnapshot.lastResultStatus = '';
+    this.replaySnapshot.lastError = '';
+
     this.replayActive = true;
     const delayMs = 1000;
     void this.runReplaySteps(steps, delayMs).finally(() => {
       this.replayActive = false;
+      this.replaySnapshot.status = 'idle';
+      this.replaySnapshot.stepIndex = 0;
+      this.replaySnapshot.lastDescription = '';
+      this.replaySnapshot.lastActionName = '';
+      this.replaySnapshot.lastActionJson = '';
+      this.replaySnapshot.lastResultStatus = '';
+      this.replaySnapshot.lastError = '';
     });
     return JSON.stringify({ status: 'started', taskId: id, skill_name: meta.skill_name });
   }
@@ -1360,34 +1408,105 @@ export class AgentController {
       const toolKit = this.requireToolKit();
       await toolKit.ensureVts();
       const ordered = steps.slice().sort((a, b) => a.stepIndex - b.stepIndex);
-      for (const step of ordered) {
-        const action = this.parseHistoryAction(step.actionJson);
-        if (!action) {
-          const raw = step.actionJson.trim();
-          const snippet = raw.length > 120 ? `${raw.slice(0, 120)}...` : raw;
-          hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replay skip step=%{public}d invalid_action=%{public}s', step.stepIndex, snippet);
-          continue;
-        }
-        const actionName = action.name.trim().toLowerCase();
-        if (actionName === 'launch_app') {
-          const appName = this.resolveAppName(action);
-          if (appName.length > 0) {
-            await this.handleLaunchAppUiSideEffects(appName);
-          }
-        }
-        hilog.info(HILOG_DOMAIN, HILOG_TAG, 'replay step=%{public}d action=%{public}s', step.stepIndex, action.name);
-        const result = await toolKit.executeAction(action);
-        if (result.status !== 'SUCCESS') {
-          const err = result.error && result.error.length > 0 ? result.error : result.status;
-          throw new Error(`action_failed:${action.name}:${err}`);
-        }
-        await this.sleepMs(delayMs);
+      const plan = this.buildReplayPlan(ordered);
+      if (plan.length === 0) {
+        throw new Error('empty_replay_plan');
       }
+      const engine = new ActionExecutionEngine(toolKit);
+      const observer: ActionExecutionObserver = {
+        onStepStart: async (item: ActionSequenceStep, position: number): Promise<void> => {
+          const desc = item.description.trim();
+          if (desc.length > 0) {
+            this.replaySnapshot.lastDescription = desc;
+          }
+          const action = item.action;
+          this.replaySnapshot.status = 'running';
+          this.replaySnapshot.stepIndex = position + 1;
+          this.replaySnapshot.lastActionName = action.name;
+          this.replaySnapshot.lastActionJson = JSON.stringify(action);
+          this.replaySnapshot.lastResultStatus = '';
+          this.replaySnapshot.lastError = '';
+          if ((action.name ?? '').trim().toLowerCase() === 'launch_app') {
+            const appName = this.resolveAppName(action);
+            if (appName.length > 0) {
+              await this.handleLaunchAppUiSideEffects(appName);
+            }
+          }
+          hilog.info(HILOG_DOMAIN, HILOG_TAG, 'replay step=%{public}d action=%{public}s', position + 1, action.name);
+        },
+        onStepComplete: async (_item: ActionSequenceStep, _position: number, result: ActionResult): Promise<void> => {
+          this.replaySnapshot.lastResultStatus = result.status;
+          const err = (result.error ?? '').trim();
+          this.replaySnapshot.lastError = err;
+        },
+        onWaitExpectedStart: async (_step: ActionSequenceStep, position: number, expected: UiTreeExpectedTarget): Promise<void> => {
+          const text = (expected.text ?? '').trim();
+          const idx = typeof expected.index === 'number' && Number.isFinite(expected.index) ? Math.max(0, Math.floor(expected.index)) : 0;
+          hilog.info(
+            HILOG_DOMAIN,
+            HILOG_TAG,
+            'replay wait_expected_start step=%{public}d text=%{public}s index=%{public}d',
+            position + 1,
+            text,
+            idx
+          );
+        },
+        onWaitExpectedDone: async (_step: ActionSequenceStep, position: number, matched: boolean, elapsedMs: number): Promise<void> => {
+          hilog.info(
+            HILOG_DOMAIN,
+            HILOG_TAG,
+            'replay wait_expected_done step=%{public}d matched=%{public}s elapsed_ms=%{public}d',
+            position + 1,
+            String(matched),
+            Math.max(0, Math.floor(elapsedMs))
+          );
+        },
+      };
+      await engine.run(plan, observer, { defaultWaitMs: delayMs, expectTimeoutMs: 5000, pollIntervalMs: 200, windowId: 0 });
+      this.replaySnapshot.status = 'finished';
+      this.replaySnapshot.lastDescription = '回放完成';
       await this.publishFinishedLiveView('回放完成');
     } catch (e) {
       hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replay failed: %{public}s', String(e));
+      this.replaySnapshot.status = 'failed';
+      this.replaySnapshot.lastError = String(e);
+      this.replaySnapshot.lastDescription = '回放失败';
       await this.publishFailedLiveView(`回放失败: ${String(e)}`);
     }
+  }
+
+  private buildReplayPlan(steps: Array<HistoryStepMeta>): Array<ActionSequenceStep> {
+    const ordered = steps.slice().sort((a, b) => a.stepIndex - b.stepIndex);
+    const plan: Array<ActionSequenceStep> = [];
+    for (let i = 0; i < ordered.length; i += 1) {
+      const step = ordered[i];
+      const action = this.parseHistoryAction(step.actionJson);
+      if (!action) {
+        const raw = step.actionJson.trim();
+        const snippet = raw.length > 120 ? `${raw.slice(0, 120)}...` : raw;
+        hilog.warn(HILOG_DOMAIN, HILOG_TAG, 'replay skip step=%{public}d invalid_action=%{public}s', step.stepIndex, snippet);
+        continue;
+      }
+      const description = typeof step.description === 'string' ? step.description : '';
+      let expected: UiTreeExpectedTarget | null = null;
+      if (i < ordered.length - 1) {
+        const next = ordered[i + 1];
+        const text = (next.uiTargetText ?? '').trim();
+        const rawIndex = next.uiTargetIndex ?? 0;
+        const idx = typeof rawIndex === 'number' && Number.isFinite(rawIndex) ? Math.max(0, Math.floor(rawIndex)) : 0;
+        if (text.length > 0 || idx > 0) {
+          const uiTarget: UiTreeExpectedTarget = { text, index: idx };
+          expected = uiTarget;
+        }
+      }
+      let expectedResult: ActionExpectedResult | undefined = undefined;
+      if (expected) {
+        expectedResult = { uiTarget: expected };
+      }
+      const item: ActionSequenceStep = { action, description, expected: expectedResult };
+      plan.push(item);
+    }
+    return plan;
   }
 
   private parseHistoryAction(actionJson: string): AgentAction | null {
@@ -1459,7 +1578,7 @@ export class AgentController {
   handleDeviceToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
     const toolName = call.name.trim().toLowerCase();
     const hitText = result.uiTargetText.trim();
-    const hitHash = result.uiTargetHashCode.trim();
+    const hitIndex = result.uiTargetIndex;
     let shouldLogHit = toolName === 'click' || toolName === 'long_click';
     if (!shouldLogHit && toolName === 'type') {
       const pt = result.action?.parameters?.point;
@@ -1470,20 +1589,20 @@ export class AgentController {
         hilog.info(
           HILOG_DOMAIN,
           HILOG_TAG,
-          'tool_call hit_text tool=%{public}s call_id=%{public}s text=%{public}s hash=%{public}s',
+          'tool_call hit_text tool=%{public}s call_id=%{public}s text=%{public}s index=%{public}d',
           call.name,
           call.call_id,
           hitText,
-          hitHash
+          hitIndex
         );
       } else {
         hilog.info(
           HILOG_DOMAIN,
           HILOG_TAG,
-          'tool_call hit_text_empty tool=%{public}s call_id=%{public}s hash=%{public}s',
+          'tool_call hit_text_empty tool=%{public}s call_id=%{public}s index=%{public}d',
           call.name,
           call.call_id,
-          hitHash
+          hitIndex
         );
       }
     }

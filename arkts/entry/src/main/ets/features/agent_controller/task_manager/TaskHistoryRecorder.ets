@@ -59,7 +59,7 @@ export class TaskHistoryRecorder {
     action: AgentAction,
     screenshot: string,
     uiTargetText: string = '',
-    uiTargetHashCode: string = ''
+    uiTargetIndex: number = 0
   ): void {
     if (taskId.length === 0 || stepIndex <= 0) {
       return;
@@ -70,7 +70,7 @@ export class TaskHistoryRecorder {
       tsMs: Date.now(),
       description,
       uiTargetText,
-      uiTargetHashCode,
+      uiTargetIndex,
       actionName: action.name,
       actionJson: JSON.stringify(action),
       resultStatus: '',

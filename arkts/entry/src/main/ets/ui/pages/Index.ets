@@ -1424,8 +1424,8 @@ struct Index {
               .lineHeight(18)
           }
 
-          if (this.resolveStepHitHash(step).length > 0) {
-            Text(`hashCode: ${this.resolveStepHitHash(step)}`)
+          if (this.resolveStepHitIndex(step) > 0) {
+            Text(`index: ${this.resolveStepHitIndex(step)}`)
               .fontSize(DETAIL_TEXT_SIZE)
               .fontColor(THEME_TEXT_MUTED)
               .lineHeight(18)
@@ -2374,25 +2374,29 @@ struct Index {
     return (step.uiTargetText ?? '').trim();
   }
 
-  private resolveStepHitHash(step: HistoryStepMeta): string {
-    return (step.uiTargetHashCode ?? '').trim();
+  private resolveStepHitIndex(step: HistoryStepMeta): number {
+    const raw = step.uiTargetIndex ?? 0;
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      return 0;
+    }
+    return Math.max(0, Math.floor(raw));
   }
 
   private stepHasHit(step: HistoryStepMeta): boolean {
-    return this.resolveStepHitText(step).length > 0 || this.resolveStepHitHash(step).length > 0;
+    return this.resolveStepHitText(step).length > 0 || this.resolveStepHitIndex(step) > 0;
   }
 
   private resolveStepHitLabel(step: HistoryStepMeta): string {
     const text = this.resolveStepHitText(step);
-    const hash = this.resolveStepHitHash(step);
-    if (text.length > 0 && hash.length > 0) {
-      return `命中：${text} #${hash}`;
+    const index = this.resolveStepHitIndex(step);
+    if (text.length > 0 && index > 0) {
+      return `命中：${text} #${index}`;
     }
     if (text.length > 0) {
       return `命中：${text}`;
     }
-    if (hash.length > 0) {
-      return `命中：#${hash}`;
+    if (index > 0) {
+      return `命中：#${index}`;
     }
     return '';
   }

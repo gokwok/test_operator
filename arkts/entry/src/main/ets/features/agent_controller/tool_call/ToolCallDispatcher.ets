@@ -10,7 +10,7 @@ export interface ToolCallResult {
   error: string;
   screenshot_b64: string;
   uiTargetText: string;
-  uiTargetHashCode: string;
+  uiTargetIndex: number;
   action: AgentAction | null;
 }
 
@@ -40,7 +40,7 @@ export class ToolCallDispatcher {
   async execute(name: string, argsJson: string): Promise<ToolCallResult> {
     const toolName = name.trim().toLowerCase();
     if (toolName.length === 0) {
-      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', uiTargetText: '', uiTargetHashCode: '', action: null };
+      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', uiTargetText: '', uiTargetIndex: 0, action: null };
     }
     const args = this.parseArgs(argsJson);
     if (!args) {
@@ -50,7 +50,7 @@ export class ToolCallDispatcher {
         error: 'invalid_arguments_json',
         screenshot_b64: snapshot,
         uiTargetText: '',
-        uiTargetHashCode: '',
+        uiTargetIndex: 0,
         action: null,
       };
     }
@@ -62,7 +62,7 @@ export class ToolCallDispatcher {
           error: 'screenshot_failed',
           screenshot_b64: snapshot,
           uiTargetText: '',
-          uiTargetHashCode: '',
+          uiTargetIndex: 0,
           action: { name: 'screenshot' }
         };
       }
@@ -71,7 +71,7 @@ export class ToolCallDispatcher {
         error: '',
         screenshot_b64: snapshot,
         uiTargetText: '',
-        uiTargetHashCode: '',
+        uiTargetIndex: 0,
         action: { name: 'screenshot' },
       };
     }
@@ -81,7 +81,7 @@ export class ToolCallDispatcher {
     let actionExecuted = false;
     let action: AgentAction | null = null;
     let uiTargetText: string = '';
-    let uiTargetHashCode: string = '';
+    let uiTargetIndex: number = 0;
     try {
       action = this.buildAction(toolName, args);
       if (!action) {
@@ -90,7 +90,7 @@ export class ToolCallDispatcher {
       } else {
         const hit = await this.resolveUiTargetBestEffort(toolName, action);
         uiTargetText = hit.text;
-        uiTargetHashCode = hit.hashCode;
+        uiTargetIndex = hit.index;
         actionExecuted = true;
         const result = await this.toolKit.executeAction(action);
         if (result.status !== 'SUCCESS') {
@@ -112,7 +112,7 @@ export class ToolCallDispatcher {
       status = 'FAILED';
       error = error.length > 0 ? error : 'screenshot_failed';
     }
-    return { status, error, screenshot_b64: snapshot, uiTargetText, uiTargetHashCode, action };
+    return { status, error, screenshot_b64: snapshot, uiTargetText, uiTargetIndex, action };
   }
 
   private isScreenPointAction(toolName: string, action: AgentAction): boolean {
@@ -131,22 +131,22 @@ export class ToolCallDispatcher {
 
   private async resolveUiTargetBestEffort(toolName: string, action: AgentAction): Promise<A11yTreeHitTarget> {
     if (!this.isScreenPointAction(toolName, action)) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
     const pt = action.parameters?.point;
     if (!pt || pt.length < 2) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
     const xNorm = Number(pt[0]);
     const yNorm = Number(pt[1]);
     if (!Number.isFinite(xNorm) || !Number.isFinite(yNorm)) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
     try {
       const runtime = await this.toolKit.ensureVts();
       const dump = await this.toolKit.getVisiblePageContent(0);
       if (dump.trim().length === 0) {
-        return { text: '', hashCode: '' };
+        return { text: '', index: 0 };
       }
       const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
       const px = this.resolvePointPx(runtime.widthPx, runtime.heightPx, xNorm, yNorm);
@@ -154,7 +154,7 @@ export class ToolCallDispatcher {
       const yPx = px[1];
       return VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx);
     } catch (_e) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
   }
 

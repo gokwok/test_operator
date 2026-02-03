@@ -357,7 +357,7 @@ export class TaskManager {
             action,
             screenshot,
             hit.text,
-            hit.hashCode
+            hit.index
           );
           if (outcome !== 'continue') {
             break;
@@ -422,7 +422,7 @@ export class TaskManager {
           action,
           screenshot,
           hit.text,
-          hit.hashCode
+          hit.index
         );
         if (outcome !== 'continue') {
           break;
@@ -722,17 +722,17 @@ export class TaskManager {
 
   private async resolveUiTargetBestEffort(toolKit: ToolKit, action: AgentAction): Promise<A11yTreeHitTarget> {
     if (!this.isScreenPointAction(action)) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
     const pt = this.readActionPoint(action);
     if (!pt) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
     try {
       const runtime = await toolKit.ensureVts();
       const dump = await toolKit.getVisiblePageContent(0);
       if (dump.trim().length === 0) {
-        return { text: '', hashCode: '' };
+        return { text: '', index: 0 };
       }
       const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
       const px = this.resolvePointPx(runtime.widthPx, runtime.heightPx, pt[0], pt[1]);
@@ -740,7 +740,7 @@ export class TaskManager {
       const yPx = px[1];
       return VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx);
     } catch (_e) {
-      return { text: '', hashCode: '' };
+      return { text: '', index: 0 };
     }
   }
 
