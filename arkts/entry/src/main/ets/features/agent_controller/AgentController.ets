@@ -323,6 +323,9 @@ export class AgentController {
   }
 
   private resolveActiveFlowKind(): TaskFlowKind {
+    if (this.replayActive && this.replaySnapshot.status !== 'idle') {
+      return 'replay';
+    }
     if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
       return 'a2a';
     }
@@ -337,6 +340,9 @@ export class AgentController {
   }
 
   private resolveActiveSnapshot(): TaskSnapshot {
+    if (this.replayActive && this.replaySnapshot.status !== 'idle') {
+      return this.replaySnapshot;
+    }
     if (this.a2aSnapshot.status !== 'idle' || this.a2aActive || this.a2aTaskId.trim().length > 0) {
       return this.a2aSnapshot;
     }

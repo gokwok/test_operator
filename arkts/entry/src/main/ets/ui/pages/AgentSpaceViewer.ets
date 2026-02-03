@@ -433,6 +433,10 @@ struct AgentSpaceViewer {
         this.startEffectPolling();
       }
 
+      if ((snapshot.status === 'running' || snapshot.status === 'waiting_user') && this.statusController.stopped) {
+        this.statusController.setStopped(false);
+      }
+
       if (!isA2AFlow) {
         if (snapshot.status === 'finished') {
           this.enterTaskFinished(snapshot);
