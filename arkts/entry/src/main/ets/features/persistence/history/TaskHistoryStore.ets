@@ -59,6 +59,7 @@ export interface HistoryStepBaseMeta {
   tsMs: number;
   description: string;
   uiTargetText?: string;
+  uiTargetHashCode?: string;
   actionName: string;
   actionJson: string;
   resultStatus: string;
@@ -72,6 +73,7 @@ export interface HistoryStepMeta {
   tsMs: number;
   description: string;
   uiTargetText?: string;
+  uiTargetHashCode?: string;
   actionName: string;
   actionJson: string;
   resultStatus: string;
@@ -162,6 +164,7 @@ export class TaskHistoryStore {
       tsMs: meta.tsMs,
       description: meta.description,
       uiTargetText: meta.uiTargetText,
+      uiTargetHashCode: meta.uiTargetHashCode,
       actionName: meta.actionName,
       actionJson: meta.actionJson,
       resultStatus: meta.resultStatus,
@@ -201,6 +204,7 @@ export class TaskHistoryStore {
         tsMs: parsed.tsMs,
         description: parsed.description,
         uiTargetText: parsed.uiTargetText,
+        uiTargetHashCode: parsed.uiTargetHashCode,
         actionName: parsed.actionName,
         actionJson: parsed.actionJson,
         resultStatus: status,

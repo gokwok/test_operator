@@ -1,6 +1,7 @@
 import type { AgentAction, ActionParameters, ActionResult } from '../agentspace/AgentSpace';
 import { ToolKit } from '../toolkit/ToolKit';
 import { VisiblePageContentA11yTree } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
+import type { A11yTreeHitTarget } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
 
 export type ToolCallStatus = 'SUCCESS' | 'FAILED';
 
@@ -9,6 +10,7 @@ export interface ToolCallResult {
   error: string;
   screenshot_b64: string;
   uiTargetText: string;
+  uiTargetHashCode: string;
   action: AgentAction | null;
 }
 
@@ -38,12 +40,19 @@ export class ToolCallDispatcher {
   async execute(name: string, argsJson: string): Promise<ToolCallResult> {
     const toolName = name.trim().toLowerCase();
     if (toolName.length === 0) {
-      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', uiTargetText: '', action: null };
+      return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', uiTargetText: '', uiTargetHashCode: '', action: null };
     }
     const args = this.parseArgs(argsJson);
     if (!args) {
       const snapshot = await this.safeScreenshot();
-      return { status: 'FAILED', error: 'invalid_arguments_json', screenshot_b64: snapshot, uiTargetText: '', action: null };
+      return {
+        status: 'FAILED',
+        error: 'invalid_arguments_json',
+        screenshot_b64: snapshot,
+        uiTargetText: '',
+        uiTargetHashCode: '',
+        action: null,
+      };
     }
     if (toolName === 'screenshot') {
       const snapshot = await this.safeScreenshot();
@@ -53,10 +62,18 @@ export class ToolCallDispatcher {
           error: 'screenshot_failed',
           screenshot_b64: snapshot,
           uiTargetText: '',
+          uiTargetHashCode: '',
           action: { name: 'screenshot' }
         };
       }
-      return { status: 'SUCCESS', error: '', screenshot_b64: snapshot, uiTargetText: '', action: { name: 'screenshot' } };
+      return {
+        status: 'SUCCESS',
+        error: '',
+        screenshot_b64: snapshot,
+        uiTargetText: '',
+        uiTargetHashCode: '',
+        action: { name: 'screenshot' },
+      };
     }
 
     let status: ToolCallStatus = 'SUCCESS';
@@ -64,13 +81,16 @@ export class ToolCallDispatcher {
     let actionExecuted = false;
     let action: AgentAction | null = null;
     let uiTargetText: string = '';
+    let uiTargetHashCode: string = '';
     try {
       action = this.buildAction(toolName, args);
       if (!action) {
         status = 'FAILED';
         error = 'invalid_arguments';
       } else {
-        uiTargetText = await this.resolveUiTargetTextBestEffort(toolName, action);
+        const hit = await this.resolveUiTargetBestEffort(toolName, action);
+        uiTargetText = hit.text;
+        uiTargetHashCode = hit.hashCode;
         actionExecuted = true;
         const result = await this.toolKit.executeAction(action);
         if (result.status !== 'SUCCESS') {
@@ -92,7 +112,7 @@ export class ToolCallDispatcher {
       status = 'FAILED';
       error = error.length > 0 ? error : 'screenshot_failed';
     }
-    return { status, error, screenshot_b64: snapshot, uiTargetText, action };
+    return { status, error, screenshot_b64: snapshot, uiTargetText, uiTargetHashCode, action };
   }
 
   private isScreenPointAction(toolName: string, action: AgentAction): boolean {
@@ -109,32 +129,32 @@ export class ToolCallDispatcher {
     return false;
   }
 
-  private async resolveUiTargetTextBestEffort(toolName: string, action: AgentAction): Promise<string> {
+  private async resolveUiTargetBestEffort(toolName: string, action: AgentAction): Promise<A11yTreeHitTarget> {
     if (!this.isScreenPointAction(toolName, action)) {
-      return '';
+      return { text: '', hashCode: '' };
     }
     const pt = action.parameters?.point;
     if (!pt || pt.length < 2) {
-      return '';
+      return { text: '', hashCode: '' };
     }
     const xNorm = Number(pt[0]);
     const yNorm = Number(pt[1]);
     if (!Number.isFinite(xNorm) || !Number.isFinite(yNorm)) {
-      return '';
+      return { text: '', hashCode: '' };
     }
     try {
       const runtime = await this.toolKit.ensureVts();
       const dump = await this.toolKit.getVisiblePageContent(0);
       if (dump.trim().length === 0) {
-        return '';
+        return { text: '', hashCode: '' };
       }
       const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
       const px = this.resolvePointPx(runtime.widthPx, runtime.heightPx, xNorm, yNorm);
       const xPx = px[0];
       const yPx = px[1];
-      return VisiblePageContentA11yTree.hitTextAtPoint(list, xPx, yPx);
+      return VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx);
     } catch (_e) {
-      return '';
+      return { text: '', hashCode: '' };
     }
   }
 

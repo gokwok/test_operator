@@ -15,6 +15,7 @@ import { TaskHistoryStore } from '../../persistence/history/TaskHistoryStore';
 import { TaskEventQueue } from './TaskEventQueue';
 import { TaskHistoryRecorder } from './TaskHistoryRecorder';
 import { VisiblePageContentA11yTree } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
+import type { A11yTreeHitTarget } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
 
 const DEFAULT_WAIT_AFTER_ACTION_MS: number = 500;
 const MAX_RETRY_COUNT: number = 3;
@@ -348,14 +349,15 @@ export class TaskManager {
           }
           pendingDescription = output?.description ?? '';
           const outcome = this.handleIncomingAction(action, pendingDescription);
-          const uiTargetText = await this.resolveUiTargetTextBestEffort(toolKit, action);
+          const hit = await this.resolveUiTargetBestEffort(toolKit, action);
           this.historyRecorder.recordStep(
             this.historyTaskId,
             this.snapshot.stepIndex,
             pendingDescription,
             action,
             screenshot,
-            uiTargetText
+            hit.text,
+            hit.hashCode
           );
           if (outcome !== 'continue') {
             break;
@@ -412,14 +414,15 @@ export class TaskManager {
         }
         pendingDescription = output?.description ?? '';
         const outcome = this.handleIncomingAction(action, pendingDescription);
-        const uiTargetText = await this.resolveUiTargetTextBestEffort(toolKit, action);
+        const hit = await this.resolveUiTargetBestEffort(toolKit, action);
         this.historyRecorder.recordStep(
           this.historyTaskId,
           this.snapshot.stepIndex,
           pendingDescription,
           action,
           screenshot,
-          uiTargetText
+          hit.text,
+          hit.hashCode
         );
         if (outcome !== 'continue') {
           break;
@@ -717,27 +720,27 @@ export class TaskManager {
     return [x, y];
   }
 
-  private async resolveUiTargetTextBestEffort(toolKit: ToolKit, action: AgentAction): Promise<string> {
+  private async resolveUiTargetBestEffort(toolKit: ToolKit, action: AgentAction): Promise<A11yTreeHitTarget> {
     if (!this.isScreenPointAction(action)) {
-      return '';
+      return { text: '', hashCode: '' };
     }
     const pt = this.readActionPoint(action);
     if (!pt) {
-      return '';
+      return { text: '', hashCode: '' };
     }
     try {
       const runtime = await toolKit.ensureVts();
       const dump = await toolKit.getVisiblePageContent(0);
       if (dump.trim().length === 0) {
-        return '';
+        return { text: '', hashCode: '' };
       }
       const list = VisiblePageContentA11yTree.buildListFromDump(dump, runtime.widthPx, runtime.heightPx);
       const px = this.resolvePointPx(runtime.widthPx, runtime.heightPx, pt[0], pt[1]);
       const xPx = px[0];
       const yPx = px[1];
-      return VisiblePageContentA11yTree.hitTextAtPoint(list, xPx, yPx);
+      return VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx);
     } catch (_e) {
-      return '';
+      return { text: '', hashCode: '' };
     }
   }
 

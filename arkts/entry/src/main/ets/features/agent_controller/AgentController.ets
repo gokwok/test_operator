@@ -421,7 +421,8 @@ export class AgentController {
       resolvedDescription,
       action,
       result.screenshot_b64,
-      result.uiTargetText
+      result.uiTargetText,
+      result.uiTargetHashCode
     );
 
     const mapped: ActionResult = { status: result.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED' };
@@ -1415,6 +1416,7 @@ export class AgentController {
   handleDeviceToolCallCompleted(call: McpToolCall, result: ToolCallResult, elapsedMs: number): void {
     const toolName = call.name.trim().toLowerCase();
     const hitText = result.uiTargetText.trim();
+    const hitHash = result.uiTargetHashCode.trim();
     let shouldLogHit = toolName === 'click' || toolName === 'long_click';
     if (!shouldLogHit && toolName === 'type') {
       const pt = result.action?.parameters?.point;
@@ -1425,18 +1427,20 @@ export class AgentController {
         hilog.info(
           HILOG_DOMAIN,
           HILOG_TAG,
-          'tool_call hit_text tool=%{public}s call_id=%{public}s text=%{public}s',
+          'tool_call hit_text tool=%{public}s call_id=%{public}s text=%{public}s hash=%{public}s',
           call.name,
           call.call_id,
-          hitText
+          hitText,
+          hitHash
         );
       } else {
         hilog.info(
           HILOG_DOMAIN,
           HILOG_TAG,
-          'tool_call hit_text_empty tool=%{public}s call_id=%{public}s',
+          'tool_call hit_text_empty tool=%{public}s call_id=%{public}s hash=%{public}s',
           call.name,
-          call.call_id
+          call.call_id,
+          hitHash
         );
       }
     }

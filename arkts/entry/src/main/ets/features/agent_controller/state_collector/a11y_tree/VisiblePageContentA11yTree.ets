@@ -1,11 +1,17 @@
 export interface A11yTreeListItem {
   index: number;
+  hashCode: string;
   resourceId: string;
   className: string;
   text: string;
   bounds: string;
   textCandidates?: Array<string>;
   children: Array<A11yTreeListItem>;
+}
+
+export interface A11yTreeHitTarget {
+  text: string;
+  hashCode: string;
 }
 
 export enum A11yTreeFilterMode {
@@ -110,8 +116,9 @@ export class VisiblePageContentA11yTree {
     return VisiblePageContentA11yTree.flatten(filtered);
   }
 
-  static hitTextAtPoint(list: Array<A11yTreeListItem>, xPx: number, yPx: number): string {
+  static hitTargetAtPoint(list: Array<A11yTreeListItem>, xPx: number, yPx: number): A11yTreeHitTarget {
     let bestText: string = '';
+    let bestHashCode: string = '';
     let bestArea: number = Number.POSITIVE_INFINITY;
     for (const item of list) {
       const rect = VisiblePageContentA11yTree.parseBounds(item.bounds);
@@ -125,6 +132,7 @@ export class VisiblePageContentA11yTree {
       const text = (item.text ?? '').trim();
       if (bestText.length === 0 && text.length > 0) {
         bestText = text;
+        bestHashCode = (item.hashCode ?? '').trim();
         bestArea = area;
         continue;
       }
@@ -133,10 +141,15 @@ export class VisiblePageContentA11yTree {
       }
       if (area > 0 && area < bestArea) {
         bestText = text;
+        bestHashCode = (item.hashCode ?? '').trim();
         bestArea = area;
       }
     }
-    return bestText;
+    return { text: bestText, hashCode: bestHashCode };
+  }
+
+  static hitTextAtPoint(list: Array<A11yTreeListItem>, xPx: number, yPx: number): string {
+    return VisiblePageContentA11yTree.hitTargetAtPoint(list, xPx, yPx).text;
   }
 
   private static parseDumpRoot(dumpJson: string): VisiblePageContentNode | null {
@@ -362,6 +375,7 @@ export class VisiblePageContentA11yTree {
       if (VisiblePageContentA11yTree.isOperable(node)) {
         const item: A11yTreeListItem = {
           index,
+          hashCode: VisiblePageContentA11yTree.pickHashCode(node),
           resourceId: VisiblePageContentA11yTree.pickResourceId(node),
           className: VisiblePageContentA11yTree.pickClassName(node),
           text: VisiblePageContentA11yTree.pickOperableText(entry),
@@ -393,6 +407,18 @@ export class VisiblePageContentA11yTree {
       return VisiblePageContentA11yTree.pickMergedText(entry);
     }
     return VisiblePageContentA11yTree.pickText(node);
+  }
+
+  private static pickHashCode(node: VisiblePageContentNode): string {
+    const id = node.$ID;
+    if (typeof id === 'number' && Number.isFinite(id)) {
+      return `${id}`;
+    }
+    const resource = (node.compid ?? '').trim();
+    if (resource.length > 0) {
+      return resource;
+    }
+    return '';
   }
 
   private static pickMergedText(entry: FilteredNode): string {
