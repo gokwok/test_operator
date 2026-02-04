@@ -39,10 +39,18 @@ export interface ActionExecutionObserver {
   onWaitExpectedDone?: (step: ActionSequenceStep, position: number, matched: boolean, elapsedMs: number) => void | Promise<void>;
 }
 
+interface ExpectedUiTargetTimeoutMeta {
+  stepIndex: number;
+  description: string;
+  action: AgentAction;
+  expected: UiTreeExpectedTarget;
+  timeoutMs: number;
+}
+
 const DEFAULT_WINDOW_ID: number = 0;
 const DEFAULT_WAIT_MS: number = 1000;
 const DEFAULT_POLL_INTERVAL_MS: number = 200;
-const DEFAULT_EXPECT_TIMEOUT_MS: number = 5000;
+const DEFAULT_EXPECT_TIMEOUT_MS: number = 10000;
 
 export class ActionExecutionEngine {
   private readonly toolKit: ToolKit;
@@ -88,6 +96,18 @@ export class ActionExecutionEngine {
         const elapsedMs = Math.max(0, Date.now() - startedAt);
         if (observer && observer.onWaitExpectedDone) {
           await observer.onWaitExpectedDone(step, i, matched, elapsedMs);
+        }
+        if (!matched) {
+          const expectedText = this.normalizeText(expected.text);
+          const expectedIndex = this.normalizeIndex(expected.index);
+          const meta: ExpectedUiTargetTimeoutMeta = {
+            stepIndex: i + 1,
+            description: step.description,
+            action,
+            expected: { text: expectedText, index: expectedIndex },
+            timeoutMs: resolved.expectTimeoutMs,
+          };
+          throw new Error(`expected_ui_target_timeout:${JSON.stringify(meta)}`);
         }
         continue;
       }

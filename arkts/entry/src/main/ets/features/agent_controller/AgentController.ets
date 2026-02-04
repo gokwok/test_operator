@@ -1474,7 +1474,7 @@ export class AgentController {
           );
         },
       };
-      await engine.run(plan, observer, { defaultWaitMs: delayMs, expectTimeoutMs: 5000, pollIntervalMs: 200, windowId: 0 });
+      await engine.run(plan, observer, { defaultWaitMs: delayMs, expectTimeoutMs: 10000, pollIntervalMs: 200, windowId: 0 });
       this.replaySnapshot.status = 'finished';
       this.replaySnapshot.lastDescription = '回放完成';
       await this.publishFinishedLiveView('回放完成');
