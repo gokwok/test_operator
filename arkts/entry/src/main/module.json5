@@ -168,20 +168,6 @@
         "srcEntry": "./ets/abilities/FloatWindowAbility.ets",
         "type": "service",
         "exported": true
-      },
-      {
-        "name": "OperationFormAbility",
-        "srcEntry": "./ets/abilities/OperationFormAbility.ets",
-        "description": "$string:operation_widget_desc",
-        "label": "$string:operation_widget_display_name",
-        "type": "form",
-        "exported": true,
-        "metadata": [
-          {
-            "name": "ohos.extension.form",
-            "resource": "$profile:form_config"
-          }
-        ]
       }
     ]
   }
