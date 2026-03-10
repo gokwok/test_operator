@@ -1,4 +1,4 @@
-import { abilityAccessCtrl } from '@kit.AbilityKit';
+import { abilityAccessCtrl, insightIntent, insightIntentDriver } from '@kit.AbilityKit';
 import type { common, Permissions, Want } from '@kit.AbilityKit';
 import type { BusinessError } from '@kit.BasicServicesKit';
 import image from '@ohos.multimedia.image';
@@ -117,6 +117,58 @@ interface A2AResponseSnapshot {
   status?: A2AStatusSnapshot;
 }
 
+interface InsightIntentInfoSnapshot {
+  bundleName?: string;
+  moduleName?: string;
+  intentName?: string;
+  domain?: string;
+  intentVersion?: string;
+  displayName?: string;
+  displayDescription?: string;
+  schema?: string;
+  llmDescription?: string;
+  intentType?: string;
+  subIntentInfo?: InsightIntentSubInfoSnapshot;
+  subIntentInfoForConfiguration?: InsightIntentSubInfoForConfigurationSnapshot;
+  parameters?: Object;
+  result?: Object;
+  entities?: Array<Object>;
+}
+
+interface InsightIntentSubInfoSnapshot {
+  abilityName?: string;
+  uiAbility?: string;
+  pagePath?: string;
+  uri?: string;
+  formName?: string;
+}
+
+interface InsightIntentSubInfoForConfigurationSnapshot {
+  uiAbility?: InsightIntentUiAbilitySnapshot;
+  uiExtension?: InsightIntentAbilityRefSnapshot;
+  serviceExtension?: InsightIntentAbilityRefSnapshot;
+  form?: InsightIntentFormSnapshot;
+}
+
+interface InsightIntentUiAbilitySnapshot {
+  abilityName?: string;
+  executeMode?: Array<number>;
+}
+
+interface InsightIntentAbilityRefSnapshot {
+  abilityName?: string;
+}
+
+interface InsightIntentFormSnapshot {
+  abilityName?: string;
+  formName?: string;
+}
+
+interface InsightIntentExecuteResultSnapshot {
+  code?: number;
+  result?: Object;
+}
+
 interface ServiceExtensionStarter {
   startServiceExtensionAbility?: (want: Want) => Promise<void>;
 }
@@ -164,6 +216,17 @@ struct Index {
   @State mcpStatusInfo: string = '';
   @State mcpLogInfo: string = '';
   @State mcpLogLines: Array<string> = [];
+  @State intentBundleName: string = '';
+  @State intentModuleName: string = 'entry';
+  @State intentAbilityName: string = '';
+  @State intentName: string = '';
+  @State intentParamsJson: string = '{}';
+  @State intentQueryKeyword: string = '';
+  @State intentQueryInfo: string = '';
+  @State intentSummaryLines: Array<string> = [];
+  @State intentDetailInfo: string = '';
+  @State intentExecuteInfo: string = '';
+  @State intentExecuteResult: string = '';
   @State a2aPrompt: string = '';
   @State a2aTaskId: string = '';
   @State a2aReply: string = '';
@@ -508,6 +571,218 @@ struct Index {
             .backgroundColor(DETAIL_SECTION_BG)
             .borderRadius(10)
             .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
+        }
+
+        Column({ space: 8 }) {
+          Text('Intent Kit')
+            .fontSize(12)
+            .fontFamily(FONT_DISPLAY)
+            .fontColor(THEME_TEXT_MUTED)
+
+          Text('系统应用调试：查询已注册 Intent，并直接执行指定 Intent。')
+            .fontSize(11)
+            .fontColor(THEME_TEXT_SUBTLE)
+
+          Row({ space: 8 }) {
+            Button('查询全部')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.queryAllInsightIntents();
+              })
+
+            Button('按 Bundle 查')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.queryInsightIntentsByBundle();
+              })
+
+            Button('按 Intent 查')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.queryInsightIntentByName();
+              })
+          }
+
+          Row({ space: 8 }) {
+            Button('华为音乐候选')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.applyHuaweiMusicIntentPreset();
+              })
+
+            Button('备忘录候选')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.applyMemoIntentPreset();
+              })
+
+            Button('清空结果')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.clearInsightIntentDebug();
+              })
+          }
+
+          TextInput({ placeholder: 'bundleName（例如 com.huawei.music）', text: this.intentBundleName })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.intentBundleName = value;
+            })
+
+          Row({ space: 8 }) {
+            TextInput({ placeholder: 'moduleName', text: this.intentModuleName })
+              .layoutWeight(1)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.intentModuleName = value;
+              })
+
+            TextInput({ placeholder: 'abilityName（执行时必填）', text: this.intentAbilityName })
+              .layoutWeight(1)
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.intentAbilityName = value;
+              })
+          }
+
+          TextInput({ placeholder: 'intentName（例如 PlayMusicList / ViewSearchPageLocal）', text: this.intentName })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.intentName = value;
+            })
+
+          TextInput({ placeholder: '结果筛选关键字（如 music / memo / note / 备忘录）', text: this.intentQueryKeyword })
+            .height(32)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.intentQueryKeyword = value;
+            })
+
+          TextInput({ placeholder: 'intent parameters JSON', text: this.intentParamsJson })
+            .height(36)
+            .fontSize(12)
+            .fontColor(THEME_TEXT_PRIMARY)
+            .backgroundColor(THEME_CARD)
+            .borderRadius(10)
+            .border({ width: 1, color: THEME_BORDER })
+            .padding({ left: 10, right: 10 })
+            .onChange((value: string) => {
+              this.intentParamsJson = value;
+            })
+
+          Row({ space: 8 }) {
+            Button('执行 Intent')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(14)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                void this.executeInsightIntentDebug();
+              })
+          }
+
+          if (this.intentQueryInfo.length > 0) {
+            Text(this.intentQueryInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.intentSummaryLines.length === 0) {
+            Text('暂无 Intent 查询结果')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_SUBTLE)
+          } else {
+            Column({ space: 4 }) {
+              ForEach(this.getFilteredIntentSummaryLines(), (line: string, index: number) => {
+                Text(line)
+                  .fontSize(10)
+                  .fontColor(THEME_TEXT_MUTED)
+              }, (line: string, index: number) => `${index}:${line}`)
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
+
+          if (this.intentDetailInfo.length > 0) {
+            Text(this.intentDetailInfo)
+              .fontSize(10)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.intentExecuteInfo.length > 0) {
+            Text(this.intentExecuteInfo)
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+          }
+
+          if (this.intentExecuteResult.length > 0) {
+            Text(this.intentExecuteResult)
+              .fontSize(10)
+              .fontColor(THEME_TEXT_MUTED)
           }
         }
 
@@ -3205,6 +3480,276 @@ struct Index {
       return trimmed;
     } catch (_e) {
       return trimmed;
+    }
+  }
+
+  private applyHuaweiMusicIntentPreset(): void {
+    this.intentBundleName = 'com.huawei.music';
+    this.intentModuleName = 'entry';
+    this.intentAbilityName = '';
+    this.intentName = 'PlayMusicList';
+    this.intentParamsJson = '{"sceneType":"DRIVE_SCENE"}';
+    this.intentQueryKeyword = 'music';
+    this.intentQueryInfo = '已填入华为音乐候选值，并给出 PlayMusicList 的示例参数。建议先按 Bundle / 按 Intent 查询，确认真实 abilityName 后再执行。';
+  }
+
+  private applyMemoIntentPreset(): void {
+    this.intentBundleName = 'com.huawei.notepad';
+    this.intentModuleName = 'entry';
+    this.intentAbilityName = '';
+    this.intentName = '';
+    this.intentParamsJson = '{}';
+    this.intentQueryKeyword = 'memo';
+    this.intentQueryInfo = '已填入备忘录候选 bundle。若查询为空，请先“查询全部”后搜索 memo / note / 备忘录。';
+  }
+
+  private clearInsightIntentDebug(): void {
+    this.intentQueryInfo = '';
+    this.intentSummaryLines = [];
+    this.intentDetailInfo = '';
+    this.intentExecuteInfo = '';
+    this.intentExecuteResult = '';
+  }
+
+  private getInsightIntentSummaryFlags(): number {
+    return insightIntentDriver.GetInsightIntentFlag.GET_SUMMARY_INSIGHT_INTENT;
+  }
+
+  private getInsightIntentDetailFlags(): number {
+    return insightIntentDriver.GetInsightIntentFlag.GET_FULL_INSIGHT_INTENT |
+      insightIntentDriver.GetInsightIntentFlag.GET_ENTITY_INFO;
+  }
+
+  private getFilteredIntentSummaryLines(): Array<string> {
+    const keyword = this.intentQueryKeyword.trim().toLowerCase();
+    if (keyword.length === 0) {
+      return this.intentSummaryLines;
+    }
+    return this.intentSummaryLines.filter((line: string) => line.toLowerCase().includes(keyword));
+  }
+
+  private async queryAllInsightIntents(): Promise<void> {
+    this.intentQueryInfo = '正在查询系统已注册 Intent...';
+    this.intentDetailInfo = '';
+    try {
+      const items = await insightIntentDriver.getAllInsightIntentInfo(this.getInsightIntentSummaryFlags()) as Array<InsightIntentInfoSnapshot>;
+      this.intentSummaryLines = this.formatInsightIntentSummaryLines(items);
+      this.intentQueryInfo = `查询成功，共 ${items.length} 个已注册 Intent`;
+      if (this.intentSummaryLines.length === 0) {
+        this.intentQueryInfo = '未查询到已注册 Intent';
+      }
+    } catch (e) {
+      this.intentSummaryLines = [];
+      this.intentDetailInfo = '';
+      this.intentQueryInfo = `查询失败: ${String(e)}`;
+    }
+  }
+
+  private async queryInsightIntentsByBundle(): Promise<void> {
+    const bundleName = this.intentBundleName.trim();
+    if (bundleName.length === 0) {
+      this.intentQueryInfo = '请输入 bundleName';
+      return;
+    }
+    this.intentQueryInfo = `正在查询 ${bundleName} 暴露的 Intent...`;
+    this.intentDetailInfo = '';
+    try {
+      const items = await insightIntentDriver.getInsightIntentInfoByBundleName(
+        bundleName,
+        this.getInsightIntentDetailFlags()
+      ) as Array<InsightIntentInfoSnapshot>;
+      this.intentSummaryLines = this.formatInsightIntentSummaryLines(items);
+      this.intentDetailInfo = this.prettyPrintIntentValue(items);
+      this.intentQueryInfo = `${bundleName} 下共 ${items.length} 个 Intent`;
+      if (items.length === 1) {
+        this.applyInsightIntentInfoToInputs(items[0]);
+      }
+    } catch (e) {
+      this.intentSummaryLines = [];
+      this.intentDetailInfo = '';
+      this.intentQueryInfo = `按 Bundle 查询失败: ${String(e)}`;
+    }
+  }
+
+  private async queryInsightIntentByName(): Promise<void> {
+    const bundleName = this.intentBundleName.trim();
+    if (bundleName.length === 0) {
+      this.intentQueryInfo = '请输入 bundleName';
+      return;
+    }
+    const moduleName = this.intentModuleName.trim();
+    if (moduleName.length === 0) {
+      this.intentQueryInfo = '请输入 moduleName';
+      return;
+    }
+    const intentName = this.intentName.trim();
+    if (intentName.length === 0) {
+      this.intentQueryInfo = '请输入 intentName';
+      return;
+    }
+
+    this.intentQueryInfo = `正在查询 ${intentName}...`;
+    this.intentDetailInfo = '';
+    try {
+      const item = await insightIntentDriver.getInsightIntentInfoByIntentName(
+        bundleName,
+        moduleName,
+        intentName,
+        this.getInsightIntentDetailFlags()
+      ) as InsightIntentInfoSnapshot;
+      this.applyInsightIntentInfoToInputs(item);
+      this.intentSummaryLines = this.formatInsightIntentSummaryLines([item]);
+      this.intentDetailInfo = this.prettyPrintIntentValue(item);
+      this.intentQueryInfo = `已查询到 ${item.intentName ?? intentName}`;
+    } catch (e) {
+      this.intentSummaryLines = [];
+      this.intentDetailInfo = '';
+      this.intentQueryInfo = `按 Intent 查询失败: ${String(e)}`;
+    }
+  }
+
+  private async executeInsightIntentDebug(): Promise<void> {
+    const bundleName = this.intentBundleName.trim();
+    if (bundleName.length === 0) {
+      this.intentExecuteInfo = '请输入 bundleName';
+      return;
+    }
+    const moduleName = this.intentModuleName.trim();
+    if (moduleName.length === 0) {
+      this.intentExecuteInfo = '请输入 moduleName';
+      return;
+    }
+    const abilityName = this.intentAbilityName.trim();
+    if (abilityName.length === 0) {
+      this.intentExecuteInfo = '请输入 abilityName（建议先查询后自动回填）';
+      return;
+    }
+    const intentName = this.intentName.trim();
+    if (intentName.length === 0) {
+      this.intentExecuteInfo = '请输入 intentName';
+      return;
+    }
+    const params = this.parseInsightIntentParamsJson();
+    if (!params) {
+      return;
+    }
+
+    this.intentExecuteInfo = `正在执行 ${intentName}...`;
+    this.intentExecuteResult = '';
+    try {
+      const result = await insightIntentDriver.execute({
+        bundleName,
+        moduleName,
+        abilityName,
+        insightIntentName: intentName,
+        insightIntentParam: params,
+        executeMode: insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND,
+      }) as InsightIntentExecuteResultSnapshot;
+      const code = typeof result.code === 'number' ? result.code : -1;
+      this.intentExecuteInfo = `执行完成，code=${code}`;
+      this.intentExecuteResult = this.prettyPrintIntentValue(result);
+    } catch (e) {
+      this.intentExecuteInfo = `执行失败: ${String(e)}`;
+      this.intentExecuteResult = '';
+    }
+  }
+
+  private parseInsightIntentParamsJson(): Record<string, Object> | null {
+    const raw = this.intentParamsJson.trim();
+    if (raw.length === 0) {
+      return {};
+    }
+    try {
+      const parsed = JSON.parse(raw) as Object;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        this.intentExecuteInfo = 'intent parameters JSON 必须是对象';
+        return null;
+      }
+      return parsed as Record<string, Object>;
+    } catch (e) {
+      this.intentExecuteInfo = `intent parameters JSON 解析失败: ${String(e)}`;
+      return null;
+    }
+  }
+
+  private formatInsightIntentSummaryLines(items: Array<InsightIntentInfoSnapshot>): Array<string> {
+    const sorted = items.slice().sort((a: InsightIntentInfoSnapshot, b: InsightIntentInfoSnapshot) => {
+      const left = `${a.bundleName ?? ''}/${a.moduleName ?? ''}/${a.intentName ?? ''}`;
+      const right = `${b.bundleName ?? ''}/${b.moduleName ?? ''}/${b.intentName ?? ''}`;
+      return left.localeCompare(right);
+    });
+    return sorted.map((item: InsightIntentInfoSnapshot) => this.formatInsightIntentSummaryLine(item));
+  }
+
+  private formatInsightIntentSummaryLine(item: InsightIntentInfoSnapshot): string {
+    const rawDisplayName = typeof item.displayName === 'string' ? item.displayName.trim() : '';
+    const displayName = rawDisplayName.length > 0 ? rawDisplayName : (item.intentName ?? '-');
+    const intentName = item.intentName ?? '-';
+    const bundleName = item.bundleName ?? '-';
+    const moduleName = item.moduleName ?? '-';
+    const domain = item.domain ?? '-';
+    const type = item.intentType ?? '-';
+    const abilityName = this.resolveInsightIntentAbilityName(item);
+    const abilityPart = abilityName.length > 0 ? ` / ability=${abilityName}` : '';
+    return `${displayName} [${intentName}] / ${bundleName}/${moduleName} / ${domain} / ${type}${abilityPart}`;
+  }
+
+  private resolveInsightIntentAbilityName(item: InsightIntentInfoSnapshot): string {
+    const sub = item.subIntentInfo;
+    if (sub) {
+      if (typeof sub.abilityName === 'string' && sub.abilityName.trim().length > 0) {
+        return sub.abilityName.trim();
+      }
+      if (typeof sub.uiAbility === 'string' && sub.uiAbility.trim().length > 0) {
+        return sub.uiAbility.trim();
+      }
+    }
+
+    const config = item.subIntentInfoForConfiguration;
+    if (!config) {
+      return '';
+    }
+    const uiAbility = config.uiAbility?.abilityName;
+    if (typeof uiAbility === 'string' && uiAbility.trim().length > 0) {
+      return uiAbility.trim();
+    }
+    const uiExtension = config.uiExtension?.abilityName;
+    if (typeof uiExtension === 'string' && uiExtension.trim().length > 0) {
+      return uiExtension.trim();
+    }
+    const serviceExtension = config.serviceExtension?.abilityName;
+    if (typeof serviceExtension === 'string' && serviceExtension.trim().length > 0) {
+      return serviceExtension.trim();
+    }
+    const formAbility = config.form?.abilityName;
+    if (typeof formAbility === 'string' && formAbility.trim().length > 0) {
+      return formAbility.trim();
+    }
+    return '';
+  }
+
+  private applyInsightIntentInfoToInputs(item: InsightIntentInfoSnapshot): void {
+    if (typeof item.bundleName === 'string' && item.bundleName.trim().length > 0) {
+      this.intentBundleName = item.bundleName.trim();
+    }
+    if (typeof item.moduleName === 'string' && item.moduleName.trim().length > 0) {
+      this.intentModuleName = item.moduleName.trim();
+    }
+    if (typeof item.intentName === 'string' && item.intentName.trim().length > 0) {
+      this.intentName = item.intentName.trim();
+    }
+    const abilityName = this.resolveInsightIntentAbilityName(item);
+    if (abilityName.length > 0) {
+      this.intentAbilityName = abilityName;
+    }
+  }
+
+  private prettyPrintIntentValue(value: Object | Array<Object>): string {
+    try {
+      const raw = JSON.stringify(value, null, 2);
+      return this.truncateText(typeof raw === 'string' ? raw : String(value), 6000);
+    } catch (_e) {
+      return this.truncateText(String(value), 6000);
     }
   }
 
