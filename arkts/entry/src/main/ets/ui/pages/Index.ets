@@ -3789,18 +3789,17 @@ struct Index {
 
   @Builder
   private intentSummaryItemRow(item: InsightIntentInfoSnapshot): void {
-    const selected = this.intentSelectedSummaryKey === this.buildIntentSummaryKey(item);
     Row() {
       Text(this.formatInsightIntentSummaryLine(item))
         .fontSize(10)
-        .fontColor(selected ? THEME_TEXT_PRIMARY : THEME_TEXT_MUTED)
+        .fontColor(this.isSelectedIntentSummaryItem(item) ? THEME_TEXT_PRIMARY : THEME_TEXT_MUTED)
         .layoutWeight(1)
     }
     .width('100%')
     .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-    .backgroundColor(selected ? DETAIL_TAG_BG : Color.Transparent)
+    .backgroundColor(this.isSelectedIntentSummaryItem(item) ? DETAIL_TAG_BG : Color.Transparent)
     .borderRadius(8)
-    .border({ width: 1, color: selected ? THEME_ACCENT : DETAIL_SECTION_BORDER })
+    .border({ width: 1, color: this.isSelectedIntentSummaryItem(item) ? THEME_ACCENT : DETAIL_SECTION_BORDER })
     .onClick(() => {
       this.selectInsightIntentItem(item, true);
     })
@@ -3808,6 +3807,10 @@ struct Index {
 
   private buildIntentSummaryKey(item: InsightIntentInfoSnapshot): string {
     return `${item.bundleName ?? ''}/${item.moduleName ?? ''}/${item.intentName ?? ''}/${this.resolveInsightIntentAbilityName(item)}`;
+  }
+
+  private isSelectedIntentSummaryItem(item: InsightIntentInfoSnapshot): boolean {
+    return this.intentSelectedSummaryKey === this.buildIntentSummaryKey(item);
   }
 
   private selectInsightIntentItem(item: InsightIntentInfoSnapshot, fromUserTap: boolean): void {
