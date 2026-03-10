@@ -169,6 +169,15 @@ interface InsightIntentExecuteResultSnapshot {
   result?: Object;
 }
 
+interface InsightIntentSchemaNodeSnapshot {
+  type?: string;
+  description?: string;
+  required?: Array<string>;
+  properties?: Record<string, InsightIntentSchemaNodeSnapshot>;
+  enum?: Array<string>;
+  items?: InsightIntentSchemaNodeSnapshot;
+}
+
 interface ServiceExtensionStarter {
   startServiceExtensionAbility?: (want: Want) => Promise<void>;
 }
@@ -223,7 +232,12 @@ struct Index {
   @State intentParamsJson: string = '{}';
   @State intentQueryKeyword: string = '';
   @State intentQueryInfo: string = '';
+  @State intentSummaryItems: Array<InsightIntentInfoSnapshot> = [];
   @State intentSummaryLines: Array<string> = [];
+  @State intentSelectedSummaryKey: string = '';
+  @State intentHintLines: Array<string> = [];
+  @State intentParameterLines: Array<string> = [];
+  @State intentResultLines: Array<string> = [];
   @State intentDetailInfo: string = '';
   @State intentExecuteInfo: string = '';
   @State intentExecuteResult: string = '';
@@ -755,11 +769,67 @@ struct Index {
               .fontColor(THEME_TEXT_SUBTLE)
           } else {
             Column({ space: 4 }) {
-              ForEach(this.getFilteredIntentSummaryLines(), (line: string, index: number) => {
+              Text('点击任一条摘要可自动回填执行字段，并刷新参数说明。')
+                .fontSize(10)
+                .fontColor(THEME_TEXT_SUBTLE)
+
+              ForEach(this.getFilteredIntentSummaryItems(), (item: InsightIntentInfoSnapshot) => {
+                this.intentSummaryItemRow(item);
+              }, (item: InsightIntentInfoSnapshot) => this.buildIntentSummaryKey(item))
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
+
+          if (this.intentHintLines.length > 0) {
+            Column({ space: 4 }) {
+              Text('调试提示')
+                .fontSize(11)
+                .fontColor(THEME_TEXT_MUTED)
+
+              ForEach(this.intentHintLines, (line: string, index: number) => {
                 Text(line)
                   .fontSize(10)
                   .fontColor(THEME_TEXT_MUTED)
-              }, (line: string, index: number) => `${index}:${line}`)
+              }, (line: string, index: number) => `intent-hint:${index}:${line}`)
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
+
+          if (this.intentParameterLines.length > 0) {
+            Column({ space: 4 }) {
+              Text('参数定义')
+                .fontSize(11)
+                .fontColor(THEME_TEXT_MUTED)
+
+              ForEach(this.intentParameterLines, (line: string, index: number) => {
+                Text(line)
+                  .fontSize(10)
+                  .fontColor(THEME_TEXT_MUTED)
+              }, (line: string, index: number) => `intent-param:${index}:${line}`)
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
+          }
+
+          if (this.intentResultLines.length > 0) {
+            Column({ space: 4 }) {
+              Text('返回定义')
+                .fontSize(11)
+                .fontColor(THEME_TEXT_MUTED)
+
+              ForEach(this.intentResultLines, (line: string, index: number) => {
+                Text(line)
+                  .fontSize(10)
+                  .fontColor(THEME_TEXT_MUTED)
+              }, (line: string, index: number) => `intent-result:${index}:${line}`)
             }
             .padding({ left: 10, right: 10, top: 8, bottom: 8 })
             .backgroundColor(DETAIL_SECTION_BG)
@@ -768,9 +838,19 @@ struct Index {
           }
 
           if (this.intentDetailInfo.length > 0) {
-            Text(this.intentDetailInfo)
-              .fontSize(10)
-              .fontColor(THEME_TEXT_MUTED)
+            Column({ space: 4 }) {
+              Text('原始详情 JSON')
+                .fontSize(11)
+                .fontColor(THEME_TEXT_MUTED)
+
+              Text(this.intentDetailInfo)
+                .fontSize(10)
+                .fontColor(THEME_TEXT_MUTED)
+            }
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .backgroundColor(DETAIL_SECTION_BG)
+            .borderRadius(10)
+            .border({ width: 1, color: DETAIL_SECTION_BORDER })
           }
 
           if (this.intentExecuteInfo.length > 0) {
@@ -3484,28 +3564,31 @@ struct Index {
   }
 
   private applyHuaweiMusicIntentPreset(): void {
-    this.intentBundleName = 'com.huawei.music';
-    this.intentModuleName = 'entry';
-    this.intentAbilityName = '';
+    this.intentBundleName = 'com.huawei.hmsapp.music';
+    this.intentModuleName = 'phone';
+    this.intentAbilityName = 'MainAbility';
     this.intentName = 'PlayMusicList';
     this.intentParamsJson = '{"sceneType":"DRIVE_SCENE"}';
     this.intentQueryKeyword = 'music';
-    this.intentQueryInfo = '已填入华为音乐候选值，并给出 PlayMusicList 的示例参数。建议先按 Bundle / 按 Intent 查询，确认真实 abilityName 后再执行。';
+    this.intentQueryInfo = '已按实机截图修正华为音乐预设：bundle=com.huawei.hmsapp.music, module=phone, ability=MainAbility。建议先按 Intent 查确认后再执行。';
   }
 
   private applyMemoIntentPreset(): void {
-    this.intentBundleName = 'com.huawei.notepad';
+    this.intentBundleName = '';
     this.intentModuleName = 'entry';
     this.intentAbilityName = '';
     this.intentName = '';
     this.intentParamsJson = '{}';
-    this.intentQueryKeyword = 'memo';
-    this.intentQueryInfo = '已填入备忘录候选 bundle。若查询为空，请先“查询全部”后搜索 memo / note / 备忘录。';
+    this.intentQueryKeyword = '备忘录';
+    this.intentQueryInfo = '未再硬编码备忘录 bundle。请先“查询全部”，再用 备忘录 / memo / note 过滤，确认真实 bundle 和 intent 后再执行。';
   }
 
   private clearInsightIntentDebug(): void {
     this.intentQueryInfo = '';
+    this.intentSummaryItems = [];
     this.intentSummaryLines = [];
+    this.intentSelectedSummaryKey = '';
+    this.resetIntentInspection();
     this.intentDetailInfo = '';
     this.intentExecuteInfo = '';
     this.intentExecuteResult = '';
@@ -3528,18 +3611,34 @@ struct Index {
     return this.intentSummaryLines.filter((line: string) => line.toLowerCase().includes(keyword));
   }
 
+  private getFilteredIntentSummaryItems(): Array<InsightIntentInfoSnapshot> {
+    const keyword = this.intentQueryKeyword.trim().toLowerCase();
+    if (keyword.length === 0) {
+      return this.intentSummaryItems;
+    }
+    return this.intentSummaryItems.filter((item: InsightIntentInfoSnapshot) => {
+      const line = this.formatInsightIntentSummaryLine(item);
+      return line.toLowerCase().includes(keyword);
+    });
+  }
+
   private async queryAllInsightIntents(): Promise<void> {
     this.intentQueryInfo = '正在查询系统已注册 Intent...';
+    this.resetIntentInspection();
     this.intentDetailInfo = '';
     try {
       const items = await insightIntentDriver.getAllInsightIntentInfo(this.getInsightIntentSummaryFlags()) as Array<InsightIntentInfoSnapshot>;
+      this.intentSummaryItems = items.slice();
       this.intentSummaryLines = this.formatInsightIntentSummaryLines(items);
+      this.intentSelectedSummaryKey = '';
       this.intentQueryInfo = `查询成功，共 ${items.length} 个已注册 Intent`;
       if (this.intentSummaryLines.length === 0) {
         this.intentQueryInfo = '未查询到已注册 Intent';
       }
     } catch (e) {
+      this.intentSummaryItems = [];
       this.intentSummaryLines = [];
+      this.intentSelectedSummaryKey = '';
       this.intentDetailInfo = '';
       this.intentQueryInfo = `查询失败: ${String(e)}`;
     }
@@ -3552,20 +3651,26 @@ struct Index {
       return;
     }
     this.intentQueryInfo = `正在查询 ${bundleName} 暴露的 Intent...`;
+    this.resetIntentInspection();
     this.intentDetailInfo = '';
     try {
       const items = await insightIntentDriver.getInsightIntentInfoByBundleName(
         bundleName,
         this.getInsightIntentDetailFlags()
       ) as Array<InsightIntentInfoSnapshot>;
+      this.intentSummaryItems = items.slice();
       this.intentSummaryLines = this.formatInsightIntentSummaryLines(items);
+      this.intentSelectedSummaryKey = '';
       this.intentDetailInfo = this.prettyPrintIntentValue(items);
       this.intentQueryInfo = `${bundleName} 下共 ${items.length} 个 Intent`;
       if (items.length === 1) {
-        this.applyInsightIntentInfoToInputs(items[0]);
+        this.selectInsightIntentItem(items[0], false);
       }
     } catch (e) {
+      this.intentSummaryItems = [];
       this.intentSummaryLines = [];
+      this.intentSelectedSummaryKey = '';
+      this.resetIntentInspection();
       this.intentDetailInfo = '';
       this.intentQueryInfo = `按 Bundle 查询失败: ${String(e)}`;
     }
@@ -3589,6 +3694,7 @@ struct Index {
     }
 
     this.intentQueryInfo = `正在查询 ${intentName}...`;
+    this.resetIntentInspection();
     this.intentDetailInfo = '';
     try {
       const item = await insightIntentDriver.getInsightIntentInfoByIntentName(
@@ -3597,12 +3703,15 @@ struct Index {
         intentName,
         this.getInsightIntentDetailFlags()
       ) as InsightIntentInfoSnapshot;
-      this.applyInsightIntentInfoToInputs(item);
+      this.intentSummaryItems = [item];
       this.intentSummaryLines = this.formatInsightIntentSummaryLines([item]);
-      this.intentDetailInfo = this.prettyPrintIntentValue(item);
+      this.selectInsightIntentItem(item, false);
       this.intentQueryInfo = `已查询到 ${item.intentName ?? intentName}`;
     } catch (e) {
+      this.intentSummaryItems = [];
       this.intentSummaryLines = [];
+      this.intentSelectedSummaryKey = '';
+      this.resetIntentInspection();
       this.intentDetailInfo = '';
       this.intentQueryInfo = `按 Intent 查询失败: ${String(e)}`;
     }
@@ -3670,6 +3779,213 @@ struct Index {
       this.intentExecuteInfo = `intent parameters JSON 解析失败: ${String(e)}`;
       return null;
     }
+  }
+
+  private resetIntentInspection(): void {
+    this.intentHintLines = [];
+    this.intentParameterLines = [];
+    this.intentResultLines = [];
+  }
+
+  @Builder
+  private intentSummaryItemRow(item: InsightIntentInfoSnapshot): void {
+    const selected = this.intentSelectedSummaryKey === this.buildIntentSummaryKey(item);
+    Row() {
+      Text(this.formatInsightIntentSummaryLine(item))
+        .fontSize(10)
+        .fontColor(selected ? THEME_TEXT_PRIMARY : THEME_TEXT_MUTED)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+    .backgroundColor(selected ? DETAIL_TAG_BG : Color.Transparent)
+    .borderRadius(8)
+    .border({ width: 1, color: selected ? THEME_ACCENT : DETAIL_SECTION_BORDER })
+    .onClick(() => {
+      this.selectInsightIntentItem(item, true);
+    })
+  }
+
+  private buildIntentSummaryKey(item: InsightIntentInfoSnapshot): string {
+    return `${item.bundleName ?? ''}/${item.moduleName ?? ''}/${item.intentName ?? ''}/${this.resolveInsightIntentAbilityName(item)}`;
+  }
+
+  private selectInsightIntentItem(item: InsightIntentInfoSnapshot, fromUserTap: boolean): void {
+    this.intentSelectedSummaryKey = this.buildIntentSummaryKey(item);
+    this.applyInsightIntentInfoToInputs(item);
+    this.populateIntentInspection(item);
+    this.intentDetailInfo = this.prettyPrintIntentValue(item);
+    if (fromUserTap) {
+      this.intentQueryInfo = `已回填 ${item.intentName ?? '-'}，现在可直接执行或继续修改参数。`;
+    }
+  }
+
+  private populateIntentInspection(item: InsightIntentInfoSnapshot): void {
+    const intentName = item.intentName ?? this.intentName.trim();
+    this.intentHintLines = this.buildIntentHintLines(item);
+    this.intentParameterLines = this.describeIntentSchemaLines(item.parameters, intentName, 'param');
+    this.intentResultLines = this.describeIntentSchemaLines(item.result, intentName, 'result');
+  }
+
+  private describeIntentSchemaLines(schemaValue: Object | undefined, intentName: string, section: 'param' | 'result'): Array<string> {
+    const schema = schemaValue as InsightIntentSchemaNodeSnapshot | undefined;
+    if (!schema || typeof schema !== 'object') {
+      return [];
+    }
+
+    const lines: Array<string> = [];
+    this.appendIntentSchemaLines(lines, '', schema, intentName, section, 0);
+    if (lines.length === 0) {
+      const schemaType = this.formatIntentSchemaType(schema);
+      const typeLabel = section === 'param' ? '参数' : '返回';
+      lines.push(`${typeLabel} schema 类型: ${schemaType}`);
+    }
+    return lines;
+  }
+
+  private appendIntentSchemaLines(
+    lines: Array<string>,
+    prefix: string,
+    schema: InsightIntentSchemaNodeSnapshot,
+    intentName: string,
+    section: 'param' | 'result',
+    depth: number
+  ): void {
+    const properties = schema.properties;
+    if (!properties) {
+      return;
+    }
+    const requiredNames = Array.isArray(schema.required) ? schema.required : [];
+    const names = Object.keys(properties).sort();
+    names.forEach((name: string) => {
+      const fieldSchema = properties[name];
+      if (!fieldSchema) {
+        return;
+      }
+      const fieldPath = prefix.length > 0 ? `${prefix}.${name}` : name;
+      const required = requiredNames.includes(name);
+      lines.push(this.formatIntentSchemaLine(fieldPath, fieldSchema, required, intentName, section));
+      if (depth < 1 && fieldSchema.properties && Object.keys(fieldSchema.properties).length > 0) {
+        this.appendIntentSchemaLines(lines, fieldPath, fieldSchema, intentName, section, depth + 1);
+      }
+    });
+  }
+
+  private formatIntentSchemaLine(
+    fieldPath: string,
+    schema: InsightIntentSchemaNodeSnapshot,
+    required: boolean,
+    intentName: string,
+    section: 'param' | 'result'
+  ): string {
+    const requirement = section === 'param' ? (required ? '必填' : '可选') : (required ? '必返' : '可返');
+    const type = this.formatIntentSchemaType(schema);
+    const description = typeof schema.description === 'string' && schema.description.trim().length > 0 ?
+      schema.description.trim() : '无描述';
+    const enumText = this.formatIntentSchemaEnum(schema);
+    const note = this.resolveIntentFieldNote(intentName, fieldPath, section);
+    const noteText = note.length > 0 ? ` 提示: ${note}` : '';
+    return `${fieldPath} [${requirement}] (${type}) ${description}${enumText}${noteText}`;
+  }
+
+  private formatIntentSchemaType(schema: InsightIntentSchemaNodeSnapshot): string {
+    if (typeof schema.type === 'string' && schema.type.trim().length > 0) {
+      if (schema.type === 'array' && schema.items) {
+        return `array<${this.formatIntentSchemaType(schema.items)}>`;
+      }
+      return schema.type.trim();
+    }
+    if (schema.properties) {
+      return 'object';
+    }
+    if (schema.items) {
+      return `array<${this.formatIntentSchemaType(schema.items)}>`;
+    }
+    return 'unknown';
+  }
+
+  private formatIntentSchemaEnum(schema: InsightIntentSchemaNodeSnapshot): string {
+    if (!Array.isArray(schema.enum) || schema.enum.length === 0) {
+      return '';
+    }
+    return ` 候选值: ${this.truncateText(schema.enum.join(' | '), 120)}`;
+  }
+
+  private resolveIntentFieldNote(intentName: string, fieldPath: string, section: 'param' | 'result'): string {
+    const fieldName = fieldPath.split('.').pop()?.toLowerCase() ?? '';
+    if (section === 'result') {
+      if (fieldName === 'code') {
+        return '通常 0 表示成功。';
+      }
+      if (fieldName === 'result') {
+        return '返回对象的内部结构通常由目标应用自己决定。';
+      }
+    }
+
+    if (fieldName === 'entityid') {
+      return '通常需要目标应用或其后端先提供实体 ID；Intent Kit 本身不会帮你搜索出来。';
+    }
+    if (fieldName === 'entitygroupid') {
+      return '通常由目标应用定义内容分组或 UI 形态；没有配套 Search/Get Intent 时很难自行构造。';
+    }
+    if (fieldName === 'scenetype') {
+      return '最适合先用来验证链路，不依赖具体内容 ID。';
+    }
+    if (fieldName === 'city') {
+      return '一般只在城市推荐或城市场景下有意义。';
+    }
+    if (intentName === 'PlayMusicList' && fieldName === 'result') {
+      return 'PlayMusicList 的真实播放内容通常由音乐应用内部决定。';
+    }
+    return '';
+  }
+
+  private buildIntentHintLines(item: InsightIntentInfoSnapshot): Array<string> {
+    const lines: Array<string> = [];
+    const intentName = item.intentName ?? this.intentName.trim();
+    const requiredParamNames = this.getIntentRequiredFieldNames(item.parameters);
+    if (requiredParamNames.length === 0) {
+      lines.push('这个 Intent 没有声明必填参数，可先用 {} 验证链路。');
+    } else {
+      lines.push(`这个 Intent 的必填参数: ${requiredParamNames.join(', ')}`);
+    }
+
+    const abilityName = this.resolveInsightIntentAbilityName(item);
+    const bundleName = item.bundleName ?? this.intentBundleName.trim();
+    const moduleName = item.moduleName ?? this.intentModuleName.trim();
+    if (bundleName.length > 0 && moduleName.length > 0 && abilityName.length > 0 && intentName.length > 0) {
+      lines.push(`建议执行四元组: ${bundleName} / ${moduleName} / ${abilityName} / ${intentName}`);
+    }
+
+    if (this.hasIntentEntityBackedField(item.parameters)) {
+      lines.push('出现 entityId / entityGroupId 这类字段时，Intent Kit 不负责反查这些值；如果没有配套 Search/Get Intent，通常需要业务侧先提供。');
+    }
+
+    if (intentName === 'PlayMusicList') {
+      lines.push('PlayMusicList 更适合先用 {} 或 {"sceneType":"DRIVE_SCENE"} 调试；想精确打开某个歌单通常还需要 entityId。');
+    }
+
+    return lines;
+  }
+
+  private getIntentRequiredFieldNames(schemaValue: Object | undefined): Array<string> {
+    const schema = schemaValue as InsightIntentSchemaNodeSnapshot | undefined;
+    if (!schema || !Array.isArray(schema.required)) {
+      return [];
+    }
+    return schema.required.slice();
+  }
+
+  private hasIntentEntityBackedField(schemaValue: Object | undefined): boolean {
+    const schema = schemaValue as InsightIntentSchemaNodeSnapshot | undefined;
+    const properties = schema?.properties;
+    if (!properties) {
+      return false;
+    }
+    return Object.keys(properties).some((name: string) => {
+      const lower = name.toLowerCase();
+      return lower === 'entityid' || lower === 'entitygroupid';
+    });
   }
 
   private formatInsightIntentSummaryLines(items: Array<InsightIntentInfoSnapshot>): Array<string> {
