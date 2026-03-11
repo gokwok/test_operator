@@ -168,10 +168,8 @@ export class AiDispatchSearchClient {
     const notifyMessages: Array<string> = [];
     let settled = false;
     let resolvePromise: ((payload: AiDispatchCallbackPayload) => void) | null = null;
-    let rejectPromise: ((error: Error) => void) | null = null;
-    const callbackPromise = new Promise<AiDispatchCallbackPayload>((resolve, reject) => {
+    const callbackPromise = new Promise<AiDispatchCallbackPayload>((resolve) => {
       resolvePromise = resolve;
-      rejectPromise = reject;
     });
     const callback = new AiDispatchServiceCallback((payload: AiDispatchCallbackPayload) => {
       if (settled) {
@@ -187,13 +185,8 @@ export class AiDispatchSearchClient {
     try {
       await this.sendProcessMessage(dispatchPayloadText, callback);
     } catch (error) {
-      if (!settled) {
-        settled = true;
-        const rejector = rejectPromise;
-        if (rejector) {
-          rejector(new Error(`AiDispatch IPC failed: ${String(error)}`));
-        }
-      }
+      settled = true;
+      throw new Error(`AiDispatch IPC failed: ${String(error)}`);
     }
 
     const callbackPayload = await callbackPromise;
