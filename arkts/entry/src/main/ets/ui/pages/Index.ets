@@ -8,11 +8,14 @@ import type { HistoryStepMeta, HistoryTaskMeta } from '../../features/persistenc
 import { AgentSettings } from '../../features/persistence/settings/AgentSettings';
 import type { AgentSettingsData } from '../../features/persistence/settings/AgentSettings';
 import { AgentControllerClient } from '../../features/agent_controller/ipc/AgentControllerClient';
+import { AiDispatchSearchClient, AI_DISPATCH_NOTE_TARGET_BUNDLE_NAME } from '../../features/debug/AiDispatchSearchClient';
+import type { AiDispatchSearchRequest } from '../../features/debug/AiDispatchSearchClient';
 import type { TaskEvent, TaskEventBatch } from '../../features/agent_controller/types';
 import { WallpaperState } from '../../features/agent_controller/state_collector/WallpaperState';
 import { ForegroundAppState } from '../../features/agent_controller/state_collector/ForegroundAppState';
 import { LocationState } from '../../features/agent_controller/state_collector/LocationState';
 
+const APP_BUNDLE_NAME: string = 'com.huawei.aios.agent.operation';
 const DEFAULT_TASK_LIST_LIMIT: number = 100;
 const DEFAULT_STEP_LIST_LIMIT: number = 200;
 const THEME_BG_START: string = '#FFFFFF';
@@ -340,6 +343,7 @@ struct Index {
   private debugEventSequence: number = 0;
   private a2aStreamSequence: number = 0;
   private agentServiceClient: AgentControllerClient = new AgentControllerClient();
+  private aiDispatchSearchClient: AiDispatchSearchClient = new AiDispatchSearchClient();
 
   aboutToAppear(): void {
     void this.loadSettings();
@@ -793,6 +797,18 @@ struct Index {
                 .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                 .onClick(() => {
                   this.applyMemoSearchNotePreset();
+                })
+
+              Button('直调 SearchNote')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoSearchNotePreset();
+                  void this.executeInsightIntentDebug();
                 })
 
               Button('搜索 HiNote')
@@ -3990,8 +4006,8 @@ struct Index {
     this.intentParamsJson = this.buildMemoSearchQueryParamsJson();
     this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
     this.intentQueryKeyword = 'SearchNote';
-    this.intentQueryInfo = 'SearchNote 走 AiDispatchService 内部 nonStandardIntent，执行器是 SearchIntentExecutor，查询索引是 sysMemoNote。';
-    this.memoQuickInfo = '已按实机系统配置预填 SearchNote。直接点“执行 Intent”即可验证；如果 execute 失败，再走小艺或公开候选排查。';
+    this.intentQueryInfo = 'SearchNote 走 AiDispatchService 内部 nonStandardIntent，执行器是 SearchIntentExecutor，查询索引是 sysMemoNote，调试页会直接模拟这条内部 RPC。';
+    this.memoQuickInfo = '已按实机系统配置预填 SearchNote。现在点“执行 Intent”会直接走 AiDispatch 内部 RPC，不再走 insightIntentDriver.execute。';
     this.intentHintLines = [
       'SearchNote 不是备忘录包自己注册的标准 Intent，而是 com.huawei.hmos.aidispatchservice 里的内部 nonStandardIntent。',
       '实机日志链路是：vassistant -> aidispatchservice -> SearchIntentExecutor -> FusionSearch(sysMemoNote)。',
@@ -4024,7 +4040,7 @@ struct Index {
     this.intentParamsJson = this.buildMemoSearchQueryParamsJson();
     this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
     this.intentQueryKeyword = 'SearchHiNote';
-    this.intentQueryInfo = 'SearchHiNote 走 AiDispatchService 内部 nonStandardIntent，执行器是 SearchIntentExecutor，查询索引是 hiNotePages。';
+    this.intentQueryInfo = 'SearchHiNote 走 AiDispatchService 内部 nonStandardIntent，执行器是 SearchIntentExecutor，查询索引是 hiNotePages；调试页同样会直接模拟这条内部 RPC。';
     this.memoQuickInfo = '已按实机系统配置预填 SearchHiNote，参数同样使用顶层 query。';
     this.intentHintLines = [
       'SearchHiNote 也是 aidispatchservice 的内部 nonStandardIntent，不在 AppNotepad 自己的 insight_intent.json 里。',
@@ -4291,6 +4307,20 @@ struct Index {
   }
 
   private async executeInsightIntentDebug(): Promise<void> {
+    const intentName = this.intentName.trim();
+    if (intentName.length === 0) {
+      this.intentExecuteInfo = '请输入 intentName';
+      return;
+    }
+    const params = this.parseInsightIntentParamsJson();
+    if (!params) {
+      return;
+    }
+    if (this.shouldUseAiDispatchInternalSearch(intentName)) {
+      await this.executeAiDispatchInternalSearchIntent(intentName, params);
+      return;
+    }
+
     const bundleName = this.intentBundleName.trim();
     if (bundleName.length === 0) {
       this.intentExecuteInfo = '请输入 bundleName';
@@ -4304,15 +4334,6 @@ struct Index {
     const abilityName = this.intentAbilityName.trim();
     if (abilityName.length === 0) {
       this.intentExecuteInfo = '请输入 abilityName（建议先查询后自动回填）';
-      return;
-    }
-    const intentName = this.intentName.trim();
-    if (intentName.length === 0) {
-      this.intentExecuteInfo = '请输入 intentName';
-      return;
-    }
-    const params = this.parseInsightIntentParamsJson();
-    if (!params) {
       return;
     }
 
@@ -4334,6 +4355,81 @@ struct Index {
       this.handleMemoIntentExecuteResult(intentName, params, result, code);
     } catch (e) {
       this.intentExecuteInfo = `执行失败: ${String(e)}`;
+      this.intentExecuteResult = '';
+    }
+  }
+
+  private shouldUseAiDispatchInternalSearch(intentName: string): boolean {
+    return intentName === 'SearchNote' || intentName === 'SearchHiNote';
+  }
+
+  private resolveAiDispatchSearchQuery(params: Record<string, Object>): string {
+    const queryValue = params['query'];
+    if (typeof queryValue === 'string' && queryValue.trim().length > 0) {
+      return queryValue.trim();
+    }
+    const keywordValue = params['keyword'];
+    if (typeof keywordValue === 'string' && keywordValue.trim().length > 0) {
+      return keywordValue.trim();
+    }
+    const contentValue = params['content'];
+    if (typeof contentValue === 'string' && contentValue.trim().length > 0) {
+      return contentValue.trim();
+    }
+    return this.memoSearchKeyword.trim();
+  }
+
+  private buildAiDispatchExecuteResultText(callbackCode: number, notifyMessages: Array<string>, payloadText: string): string {
+    const lines: Array<string> = [
+      `callbackCode: ${callbackCode}`,
+      `notifyCount: ${notifyMessages.length}`,
+    ];
+    if (notifyMessages.length > 0) {
+      lines.push('');
+      lines.push('notifyMessages:');
+      let index = 0;
+      while (index < notifyMessages.length) {
+        lines.push(`- ${notifyMessages[index]}`);
+        index += 1;
+      }
+    }
+    if (payloadText.trim().length > 0) {
+      lines.push('');
+      lines.push(payloadText);
+    }
+    return this.truncateText(lines.join('\n'), 6000);
+  }
+
+  private async executeAiDispatchInternalSearchIntent(intentName: string, params: Record<string, Object>): Promise<void> {
+    const query = this.resolveAiDispatchSearchQuery(params);
+    if (query.length === 0) {
+      this.intentExecuteInfo = `${intentName} 需要 query 参数`;
+      this.intentExecuteResult = '';
+      return;
+    }
+    this.intentExecuteInfo = `正在通过 AiDispatch 模拟 ${intentName}...`;
+    this.intentExecuteResult = '';
+    try {
+      const request: AiDispatchSearchRequest = {
+        senderBundleName: APP_BUNDLE_NAME,
+        targetBundleName: AI_DISPATCH_NOTE_TARGET_BUNDLE_NAME,
+        intentName,
+        query,
+      };
+      const result = await this.aiDispatchSearchClient.executeSearchIntent(this.getUiContext(), request);
+      const payloadText = result.parsedMessage ?
+        this.prettyPrintIntentValue(result.parsedMessage) :
+        this.truncateText(result.callbackMessage, 6000);
+      this.intentExecuteInfo = result.callbackCode === 1 ?
+        `${intentName} 已通过 AiDispatch 执行，callbackCode=${result.callbackCode}` :
+        `${intentName} 执行失败，callbackCode=${result.callbackCode}`;
+      this.intentExecuteResult = this.buildAiDispatchExecuteResultText(
+        result.callbackCode,
+        result.notifyMessages,
+        payloadText
+      );
+    } catch (e) {
+      this.intentExecuteInfo = `${intentName} 执行失败: ${String(e)}`;
       this.intentExecuteResult = '';
     }
   }
