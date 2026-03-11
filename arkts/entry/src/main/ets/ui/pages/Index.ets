@@ -169,6 +169,20 @@ interface InsightIntentExecuteResultSnapshot {
   result?: Object;
 }
 
+interface MemoCreateNotePresetParams {
+  title: string;
+  content: string;
+}
+
+interface MemoCreateNotePresetDetail {
+  manualIntent: string;
+  bundleName: string;
+  moduleName: string;
+  abilityName: string;
+  executeMode: string;
+  params: MemoCreateNotePresetParams;
+}
+
 interface InsightIntentSchemaNodeSnapshot {
   type?: string;
   description?: string;
@@ -3634,17 +3648,19 @@ struct Index {
       'title [可返] (string) 最终保存的标题。',
       'content [可返] (string) 最终保存的正文。',
     ];
-    this.intentDetailInfo = JSON.stringify({
+    const presetParams: MemoCreateNotePresetParams = {
+      title: '测试标题',
+      content: '测试内容',
+    };
+    const presetDetail: MemoCreateNotePresetDetail = {
       manualIntent: 'CreateNote',
       bundleName: this.intentBundleName,
       moduleName: this.intentModuleName,
       abilityName: this.intentAbilityName,
       executeMode: 'UI_ABILITY_BACKGROUND',
-      params: {
-        title: '测试标题',
-        content: '测试内容',
-      },
-    }, null, 2);
+      params: presetParams,
+    };
+    this.intentDetailInfo = JSON.stringify(presetDetail, null, 2);
   }
 
   private clearInsightIntentDebug(): void {
