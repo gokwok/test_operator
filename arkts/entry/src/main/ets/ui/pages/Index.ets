@@ -230,6 +230,7 @@ struct Index {
   @State intentAbilityName: string = '';
   @State intentName: string = '';
   @State intentParamsJson: string = '{}';
+  @State intentExecuteMode: number = insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND;
   @State intentQueryKeyword: string = '';
   @State intentQueryInfo: string = '';
   @State intentSummaryItems: Array<InsightIntentInfoSnapshot> = [];
@@ -645,7 +646,7 @@ struct Index {
                 this.applyHuaweiMusicIntentPreset();
               })
 
-            Button('备忘录候选')
+            Button('备忘录创建')
               .fontSize(12)
               .fontColor(THEME_TEXT_PRIMARY)
               .backgroundColor(THEME_CARD)
@@ -719,6 +720,40 @@ struct Index {
             .onChange((value: string) => {
               this.intentName = value;
             })
+
+          Row({ space: 8 }) {
+            Text(this.getInsightIntentExecuteModeLabel())
+              .fontSize(12)
+              .fontColor(THEME_TEXT_MUTED)
+
+            Button('前台')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND ? THEME_ACCENT_SOFT : THEME_CARD)
+              .borderRadius(14)
+              .border({
+                width: 1,
+                color: this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND ? THEME_ACCENT : THEME_BORDER,
+              })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND;
+              })
+
+            Button('后台')
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ? THEME_ACCENT_SOFT : THEME_CARD)
+              .borderRadius(14)
+              .border({
+                width: 1,
+                color: this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ? THEME_ACCENT : THEME_BORDER,
+              })
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+              })
+          }
 
           TextInput({ placeholder: '结果筛选关键字（如 music / memo / note / 备忘录）', text: this.intentQueryKeyword })
             .height(32)
@@ -3569,18 +3604,47 @@ struct Index {
     this.intentAbilityName = 'MainAbility';
     this.intentName = 'PlayMusicList';
     this.intentParamsJson = '{"sceneType":"DRIVE_SCENE"}';
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND;
     this.intentQueryKeyword = 'music';
     this.intentQueryInfo = '已按实机截图修正华为音乐预设：bundle=com.huawei.hmsapp.music, module=phone, ability=MainAbility。建议先按 Intent 查确认后再执行。';
   }
 
   private applyMemoIntentPreset(): void {
-    this.intentBundleName = '';
-    this.intentModuleName = 'entry';
-    this.intentAbilityName = '';
-    this.intentName = '';
-    this.intentParamsJson = '{}';
-    this.intentQueryKeyword = '备忘录';
-    this.intentQueryInfo = '未再硬编码备忘录 bundle。请先“查询全部”，再用 备忘录 / memo / note 过滤，确认真实 bundle 和 intent 后再执行。';
+    this.intentBundleName = 'com.huawei.hmos.notepad';
+    this.intentModuleName = 'NotepadPhone';
+    this.intentAbilityName = 'InsightIntentAbility';
+    this.intentName = 'CreateNote';
+    this.intentParamsJson = '{"title":"测试标题","content":"测试内容"}';
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+    this.intentQueryKeyword = 'CreateNote';
+    this.intentQueryInfo = 'CreateNote 不在公开注册表里，通常“查询全部/按 Bundle 查”都查不到。请直接使用这组四元组并以后台模式执行。';
+    this.intentHintLines = [
+      'CreateNote 普通模式实际吃的是顶层 title/content，不是 items[]。',
+      'CreateNote 必须走后台执行；前台执行器只支持 ViewNote 和 ShareNote。',
+      'title 可为空；为空时备忘录会用 content 第一行自动截成标题。',
+    ];
+    this.intentParameterLines = [
+      'title [可选] (string) 为空时会从 content 第一行自动生成标题，最长约 50 字符。',
+      'content [可选] (string) 笔记正文；支持换行，保存时会拆成多段文本元素。',
+      'type [可选] (string) 留空即走普通 CreateNote；AiCallAssistant 会切到另一条通话助手分支。',
+    ];
+    this.intentResultLines = [
+      'entityId [可返] (string) 新建笔记的 uuid，可用于后续 ViewNote / ModifyNote / DeleteNote。',
+      'modifiedDate [可返] (number) 笔记更新时间戳。',
+      'title [可返] (string) 最终保存的标题。',
+      'content [可返] (string) 最终保存的正文。',
+    ];
+    this.intentDetailInfo = JSON.stringify({
+      manualIntent: 'CreateNote',
+      bundleName: this.intentBundleName,
+      moduleName: this.intentModuleName,
+      abilityName: this.intentAbilityName,
+      executeMode: 'UI_ABILITY_BACKGROUND',
+      params: {
+        title: '测试标题',
+        content: '测试内容',
+      },
+    }, null, 2);
   }
 
   private clearInsightIntentDebug(): void {
@@ -3592,6 +3656,13 @@ struct Index {
     this.intentDetailInfo = '';
     this.intentExecuteInfo = '';
     this.intentExecuteResult = '';
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND;
+  }
+
+  private getInsightIntentExecuteModeLabel(): string {
+    return this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ?
+      '执行模式: 后台（适合 CreateNote）' :
+      '执行模式: 前台';
   }
 
   private getInsightIntentSummaryFlags(): number {
@@ -3752,10 +3823,11 @@ struct Index {
         abilityName,
         insightIntentName: intentName,
         insightIntentParam: params,
-        executeMode: insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND,
+        executeMode: this.intentExecuteMode,
       }) as InsightIntentExecuteResultSnapshot;
       const code = typeof result.code === 'number' ? result.code : -1;
-      this.intentExecuteInfo = `执行完成，code=${code}`;
+      const modeText = this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ? '后台' : '前台';
+      this.intentExecuteInfo = `执行完成，code=${code}，mode=${modeText}`;
       this.intentExecuteResult = this.prettyPrintIntentValue(result);
     } catch (e) {
       this.intentExecuteInfo = `执行失败: ${String(e)}`;
@@ -3926,7 +3998,19 @@ struct Index {
     }
 
     if (fieldName === 'entityid') {
+      if (intentName === 'CreateNote' && section === 'result') {
+        return '这里返回的是新建笔记的 uuid，可继续用于 ViewNote / ModifyNote / DeleteNote。';
+      }
       return '通常需要目标应用或其后端先提供实体 ID；Intent Kit 本身不会帮你搜索出来。';
+    }
+    if (intentName === 'CreateNote' && fieldName === 'title') {
+      return '可为空；为空时备忘录会取 content 第一行作为标题，并裁到约 50 字符。';
+    }
+    if (intentName === 'CreateNote' && fieldName === 'content') {
+      return '普通建笔记分支实际读取的是顶层 content 字符串；支持换行，不需要 items[]。';
+    }
+    if (intentName === 'CreateNote' && fieldName === 'type') {
+      return '留空即普通建笔记；AiCallAssistant 会切到通话助手分支。';
     }
     if (fieldName === 'entitygroupid') {
       return '通常由目标应用定义内容分组或 UI 形态；没有配套 Search/Get Intent 时很难自行构造。';
@@ -3966,6 +4050,10 @@ struct Index {
 
     if (intentName === 'PlayMusicList') {
       lines.push('PlayMusicList 更适合先用 {} 或 {"sceneType":"DRIVE_SCENE"} 调试；想精确打开某个歌单通常还需要 entityId。');
+    }
+    if (intentName === 'CreateNote') {
+      lines.push('CreateNote 在当前系统上不是公开可枚举 Intent，所以即使查询不到，也可以直接按四元组手动执行。');
+      lines.push('普通 CreateNote 使用顶层 title/content；如果切到前台模式，会命中不到对应执行器。');
     }
 
     return lines;
