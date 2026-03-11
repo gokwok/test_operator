@@ -733,7 +733,7 @@ struct Index {
               .fontSize(11)
               .fontColor(THEME_TEXT_MUTED)
 
-            Text('Create / Modify / Share / Delete 已按实机 profile 预填；Search 系列先从全量结果里回填真实四元组。')
+            Text('Create / Modify / Share / Delete 已按实机 profile 预填；Search 系列按 AiDispatch 内部配置预填 query 参数。')
               .fontSize(10)
               .fontColor(THEME_TEXT_SUBTLE)
 
@@ -784,7 +784,29 @@ struct Index {
             }
 
             Row({ space: 8 }) {
-              Button('查 SearchNote')
+              Button('搜索备忘录')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoSearchNotePreset();
+                })
+
+              Button('搜索 HiNote')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoSearchHiNotePreset();
+                })
+
+              Button('查公开 SearchNote')
                 .fontSize(12)
                 .fontColor(THEME_TEXT_PRIMARY)
                 .backgroundColor(THEME_CARD)
@@ -795,7 +817,7 @@ struct Index {
                   void this.queryMemoIntentCandidates('SearchNote');
                 })
 
-              Button('查 SearchHiNote')
+              Button('查公开 SearchHiNote')
                 .fontSize(12)
                 .fontColor(THEME_TEXT_PRIMARY)
                 .backgroundColor(THEME_CARD)
@@ -3960,6 +3982,74 @@ struct Index {
     );
   }
 
+  private applyMemoSearchNotePreset(): void {
+    this.intentBundleName = 'com.huawei.hmos.aidispatchservice';
+    this.intentModuleName = 'entry';
+    this.intentAbilityName = 'AiDispatchRemoteAbility';
+    this.intentName = 'SearchNote';
+    this.intentParamsJson = this.buildMemoSearchQueryParamsJson();
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+    this.intentQueryKeyword = 'SearchNote';
+    this.intentQueryInfo = 'SearchNote 走 AiDispatchService 内部 nonStandardIntent，执行器是 SearchIntentExecutor，查询索引是 sysMemoNote。';
+    this.memoQuickInfo = '已按实机系统配置预填 SearchNote。直接点“执行 Intent”即可验证；如果 execute 失败，再走小艺或公开候选排查。';
+    this.intentHintLines = [
+      'SearchNote 不是备忘录包自己注册的标准 Intent，而是 com.huawei.hmos.aidispatchservice 里的内部 nonStandardIntent。',
+      '实机日志链路是：vassistant -> aidispatchservice -> SearchIntentExecutor -> FusionSearch(sysMemoNote)。',
+      '入参读取的是顶层 query；目标索引会在 title / attachmentNames / content 上做匹配，并过滤 isDeleted=0、isLocked=0。',
+    ];
+    this.intentParameterLines = [
+      'query [必填] (string) 搜索关键词；实机配置从 intentParam.query 透传到 FusionSearch。',
+    ];
+    this.intentResultLines = [
+      'entityName [可返] (string) 搜到的笔记实体展示名。',
+      'entityId [可返] (string) 笔记实体 uuid，可继续用于 ViewNote / ShareNote / DeleteNote。',
+      'title [可返] (string) 命中的标题。',
+      'modifiedDate [可返] (number) 最后修改时间。',
+      'content [可返] (string) 命中的正文摘要。',
+      'createdDate [可返] (number) 创建时间。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'SearchNote',
+      this.intentAbilityName,
+      'UI_ABILITY_BACKGROUND',
+      this.intentParamsJson
+    );
+  }
+
+  private applyMemoSearchHiNotePreset(): void {
+    this.intentBundleName = 'com.huawei.hmos.aidispatchservice';
+    this.intentModuleName = 'entry';
+    this.intentAbilityName = 'AiDispatchRemoteAbility';
+    this.intentName = 'SearchHiNote';
+    this.intentParamsJson = this.buildMemoSearchQueryParamsJson();
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+    this.intentQueryKeyword = 'SearchHiNote';
+    this.intentQueryInfo = 'SearchHiNote 走 AiDispatchService 内部 nonStandardIntent，执行器是 SearchIntentExecutor，查询索引是 hiNotePages。';
+    this.memoQuickInfo = '已按实机系统配置预填 SearchHiNote，参数同样使用顶层 query。';
+    this.intentHintLines = [
+      'SearchHiNote 也是 aidispatchservice 的内部 nonStandardIntent，不在 AppNotepad 自己的 insight_intent.json 里。',
+      '实机配置显示它查询的是 hiNotePages，而不是 sysMemoNote。',
+      '结果排序会优先 noteIsTop，再按 modifiedDate 倒序。',
+    ];
+    this.intentParameterLines = [
+      'query [必填] (string) 搜索关键词；实机配置从 intentParam.query 透传到 hiNotePages 搜索。',
+    ];
+    this.intentResultLines = [
+      'entityName [可返] (string) 命中的 HiNote 实体名。',
+      'pageNum [可返] (number) 页码。',
+      'noteTitle [可返] (string) 命中的标题。',
+      'content [可返] (string) 命中的正文摘要。',
+      'noteId [可返] (string) HiNote noteId。',
+      'entityId [可返] (string) 实体 uuid。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'SearchHiNote',
+      this.intentAbilityName,
+      'UI_ABILITY_BACKGROUND',
+      this.intentParamsJson
+    );
+  }
+
   private async queryMemoIntentCandidates(intentName: string): Promise<void> {
     this.intentBundleName = '';
     this.intentModuleName = '';
@@ -4023,8 +4113,21 @@ struct Index {
   }
 
   private buildMemoSearchQueryParamsJson(): string {
-    const params: MemoSearchQueryIntentParams = { query: this.memoSearchKeyword };
+    const keyword = this.getMemoSearchKeyword();
+    const params: MemoSearchQueryIntentParams = { query: keyword };
     return JSON.stringify(params);
+  }
+
+  private getMemoSearchKeyword(): string {
+    const keyword = this.memoSearchKeyword.trim();
+    if (keyword.length > 0) {
+      return keyword;
+    }
+    const content = this.memoDraftContent.trim();
+    if (content.length > 0) {
+      return content;
+    }
+    return '测试';
   }
 
   private buildMemoPresetDetailJson(
@@ -4481,8 +4584,11 @@ struct Index {
       lines.push('ShareNote 只需要 entityId，成功后通常直接拉起分享页面。');
     }
     if (intentName === 'SearchNote' || intentName === 'SearchHiNote') {
-      lines.push('实机 AppNotepad.hap 的 insight_intent.json 没有这条；若全量查询枚举到了它，请以查询结果回填的 bundle/module/ability 为准。');
-      lines.push('选中摘要行后，当前面板会优先按 schema 自动补 content / keyword / query 其中之一。');
+      lines.push('这两条是 com.huawei.hmos.aidispatchservice 的内部 nonStandardIntent，不是 AppNotepad 自己注册的标准 Intent。');
+      lines.push(intentName === 'SearchNote' ?
+        'SearchNote 读取顶层 query，并落到 FusionSearch 的 sysMemoNote 索引。' :
+        'SearchHiNote 读取顶层 query，并落到 FusionSearch 的 hiNotePages 索引。');
+      lines.push('当前面板已经按实机系统配置预填 com.huawei.hmos.aidispatchservice / entry / AiDispatchRemoteAbility。');
     }
 
     return lines;
