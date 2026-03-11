@@ -183,6 +183,45 @@ interface MemoCreateNotePresetDetail {
   params: MemoCreateNotePresetParams;
 }
 
+interface MemoModifyNoteIntentParams {
+  entityId: string;
+  contentType: number;
+  text: string;
+}
+
+interface MemoDeleteNoteItemParams {
+  entityId: string;
+}
+
+interface MemoDeleteNoteIntentParams {
+  items: Array<MemoDeleteNoteItemParams>;
+}
+
+interface MemoEntityIntentParams {
+  entityId: string;
+}
+
+interface MemoSearchContentIntentParams {
+  content: string;
+}
+
+interface MemoSearchKeywordIntentParams {
+  keyword: string;
+}
+
+interface MemoSearchQueryIntentParams {
+  query: string;
+}
+
+interface MemoIntentResultPayloadSnapshot {
+  entityId?: string;
+  modifiedDate?: number;
+  title?: string;
+  content?: string;
+  info?: string;
+  error?: string;
+}
+
 interface InsightIntentSchemaNodeSnapshot {
   type?: string;
   description?: string;
@@ -256,6 +295,12 @@ struct Index {
   @State intentDetailInfo: string = '';
   @State intentExecuteInfo: string = '';
   @State intentExecuteResult: string = '';
+  @State memoDraftTitle: string = '测试标题';
+  @State memoDraftContent: string = '测试内容';
+  @State memoModifyText: string = '修改后的测试内容';
+  @State memoLastEntityId: string = '';
+  @State memoSearchKeyword: string = '测试';
+  @State memoQuickInfo: string = '';
   @State a2aPrompt: string = '';
   @State a2aTaskId: string = '';
   @State a2aReply: string = '';
@@ -682,6 +727,156 @@ struct Index {
                 this.clearInsightIntentDebug();
               })
           }
+
+          Column({ space: 8 }) {
+            Text('备忘录快测')
+              .fontSize(11)
+              .fontColor(THEME_TEXT_MUTED)
+
+            Text('Create / Modify / Share / Delete 已按实机 profile 预填；Search 系列先从全量结果里回填真实四元组。')
+              .fontSize(10)
+              .fontColor(THEME_TEXT_SUBTLE)
+
+            Row({ space: 8 }) {
+              Button('创建笔记')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoCreatePreset();
+                })
+
+              Button('修改最近')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoModifyPreset();
+                })
+
+              Button('分享最近')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoSharePreset();
+                })
+
+              Button('删除最近')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoDeletePreset();
+                })
+            }
+
+            Row({ space: 8 }) {
+              Button('查 SearchNote')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.queryMemoIntentCandidates('SearchNote');
+                })
+
+              Button('查 SearchHiNote')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  void this.queryMemoIntentCandidates('SearchHiNote');
+                })
+            }
+
+            TextInput({ placeholder: '新建标题', text: this.memoDraftTitle })
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.memoDraftTitle = value;
+              })
+
+            TextInput({ placeholder: '新建正文 / 搜索关键词内容', text: this.memoDraftContent })
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.memoDraftContent = value;
+              })
+
+            TextInput({ placeholder: '修改正文（ModifyNote.text）', text: this.memoModifyText })
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.memoModifyText = value;
+              })
+
+            TextInput({ placeholder: '最近 entityId（Create/Modify 成功后会自动回填）', text: this.memoLastEntityId })
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.memoLastEntityId = value;
+              })
+
+            TextInput({ placeholder: '搜索关键词（SearchNote / SearchHiNote 自动补参数时会用到）', text: this.memoSearchKeyword })
+              .height(32)
+              .fontSize(12)
+              .fontColor(THEME_TEXT_PRIMARY)
+              .backgroundColor(THEME_CARD)
+              .borderRadius(10)
+              .border({ width: 1, color: THEME_BORDER })
+              .padding({ left: 10, right: 10 })
+              .onChange((value: string) => {
+                this.memoSearchKeyword = value;
+              })
+
+            if (this.memoQuickInfo.length > 0) {
+              Text(this.memoQuickInfo)
+                .fontSize(10)
+                .fontColor(THEME_TEXT_MUTED)
+            }
+          }
+          .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+          .backgroundColor(DETAIL_SECTION_BG)
+          .borderRadius(10)
+          .border({ width: 1, color: DETAIL_SECTION_BORDER })
 
           TextInput({ placeholder: 'bundleName（例如 com.huawei.music）', text: this.intentBundleName })
             .height(32)
@@ -3624,14 +3819,19 @@ struct Index {
   }
 
   private applyMemoIntentPreset(): void {
+    this.applyMemoCreatePreset();
+  }
+
+  private applyMemoCreatePreset(): void {
     this.intentBundleName = 'com.huawei.hmos.notepad';
     this.intentModuleName = 'NotepadPhone';
     this.intentAbilityName = 'InsightIntentAbility';
     this.intentName = 'CreateNote';
-    this.intentParamsJson = '{"title":"测试标题","content":"测试内容"}';
+    this.intentParamsJson = this.buildMemoCreateParamsJson();
     this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
     this.intentQueryKeyword = 'CreateNote';
     this.intentQueryInfo = 'CreateNote 不在公开注册表里，通常“查询全部/按 Bundle 查”都查不到。请直接使用这组四元组并以后台模式执行。';
+    this.memoQuickInfo = 'CreateNote 走 InsightIntentAbility + 后台模式。执行成功后会自动回填最近 entityId。';
     this.intentHintLines = [
       'CreateNote 普通模式实际吃的是顶层 title/content，不是 items[]。',
       'CreateNote 必须走后台执行；前台执行器只支持 ViewNote 和 ShareNote。',
@@ -3648,10 +3848,7 @@ struct Index {
       'title [可返] (string) 最终保存的标题。',
       'content [可返] (string) 最终保存的正文。',
     ];
-    const presetParams: MemoCreateNotePresetParams = {
-      title: '测试标题',
-      content: '测试内容',
-    };
+    const presetParams: MemoCreateNotePresetParams = this.buildMemoCreateParams();
     const presetDetail: MemoCreateNotePresetDetail = {
       manualIntent: 'CreateNote',
       bundleName: this.intentBundleName,
@@ -3661,6 +3858,192 @@ struct Index {
       params: presetParams,
     };
     this.intentDetailInfo = JSON.stringify(presetDetail, null, 2);
+  }
+
+  private applyMemoModifyPreset(): void {
+    const entityId = this.memoLastEntityId.trim();
+    this.intentBundleName = 'com.huawei.hmos.notepad';
+    this.intentModuleName = 'NotepadPhone';
+    this.intentAbilityName = 'InsightIntentAbility';
+    this.intentName = 'ModifyNote';
+    this.intentParamsJson = this.buildMemoModifyParamsJson(entityId);
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+    this.intentQueryKeyword = 'ModifyNote';
+    this.intentQueryInfo = 'ModifyNote 在备忘录设备 profile 里走后台 + InsightIntentAbility。普通文本笔记修改实际读取 entityId + contentType=1 + text。';
+    this.memoQuickInfo = entityId.length > 0 ?
+      `已用最近 entityId 预填 ModifyNote: ${entityId}` :
+      '最近没有 entityId。请先执行 CreateNote 成功，或手动填写“最近 entityId”后再测 ModifyNote。';
+    this.intentHintLines = [
+      'ModifyNote 走后台执行；普通文本笔记修改分支实际读取顶层 entityId / contentType / text。',
+      'contentType 必须为 1，才能进入文本笔记修改分支；只传 title/content 不会命中这条链路。',
+      'ModifyNote 成功后也会返回 entityId / modifiedDate / title / content，并刷新“最近 entityId”。',
+    ];
+    this.intentParameterLines = [
+      'entityId [必填] (string) 要修改的笔记 uuid；建议直接用 CreateNote 返回的 entityId。',
+      'contentType [必填] (number) 文本笔记请固定填 1；不传或填其他值时不会进入普通文本修改分支。',
+      'text [必填] (string) 新的正文内容；保存时会据此重算正文和标题摘要。',
+    ];
+    this.intentResultLines = [
+      'entityId [可返] (string) 修改后的笔记 uuid，通常与入参相同。',
+      'modifiedDate [可返] (number) 修改时间戳。',
+      'title [可返] (string) 备忘录最终保存的标题。',
+      'content [可返] (string) 备忘录最终保存的正文。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'ModifyNote',
+      this.intentAbilityName,
+      'UI_ABILITY_BACKGROUND',
+      this.intentParamsJson
+    );
+  }
+
+  private applyMemoSharePreset(): void {
+    const entityId = this.memoLastEntityId.trim();
+    this.intentBundleName = 'com.huawei.hmos.notepad';
+    this.intentModuleName = 'NotepadPhone';
+    this.intentAbilityName = 'MainAbility';
+    this.intentName = 'ShareNote';
+    this.intentParamsJson = this.buildMemoEntityParamsJson(entityId);
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND;
+    this.intentQueryKeyword = 'ShareNote';
+    this.intentQueryInfo = 'ShareNote 在设备 profile 里走 MainAbility + 前台模式，会拉起备忘录分享链路。';
+    this.memoQuickInfo = entityId.length > 0 ?
+      `已用最近 entityId 预填 ShareNote: ${entityId}` :
+      '最近没有 entityId。请先创建一条笔记，或手动填写“最近 entityId”后再测 ShareNote。';
+    this.intentHintLines = [
+      'ShareNote 走前台执行，目标 ability 是 MainAbility，不是 InsightIntentAbility。',
+      '它只需要顶层 entityId；成功时通常返回 info 文本，并直接拉起分享链路。',
+    ];
+    this.intentParameterLines = [
+      'entityId [必填] (string) 要分享的笔记 uuid。',
+    ];
+    this.intentResultLines = [
+      'info [可返] (string) 一般会回显 shareNote entityId:... success。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'ShareNote',
+      this.intentAbilityName,
+      'UI_ABILITY_FOREGROUND',
+      this.intentParamsJson
+    );
+  }
+
+  private applyMemoDeletePreset(): void {
+    const entityId = this.memoLastEntityId.trim();
+    this.intentBundleName = 'com.huawei.hmos.notepad';
+    this.intentModuleName = 'NotepadPhone';
+    this.intentAbilityName = 'InsightIntentAbility';
+    this.intentName = 'DeleteNote';
+    this.intentParamsJson = this.buildMemoDeleteParamsJson(entityId);
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+    this.intentQueryKeyword = 'DeleteNote';
+    this.intentQueryInfo = 'DeleteNote 在备忘录设备 profile 里走后台 + InsightIntentAbility；它实际读取 items[].entityId。';
+    this.memoQuickInfo = entityId.length > 0 ?
+      `已用最近 entityId 预填 DeleteNote: ${entityId}` :
+      '最近没有 entityId。请先创建一条笔记，或手动填写“最近 entityId”后再测 DeleteNote。';
+    this.intentHintLines = [
+      'DeleteNote 走后台执行；真正读取的是 items[] 数组，每项至少要带 entityId。',
+      '单条删除时传一个 items[0].entityId 就够；成功后建议清空本地缓存的最近 entityId。',
+    ];
+    this.intentParameterLines = [
+      'items [必填] (array<object>) 删除目标数组；每项至少要有 entityId。',
+      'items.entityId [必填] (string) 要删除的笔记 uuid。',
+    ];
+    this.intentResultLines = [
+      'info [可返] (string) 一般会回显 DeleteNote items:... success。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'DeleteNote',
+      this.intentAbilityName,
+      'UI_ABILITY_BACKGROUND',
+      this.intentParamsJson
+    );
+  }
+
+  private async queryMemoIntentCandidates(intentName: string): Promise<void> {
+    this.intentBundleName = '';
+    this.intentModuleName = '';
+    this.intentAbilityName = '';
+    this.intentName = intentName;
+    this.intentParamsJson = '{}';
+    this.intentQueryKeyword = intentName;
+    this.intentQueryInfo = `正在查询 ${intentName} 候选...`;
+    this.memoQuickInfo = `${intentName} 不在 AppNotepad 实机 profile 里；如果系统全量查询能枚举到它，请点摘要行回填真实 bundle/module/ability。`;
+    await this.queryAllInsightIntents();
+    const filtered = this.getFilteredIntentSummaryItems();
+    if (filtered.length > 0) {
+      this.memoQuickInfo = `已筛到 ${filtered.length} 条 ${intentName} 候选。点摘要行后会自动回填四元组，并尽量按 schema 自动补搜索参数。`;
+    } else {
+      this.memoQuickInfo = `${intentName} 没出现在当前系统公开注册表里。实机 AppNotepad.hap 的 insight_intent.json 也没有这条，后续需要按真实查询结果或日志继续追。`;
+    }
+  }
+
+  private buildMemoCreateParams(): MemoCreateNotePresetParams {
+    const title = this.memoDraftTitle.trim();
+    const content = this.memoDraftContent;
+    return {
+      title,
+      content,
+    };
+  }
+
+  private buildMemoCreateParamsJson(): string {
+    const params = this.buildMemoCreateParams();
+    return JSON.stringify(params);
+  }
+
+  private buildMemoModifyParamsJson(entityId: string): string {
+    const params: MemoModifyNoteIntentParams = {
+      entityId,
+      contentType: 1,
+      text: this.memoModifyText,
+    };
+    return JSON.stringify(params);
+  }
+
+  private buildMemoDeleteParamsJson(entityId: string): string {
+    const item: MemoDeleteNoteItemParams = { entityId };
+    const params: MemoDeleteNoteIntentParams = { items: [item] };
+    return JSON.stringify(params);
+  }
+
+  private buildMemoEntityParamsJson(entityId: string): string {
+    const params: MemoEntityIntentParams = { entityId };
+    return JSON.stringify(params);
+  }
+
+  private buildMemoSearchContentParamsJson(): string {
+    const params: MemoSearchContentIntentParams = { content: this.memoSearchKeyword };
+    return JSON.stringify(params);
+  }
+
+  private buildMemoSearchKeywordParamsJson(): string {
+    const params: MemoSearchKeywordIntentParams = { keyword: this.memoSearchKeyword };
+    return JSON.stringify(params);
+  }
+
+  private buildMemoSearchQueryParamsJson(): string {
+    const params: MemoSearchQueryIntentParams = { query: this.memoSearchKeyword };
+    return JSON.stringify(params);
+  }
+
+  private buildMemoPresetDetailJson(
+    intentName: string,
+    abilityName: string,
+    executeMode: string,
+    paramsJson: string
+  ): string {
+    const lines: Array<string> = [
+      '{',
+      `  "manualIntent": "${intentName}",`,
+      `  "bundleName": "${this.intentBundleName}",`,
+      `  "moduleName": "${this.intentModuleName}",`,
+      `  "abilityName": "${abilityName}",`,
+      `  "executeMode": "${executeMode}",`,
+      `  "paramsPreview": ${JSON.stringify(paramsJson)}`,
+      '}',
+    ];
+    return lines.join('\n');
   }
 
   private clearInsightIntentDebug(): void {
@@ -3677,8 +4060,8 @@ struct Index {
 
   private getInsightIntentExecuteModeLabel(): string {
     return this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ?
-      '执行模式: 后台（适合 CreateNote）' :
-      '执行模式: 前台';
+      '执行模式: 后台（适合 Create / Modify / Delete）' :
+      '执行模式: 前台（适合 Share / View）';
   }
 
   private getInsightIntentSummaryFlags(): number {
@@ -3845,6 +4228,7 @@ struct Index {
       const modeText = this.intentExecuteMode === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ? '后台' : '前台';
       this.intentExecuteInfo = `执行完成，code=${code}，mode=${modeText}`;
       this.intentExecuteResult = this.prettyPrintIntentValue(result);
+      this.handleMemoIntentExecuteResult(intentName, params, result, code);
     } catch (e) {
       this.intentExecuteInfo = `执行失败: ${String(e)}`;
       this.intentExecuteResult = '';
@@ -3905,6 +4289,7 @@ struct Index {
     this.intentSelectedSummaryKey = this.buildIntentSummaryKey(item);
     this.applyInsightIntentInfoToInputs(item);
     this.populateIntentInspection(item);
+    this.maybeAutofillMemoSearchParams(item);
     this.intentDetailInfo = this.prettyPrintIntentValue(item);
     if (fromUserTap) {
       this.intentQueryInfo = `已回填 ${item.intentName ?? '-'}，现在可直接执行或继续修改参数。`;
@@ -4028,6 +4413,18 @@ struct Index {
     if (intentName === 'CreateNote' && fieldName === 'type') {
       return '留空即普通建笔记；AiCallAssistant 会切到通话助手分支。';
     }
+    if (intentName === 'ModifyNote' && fieldName === 'contenttype') {
+      return '文本笔记修改请固定填 1；不传时不会进入普通文本修改分支。';
+    }
+    if (intentName === 'ModifyNote' && fieldName === 'text') {
+      return '普通文本修改实际读取的是顶层 text，并据此重算标题和正文。';
+    }
+    if (intentName === 'DeleteNote' && fieldPath.toLowerCase() === 'items.entityid') {
+      return 'DeleteNote 实际读取的是 items[].entityId。';
+    }
+    if (intentName === 'ShareNote' && fieldName === 'entityid') {
+      return 'ShareNote 走前台 MainAbility；只需要笔记 uuid。';
+    }
     if (fieldName === 'entitygroupid') {
       return '通常由目标应用定义内容分组或 UI 形态；没有配套 Search/Get Intent 时很难自行构造。';
     }
@@ -4070,6 +4467,22 @@ struct Index {
     if (intentName === 'CreateNote') {
       lines.push('CreateNote 在当前系统上不是公开可枚举 Intent，所以即使查询不到，也可以直接按四元组手动执行。');
       lines.push('普通 CreateNote 使用顶层 title/content；如果切到前台模式，会命中不到对应执行器。');
+    }
+    if (intentName === 'ModifyNote') {
+      lines.push('实机 AppNotepad.hap 里，ModifyNote 走 InsightIntentAbility + 后台模式。');
+      lines.push('普通文本修改需要 entityId + contentType=1 + text。');
+    }
+    if (intentName === 'DeleteNote') {
+      lines.push('实机 AppNotepad.hap 里，DeleteNote 走 InsightIntentAbility + 后台模式。');
+      lines.push('单条删除时传 items[0].entityId 即可。');
+    }
+    if (intentName === 'ShareNote') {
+      lines.push('实机 AppNotepad.hap 里，ShareNote 走 MainAbility + 前台模式。');
+      lines.push('ShareNote 只需要 entityId，成功后通常直接拉起分享页面。');
+    }
+    if (intentName === 'SearchNote' || intentName === 'SearchHiNote') {
+      lines.push('实机 AppNotepad.hap 的 insight_intent.json 没有这条；若全量查询枚举到了它，请以查询结果回填的 bundle/module/ability 为准。');
+      lines.push('选中摘要行后，当前面板会优先按 schema 自动补 content / keyword / query 其中之一。');
     }
 
     return lines;
@@ -4151,6 +4564,21 @@ struct Index {
     return '';
   }
 
+  private resolveInsightIntentExecuteMode(item: InsightIntentInfoSnapshot): number | null {
+    const config = item.subIntentInfoForConfiguration;
+    const uiAbility = config?.uiAbility;
+    const executeModes = uiAbility?.executeMode;
+    if (!Array.isArray(executeModes) || executeModes.length === 0) {
+      return null;
+    }
+    const value = executeModes[0];
+    if (value === insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND ||
+      value === insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND) {
+      return value;
+    }
+    return null;
+  }
+
   private applyInsightIntentInfoToInputs(item: InsightIntentInfoSnapshot): void {
     if (typeof item.bundleName === 'string' && item.bundleName.trim().length > 0) {
       this.intentBundleName = item.bundleName.trim();
@@ -4165,6 +4593,101 @@ struct Index {
     if (abilityName.length > 0) {
       this.intentAbilityName = abilityName;
     }
+    const executeMode = this.resolveInsightIntentExecuteMode(item);
+    if (executeMode !== null) {
+      this.intentExecuteMode = executeMode;
+    }
+  }
+
+  private maybeAutofillMemoSearchParams(item: InsightIntentInfoSnapshot): void {
+    const intentName = item.intentName ?? '';
+    if (intentName !== 'SearchNote' && intentName !== 'SearchHiNote') {
+      return;
+    }
+    const currentParams = this.intentParamsJson.trim();
+    if (currentParams.length > 0 &&
+      currentParams !== '{}' &&
+      !currentParams.startsWith('{"content":') &&
+      !currentParams.startsWith('{"keyword":') &&
+      !currentParams.startsWith('{"query":')) {
+      return;
+    }
+    const schema = item.parameters as InsightIntentSchemaNodeSnapshot | undefined;
+    const properties = schema?.properties;
+    if (!properties) {
+      return;
+    }
+    if (properties.content) {
+      this.intentParamsJson = this.buildMemoSearchContentParamsJson();
+      this.memoQuickInfo = `${intentName} 已按 schema 自动补 content 搜索词，可直接执行或继续改参。`;
+      return;
+    }
+    if (properties.keyword) {
+      this.intentParamsJson = this.buildMemoSearchKeywordParamsJson();
+      this.memoQuickInfo = `${intentName} 已按 schema 自动补 keyword 搜索词，可直接执行或继续改参。`;
+      return;
+    }
+    if (properties.query) {
+      this.intentParamsJson = this.buildMemoSearchQueryParamsJson();
+      this.memoQuickInfo = `${intentName} 已按 schema 自动补 query 搜索词，可直接执行或继续改参。`;
+    }
+  }
+
+  private handleMemoIntentExecuteResult(
+    intentName: string,
+    params: Record<string, Object>,
+    result: InsightIntentExecuteResultSnapshot,
+    code: number
+  ): void {
+    const payload = result.result as MemoIntentResultPayloadSnapshot | undefined;
+    if (payload && typeof payload.entityId === 'string' && payload.entityId.trim().length > 0) {
+      this.memoLastEntityId = payload.entityId.trim();
+      this.memoQuickInfo = `已回填最近 entityId: ${this.memoLastEntityId}`;
+    }
+    if (payload && typeof payload.title === 'string') {
+      this.memoDraftTitle = payload.title;
+    }
+    if (payload && typeof payload.content === 'string') {
+      this.memoDraftContent = payload.content;
+      if (intentName === 'ModifyNote') {
+        this.memoModifyText = payload.content;
+      }
+    }
+    if (intentName === 'DeleteNote' && code === 0) {
+      const deletedEntityId = this.extractMemoEntityIdFromParams(intentName, params);
+      if (deletedEntityId.length > 0 && deletedEntityId === this.memoLastEntityId.trim()) {
+        this.memoLastEntityId = '';
+      }
+      this.memoQuickInfo = deletedEntityId.length > 0 ?
+        `DeleteNote 成功，已删除 ${deletedEntityId}` :
+        'DeleteNote 成功。';
+      return;
+    }
+    if (payload && typeof payload.info === 'string' && payload.info.trim().length > 0) {
+      this.memoQuickInfo = payload.info.trim();
+      return;
+    }
+    if (payload && typeof payload.error === 'string' && payload.error.trim().length > 0) {
+      this.memoQuickInfo = payload.error.trim();
+      return;
+    }
+    if (intentName === 'CreateNote' && code === 0 && this.memoLastEntityId.trim().length > 0) {
+      this.memoQuickInfo = `CreateNote 成功，最近 entityId=${this.memoLastEntityId}`;
+    }
+  }
+
+  private extractMemoEntityIdFromParams(intentName: string, params: Record<string, Object>): string {
+    if (intentName === 'DeleteNote') {
+      const itemsValue = params['items'] as Array<Object> | undefined;
+      if (!Array.isArray(itemsValue) || itemsValue.length === 0) {
+        return '';
+      }
+      const first = itemsValue[0] as Record<string, Object> | undefined;
+      const raw = first?.['entityId'];
+      return typeof raw === 'string' ? raw.trim() : '';
+    }
+    const raw = params['entityId'];
+    return typeof raw === 'string' ? raw.trim() : '';
   }
 
   private prettyPrintIntentValue(value: Object | Array<Object>): string {
