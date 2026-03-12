@@ -788,6 +788,30 @@ struct Index {
             }
 
             Row({ space: 8 }) {
+              Button('查看最近')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoViewPreset();
+                })
+
+              Button('读取最近')
+                .fontSize(12)
+                .fontColor(THEME_TEXT_PRIMARY)
+                .backgroundColor(THEME_CARD)
+                .borderRadius(14)
+                .border({ width: 1, color: THEME_BORDER })
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .onClick(() => {
+                  this.applyMemoGetPreset();
+                })
+            }
+
+            Row({ space: 8 }) {
               Button('搜索备忘录')
                 .fontSize(12)
                 .fontColor(THEME_TEXT_PRIMARY)
@@ -3998,6 +4022,70 @@ struct Index {
     );
   }
 
+  private applyMemoViewPreset(): void {
+    const entityId = this.memoLastEntityId.trim();
+    this.intentBundleName = 'com.huawei.hmos.notepad';
+    this.intentModuleName = 'NotepadPhone';
+    this.intentAbilityName = 'MainAbility';
+    this.intentName = 'ViewNote';
+    this.intentParamsJson = this.buildMemoEntityParamsJson(entityId);
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND;
+    this.intentQueryKeyword = 'ViewNote';
+    this.intentQueryInfo = 'ViewNote 在备忘录设备 profile 里走 MainAbility + 前台模式；它实际读取顶层 entityId。';
+    this.memoQuickInfo = entityId.length > 0 ?
+      `已用最近 entityId 预填 ViewNote: ${entityId}` :
+      '最近没有 entityId。请先创建一条笔记，或手动填写“最近 entityId”后再测 ViewNote。';
+    this.intentHintLines = [
+      'ViewNote 走前台执行，目标 ability 是 MainAbility；成功时会直接拉起对应笔记页面。',
+      '它只需要顶层 entityId，不需要 items[] 或 contentType。',
+    ];
+    this.intentParameterLines = [
+      'entityId [必填] (string) 要打开的笔记 uuid。',
+    ];
+    this.intentResultLines = [
+      'info [可返] (string) 通常用于回显打开结果；更多效果体现在前台页面跳转。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'ViewNote',
+      this.intentAbilityName,
+      'UI_ABILITY_FOREGROUND',
+      this.intentParamsJson
+    );
+  }
+
+  private applyMemoGetPreset(): void {
+    const entityId = this.memoLastEntityId.trim();
+    this.intentBundleName = 'com.huawei.hmos.notepad';
+    this.intentModuleName = 'NotepadPhone';
+    this.intentAbilityName = 'InsightIntentAbility';
+    this.intentName = 'GetNote';
+    this.intentParamsJson = this.buildMemoEntityParamsJson(entityId);
+    this.intentExecuteMode = insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND;
+    this.intentQueryKeyword = 'GetNote';
+    this.intentQueryInfo = 'GetNote 在备忘录设备 profile 里走后台 + InsightIntentAbility；它实际读取顶层 entityId。';
+    this.memoQuickInfo = entityId.length > 0 ?
+      `已用最近 entityId 预填 GetNote: ${entityId}` :
+      '最近没有 entityId。请先创建一条笔记，或手动填写“最近 entityId”后再测 GetNote。';
+    this.intentHintLines = [
+      'GetNote 走后台执行；实机字符串显示它会按 noteId/entityId 读取笔记内容。',
+      '如果成功，返回里通常会带 content，可直接用来校验读取结果。',
+    ];
+    this.intentParameterLines = [
+      'entityId [必填] (string) 要读取的笔记 uuid。',
+    ];
+    this.intentResultLines = [
+      'entityId [可返] (string) 回显读取到的笔记 uuid。',
+      'title [可返] (string) 笔记标题。',
+      'content [可返] (string) 笔记正文。',
+    ];
+    this.intentDetailInfo = this.buildMemoPresetDetailJson(
+      'GetNote',
+      this.intentAbilityName,
+      'UI_ABILITY_BACKGROUND',
+      this.intentParamsJson
+    );
+  }
+
   private applyMemoSearchNotePreset(): void {
     this.intentBundleName = 'com.huawei.hmos.aidispatchservice';
     this.intentModuleName = 'entry';
@@ -4624,6 +4712,12 @@ struct Index {
     if (intentName === 'ShareNote' && fieldName === 'entityid') {
       return 'ShareNote 走前台 MainAbility；只需要笔记 uuid。';
     }
+    if (intentName === 'ViewNote' && fieldName === 'entityid') {
+      return 'ViewNote 走前台 MainAbility；用这条 uuid 直接打开对应笔记。';
+    }
+    if (intentName === 'GetNote' && fieldName === 'entityid') {
+      return 'GetNote 走后台 InsightIntentAbility；用这条 uuid 读取对应笔记内容。';
+    }
     if (fieldName === 'entitygroupid') {
       return '通常由目标应用定义内容分组或 UI 形态；没有配套 Search/Get Intent 时很难自行构造。';
     }
@@ -4678,6 +4772,14 @@ struct Index {
     if (intentName === 'ShareNote') {
       lines.push('实机 AppNotepad.hap 里，ShareNote 走 MainAbility + 前台模式。');
       lines.push('ShareNote 只需要 entityId，成功后通常直接拉起分享页面。');
+    }
+    if (intentName === 'ViewNote') {
+      lines.push('实机 AppNotepad.hap 里，ViewNote 走 MainAbility + 前台模式。');
+      lines.push('ViewNote 只需要 entityId，成功效果主要体现在前台打开笔记详情。');
+    }
+    if (intentName === 'GetNote') {
+      lines.push('实机 AppNotepad.hap 里，GetNote 走 InsightIntentAbility + 后台模式。');
+      lines.push('GetNote 只需要 entityId，成功后通常会直接返回标题和正文。');
     }
     if (intentName === 'SearchNote' || intentName === 'SearchHiNote') {
       lines.push('这两条是 com.huawei.hmos.aidispatchservice 的内部 nonStandardIntent，不是 AppNotepad 自己注册的标准 Intent。');
@@ -4865,12 +4967,26 @@ struct Index {
         'DeleteNote 成功。';
       return;
     }
+    if (intentName === 'ViewNote' && code === 0) {
+      const viewEntityId = this.extractMemoEntityIdFromParams(intentName, params);
+      this.memoQuickInfo = viewEntityId.length > 0 ?
+        `ViewNote 已请求打开 ${viewEntityId}` :
+        'ViewNote 已请求打开目标笔记。';
+      return;
+    }
     if (payload && typeof payload.info === 'string' && payload.info.trim().length > 0) {
       this.memoQuickInfo = payload.info.trim();
       return;
     }
     if (payload && typeof payload.error === 'string' && payload.error.trim().length > 0) {
       this.memoQuickInfo = payload.error.trim();
+      return;
+    }
+    if (intentName === 'GetNote' && code === 0) {
+      const getEntityId = this.extractMemoEntityIdFromParams(intentName, params);
+      this.memoQuickInfo = getEntityId.length > 0 ?
+        `GetNote 成功，已读取 ${getEntityId}` :
+        'GetNote 成功。';
       return;
     }
     if (intentName === 'CreateNote' && code === 0 && this.memoLastEntityId.trim().length > 0) {

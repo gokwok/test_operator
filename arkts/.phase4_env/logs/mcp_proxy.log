@@ -1,0 +1,2 @@
+[harmony_mcp_proxy] ws  listening: ws://0.0.0.0:7001/ws
+[harmony_mcp_proxy] mcp listening: http://0.0.0.0:7002/mcp (POST JSON-RPC, GET SSE)
