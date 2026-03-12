@@ -4404,6 +4404,12 @@ struct Index {
     if (!params) {
       return;
     }
+    const memoParamsError = this.validateMemoIntentParams(intentName, params);
+    if (memoParamsError.length > 0) {
+      this.intentExecuteInfo = memoParamsError;
+      this.intentExecuteResult = '';
+      return;
+    }
     if (this.shouldUseAiDispatchInternalSearch(intentName)) {
       await this.executeAiDispatchInternalSearchIntent(intentName, params);
       return;
@@ -4538,6 +4544,23 @@ struct Index {
       this.intentExecuteInfo = `intent parameters JSON 解析失败: ${String(e)}`;
       return null;
     }
+  }
+
+  private validateMemoIntentParams(intentName: string, params: Record<string, Object>): string {
+    if (intentName === 'DeleteNote') {
+      const entityId = this.extractMemoEntityIdFromParams(intentName, params);
+      if (entityId.length === 0) {
+        return 'DeleteNote 需要非空 items[0].entityId。请先执行 CreateNote 成功或填写“最近 entityId”。';
+      }
+      return '';
+    }
+    if (intentName === 'ModifyNote' || intentName === 'ShareNote' || intentName === 'ViewNote' || intentName === 'GetNote') {
+      const entityId = this.extractMemoEntityIdFromParams(intentName, params);
+      if (entityId.length === 0) {
+        return `${intentName} 需要非空 entityId。请先执行 CreateNote 成功或填写“最近 entityId”。`;
+      }
+    }
+    return '';
   }
 
   private resetIntentInspection(): void {
