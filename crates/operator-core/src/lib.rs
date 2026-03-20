@@ -1,11 +1,27 @@
 //! Core domain primitives for Operator.
 
+mod action;
+mod capability;
 mod error;
+mod exec;
 mod geometry;
 mod ids;
+mod locator;
+mod query;
+mod snapshot;
+mod surface;
 mod target;
 
+pub use action::{Action, ActionOutcome, ActionRequest, MouseButton};
+pub use capability::{Capability, CapabilityId, CapabilitySet};
 pub use error::OperatorError;
+pub use exec::{ExecContext, ObserveRequest, ObserveResult};
 pub use geometry::{Point, Rect};
 pub use ids::{ArtifactId, ElementId, SessionId, SnapshotId, TargetId, WindowId};
+pub use locator::Locator;
+pub use query::{
+    AppInfo, FocusInfo, PermissionStatus, PermissionsReport, QueryRequest, QueryResult, WindowInfo,
+};
+pub use snapshot::{ElementSource, Snapshot, SnapshotMetadata, UiElement};
+pub use surface::{Surface, SurfaceKind};
 pub use target::{TargetConnection, TargetDescriptor};

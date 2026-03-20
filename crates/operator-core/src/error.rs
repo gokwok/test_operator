@@ -1,7 +1,10 @@
-use crate::{ElementId, SnapshotId};
+use crate::{Capability, ElementId, SnapshotId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorError {
+    #[error("capability not supported: {0:?}")]
+    CapabilityNotSupported(Capability),
+
     #[error("target not found: {0}")]
     TargetNotFound(String),
 
