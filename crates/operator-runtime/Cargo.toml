@@ -1,0 +1,8 @@
+[package]
+name = "operator-runtime"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+operator-core = { path = "../operator-core" }
