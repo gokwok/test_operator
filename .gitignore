@@ -1,0 +1,24 @@
+# Rust build artifacts
+/target/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+
+# 临时文件
+*.log
+*.tmp
+
+# Superpowers 实施计划（本地生成，不纳入版本控制）
+docs/superpowers/
