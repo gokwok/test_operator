@@ -7,3 +7,8 @@ version.workspace = true
 [dependencies]
 operator-core = { path = "../operator-core" }
 operator-runtime = { path = "../operator-runtime" }
+async-trait.workspace = true
+
+[dependencies.tokio]
+workspace = true
+features = ["sync"]

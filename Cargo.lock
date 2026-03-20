@@ -199,8 +199,10 @@ dependencies = [
 name = "operator-testkit"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "operator-core",
  "operator-runtime",
+ "tokio",
 ]
 
 [[package]]
