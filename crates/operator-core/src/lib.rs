@@ -2,6 +2,7 @@
 
 mod action;
 mod capability;
+mod driver;
 mod error;
 mod exec;
 mod geometry;
@@ -14,6 +15,7 @@ mod target;
 
 pub use action::{Action, ActionOutcome, ActionRequest, MouseButton};
 pub use capability::{Capability, CapabilityId, CapabilitySet};
+pub use driver::{HealthStatus, PlatformDriver};
 pub use error::OperatorError;
 pub use exec::{ExecContext, ObserveRequest, ObserveResult};
 pub use geometry::{Point, Rect};

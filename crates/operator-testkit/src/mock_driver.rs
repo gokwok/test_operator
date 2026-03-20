@@ -1,8 +1,10 @@
 use std::{collections::VecDeque, sync::Mutex};
 
+use async_trait::async_trait;
 use operator_core::{
-    ActionOutcome, ActionRequest, CapabilitySet, ExecContext, ObserveRequest, ObserveResult,
-    OperatorError, QueryRequest, QueryResult,
+    ActionOutcome, ActionRequest, CapabilitySet, ExecContext, HealthStatus, ObserveRequest,
+    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver,
+    QueryRequest, QueryResult,
 };
 
 // Keep the future PlatformDriver method shape without pulling runtime abstractions
@@ -10,6 +12,7 @@ use operator_core::{
 pub struct MockPlatformDriver {
     platform_id: &'static str,
     capabilities: CapabilitySet,
+    health_status: Mutex<HealthStatus>,
     observe_results: Mutex<VecDeque<Result<ObserveResult, OperatorError>>>,
     query_results: Mutex<VecDeque<Result<QueryResult, OperatorError>>>,
     action_results: Mutex<VecDeque<Result<ActionOutcome, OperatorError>>>,
@@ -23,6 +26,14 @@ impl MockPlatformDriver {
         Self {
             platform_id,
             capabilities,
+            health_status: Mutex::new(HealthStatus {
+                healthy: true,
+                message: None,
+                permissions: PermissionsReport {
+                    screen_recording: PermissionStatus::Granted,
+                    accessibility: PermissionStatus::Granted,
+                },
+            }),
             observe_results: Mutex::new(VecDeque::new()),
             query_results: Mutex::new(VecDeque::new()),
             action_results: Mutex::new(VecDeque::new()),
@@ -38,6 +49,14 @@ impl MockPlatformDriver {
 
     pub fn capabilities(&self) -> CapabilitySet {
         self.capabilities.clone()
+    }
+
+    pub fn set_health_status(&self, status: HealthStatus) {
+        *self.health_status.lock().unwrap() = status;
+    }
+
+    pub async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
+        Ok(self.health_status.lock().unwrap().clone())
     }
 
     pub fn push_observe_result(&self, result: Result<ObserveResult, OperatorError>) {
@@ -119,5 +138,44 @@ impl MockPlatformDriver {
 
     pub async fn action_calls(&self) -> Vec<(ActionRequest, ExecContext)> {
         self.action_calls.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl PlatformDriver for MockPlatformDriver {
+    fn platform_id(&self) -> &'static str {
+        self.platform_id()
+    }
+
+    fn capabilities(&self) -> CapabilitySet {
+        self.capabilities()
+    }
+
+    async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
+        MockPlatformDriver::health_check(self).await
+    }
+
+    async fn observe(
+        &self,
+        req: ObserveRequest,
+        ctx: &ExecContext,
+    ) -> Result<ObserveResult, OperatorError> {
+        MockPlatformDriver::observe(self, req, ctx).await
+    }
+
+    async fn query(
+        &self,
+        req: QueryRequest,
+        ctx: &ExecContext,
+    ) -> Result<QueryResult, OperatorError> {
+        MockPlatformDriver::query(self, req, ctx).await
+    }
+
+    async fn act(
+        &self,
+        req: ActionRequest,
+        ctx: &ExecContext,
+    ) -> Result<ActionOutcome, OperatorError> {
+        MockPlatformDriver::act(self, req, ctx).await
     }
 }
