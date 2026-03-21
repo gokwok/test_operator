@@ -1,0 +1,264 @@
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
+use async_trait::async_trait;
+use operator_core::{
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
+    Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
+    PermissionsReport, PlatformDriver, QueryRequest, QueryResult, Surface, SurfaceKind,
+};
+use operator_runtime::{
+    AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
+};
+use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
+
+#[tokio::test]
+async fn runtime_rejects_missing_capabilities_before_driver_call() {
+    let events = Arc::new(RecordingEventSink::default());
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture]),
+    ));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .event_sink(events.clone())
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    button: MouseButton::Left,
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: Some("sess-1".into()),
+                timeout_ms: None,
+            },
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::CapabilityNotSupported(Capability::PointerInput) => {}
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    assert!(driver.action_calls().await.is_empty());
+
+    let events = events.events();
+    assert!(matches!(
+        events.as_slice(),
+        [AuditEvent {
+            kind: AuditEventKind::CapabilityDenied {
+                tool,
+                capability: Capability::PointerInput,
+            },
+            ..
+        }] if tool == "act"
+    ));
+}
+
+#[tokio::test]
+async fn runtime_persists_snapshot_after_observe() {
+    let events = Arc::new(RecordingEventSink::default());
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let snapshot = test_snapshot("snap-1");
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
+    ));
+    driver.push_observe_result(Ok(ObserveResult {
+        snapshot: snapshot.clone(),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store.clone())
+        .event_sink(events.clone())
+        .register_driver(driver)
+        .build()
+        .await
+        .unwrap();
+
+    let result = runtime
+        .core()
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: true,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: Some("sess-2".into()),
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.snapshot, snapshot);
+    assert_eq!(store.get(&snapshot.id).await.unwrap(), Some(snapshot));
+
+    let events = events.events();
+    assert!(matches!(
+        &events[0].kind,
+        AuditEventKind::ToolInvoked { tool, .. } if tool == "observe"
+    ));
+    assert!(matches!(
+        &events[1].kind,
+        AuditEventKind::ToolCompleted {
+            tool,
+            success: true,
+            ..
+        } if tool == "observe"
+    ));
+}
+
+#[tokio::test]
+async fn runtime_times_out_slow_driver_calls() {
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(Arc::new(SlowQueryDriver))
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .query(
+            QueryRequest::ListWindows { app: None },
+            ExecContext {
+                target: "local:slow".into(),
+                session: None,
+                timeout_ms: Some(5),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::Timeout { timeout_ms } => assert_eq!(timeout_ms, 5),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn runtime_rejects_drag_between_different_snapshots() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Drag {
+                    from: Locator::SnapshotElement {
+                        snapshot: "snap-1".into(),
+                        element: "el-1".into(),
+                    },
+                    to: Locator::SnapshotElement {
+                        snapshot: "snap-2".into(),
+                        element: "el-2".into(),
+                    },
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(100),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::Platform(message) => {
+            assert_eq!(message, "drag: from/to must reference the same snapshot")
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    assert!(driver.action_calls().await.is_empty());
+}
+
+#[derive(Default)]
+struct RecordingEventSink {
+    events: Mutex<Vec<AuditEvent>>,
+}
+
+impl RecordingEventSink {
+    fn events(&self) -> Vec<AuditEvent> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl EventSink for RecordingEventSink {
+    async fn emit(&self, event: AuditEvent) -> Result<(), OperatorError> {
+        self.events.lock().unwrap().push(event);
+        Ok(())
+    }
+}
+
+struct SlowQueryDriver;
+
+#[async_trait]
+impl PlatformDriver for SlowQueryDriver {
+    fn platform_id(&self) -> &'static str {
+        "slow"
+    }
+
+    fn capabilities(&self) -> CapabilitySet {
+        CapabilitySet::new([Capability::WindowManagement])
+    }
+
+    async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
+        Ok(HealthStatus {
+            healthy: true,
+            message: None,
+            permissions: PermissionsReport {
+                screen_recording: PermissionStatus::Granted,
+                accessibility: PermissionStatus::Granted,
+            },
+        })
+    }
+
+    async fn observe(
+        &self,
+        _: ObserveRequest,
+        _: &ExecContext,
+    ) -> Result<ObserveResult, OperatorError> {
+        Err(OperatorError::Platform("observe unused in test".into()))
+    }
+
+    async fn query(&self, _: QueryRequest, _: &ExecContext) -> Result<QueryResult, OperatorError> {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok(QueryResult::Capabilities(CapabilitySet::new([])))
+    }
+
+    async fn act(&self, _: ActionRequest, _: &ExecContext) -> Result<ActionOutcome, OperatorError> {
+        Err(OperatorError::Platform("act unused in test".into()))
+    }
+}

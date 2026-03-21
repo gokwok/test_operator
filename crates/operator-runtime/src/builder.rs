@@ -1,70 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use operator_core::{OperatorError, PlatformDriver, TargetDescriptor, TargetId};
+use operator_core::{OperatorError, PlatformDriver};
 
 use crate::{
-    EventSink, NullEventSink, NullSessionStore, RuntimeConfig, SessionStore, SnapshotStore,
-    TargetResolver,
+    EventSink, NullEventSink, NullSessionStore, Runtime, RuntimeConfig, RuntimeCore, SessionStore,
+    SnapshotStore, TargetResolver,
 };
-
-pub struct RuntimeCore {
-    resolver: TargetResolver,
-    drivers: HashMap<String, Arc<dyn PlatformDriver>>,
-    snapshots: Arc<dyn SnapshotStore>,
-    sessions: Arc<dyn SessionStore>,
-    event_sink: Arc<dyn EventSink>,
-    config: RuntimeConfig,
-}
-
-impl RuntimeCore {
-    pub fn config(&self) -> &RuntimeConfig {
-        &self.config
-    }
-
-    pub fn snapshots(&self) -> Arc<dyn SnapshotStore> {
-        Arc::clone(&self.snapshots)
-    }
-
-    pub fn sessions(&self) -> Arc<dyn SessionStore> {
-        Arc::clone(&self.sessions)
-    }
-
-    pub fn event_sink(&self) -> Arc<dyn EventSink> {
-        Arc::clone(&self.event_sink)
-    }
-
-    pub fn resolve_target(
-        &self,
-        target: Option<&TargetId>,
-    ) -> Result<TargetDescriptor, OperatorError> {
-        self.resolver.resolve(target)
-    }
-
-    pub fn resolve_driver(
-        &self,
-        target: &TargetId,
-    ) -> Result<(TargetDescriptor, Arc<dyn PlatformDriver>), OperatorError> {
-        let descriptor = self.resolve_target(Some(target))?;
-        let driver = self
-            .drivers
-            .get(&descriptor.platform)
-            .cloned()
-            .ok_or_else(|| OperatorError::TargetNotFound(target.to_string()))?;
-
-        Ok((descriptor, driver))
-    }
-}
-
-#[derive(Clone)]
-pub struct Runtime {
-    core: Arc<RuntimeCore>,
-}
-
-impl Runtime {
-    pub fn core(&self) -> Arc<RuntimeCore> {
-        Arc::clone(&self.core)
-    }
-}
 
 pub struct RuntimeBuilder {
     config: RuntimeConfig,
