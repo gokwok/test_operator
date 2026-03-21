@@ -24,6 +24,7 @@ hooks:
     SOURCE_REPO="${OPERATOR_SOURCE_REPO:-/Users/gokwok/code/work/Operator}"
     git clone --depth 1 "$SOURCE_REPO" .
     git fetch --all --prune
+    printf '%s\n' "$SOURCE_REPO" > .symphony-source-repo-path
     if [ -d "$SOURCE_REPO/docs/superpowers" ]; then
       mkdir -p docs
       rm -rf docs/superpowers
@@ -42,7 +43,7 @@ agent:
 codex:
   command: codex app-server
   approval_policy: never
-  thread_sandbox: workspace-write
+  thread_sandbox: danger-full-access
   turn_sandbox_policy:
     type: workspaceWrite
   turn_timeout_ms: 3600000
@@ -83,7 +84,8 @@ Before any code change:
 1. Read `AGENTS.md`
 2. Read `DESIGN.md`
 3. Read the latest plan file under `docs/superpowers/plans/`
-4. Re-check the current Linear issue state and description
+4. Read `.symphony-source-repo-path` to identify the real source repository checkout for final delivery
+5. Re-check the current Linear issue state and description
 
 State rules:
 
@@ -102,6 +104,9 @@ If no Linear tool is available in the session, treat that as a real blocker and 
 - Do not push platform-specific concepts into `operator-core`.
 - If the issue acceptance commands or file paths are stale, update the issue first, then continue implementation.
 - If you discover meaningful out-of-scope work, record it as a follow-up instead of expanding scope.
+- Do not treat an isolated issue workspace, temporary `/tmp` clone, exported patch, or other packaging-only artifact as the final delivery location.
+- If current-workspace validation passes but the same change has not been delivered back into the real source repository checkout from `.symphony-source-repo-path`, the issue is not done.
+- If current workspace or source repository `.git` metadata cannot be updated safely enough to create the required commit, keep the issue `In Progress`, record the blocker, and stop.
 
 ## Validation Rules
 
@@ -109,7 +114,8 @@ Before claiming completion:
 
 1. Run the verification commands required by the current issue
 2. Run the formatting and static checks required by `AGENTS.md`
-3. Expand validation when the change affects shared interfaces or multiple crates
+3. If delivery was copied or applied back into the real source repository checkout, re-run the issue verification commands from that final delivery location before closing the issue
+4. Expand validation when the change affects shared interfaces or multiple crates
 
 Minimum validation gate:
 
@@ -139,7 +145,8 @@ Move the issue to `Done` only when all are true:
 1. The full issue scope is complete
 2. The required validation commands were actually run and passed
 3. `cargo fmt` and `cargo clippy` passed
-4. A clean, traceable commit exists
+4. A clean, traceable commit exists in the real source repository checkout named by `.symphony-source-repo-path`
+5. The delivered result is no longer only in the issue workspace, a temporary clone, or an exported patch
 
 If auth, permissions, missing Linear tools, or issue/design conflicts prevent safe completion, keep the issue in `In Progress`, record the blocker, and stop.
 

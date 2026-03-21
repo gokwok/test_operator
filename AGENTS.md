@@ -109,6 +109,7 @@ operator/
 - 实现范围必须严格对齐当前 issue，不要顺手扩展到下一个 issue。
 - 如果发现 issue 描述与仓库现实不一致，先更新 issue，再继续写代码。
 - 完成实现后，必须先完成验证，再将 issue 更新为 `Done`。
+- 对于通过 Symphony 或其他隔离 workspace 产生的改动，只有当结果已真实回流到源仓库后，才允许视为完成。
 
 进度判断规则：
 
@@ -205,6 +206,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 - 提交信息中必须能追溯到对应 Linear issue。
 - 提交命令必须使用 `git commit -s`，保留你的 `Signed-off-by` 签名。
 - 提交时必须把 Codex 作为 co-author。
+- 仅存在于隔离 workspace、临时 clone、导出 patch 的 commit 不算完成交付；对应 commit 必须存在于真实源仓库的可达历史中。
 
 推荐 commit 形式：
 
@@ -292,6 +294,7 @@ git commit -s -m "feat(core): add typed automation domain models" \
 3. issue 中列出的验证命令已实际运行并通过
 4. 代码已格式化并通过 `clippy`
 5. 已形成单独、清晰、可回溯的 commit
+   该 commit 必须已经回流到真实源仓库；只存在于隔离 workspace、临时 clone 或导出 patch 不算完成
 6. commit 已包含 Linear issue 标识
 7. commit 已使用 `-s`，包含你的 `Signed-off-by` 签名
 8. commit 已包含 `Co-authored-by: Codex <codex@openai.com>`
