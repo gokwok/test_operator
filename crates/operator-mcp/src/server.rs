@@ -1,8 +1,16 @@
-use operator_core::OperatorError;
-use operator_runtime::{ToolRegistry, ToolSpec};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{Arc, Mutex},
+};
+
+use operator_core::{OperatorError, TargetId};
+use operator_runtime::{RuntimeConfig, ToolRegistry, ToolSpec};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::{self, Duration};
 
 const JSONRPC_VERSION: &str = "2.0";
 const PARSE_ERROR: i64 = -32700;
@@ -15,20 +23,42 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
 
 pub struct McpServer {
     tools: ToolRegistry,
-    negotiated_protocol_version: Option<&'static str>,
-    ready: bool,
+    state: Mutex<ServerState>,
+    allow_side_effects: bool,
+    default_target: TargetId,
+    default_timeout_ms: u64,
+    target_serializers: Mutex<HashMap<TargetId, Arc<Semaphore>>>,
 }
 
 impl McpServer {
     pub fn new(tools: ToolRegistry) -> Self {
+        let defaults = RuntimeConfig::default();
         Self {
             tools,
-            negotiated_protocol_version: None,
-            ready: false,
+            state: Mutex::new(ServerState::default()),
+            allow_side_effects: defaults.allow_side_effects,
+            default_target: defaults.default_target,
+            default_timeout_ms: defaults.default_timeout_ms,
+            target_serializers: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn handle_message(&mut self, message: Value) -> Result<Option<Value>, serde_json::Error> {
+    pub fn with_allow_side_effects(mut self, allow_side_effects: bool) -> Self {
+        self.allow_side_effects = allow_side_effects;
+        self
+    }
+
+    pub fn with_default_target(mut self, default_target: TargetId) -> Self {
+        self.default_target = default_target;
+        self
+    }
+
+    pub fn with_default_timeout_ms(mut self, default_timeout_ms: u64) -> Self {
+        self.default_timeout_ms = default_timeout_ms;
+        self
+    }
+
+    pub fn handle_message(&self, message: Value) -> Result<Option<Value>, serde_json::Error> {
         if let Some(batch) = message.as_array() {
             return self.handle_batch(batch);
         }
@@ -36,7 +66,7 @@ impl McpServer {
         self.handle_single(message, false)
     }
 
-    fn handle_batch(&mut self, batch: &[Value]) -> Result<Option<Value>, serde_json::Error> {
+    fn handle_batch(&self, batch: &[Value]) -> Result<Option<Value>, serde_json::Error> {
         if batch.is_empty() {
             return Ok(Some(error_response(
                 Value::Null,
@@ -61,7 +91,7 @@ impl McpServer {
     }
 
     fn handle_single(
-        &mut self,
+        &self,
         message: Value,
         in_batch: bool,
     ) -> Result<Option<Value>, serde_json::Error> {
@@ -100,8 +130,8 @@ impl McpServer {
                 }
             }
             "notifications/initialized" => {
-                if self.negotiated_protocol_version.is_some() {
-                    self.ready = true;
+                if self.is_initialized() {
+                    self.mark_ready();
                 }
                 None
             }
@@ -122,7 +152,7 @@ impl McpServer {
     }
 
     fn handle_initialize(
-        &mut self,
+        &self,
         id: Option<Value>,
         params: Option<Value>,
     ) -> Result<Option<Value>, serde_json::Error> {
@@ -153,8 +183,9 @@ impl McpServer {
             )));
         };
 
-        self.negotiated_protocol_version = Some(protocol_version);
-        self.ready = false;
+        let mut state = self.state.lock().expect("server state poisoned");
+        state.negotiated_protocol_version = Some(protocol_version);
+        state.ready = false;
 
         Ok(Some(success_response(
             id,
@@ -175,7 +206,7 @@ impl McpServer {
 
     fn handle_tools_list(&self, id: Option<Value>) -> Option<Value> {
         let id = id?;
-        if !self.ready {
+        if !self.is_ready() {
             return Some(error_response(
                 id,
                 SERVER_NOT_INITIALIZED,
@@ -206,7 +237,7 @@ impl McpServer {
             return Ok(None);
         };
 
-        if !self.ready {
+        if !self.is_ready() {
             return Ok(Some(error_response(
                 id,
                 SERVER_NOT_INITIALIZED,
@@ -250,7 +281,12 @@ impl McpServer {
             )));
         }
 
-        let result = match self.invoke_tool(&params.name, Value::Object(params.arguments)) {
+        let spec = self
+            .find_tool_spec(&params.name)
+            .ok_or_else(|| serde_json::Error::io(std::io::Error::other("missing tool spec")))?;
+        let input = Value::Object(params.arguments);
+
+        let result = match self.execute_tool_call(&spec, &params.name, input) {
             Ok(output) => call_tool_success(output)?,
             Err(error) => call_tool_error(error),
         };
@@ -258,11 +294,48 @@ impl McpServer {
         Ok(Some(success_response(id, result)))
     }
 
+    fn execute_tool_call(
+        &self,
+        spec: &ToolSpec,
+        name: &str,
+        input: Value,
+    ) -> Result<Value, OperatorError> {
+        let exec_context = match serde_json::from_value::<ExecContextInput>(input.clone()) {
+            Ok(exec_context) => exec_context,
+            Err(_) => return self.invoke_tool(name, input),
+        };
+
+        if spec.has_side_effects && !self.allow_side_effects {
+            return Err(OperatorError::Tool {
+                tool: name.to_string(),
+                message: "side effects are disabled by runtime policy".into(),
+            });
+        }
+
+        let target = exec_context
+            .target
+            .unwrap_or_else(|| self.default_target.clone());
+        let timeout_ms = exec_context.timeout_ms.unwrap_or(self.default_timeout_ms);
+        let serializer = self.target_serializer(target);
+
+        self.block_on(async move {
+            let _permit = acquire_target_permit(serializer, timeout_ms).await?;
+            self.tools.invoke(name, input).await
+        })
+    }
+
     fn invoke_tool(&self, name: &str, input: Value) -> Result<Value, OperatorError> {
+        self.block_on(self.tools.invoke(name, input))
+    }
+
+    fn block_on<F>(&self, future: F) -> Result<Value, OperatorError>
+    where
+        F: Future<Output = Result<Value, OperatorError>> + Send,
+    {
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => match handle.runtime_flavor() {
                 tokio::runtime::RuntimeFlavor::MultiThread => {
-                    tokio::task::block_in_place(|| handle.block_on(self.tools.invoke(name, input)))
+                    tokio::task::block_in_place(|| handle.block_on(future))
                 }
                 _ => Err(OperatorError::Platform(
                     "tools/call requires a multi-thread Tokio runtime".into(),
@@ -272,8 +345,42 @@ impl McpServer {
                 .map_err(|error| {
                     OperatorError::Platform(format!("failed to start async runtime: {error}"))
                 })?
-                .block_on(self.tools.invoke(name, input)),
+                .block_on(future),
         }
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.state
+            .lock()
+            .expect("server state poisoned")
+            .negotiated_protocol_version
+            .is_some()
+    }
+
+    fn is_ready(&self) -> bool {
+        self.state.lock().expect("server state poisoned").ready
+    }
+
+    fn mark_ready(&self) {
+        self.state.lock().expect("server state poisoned").ready = true;
+    }
+
+    fn find_tool_spec(&self, name: &str) -> Option<ToolSpec> {
+        self.tools
+            .specs()
+            .into_iter()
+            .find(|spec| spec.name == name)
+    }
+
+    fn target_serializer(&self, target: TargetId) -> Arc<Semaphore> {
+        let mut serializers = self
+            .target_serializers
+            .lock()
+            .expect("target serializers poisoned");
+        serializers
+            .entry(target)
+            .or_insert_with(|| Arc::new(Semaphore::new(1)))
+            .clone()
     }
 }
 
@@ -343,6 +450,18 @@ struct CallToolParams {
     arguments: Map<String, Value>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ExecContextInput {
+    target: Option<TargetId>,
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+struct ServerState {
+    negotiated_protocol_version: Option<&'static str>,
+    ready: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct ToolDescriptor<'a> {
     name: &'a str,
@@ -409,4 +528,17 @@ fn text_content(text: String) -> Value {
         "type": "text",
         "text": text,
     })
+}
+
+async fn acquire_target_permit(
+    serializer: Arc<Semaphore>,
+    timeout_ms: u64,
+) -> Result<OwnedSemaphorePermit, OperatorError> {
+    time::timeout(
+        Duration::from_millis(timeout_ms),
+        serializer.acquire_owned(),
+    )
+    .await
+    .map_err(|_| OperatorError::TargetBusy)?
+    .map_err(|_| OperatorError::Platform("target serializer closed".into()))
 }

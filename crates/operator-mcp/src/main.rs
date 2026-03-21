@@ -23,11 +23,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .register_driver(Arc::new(MacosDriver::system()))
         .build()
         .await?;
-    let mut server = McpServer::new(runtime.tools().clone());
+    let server = McpServer::new(runtime.tools().clone());
     let stdin = io::stdin();
     let stdout = io::stdout();
 
-    run_stdio_session(&mut server, stdin.lock(), &mut stdout.lock())?;
+    run_stdio_session(&server, stdin.lock(), &mut stdout.lock())?;
     Ok(())
 }
 

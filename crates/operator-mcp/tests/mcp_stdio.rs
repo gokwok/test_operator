@@ -1,14 +1,21 @@
 use std::{io::Cursor, sync::Arc};
 
+use async_trait::async_trait;
+use operator_core::{
+    ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
+    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
+    PlatformDriver, QueryRequest, QueryResult,
+};
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
 use operator_runtime::{RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore};
 use serde_json::{json, Value};
+use tokio::sync::Notify;
 
 #[test]
 fn tools_list_requires_initialized_notification() {
-    let mut server = discovery_server();
+    let server = discovery_server();
 
     let init_response = server
         .handle_message(json!({
@@ -75,7 +82,7 @@ fn tools_list_requires_initialized_notification() {
 
 #[test]
 fn initialize_rejects_unsupported_protocol_versions() {
-    let mut server = discovery_server();
+    let server = discovery_server();
 
     let response = server
         .handle_message(json!({
@@ -104,7 +111,7 @@ fn initialize_rejects_unsupported_protocol_versions() {
 
 #[test]
 fn initialize_requires_protocol_version_param() {
-    let mut server = discovery_server();
+    let server = discovery_server();
 
     let response = server
         .handle_message(json!({
@@ -131,7 +138,7 @@ fn initialize_requires_protocol_version_param() {
 
 #[test]
 fn stdio_transport_round_trips_initialize_and_tools_list() {
-    let mut server = discovery_server();
+    let server = discovery_server();
     let input = concat!(
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"0.1.0\"}}}\n",
         "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
@@ -139,7 +146,7 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     );
 
     let mut output = Vec::new();
-    run_stdio_session(&mut server, Cursor::new(input.as_bytes()), &mut output).unwrap();
+    run_stdio_session(&server, Cursor::new(input.as_bytes()), &mut output).unwrap();
 
     let responses = String::from_utf8(output)
         .unwrap()
@@ -173,7 +180,7 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
 
 #[test]
 fn stdio_transport_emits_parse_errors_without_terminating_session() {
-    let mut server = discovery_server();
+    let server = discovery_server();
     let input = concat!(
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"0.1.0\"}}}\n",
         "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
@@ -182,7 +189,7 @@ fn stdio_transport_emits_parse_errors_without_terminating_session() {
     );
 
     let mut output = Vec::new();
-    run_stdio_session(&mut server, Cursor::new(input.as_bytes()), &mut output).unwrap();
+    run_stdio_session(&server, Cursor::new(input.as_bytes()), &mut output).unwrap();
 
     let responses = String::from_utf8(output)
         .unwrap()
@@ -198,7 +205,7 @@ fn stdio_transport_emits_parse_errors_without_terminating_session() {
 
 #[test]
 fn tools_call_executes_runtime_tools_and_returns_structured_content() {
-    let mut server = initialized_server_with_snapshots(&["snap-1"]);
+    let server = initialized_server_with_snapshots(&["snap-1"]);
 
     let response = server
         .handle_message(json!({
@@ -229,7 +236,7 @@ fn tools_call_executes_runtime_tools_and_returns_structured_content() {
 
 #[test]
 fn tools_call_wraps_runtime_failures_as_tool_results() {
-    let mut server = initialized_server_with_snapshots(&[]);
+    let server = initialized_server_with_snapshots(&[]);
 
     let response = server
         .handle_message(json!({
@@ -257,7 +264,7 @@ fn tools_call_wraps_runtime_failures_as_tool_results() {
 
 #[test]
 fn tools_call_rejects_unknown_tools_as_protocol_errors() {
-    let mut server = initialized_server_with_snapshots(&[]);
+    let server = initialized_server_with_snapshots(&[]);
 
     let response = server
         .handle_message(json!({
@@ -276,6 +283,110 @@ fn tools_call_rejects_unknown_tools_as_protocol_errors() {
         response["error"]["message"],
         json!("tool is not registered")
     );
+}
+
+#[test]
+fn mcp_blocks_side_effect_tools_when_security_mode_is_disabled() {
+    let runtime = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(async {
+            RuntimeBuilder::new(RuntimeConfig::default())
+                .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+                .build()
+                .await
+        })
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone()).with_allow_side_effects(false);
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": {
+                "name": "click",
+                "arguments": {
+                    "button": "Left"
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(response["result"]["isError"], json!(true));
+    assert!(response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("side effects are disabled by runtime policy"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_serializes_same_target_requests() {
+    let driver = Arc::new(BlockingQueryDriver::default());
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+    let server = Arc::new(server);
+
+    let first_server = Arc::clone(&server);
+    let first = tokio::task::spawn_blocking(move || {
+        first_server
+            .handle_message(json!({
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": {
+                    "name": "list-windows",
+                    "arguments": {
+                        "target": "local:slow",
+                        "timeout_ms": 200
+                    }
+                }
+            }))
+            .unwrap()
+            .unwrap()
+    });
+
+    driver.wait_until_query_starts().await;
+
+    let second_server = Arc::clone(&server);
+    let second = tokio::task::spawn_blocking(move || {
+        second_server
+            .handle_message(json!({
+                "jsonrpc": "2.0",
+                "id": 16,
+                "method": "tools/call",
+                "params": {
+                    "name": "list-windows",
+                    "arguments": {
+                        "target": "local:slow",
+                        "timeout_ms": 10
+                    }
+                }
+            }))
+            .unwrap()
+            .unwrap()
+    });
+
+    let second_response = second.await.unwrap();
+    assert_eq!(second_response["result"]["isError"], json!(true));
+    assert!(second_response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("target is busy"));
+
+    driver.release_query();
+
+    let first_response = first.await.unwrap();
+    assert!(first_response["result"]["structuredContent"]["windows"].is_array());
 }
 
 fn discovery_server() -> McpServer {
@@ -297,8 +408,8 @@ fn initialized_server_with_snapshots(snapshot_ids: &[&str]) -> McpServer {
                 .await
         })
         .unwrap();
-    let mut server = McpServer::new(runtime.tools().clone());
-    initialize_server(&mut server);
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
     server
 }
 
@@ -316,7 +427,7 @@ fn build_server(store: Arc<InMemorySnapshotStore>) -> McpServer {
     McpServer::new(runtime.tools().clone())
 }
 
-fn initialize_server(server: &mut McpServer) {
+fn initialize_server(server: &McpServer) {
     let init_response = server
         .handle_message(json!({
             "jsonrpc": "2.0",
@@ -345,4 +456,60 @@ fn initialize_server(server: &mut McpServer) {
         }))
         .unwrap();
     assert!(notification.is_none());
+}
+
+#[derive(Default)]
+struct BlockingQueryDriver {
+    started: Notify,
+    release: Notify,
+}
+
+impl BlockingQueryDriver {
+    async fn wait_until_query_starts(&self) {
+        self.started.notified().await;
+    }
+
+    fn release_query(&self) {
+        self.release.notify_waiters();
+    }
+}
+
+#[async_trait]
+impl PlatformDriver for BlockingQueryDriver {
+    fn platform_id(&self) -> &'static str {
+        "slow"
+    }
+
+    fn capabilities(&self) -> CapabilitySet {
+        CapabilitySet::new([Capability::WindowManagement])
+    }
+
+    async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
+        Ok(HealthStatus {
+            healthy: true,
+            message: None,
+            permissions: PermissionsReport {
+                screen_recording: PermissionStatus::Granted,
+                accessibility: PermissionStatus::Granted,
+            },
+        })
+    }
+
+    async fn observe(
+        &self,
+        _: ObserveRequest,
+        _: &ExecContext,
+    ) -> Result<ObserveResult, OperatorError> {
+        Err(OperatorError::Platform("observe unused in test".into()))
+    }
+
+    async fn query(&self, _: QueryRequest, _: &ExecContext) -> Result<QueryResult, OperatorError> {
+        self.started.notify_one();
+        self.release.notified().await;
+        Ok(QueryResult::Windows(Vec::new()))
+    }
+
+    async fn act(&self, _: ActionRequest, _: &ExecContext) -> Result<ActionOutcome, OperatorError> {
+        Err(OperatorError::Platform("act unused in test".into()))
+    }
 }

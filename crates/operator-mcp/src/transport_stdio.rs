@@ -13,7 +13,7 @@ pub enum StdioTransportError {
 }
 
 pub fn run_stdio_session<R, W>(
-    server: &mut McpServer,
+    server: &McpServer,
     reader: R,
     writer: &mut W,
 ) -> Result<(), StdioTransportError>

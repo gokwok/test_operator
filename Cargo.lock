@@ -301,6 +301,7 @@ dependencies = [
 name = "operator-mcp"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "operator-core",
  "operator-platform-macos",
  "operator-runtime",
