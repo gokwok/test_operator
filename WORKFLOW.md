@@ -24,6 +24,11 @@ hooks:
     SOURCE_REPO="${OPERATOR_SOURCE_REPO:-/Users/gokwok/code/work/Operator}"
     git clone --depth 1 "$SOURCE_REPO" .
     git fetch --all --prune
+    if [ -d "$SOURCE_REPO/docs/superpowers" ]; then
+      mkdir -p docs
+      rm -rf docs/superpowers
+      cp -R "$SOURCE_REPO/docs/superpowers" docs/
+    fi
   before_run: |
     git status --short
   after_run: |
