@@ -188,7 +188,11 @@ dependencies = [
 name = "operator-platform-macos"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "operator-core",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

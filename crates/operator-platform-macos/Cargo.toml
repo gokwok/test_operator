@@ -5,4 +5,10 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 operator-core = { path = "../operator-core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
