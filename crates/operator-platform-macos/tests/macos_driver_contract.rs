@@ -1,10 +1,14 @@
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
-    Action, ActionRequest, AppInfo, Capability, ExecContext, OperatorError, PermissionStatus,
-    PermissionsReport, PlatformDriver, QueryRequest, QueryResult, WindowInfo,
+    Action, ActionRequest, AppInfo, ArtifactId, Capability, ElementId, ElementSource, ExecContext,
+    ObserveRequest, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver,
+    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, UiElement, WindowInfo,
 };
-use operator_platform_macos::{AppService, MacosDriver, PermissionReader};
+use operator_platform_macos::{
+    AppService, CaptureProvider, CaptureResult, InspectResult, MacosDriver, PermissionReader,
+    TreeInspector,
+};
 
 #[test]
 fn macos_driver_declares_expected_capabilities() {
@@ -14,10 +18,89 @@ fn macos_driver_declares_expected_capabilities() {
     assert!(capabilities.supports(&Capability::AppLifecycle));
     assert!(capabilities.supports(&Capability::WindowManagement));
     assert!(capabilities.supports(&Capability::Permissions));
-    assert!(!capabilities.supports(&Capability::Capture));
-    assert!(!capabilities.supports(&Capability::InspectTree));
+    assert!(capabilities.supports(&Capability::Capture));
+    assert!(capabilities.supports(&Capability::InspectTree));
     assert!(!capabilities.supports(&Capability::PointerInput));
     assert!(!capabilities.supports(&Capability::KeyboardInput));
+}
+
+#[tokio::test]
+async fn observe_frontmost_returns_snapshot_with_metadata() {
+    let driver = MacosDriver::with_observe(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("artifact-frontmost.png".into()),
+            display_scale: Some(2.0),
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-0".into()),
+                UiElement {
+                    id: ElementId("ax-0".into()),
+                    role: "AXButton".into(),
+                    label: Some("Continue".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 100.0,
+                        height: 44.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-0".into())],
+        }),
+    );
+
+    let surface = Surface {
+        kind: SurfaceKind::Frontmost,
+    };
+    let observed = driver
+        .observe(
+            ObserveRequest {
+                surface: surface.clone(),
+                include_screenshot: true,
+                include_elements: true,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(observed.snapshot.target, "local:macos".into());
+    assert_eq!(observed.snapshot.surface, surface);
+    assert_eq!(
+        observed.snapshot.image_artifact,
+        Some(ArtifactId("artifact-frontmost.png".into()))
+    );
+    assert_eq!(observed.snapshot.metadata.platform, "macos");
+    assert_eq!(observed.snapshot.metadata.display_scale, Some(2.0));
+    assert!(!observed.snapshot.id.to_string().is_empty());
+    assert!(observed.snapshot.metadata.capture_duration_ms < 1_000);
+    assert_eq!(observed.snapshot.root_ids, vec![ElementId("ax-0".into())]);
+    assert_eq!(
+        observed.snapshot.elements[&ElementId("ax-0".into())]
+            .label
+            .as_deref(),
+        Some("Continue")
+    );
+    assert_eq!(
+        driver.capture_provider().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Frontmost,
+        }]
+    );
+    assert_eq!(
+        driver.tree_inspector().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Frontmost,
+        }]
+    );
 }
 
 #[tokio::test]
@@ -152,6 +235,29 @@ async fn health_check_requires_accessibility_for_ready_status() {
     assert_eq!(health.permissions.accessibility, PermissionStatus::Denied);
 }
 
+#[tokio::test]
+async fn health_check_requires_screen_recording_for_capture_readiness() {
+    let driver = MacosDriver::new(
+        StubAppService::default(),
+        StubPermissionReader::with_report(PermissionsReport {
+            screen_recording: PermissionStatus::Denied,
+            accessibility: PermissionStatus::Granted,
+        }),
+    );
+
+    let health = driver.health_check().await.unwrap();
+
+    assert!(!health.healthy);
+    assert_eq!(
+        health.message.as_deref(),
+        Some("Screen Recording permission is required for macOS capture.")
+    );
+    assert_eq!(
+        health.permissions.screen_recording,
+        PermissionStatus::Denied
+    );
+}
+
 fn exec_context() -> ExecContext {
     ExecContext {
         target: "local:macos".into(),
@@ -217,5 +323,61 @@ impl StubPermissionReader {
 impl PermissionReader for StubPermissionReader {
     fn current_permissions(&self) -> Result<PermissionsReport, OperatorError> {
         Ok(self.report.clone())
+    }
+}
+
+struct StubCaptureProvider {
+    result: CaptureResult,
+    requested_surfaces: Mutex<Vec<Surface>>,
+}
+
+impl StubCaptureProvider {
+    fn with_result(result: CaptureResult) -> Self {
+        Self {
+            result,
+            requested_surfaces: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn requested_surfaces(&self) -> Vec<Surface> {
+        self.requested_surfaces.lock().unwrap().clone()
+    }
+}
+
+impl CaptureProvider for StubCaptureProvider {
+    fn capture(&self, surface: &Surface) -> Result<CaptureResult, OperatorError> {
+        self.requested_surfaces
+            .lock()
+            .unwrap()
+            .push(surface.clone());
+        Ok(self.result.clone())
+    }
+}
+
+struct StubTreeInspector {
+    result: InspectResult,
+    requested_surfaces: Mutex<Vec<Surface>>,
+}
+
+impl StubTreeInspector {
+    fn with_result(result: InspectResult) -> Self {
+        Self {
+            result,
+            requested_surfaces: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn requested_surfaces(&self) -> Vec<Surface> {
+        self.requested_surfaces.lock().unwrap().clone()
+    }
+}
+
+impl TreeInspector for StubTreeInspector {
+    fn inspect(&self, surface: &Surface) -> Result<InspectResult, OperatorError> {
+        self.requested_surfaces
+            .lock()
+            .unwrap()
+            .push(surface.clone());
+        Ok(self.result.clone())
     }
 }

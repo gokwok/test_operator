@@ -17,11 +17,14 @@ impl PermissionReader for SystemPermissionReader {
 }
 
 #[cfg(target_os = "macos")]
-fn accessibility_status() -> PermissionStatus {
-    unsafe extern "C" {
-        fn AXIsProcessTrusted() -> bool;
-    }
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+    fn CGPreflightScreenCaptureAccess() -> bool;
+}
 
+#[cfg(target_os = "macos")]
+fn accessibility_status() -> PermissionStatus {
     if unsafe { AXIsProcessTrusted() } {
         PermissionStatus::Granted
     } else {
@@ -31,10 +34,6 @@ fn accessibility_status() -> PermissionStatus {
 
 #[cfg(target_os = "macos")]
 fn screen_recording_status() -> PermissionStatus {
-    unsafe extern "C" {
-        fn CGPreflightScreenCaptureAccess() -> bool;
-    }
-
     if unsafe { CGPreflightScreenCaptureAccess() } {
         PermissionStatus::Granted
     } else {
