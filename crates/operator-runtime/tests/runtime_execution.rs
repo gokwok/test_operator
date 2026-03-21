@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
     Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
-    PermissionsReport, PlatformDriver, QueryRequest, QueryResult, Surface, SurfaceKind,
+    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
+    SurfaceKind,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
@@ -201,6 +202,71 @@ async fn runtime_rejects_drag_between_different_snapshots() {
     }
 
     assert!(driver.action_calls().await.is_empty());
+}
+
+#[tokio::test]
+async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-click");
+    snapshot.elements.get_mut(&"el-1".into()).unwrap().bounds = Some(Rect {
+        x: 40.0,
+        y: 20.0,
+        width: 60.0,
+        height: 30.0,
+    });
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 7,
+        detail: Some("clicked".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    button: MouseButton::Left,
+                },
+                locator: Some(Locator::SnapshotElement {
+                    snapshot: snapshot.id.clone(),
+                    element: "el-1".into(),
+                }),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Click {
+                button: MouseButton::Left,
+            },
+            locator: Some(Locator::Coords(Point { x: 70.0, y: 35.0 })),
+        }
+    );
 }
 
 #[derive(Default)]

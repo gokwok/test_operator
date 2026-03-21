@@ -6,8 +6,8 @@ use std::{
 
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, ExecContext, Locator, ObserveRequest,
-    ObserveResult, OperatorError, PlatformDriver, QueryRequest, QueryResult, TargetDescriptor,
-    TargetId,
+    ObserveResult, OperatorError, PlatformDriver, Point, QueryRequest, QueryResult,
+    TargetDescriptor, TargetId,
 };
 use tokio::time;
 
@@ -154,7 +154,18 @@ impl RuntimeCore {
 
         let started = Instant::now();
         let timeout_ms = self.timeout_ms(&ctx);
-        let result = time::timeout(Duration::from_millis(timeout_ms), driver.act(req, &ctx)).await;
+        let normalized = match self.normalize_action_request(req).await {
+            Ok(req) => req,
+            Err(error) => {
+                self.emit_completed("act", started, false, &ctx).await?;
+                return Err(error);
+            }
+        };
+        let result = time::timeout(
+            Duration::from_millis(timeout_ms),
+            driver.act(normalized, &ctx),
+        )
+        .await;
 
         match result {
             Ok(Ok(result)) => {
@@ -277,6 +288,44 @@ impl RuntimeCore {
         }
 
         Ok(())
+    }
+
+    async fn normalize_action_request(
+        &self,
+        mut req: ActionRequest,
+    ) -> Result<ActionRequest, OperatorError> {
+        if let Some(locator) = req.locator.take() {
+            req.locator = Some(self.normalize_locator(locator).await?);
+        }
+
+        Ok(req)
+    }
+
+    async fn normalize_locator(&self, locator: Locator) -> Result<Locator, OperatorError> {
+        match locator {
+            Locator::SnapshotElement { snapshot, element } => {
+                let snapshot_record = self
+                    .snapshots
+                    .get(&snapshot)
+                    .await?
+                    .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
+                let element_record = snapshot_record
+                    .elements
+                    .get(&element)
+                    .ok_or_else(|| OperatorError::ElementNotFound(element.clone()))?;
+                let bounds = element_record.bounds.ok_or_else(|| {
+                    OperatorError::Platform(format!(
+                        "snapshot element {element} in {snapshot} has no bounds"
+                    ))
+                })?;
+
+                Ok(Locator::Coords(Point {
+                    x: bounds.x + bounds.width / 2.0,
+                    y: bounds.y + bounds.height / 2.0,
+                }))
+            }
+            other => Ok(other),
+        }
     }
 
     async fn emit_invoked<T: serde::Serialize>(

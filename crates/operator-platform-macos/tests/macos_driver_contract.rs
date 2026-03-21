@@ -2,12 +2,13 @@ use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
     Action, ActionRequest, AppInfo, ArtifactId, Capability, ElementId, ElementSource, ExecContext,
-    ObserveRequest, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver,
-    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, UiElement, WindowInfo,
+    Locator, MouseButton, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport,
+    PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, UiElement,
+    WindowInfo,
 };
 use operator_platform_macos::{
-    AppService, CaptureProvider, CaptureResult, InspectResult, MacosDriver, PermissionReader,
-    TreeInspector,
+    AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
+    PermissionReader, TreeInspector,
 };
 
 #[test]
@@ -20,8 +21,8 @@ fn macos_driver_declares_expected_capabilities() {
     assert!(capabilities.supports(&Capability::Permissions));
     assert!(capabilities.supports(&Capability::Capture));
     assert!(capabilities.supports(&Capability::InspectTree));
-    assert!(!capabilities.supports(&Capability::PointerInput));
-    assert!(!capabilities.supports(&Capability::KeyboardInput));
+    assert!(capabilities.supports(&Capability::PointerInput));
+    assert!(capabilities.supports(&Capability::KeyboardInput));
 }
 
 #[tokio::test]
@@ -216,6 +217,152 @@ async fn launch_app_action_returns_successful_outcome() {
 }
 
 #[tokio::test]
+async fn click_action_resolves_text_locator_to_button_center() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-button".into()),
+                UiElement {
+                    id: ElementId("ax-button".into()),
+                    role: "AXButton".into(),
+                    label: Some("Submit".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 100.0,
+                        y: 40.0,
+                        width: 80.0,
+                        height: 20.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-button".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    button: MouseButton::Right,
+                },
+                locator: Some(Locator::Text("submit".into())),
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Click {
+            point: Point { x: 140.0, y: 50.0 },
+            button: MouseButton::Right,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn type_action_clicks_role_target_before_typing() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([
+                (
+                    ElementId("ax-field-0".into()),
+                    UiElement {
+                        id: ElementId("ax-field-0".into()),
+                        role: "AXTextField".into(),
+                        label: Some("Ignored".into()),
+                        value: None,
+                        bounds: Some(Rect {
+                            x: 10.0,
+                            y: 10.0,
+                            width: 100.0,
+                            height: 20.0,
+                        }),
+                        enabled: Some(true),
+                        children: vec![],
+                        confidence: Some(1.0),
+                        source: ElementSource::Native,
+                    },
+                ),
+                (
+                    ElementId("ax-field-1".into()),
+                    UiElement {
+                        id: ElementId("ax-field-1".into()),
+                        role: "AXTextField".into(),
+                        label: Some("Primary".into()),
+                        value: None,
+                        bounds: Some(Rect {
+                            x: 200.0,
+                            y: 60.0,
+                            width: 120.0,
+                            height: 24.0,
+                        }),
+                        enabled: Some(true),
+                        children: vec![],
+                        confidence: Some(1.0),
+                        source: ElementSource::Native,
+                    },
+                ),
+            ]),
+            root_ids: vec![
+                ElementId("ax-field-0".into()),
+                ElementId("ax-field-1".into()),
+            ],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Type {
+                    text: "hello operator".into(),
+                },
+                locator: Some(Locator::Role {
+                    role: "AXTextField".into(),
+                    index: 1,
+                }),
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        input.calls(),
+        vec![
+            RecordedInput::Click {
+                point: Point { x: 260.0, y: 72.0 },
+                button: MouseButton::Left,
+            },
+            RecordedInput::TypeText("hello operator".into()),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn health_check_requires_accessibility_for_ready_status() {
     let driver = MacosDriver::new(
         StubAppService::default(),
@@ -379,5 +526,40 @@ impl TreeInspector for StubTreeInspector {
             .unwrap()
             .push(surface.clone());
         Ok(self.result.clone())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum RecordedInput {
+    Click { point: Point, button: MouseButton },
+    TypeText(String),
+}
+
+#[derive(Default, Clone)]
+struct StubInputSynthesizer {
+    calls: std::sync::Arc<Mutex<Vec<RecordedInput>>>,
+}
+
+impl StubInputSynthesizer {
+    fn calls(&self) -> Vec<RecordedInput> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl InputSynthesizer for StubInputSynthesizer {
+    fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(RecordedInput::Click { point, button });
+        Ok(())
+    }
+
+    fn type_text(&self, text: &str) -> Result<(), OperatorError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(RecordedInput::TypeText(text.to_string()));
+        Ok(())
     }
 }

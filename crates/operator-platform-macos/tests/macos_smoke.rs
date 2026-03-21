@@ -1,6 +1,8 @@
+use std::{process::Command, thread, time::Duration};
+
 use operator_core::{
-    ExecContext, ObserveRequest, OperatorError, PermissionStatus, PlatformDriver, Surface,
-    SurfaceKind,
+    Action, ActionRequest, ExecContext, Locator, ObserveRequest, OperatorError, PermissionStatus,
+    PlatformDriver, Surface, SurfaceKind,
 };
 use operator_platform_macos::MacosDriver;
 
@@ -57,6 +59,81 @@ async fn observe_frontmost_with_system_driver() {
     assert!(!observed.snapshot.root_ids.is_empty());
 }
 
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility, screen recording, and Apple Events permissions"]
+async fn click_and_type_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS input smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare TextEdit smoke target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS input smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    for request in [
+        ActionRequest {
+            action: Action::Click {
+                button: operator_core::MouseButton::Left,
+            },
+            locator: Some(Locator::Role {
+                role: "AXTextArea".into(),
+                index: 0,
+            }),
+        },
+        ActionRequest {
+            action: Action::Type {
+                text: "operator smoke typing".into(),
+            },
+            locator: None,
+        },
+    ] {
+        match driver.act(request, &exec_context()).await {
+            Ok(_) => {}
+            Err(error) if is_sandboxed_macos_failure(&error) => {
+                eprintln!("Skipping macOS input smoke test in sandboxed session: {error}");
+                return;
+            }
+            Err(error) => panic!("input action failed: {error}"),
+        }
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let text = match read_textedit_document() {
+        Ok(text) => text,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS input smoke verification in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("failed to read TextEdit document: {error}"),
+    };
+
+    assert!(
+        text.contains("operator smoke typing"),
+        "expected TextEdit front document to contain smoke text, got: {text:?}"
+    );
+
+    drop(cleanup);
+}
+
 fn exec_context() -> ExecContext {
     ExecContext {
         target: "local:macos".into(),
@@ -72,7 +149,68 @@ fn is_sandboxed_macos_failure(error: &OperatorError) -> bool {
                 || message.contains("Connection invalid")
                 || message.contains("Application can't be found")
                 || message.contains("-10827")
+                || message.contains("Not authorized to send Apple events")
+                || message.contains("not allowed to send keystrokes")
         }
         _ => false,
     }
+}
+
+struct CleanupTextEditDocument;
+
+impl Drop for CleanupTextEditDocument {
+    fn drop(&mut self) {
+        let _ = run_osascript(
+            r#"
+tell application "TextEdit"
+  if (count of documents) > 0 then
+    close front document saving no
+  end if
+end tell
+"#,
+        );
+    }
+}
+
+fn prepare_textedit_document() -> Result<(), OperatorError> {
+    run_osascript(
+        r#"
+tell application "TextEdit"
+  activate
+  make new document
+end tell
+"#,
+    )?;
+    Ok(())
+}
+
+fn read_textedit_document() -> Result<String, OperatorError> {
+    run_osascript(
+        r#"
+tell application "TextEdit"
+  activate
+  text of front document
+end tell
+"#,
+    )
+}
+
+fn run_osascript(script: &str) -> Result<String, OperatorError> {
+    let output = Command::new("osascript")
+        .args(["-e", script])
+        .output()
+        .map_err(|error| OperatorError::Platform(format!("failed to invoke osascript: {error}")))?;
+
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.contains("Not authorized") || stderr.contains("not allowed") {
+        return Err(OperatorError::PermissionDenied(stderr));
+    }
+
+    Err(OperatorError::Platform(format!(
+        "osascript failed: {stderr}"
+    )))
 }

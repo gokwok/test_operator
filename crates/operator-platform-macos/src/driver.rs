@@ -1,18 +1,20 @@
 use std::{
     sync::atomic::{AtomicU64, Ordering},
+    thread,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
-    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, QueryRequest, QueryResult,
-    Snapshot, SnapshotMetadata,
+    Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
+    QueryRequest, QueryResult, Snapshot, SnapshotMetadata,
 };
 
 use crate::{
-    AppService, CaptureProvider, InspectResult, PermissionReader, SystemAppService,
-    SystemCaptureProvider, SystemPermissionReader, SystemTreeInspector, TreeInspector,
+    locator::resolve_locator, AppService, CaptureProvider, InputSynthesizer, InspectResult,
+    PermissionReader, SystemAppService, SystemCaptureProvider, SystemInputSynthesizer,
+    SystemPermissionReader, SystemTreeInspector, TreeInspector,
 };
 
 static SNAPSHOT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -22,11 +24,13 @@ pub struct MacosDriver<
     P = SystemPermissionReader,
     C = SystemCaptureProvider,
     I = SystemTreeInspector,
+    S = SystemInputSynthesizer,
 > {
     app_service: A,
     permission_reader: P,
     capture_provider: C,
     tree_inspector: I,
+    input_synthesizer: S,
 }
 
 impl
@@ -35,6 +39,7 @@ impl
         SystemPermissionReader,
         SystemCaptureProvider,
         SystemTreeInspector,
+        SystemInputSynthesizer,
     >
 {
     pub fn system() -> Self {
@@ -42,7 +47,7 @@ impl
     }
 }
 
-impl<A, P> MacosDriver<A, P, SystemCaptureProvider, SystemTreeInspector> {
+impl<A, P> MacosDriver<A, P, SystemCaptureProvider, SystemTreeInspector, SystemInputSynthesizer> {
     pub fn new(app_service: A, permission_reader: P) -> Self {
         Self::with_observe(
             app_service,
@@ -53,18 +58,37 @@ impl<A, P> MacosDriver<A, P, SystemCaptureProvider, SystemTreeInspector> {
     }
 }
 
-impl<A, P, C, I> MacosDriver<A, P, C, I> {
+impl<A, P, C, I> MacosDriver<A, P, C, I, SystemInputSynthesizer> {
     pub fn with_observe(
         app_service: A,
         permission_reader: P,
         capture_provider: C,
         tree_inspector: I,
     ) -> Self {
+        Self::with_components(
+            app_service,
+            permission_reader,
+            capture_provider,
+            tree_inspector,
+            SystemInputSynthesizer,
+        )
+    }
+}
+
+impl<A, P, C, I, S> MacosDriver<A, P, C, I, S> {
+    pub fn with_components(
+        app_service: A,
+        permission_reader: P,
+        capture_provider: C,
+        tree_inspector: I,
+        input_synthesizer: S,
+    ) -> Self {
         Self {
             app_service,
             permission_reader,
             capture_provider,
             tree_inspector,
+            input_synthesizer,
         }
     }
 
@@ -83,6 +107,10 @@ impl<A, P, C, I> MacosDriver<A, P, C, I> {
     pub fn tree_inspector(&self) -> &I {
         &self.tree_inspector
     }
+
+    pub fn input_synthesizer(&self) -> &S {
+        &self.input_synthesizer
+    }
 }
 
 impl Default
@@ -91,6 +119,7 @@ impl Default
         SystemPermissionReader,
         SystemCaptureProvider,
         SystemTreeInspector,
+        SystemInputSynthesizer,
     >
 {
     fn default() -> Self {
@@ -105,16 +134,19 @@ fn macos_capabilities() -> CapabilitySet {
         Capability::InspectTree,
         Capability::WindowManagement,
         Capability::Permissions,
+        Capability::PointerInput,
+        Capability::KeyboardInput,
     ])
 }
 
 #[async_trait]
-impl<A, P, C, I> operator_core::PlatformDriver for MacosDriver<A, P, C, I>
+impl<A, P, C, I, S> operator_core::PlatformDriver for MacosDriver<A, P, C, I, S>
 where
     A: AppService,
     P: PermissionReader,
     C: CaptureProvider,
     I: TreeInspector,
+    S: InputSynthesizer,
 {
     fn platform_id(&self) -> &'static str {
         "macos"
@@ -222,16 +254,81 @@ where
                     detail: Some(format!("launched {bundle_id_or_name}")),
                 })
             }
-            Action::Click { .. } | Action::Scroll { .. } | Action::Drag { .. } => Err(
+            Action::Click { button } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.click(req.locator, button, &permissions)
+            }
+            Action::Type { text } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.type_text(req.locator, &text, &permissions)
+            }
+            Action::Scroll { .. } | Action::Drag { .. } => Err(
                 OperatorError::CapabilityNotSupported(Capability::PointerInput),
             ),
-            Action::Type { .. } | Action::Hotkey { .. } => Err(
-                OperatorError::CapabilityNotSupported(Capability::KeyboardInput),
-            ),
+            Action::Hotkey { .. } => Err(OperatorError::CapabilityNotSupported(
+                Capability::KeyboardInput,
+            )),
             Action::FocusWindow { .. } => Err(OperatorError::Platform(
                 "focus-window is not implemented for the macOS foundation driver".into(),
             )),
         }
+    }
+}
+
+impl<A, P, C, I, S> MacosDriver<A, P, C, I, S>
+where
+    P: PermissionReader,
+    I: TreeInspector,
+    S: InputSynthesizer,
+{
+    fn click(
+        &self,
+        locator: Option<Locator>,
+        button: MouseButton,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        let resolved = self.resolve_required_locator(locator, "click")?;
+        self.input_synthesizer.click(resolved.point, button)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some(action_detail("clicked", resolved.warning.as_deref())),
+        })
+    }
+
+    fn type_text(
+        &self,
+        locator: Option<Locator>,
+        text: &str,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        let warning = if let Some(locator) = locator {
+            let resolved = resolve_locator(&locator, &self.tree_inspector)?;
+            self.input_synthesizer
+                .click(resolved.point, MouseButton::Left)?;
+            thread::sleep(std::time::Duration::from_millis(50));
+            resolved.warning
+        } else {
+            None
+        };
+        self.input_synthesizer.type_text(text)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some(action_detail("typed text", warning.as_deref())),
+        })
+    }
+
+    fn resolve_required_locator(
+        &self,
+        locator: Option<Locator>,
+        action: &str,
+    ) -> Result<crate::locator::ResolvedLocator, OperatorError> {
+        let locator = locator
+            .ok_or_else(|| OperatorError::Platform(format!("macOS {action} requires a locator")))?;
+        resolve_locator(&locator, &self.tree_inspector)
     }
 }
 
@@ -252,6 +349,25 @@ fn require_observe_permissions(
     }
 
     Ok(())
+}
+
+fn require_accessibility_permission(
+    permissions: &operator_core::PermissionsReport,
+) -> Result<(), OperatorError> {
+    if permissions.accessibility != PermissionStatus::Granted {
+        return Err(OperatorError::PermissionDenied(
+            "Accessibility permission is required for macOS input.".into(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn action_detail(action: &str, warning: Option<&str>) -> String {
+    match warning {
+        Some(warning) => format!("{action}; {warning}"),
+        None => action.to_string(),
+    }
 }
 
 fn next_snapshot_id() -> operator_core::SnapshotId {
