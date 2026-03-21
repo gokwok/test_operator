@@ -1,6 +1,7 @@
 use std::{env, io, path::PathBuf, sync::Arc};
 
 use operator_mcp::{run_stdio_session, McpServer};
+use operator_platform_macos::MacosDriver;
 use operator_runtime::{FileSnapshotStore, RuntimeBuilder, RuntimeConfig};
 
 #[tokio::main]
@@ -19,9 +20,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let snapshots = Arc::new(FileSnapshotStore::new(operator_home_dir(), config.clone()));
     let runtime = RuntimeBuilder::new(config)
         .snapshot_store(snapshots)
+        .register_driver(Arc::new(MacosDriver::system()))
         .build()
         .await?;
-    let mut server = McpServer::new(runtime.tools().specs());
+    let mut server = McpServer::new(runtime.tools().clone());
     let stdin = io::stdin();
     let stdout = io::stdout();
 

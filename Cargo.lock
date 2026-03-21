@@ -301,6 +301,8 @@ dependencies = [
 name = "operator-mcp"
 version = "0.1.0"
 dependencies = [
+ "operator-core",
+ "operator-platform-macos",
  "operator-runtime",
  "operator-testkit",
  "serde",

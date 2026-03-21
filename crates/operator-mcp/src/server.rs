@@ -1,7 +1,8 @@
-use operator_runtime::ToolSpec;
+use operator_core::OperatorError;
+use operator_runtime::{ToolRegistry, ToolSpec};
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 const JSONRPC_VERSION: &str = "2.0";
 const PARSE_ERROR: i64 = -32700;
@@ -13,13 +14,13 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
     &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 pub struct McpServer {
-    tools: Vec<ToolSpec>,
+    tools: ToolRegistry,
     negotiated_protocol_version: Option<&'static str>,
     ready: bool,
 }
 
 impl McpServer {
-    pub fn new(tools: Vec<ToolSpec>) -> Self {
+    pub fn new(tools: ToolRegistry) -> Self {
         Self {
             tools,
             negotiated_protocol_version: None,
@@ -105,6 +106,7 @@ impl McpServer {
                 None
             }
             "tools/list" => self.handle_tools_list(id),
+            "tools/call" => self.handle_tools_call(id, request.params)?,
             "ping" => id.map(|id| success_response(id, json!({}))),
             _ => id.map(|id| {
                 error_response(
@@ -187,11 +189,91 @@ impl McpServer {
             json!({
                 "tools": self
                     .tools
+                    .specs()
                     .iter()
                     .map(ToolDescriptor::from)
                     .collect::<Vec<_>>(),
             }),
         ))
+    }
+
+    fn handle_tools_call(
+        &self,
+        id: Option<Value>,
+        params: Option<Value>,
+    ) -> Result<Option<Value>, serde_json::Error> {
+        let Some(id) = id else {
+            return Ok(None);
+        };
+
+        if !self.ready {
+            return Ok(Some(error_response(
+                id,
+                SERVER_NOT_INITIALIZED,
+                "server not initialized",
+                None,
+            )));
+        }
+
+        let params = match serde_json::from_value::<CallToolParams>(params.unwrap_or_default()) {
+            Ok(params) => params,
+            Err(_) => {
+                return Ok(Some(error_response(
+                    id,
+                    INVALID_PARAMS,
+                    "tools/call params are invalid",
+                    None,
+                )));
+            }
+        };
+
+        if params.task.is_some() {
+            return Ok(Some(error_response(
+                id,
+                INVALID_PARAMS,
+                "task-augmented tool calls are not supported",
+                None,
+            )));
+        }
+
+        if !self
+            .tools
+            .specs()
+            .iter()
+            .any(|spec| spec.name == params.name)
+        {
+            return Ok(Some(error_response(
+                id,
+                INVALID_PARAMS,
+                "tool is not registered",
+                None,
+            )));
+        }
+
+        let result = match self.invoke_tool(&params.name, Value::Object(params.arguments)) {
+            Ok(output) => call_tool_success(output)?,
+            Err(error) => call_tool_error(error),
+        };
+
+        Ok(Some(success_response(id, result)))
+    }
+
+    fn invoke_tool(&self, name: &str, input: Value) -> Result<Value, OperatorError> {
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => match handle.runtime_flavor() {
+                tokio::runtime::RuntimeFlavor::MultiThread => {
+                    tokio::task::block_in_place(|| handle.block_on(self.tools.invoke(name, input)))
+                }
+                _ => Err(OperatorError::Platform(
+                    "tools/call requires a multi-thread Tokio runtime".into(),
+                )),
+            },
+            Err(_) => tokio::runtime::Runtime::new()
+                .map_err(|error| {
+                    OperatorError::Platform(format!("failed to start async runtime: {error}"))
+                })?
+                .block_on(self.tools.invoke(name, input)),
+        }
     }
 }
 
@@ -251,6 +333,16 @@ struct InitializeParams {
     protocol_version: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct CallToolParams {
+    #[allow(dead_code)]
+    #[serde(default)]
+    task: Option<Value>,
+    name: String,
+    #[serde(default)]
+    arguments: Map<String, Value>,
+}
+
 #[derive(Debug, Serialize)]
 struct ToolDescriptor<'a> {
     name: &'a str,
@@ -286,4 +378,35 @@ struct ToolAnnotations {
     destructive_hint: bool,
     #[serde(rename = "openWorldHint")]
     open_world_hint: bool,
+}
+
+fn call_tool_success(output: Value) -> Result<Value, serde_json::Error> {
+    let content = serde_json::to_string_pretty(&output)?;
+    let mut result = json!({
+        "content": [
+            text_content(content),
+        ],
+    });
+
+    if let Value::Object(object) = output {
+        result["structuredContent"] = Value::Object(object);
+    }
+
+    Ok(result)
+}
+
+fn call_tool_error(error: OperatorError) -> Value {
+    json!({
+        "content": [
+            text_content(error.to_string()),
+        ],
+        "isError": true,
+    })
+}
+
+fn text_content(text: String) -> Value {
+    json!({
+        "type": "text",
+        "text": text,
+    })
 }
