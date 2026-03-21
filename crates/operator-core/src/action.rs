@@ -1,14 +1,15 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{Locator, WindowId};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActionRequest {
     pub action: Action,
     pub locator: Option<Locator>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Action {
     Click { button: MouseButton },
     Type { text: String },
@@ -19,14 +20,14 @@ pub enum Action {
     FocusWindow { id: WindowId },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum MouseButton {
     Left,
     Right,
     Middle,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ActionOutcome {
     pub success: bool,
     pub duration_ms: u64,

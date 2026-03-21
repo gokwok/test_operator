@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::RuntimeCore;
+use crate::{AuditEvent, AuditEventKind, RuntimeCore};
 
 type ToolFuture = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'static>>;
 
@@ -86,7 +86,47 @@ impl ToolRegistry {
             })?;
 
         let ctx = self.extract_exec_context(&input)?;
+        self.enforce_side_effect_policy(&registration.spec, &ctx)
+            .await?;
         (registration.handler)(input, self.core.clone(), ctx).await
+    }
+
+    async fn enforce_side_effect_policy(
+        &self,
+        spec: &ToolSpec,
+        ctx: &ExecContext,
+    ) -> Result<(), OperatorError> {
+        if !spec.has_side_effects || self.core.config().allow_side_effects {
+            return Ok(());
+        }
+
+        self.emit_side_effect_blocked(spec.name, ctx).await?;
+        Err(OperatorError::Tool {
+            tool: spec.name.to_string(),
+            message: "side effects are disabled by runtime policy".into(),
+        })
+    }
+
+    async fn emit_side_effect_blocked(
+        &self,
+        tool: &str,
+        ctx: &ExecContext,
+    ) -> Result<(), OperatorError> {
+        if !self.core.config().audit_enabled {
+            return Ok(());
+        }
+
+        self.core
+            .event_sink()
+            .emit(AuditEvent {
+                timestamp: std::time::SystemTime::now(),
+                session_id: ctx.session.clone(),
+                target_id: Some(ctx.target.clone()),
+                kind: AuditEventKind::SideEffectBlocked {
+                    tool: tool.to_string(),
+                },
+            })
+            .await
     }
 
     fn extract_exec_context(&self, input: &Value) -> Result<ExecContext, OperatorError> {

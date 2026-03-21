@@ -1,3 +1,4 @@
+mod action;
 mod observe;
 mod query;
 mod snapshot_get;
@@ -9,15 +10,17 @@ use serde_json::Value;
 
 use crate::ToolRegistration;
 
-pub(crate) fn read_only_registrations() -> Vec<ToolRegistration> {
-    vec![
+pub(crate) fn registrations() -> Vec<ToolRegistration> {
+    let mut registrations = vec![
         observe::registration(),
         snapshot_get::registration(),
         query::list_apps_registration(),
         query::list_windows_registration(),
         query::permissions_status_registration(),
         query::capabilities_registration(),
-    ]
+    ];
+    registrations.extend(action::registrations());
+    registrations
 }
 
 pub(crate) fn json_schema_for<T: JsonSchema>() -> Value {

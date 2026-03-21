@@ -1,11 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use operator_core::{
-    AppInfo, Capability, CapabilitySet, ExecContext, ObserveRequest, ObserveResult,
-    PermissionStatus, PermissionsReport, QueryRequest, QueryResult, Surface, SurfaceKind,
-    WindowInfo,
+    Action, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet, ExecContext, Locator,
+    MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
+    QueryRequest, QueryResult, Surface, SurfaceKind, WindowInfo,
 };
-use operator_runtime::{RuntimeBuilder, RuntimeConfig, SnapshotStore};
+use operator_runtime::{
+    AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
+};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::json;
 
@@ -193,7 +196,180 @@ async fn read_only_query_tools_forward_runtime_results() {
 }
 
 #[tokio::test]
-async fn read_only_tools_export_stable_specs() {
+async fn action_tools_are_blocked_when_side_effects_are_disabled() {
+    let events = Arc::new(RecordingEventSink::default());
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig {
+        allow_side_effects: false,
+        ..RuntimeConfig::default()
+    })
+    .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+    .event_sink(events.clone())
+    .register_driver(driver.clone())
+    .build()
+    .await
+    .unwrap();
+
+    let error = runtime
+        .tools()
+        .invoke(
+            "click",
+            json!({
+                "target": "local:macos",
+                "button": "Left"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::Tool { tool, message } => {
+            assert_eq!(tool, "click");
+            assert_eq!(message, "side effects are disabled by runtime policy");
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    assert!(driver.action_calls().await.is_empty());
+    assert!(matches!(
+        events.events().as_slice(),
+        [AuditEvent {
+            kind: AuditEventKind::SideEffectBlocked { tool },
+            ..
+        }] if tool == "click"
+    ));
+}
+
+#[tokio::test]
+async fn action_tools_forward_typed_requests_to_runtime_act() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([
+            Capability::PointerInput,
+            Capability::KeyboardInput,
+            Capability::AppLifecycle,
+        ]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 12,
+        detail: Some("clicked".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 18,
+        detail: Some("typed".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("launched".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let click = runtime
+        .tools()
+        .invoke(
+            "click",
+            json!({
+                "target": "local:macos",
+                "button": "Right",
+                "locator": {
+                    "Text": "Submit"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let typed = runtime
+        .tools()
+        .invoke(
+            "type",
+            json!({
+                "target": "local:macos",
+                "text": "hello world",
+                "locator": {
+                    "Text": "Search"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let launched = runtime
+        .tools()
+        .invoke(
+            "launch-app",
+            json!({
+                "target": "local:macos",
+                "bundle_id_or_name": "Calculator"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(click["outcome"]["detail"], json!("clicked"));
+    assert_eq!(typed["outcome"]["detail"], json!("typed"));
+    assert_eq!(launched["outcome"]["detail"], json!("launched"));
+
+    let calls = driver.action_calls().await;
+    assert_eq!(
+        calls,
+        vec![
+            (
+                ActionRequest {
+                    action: Action::Click {
+                        button: MouseButton::Right,
+                    },
+                    locator: Some(Locator::Text("Submit".into())),
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Type {
+                        text: "hello world".into(),
+                    },
+                    locator: Some(Locator::Text("Search".into())),
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::LaunchApp {
+                        bundle_id_or_name: "Calculator".into(),
+                    },
+                    locator: None,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn action_tools_export_stable_specs() {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
         .build()
@@ -206,31 +382,68 @@ async fn read_only_tools_export_stable_specs() {
         names,
         vec![
             "capabilities",
+            "click",
+            "launch-app",
             "list-apps",
             "list-windows",
             "observe",
             "permissions-status",
             "snapshot-get",
+            "type",
         ]
     );
 
     for spec in &specs {
-        assert!(
-            !spec.has_side_effects,
-            "{:?} should be read-only",
-            spec.name
-        );
         assert_eq!(spec.input_schema["type"], json!("object"));
         assert_eq!(spec.output_schema["type"], json!("object"));
     }
 
+    let click = specs.iter().find(|spec| spec.name == "click").unwrap();
+    assert!(click.has_side_effects);
+    assert_eq!(click.capabilities_required, &[Capability::PointerInput]);
+
+    let launch_app = specs.iter().find(|spec| spec.name == "launch-app").unwrap();
+    assert!(launch_app.has_side_effects);
+    assert_eq!(
+        launch_app.capabilities_required,
+        &[Capability::AppLifecycle]
+    );
+
+    let type_spec = specs.iter().find(|spec| spec.name == "type").unwrap();
+    assert!(type_spec.has_side_effects);
+    assert_eq!(
+        type_spec.capabilities_required,
+        &[Capability::KeyboardInput]
+    );
+
     let observe = specs.iter().find(|spec| spec.name == "observe").unwrap();
+    assert!(!observe.has_side_effects);
     assert!(observe.input_schema["properties"]["surface"].is_object());
 
     let snapshot_get = specs
         .iter()
         .find(|spec| spec.name == "snapshot-get")
         .unwrap();
+    assert!(!snapshot_get.has_side_effects);
     assert!(snapshot_get.input_schema["properties"]["snapshot_id"].is_object());
     assert_eq!(snapshot_get.capabilities_required.len(), 0);
+}
+
+#[derive(Default)]
+struct RecordingEventSink {
+    events: Mutex<Vec<AuditEvent>>,
+}
+
+impl RecordingEventSink {
+    fn events(&self) -> Vec<AuditEvent> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl EventSink for RecordingEventSink {
+    async fn emit(&self, event: AuditEvent) -> Result<(), OperatorError> {
+        self.events.lock().unwrap().push(event);
+        Ok(())
+    }
 }

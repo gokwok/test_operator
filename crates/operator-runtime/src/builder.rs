@@ -65,7 +65,7 @@ impl RuntimeBuilder {
 
         let core = Arc::new(core);
         let mut tools = ToolRegistry::new(core.clone());
-        tools.register_all(tools::read_only_registrations())?;
+        tools.register_all(tools::registrations())?;
 
         Ok(Runtime { core, tools })
     }
