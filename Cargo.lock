@@ -298,6 +298,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "operator-mcp"
+version = "0.1.0"
+dependencies = [
+ "operator-runtime",
+ "operator-testkit",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "operator-platform-macos"
 version = "0.1.0"
 dependencies = [

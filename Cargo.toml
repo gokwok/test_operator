@@ -2,6 +2,7 @@
 members = [
     "crates/operator-cli",
     "crates/operator-core",
+    "crates/operator-mcp",
     "crates/operator-platform-macos",
     "crates/operator-runtime",
     "crates/operator-testkit",
@@ -24,4 +25,3 @@ thiserror = "2.0.12"
 tokio = { version = "1.44.2", features = ["fs", "macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1.41"
 uuid = { version = "1.16.0", features = ["serde", "v4"] }
-
