@@ -1,10 +1,11 @@
 use std::fmt::{self, Display, Formatter};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 macro_rules! string_id {
     ($name:ident) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
         pub struct $name(pub String);
 
         impl From<&str> for $name {
@@ -33,7 +34,7 @@ string_id!(SessionId);
 string_id!(TargetId);
 string_id!(ArtifactId);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct WindowId(pub u64);
 
 impl From<u64> for WindowId {

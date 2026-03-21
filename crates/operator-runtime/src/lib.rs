@@ -6,6 +6,8 @@ mod events;
 mod resolver;
 mod runtime;
 pub mod stores;
+mod tool_registry;
+pub mod tools;
 
 pub use builder::RuntimeBuilder;
 pub use config::RuntimeConfig;
@@ -17,3 +19,4 @@ pub use runtime::{Runtime, RuntimeCore};
 pub use stores::{
     FileSessionStore, FileSnapshotStore, NullSessionStore, SessionStore, SnapshotStore,
 };
+pub use tool_registry::{ToolHandler, ToolRegistration, ToolRegistry, ToolSpec};

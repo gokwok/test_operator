@@ -7,6 +7,7 @@ version.workspace = true
 [dependencies]
 operator-core = { path = "../operator-core" }
 async-trait.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

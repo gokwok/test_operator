@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{CapabilitySet, Rect, WindowId};
@@ -20,7 +21,7 @@ pub enum QueryResult {
     Capabilities(CapabilitySet),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AppInfo {
     pub bundle_id: Option<String>,
     pub name: String,
@@ -28,7 +29,7 @@ pub struct AppInfo {
     pub is_running: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WindowInfo {
     pub id: WindowId,
     pub title: Option<String>,
@@ -38,7 +39,7 @@ pub struct WindowInfo {
     pub is_minimized: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FocusInfo {
     pub role: String,
     pub label: Option<String>,
@@ -46,13 +47,13 @@ pub struct FocusInfo {
     pub app_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PermissionsReport {
     pub screen_recording: PermissionStatus,
     pub accessibility: PermissionStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum PermissionStatus {
     Granted,
     Denied,

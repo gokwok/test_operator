@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use operator_core::{OperatorError, PlatformDriver};
 
 use crate::{
-    EventSink, NullEventSink, NullSessionStore, Runtime, RuntimeConfig, RuntimeCore, SessionStore,
-    SnapshotStore, TargetResolver,
+    tools, EventSink, NullEventSink, NullSessionStore, Runtime, RuntimeConfig, RuntimeCore,
+    SessionStore, SnapshotStore, TargetResolver, ToolRegistry,
 };
 
 pub struct RuntimeBuilder {
@@ -63,8 +63,10 @@ impl RuntimeBuilder {
             config: self.config,
         };
 
-        Ok(Runtime {
-            core: Arc::new(core),
-        })
+        let core = Arc::new(core);
+        let mut tools = ToolRegistry::new(core.clone());
+        tools.register_all(tools::read_only_registrations())?;
+
+        Ok(Runtime { core, tools })
     }
 }

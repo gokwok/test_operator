@@ -13,7 +13,7 @@ use tokio::time;
 
 use crate::{
     AuditEvent, AuditEventKind, EventSink, RuntimeConfig, SessionStore, SnapshotStore,
-    TargetResolver,
+    TargetResolver, ToolRegistry,
 };
 
 pub struct RuntimeCore {
@@ -340,10 +340,15 @@ impl RuntimeCore {
 #[derive(Clone)]
 pub struct Runtime {
     pub(crate) core: Arc<RuntimeCore>,
+    pub(crate) tools: ToolRegistry,
 }
 
 impl Runtime {
     pub fn core(&self) -> Arc<RuntimeCore> {
         Arc::clone(&self.core)
+    }
+
+    pub fn tools(&self) -> &ToolRegistry {
+        &self.tools
     }
 }

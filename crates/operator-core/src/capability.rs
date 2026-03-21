@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
+use schemars::JsonSchema;
 use serde::Serialize;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 pub enum Capability {
     Capture,
     InspectTree,
@@ -17,13 +18,13 @@ pub enum Capability {
     Extension(CapabilityId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 pub struct CapabilityId {
     pub namespace: &'static str,
     pub name: &'static str,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct CapabilitySet(HashSet<Capability>);
 
 impl CapabilitySet {
@@ -36,6 +37,10 @@ impl CapabilitySet {
 
     pub fn supports(&self, capability: &Capability) -> bool {
         self.0.contains(capability)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Capability> {
+        self.0.iter()
     }
 }
 
