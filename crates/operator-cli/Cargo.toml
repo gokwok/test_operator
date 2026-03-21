@@ -5,5 +5,10 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+clap = { workspace = true }
 operator-core = { path = "../operator-core" }
+operator-platform-macos = { path = "../operator-platform-macos" }
 operator-runtime = { path = "../operator-runtime" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
