@@ -4,7 +4,7 @@ use operator_core::{
     Action, ActionRequest, AppInfo, ArtifactId, Capability, ElementId, ElementSource, ExecContext,
     FocusInfo, Locator, MouseButton, ObserveRequest, OperatorError, PermissionStatus,
     PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
-    SurfaceKind, UiElement, WindowInfo,
+    SurfaceKind, UiElement, WindowId, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -148,6 +148,7 @@ async fn list_apps_and_windows_queries_forward_to_services() {
             }],
             focus: None,
             launched: Mutex::new(Vec::new()),
+            focused_windows: Mutex::new(Vec::new()),
             last_window_filter: Mutex::new(None),
         },
         StubPermissionReader::granted(),
@@ -243,6 +244,29 @@ async fn launch_app_action_returns_successful_outcome() {
     assert_eq!(
         driver.app_service().launched_apps(),
         vec!["TextEdit".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn focus_window_action_returns_successful_outcome() {
+    let driver = MacosDriver::new(StubAppService::default(), StubPermissionReader::granted());
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::FocusWindow { id: 42.into() },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("focused window 42"));
+    assert_eq!(
+        driver.app_service().focused_windows(),
+        vec![WindowId::from(42)]
     );
 }
 
@@ -449,6 +473,7 @@ struct StubAppService {
     windows: Vec<WindowInfo>,
     focus: Option<FocusInfo>,
     launched: Mutex<Vec<String>>,
+    focused_windows: Mutex<Vec<WindowId>>,
     last_window_filter: Mutex<Option<String>>,
 }
 
@@ -459,6 +484,10 @@ impl StubAppService {
 
     fn last_window_filter(&self) -> Option<String> {
         self.last_window_filter.lock().unwrap().clone()
+    }
+
+    fn focused_windows(&self) -> Vec<WindowId> {
+        self.focused_windows.lock().unwrap().clone()
     }
 }
 
@@ -481,6 +510,11 @@ impl AppService for StubAppService {
             .lock()
             .unwrap()
             .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn focus_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        self.focused_windows.lock().unwrap().push(id);
         Ok(())
     }
 }

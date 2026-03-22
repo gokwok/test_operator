@@ -8,6 +8,7 @@ pub trait AppService: Send + Sync {
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError>;
     fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError>;
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError>;
+    fn focus_window(&self, id: WindowId) -> Result<(), OperatorError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -151,6 +152,10 @@ if (processes.length === 0) {
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         launch_with_open(bundle_id_or_name)
     }
+
+    fn focus_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        focus_window_with_osascript(id)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -261,6 +266,48 @@ fn launch_with_open(_bundle_id_or_name: &str) -> Result<(), OperatorError> {
     Err(OperatorError::Platform(
         "macOS app launch is unavailable on non-macOS hosts".into(),
     ))
+}
+
+#[cfg(target_os = "macos")]
+fn focus_window_with_osascript(id: WindowId) -> Result<(), OperatorError> {
+    let script = format!(
+        r#"
+tell application "System Events"
+  repeat with proc in application processes
+    repeat with win in windows of proc
+      if id of win is {window_id} then
+        set frontmost of proc to true
+        try
+          perform action "AXRaise" of win
+        end try
+        return "{window_id}"
+      end if
+    end repeat
+  end repeat
+end tell
+error "window {window_id} not found"
+"#,
+        window_id = id.0
+    );
+
+    run_osascript(&script).map(|_| ())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn focus_window_with_osascript(_id: WindowId) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS window focus is unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn run_osascript(script: &str) -> Result<String, OperatorError> {
+    let output = Command::new("osascript")
+        .args(["-e", script])
+        .output()
+        .map_err(|error| OperatorError::Platform(format!("failed to invoke osascript: {error}")))?;
+
+    command_output("osascript", output)
 }
 
 #[cfg(target_os = "macos")]

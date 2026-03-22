@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, Locator, MouseButton, OperatorError,
+    Action, ActionOutcome, ActionRequest, Capability, Locator, MouseButton, OperatorError, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -15,12 +15,14 @@ use crate::{
 const CLICK_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 
 pub(crate) fn registrations() -> Vec<ToolRegistration> {
     vec![
         click_registration(),
         type_registration(),
         launch_app_registration(),
+        focus_window_registration(),
     ]
 }
 
@@ -68,6 +70,22 @@ fn launch_app_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { launch_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn focus_window_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "focus-window",
+            description: "Focus a specific window by id.",
+            input_schema: json_schema_for::<FocusWindowToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: FOCUS_WINDOW_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { focus_window(input, core, ctx).await })
         }),
     }
 }
@@ -133,6 +151,27 @@ async fn launch_app(
     serialize_output(outcome)
 }
 
+async fn focus_window(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<FocusWindowToolInput>("focus-window", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::FocusWindow {
+                    id: input.window_id,
+                },
+                locator: None,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 fn parse_input<T: for<'de> Deserialize<'de>>(tool: &str, input: Value) -> Result<T, OperatorError> {
     serde_json::from_value(input).map_err(|error| OperatorError::Tool {
         tool: tool.to_string(),
@@ -179,6 +218,15 @@ struct LaunchAppToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     bundle_id_or_name: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct FocusWindowToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    window_id: WindowId,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

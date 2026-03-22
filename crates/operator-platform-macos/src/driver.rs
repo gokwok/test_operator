@@ -266,9 +266,14 @@ where
             Action::Hotkey { .. } => Err(OperatorError::CapabilityNotSupported(
                 Capability::KeyboardInput,
             )),
-            Action::FocusWindow { .. } => Err(OperatorError::Platform(
-                "focus-window is not implemented for the macOS foundation driver".into(),
-            )),
+            Action::FocusWindow { id } => {
+                self.app_service.focus_window(id)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(format!("focused window {id}")),
+                })
+            }
         }
     }
 }

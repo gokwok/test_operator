@@ -44,6 +44,7 @@ enum Command {
     Click(ClickArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
+    FocusWindow(FocusWindowArgs),
 }
 
 impl Command {
@@ -59,6 +60,7 @@ impl Command {
             Self::Click(args) => &args.common,
             Self::Type(args) => &args.common,
             Self::LaunchApp(args) => &args.common,
+            Self::FocusWindow(args) => &args.common,
         }
     }
 
@@ -76,6 +78,7 @@ impl Command {
             Self::Click(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
+            Self::FocusWindow(args) => args.into_invocation(),
         }
     }
 }
@@ -334,6 +337,26 @@ impl LaunchAppArgs {
         );
         Ok(ToolInvocation {
             tool: "launch-app",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct FocusWindowArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long)]
+    window_id: u64,
+}
+
+impl FocusWindowArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        insert_serialized(&mut input, "window_id", WindowId::from(self.window_id))?;
+        Ok(ToolInvocation {
+            tool: "focus-window",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })

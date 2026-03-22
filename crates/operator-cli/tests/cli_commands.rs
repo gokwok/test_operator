@@ -95,6 +95,32 @@ fn get_focus_command_maps_common_flags_to_tool_input() {
 }
 
 #[tokio::test]
+async fn focus_window_command_maps_window_id_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "focus-window",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--window-id",
+        "42",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "focus-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "window_id": 42
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",

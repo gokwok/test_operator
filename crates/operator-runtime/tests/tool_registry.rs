@@ -301,6 +301,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             Capability::PointerInput,
             Capability::KeyboardInput,
             Capability::AppLifecycle,
+            Capability::WindowManagement,
         ]),
     ));
     driver.push_action_result(Ok(ActionOutcome {
@@ -317,6 +318,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         success: true,
         duration_ms: 9,
         detail: Some("launched".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 5,
+        detail: Some("focused".into()),
     }));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
@@ -365,10 +371,22 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let focused = runtime
+        .tools()
+        .invoke(
+            "focus-window",
+            json!({
+                "target": "local:macos",
+                "window_id": 42
+            }),
+        )
+        .await
+        .unwrap();
 
     assert_eq!(click["outcome"]["detail"], json!("clicked"));
     assert_eq!(typed["outcome"]["detail"], json!("typed"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
+    assert_eq!(focused["outcome"]["detail"], json!("focused"));
 
     let calls = driver.action_calls().await;
     assert_eq!(
@@ -413,6 +431,17 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     timeout_ms: Some(10_000),
                 },
             ),
+            (
+                ActionRequest {
+                    action: Action::FocusWindow { id: 42.into() },
+                    locator: None,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
         ]
     );
 }
@@ -432,6 +461,7 @@ async fn action_tools_export_stable_specs() {
         vec![
             "capabilities",
             "click",
+            "focus-window",
             "get-focus",
             "launch-app",
             "list-apps",
@@ -457,6 +487,16 @@ async fn action_tools_export_stable_specs() {
     assert_eq!(
         launch_app.capabilities_required,
         &[Capability::AppLifecycle]
+    );
+
+    let focus_window = specs
+        .iter()
+        .find(|spec| spec.name == "focus-window")
+        .unwrap();
+    assert!(focus_window.has_side_effects);
+    assert_eq!(
+        focus_window.capabilities_required,
+        &[Capability::WindowManagement]
     );
 
     let type_spec = specs.iter().find(|spec| spec.name == "type").unwrap();

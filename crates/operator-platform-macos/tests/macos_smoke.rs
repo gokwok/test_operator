@@ -212,6 +212,127 @@ async fn list_windows_and_get_focus_with_system_driver() {
     drop(cleanup);
 }
 
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn focus_window_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS focus-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare first TextEdit smoke target: {error}");
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS focus-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare second TextEdit smoke target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS focus-window smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let windows = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS focus-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query failed: {error}"),
+    };
+
+    let QueryResult::Windows(windows) = windows else {
+        panic!("expected windows query result");
+    };
+    assert!(
+        windows.len() >= 2,
+        "expected at least two TextEdit windows for focus-window smoke test: {windows:?}"
+    );
+    let target_window = windows
+        .iter()
+        .find(|window| !window.is_focused)
+        .unwrap_or(&windows[0]);
+
+    match driver
+        .act(
+            ActionRequest {
+                action: Action::FocusWindow {
+                    id: target_window.id,
+                },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS focus-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("focus-window action failed: {error}"),
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let refreshed = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!(
+                "Skipping macOS focus-window smoke verification in sandboxed session: {error}"
+            );
+            return;
+        }
+        Err(error) => panic!("window query after focus-window failed: {error}"),
+    };
+
+    let QueryResult::Windows(refreshed) = refreshed else {
+        panic!("expected windows query result");
+    };
+    let focused = refreshed
+        .iter()
+        .find(|window| window.id == target_window.id && window.is_focused);
+    assert!(
+        focused.is_some(),
+        "expected target window to become focused after focus-window: {refreshed:?}"
+    );
+
+    drop(cleanup);
+}
+
 fn exec_context() -> ExecContext {
     ExecContext {
         target: "local:macos".into(),
@@ -241,9 +362,9 @@ impl Drop for CleanupTextEditDocument {
         let _ = run_osascript(
             r#"
 tell application id "com.apple.TextEdit"
-  if (count of documents) > 0 then
+  repeat while (count of documents) > 0
     close front document saving no
-  end if
+  end repeat
 end tell
 "#,
         );
