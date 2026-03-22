@@ -121,6 +121,35 @@ async fn focus_window_command_maps_window_id_to_tool_input() {
 }
 
 #[tokio::test]
+async fn scroll_command_maps_deltas_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "scroll",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--delta-x",
+        "0",
+        "--delta-y",
+        "-120",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "scroll");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "delta_x": 0.0,
+            "delta_y": -120.0
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",

@@ -316,6 +316,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 14,
+        detail: Some("scrolled".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 9,
         detail: Some("launched".into()),
     }));
@@ -360,6 +365,18 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let scrolled = runtime
+        .tools()
+        .invoke(
+            "scroll",
+            json!({
+                "target": "local:macos",
+                "delta_x": 0.0,
+                "delta_y": -120.0
+            }),
+        )
+        .await
+        .unwrap();
     let launched = runtime
         .tools()
         .invoke(
@@ -385,6 +402,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
 
     assert_eq!(click["outcome"]["detail"], json!("clicked"));
     assert_eq!(typed["outcome"]["detail"], json!("typed"));
+    assert_eq!(scrolled["outcome"]["detail"], json!("scrolled"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
     assert_eq!(focused["outcome"]["detail"], json!("focused"));
 
@@ -411,6 +429,20 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         text: "hello world".into(),
                     },
                     locator: Some(Locator::Text("Search".into())),
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Scroll {
+                        delta_x: 0.0,
+                        delta_y: -120.0,
+                    },
+                    locator: None,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -468,6 +500,7 @@ async fn action_tools_export_stable_specs() {
             "list-windows",
             "observe",
             "permissions-status",
+            "scroll",
             "snapshot-get",
             "type",
         ]
@@ -488,6 +521,10 @@ async fn action_tools_export_stable_specs() {
         launch_app.capabilities_required,
         &[Capability::AppLifecycle]
     );
+
+    let scroll = specs.iter().find(|spec| spec.name == "scroll").unwrap();
+    assert!(scroll.has_side_effects);
+    assert_eq!(scroll.capabilities_required, &[Capability::PointerInput]);
 
     let focus_window = specs
         .iter()

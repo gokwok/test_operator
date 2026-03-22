@@ -2,6 +2,7 @@ use operator_core::{MouseButton, OperatorError, Point};
 
 pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError>;
+    fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError>;
     fn type_text(&self, text: &str) -> Result<(), OperatorError>;
 }
 
@@ -11,6 +12,10 @@ pub struct SystemInputSynthesizer;
 impl InputSynthesizer for SystemInputSynthesizer {
     fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError> {
         platform::click(point, button)
+    }
+
+    fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
+        platform::scroll(delta_x, delta_y)
     }
 
     fn type_text(&self, text: &str) -> Result<(), OperatorError> {
@@ -33,6 +38,7 @@ mod platform {
     const KCG_EVENT_MOUSE_MOVED: u32 = 5;
     const KCG_EVENT_OTHER_MOUSE_DOWN: u32 = 25;
     const KCG_EVENT_OTHER_MOUSE_UP: u32 = 26;
+    const KCG_SCROLL_EVENT_UNIT_LINE: u32 = 1;
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct CGPoint {
@@ -56,6 +62,12 @@ mod platform {
             source: CGEventSourceRef,
             virtual_key: u16,
             key_down: bool,
+        ) -> CGEventRef;
+        fn CGEventCreateScrollWheelEvent(
+            source: CGEventSourceRef,
+            units: u32,
+            wheel_count: u32,
+            ...
         ) -> CGEventRef;
         fn CGEventKeyboardSetUnicodeString(
             event: CGEventRef,
@@ -136,6 +148,25 @@ mod platform {
             Ok(Self(event))
         }
 
+        fn scroll(source: &EventSource, delta_x: f64, delta_y: f64) -> Result<Self, OperatorError> {
+            let event = unsafe {
+                CGEventCreateScrollWheelEvent(
+                    source.0,
+                    KCG_SCROLL_EVENT_UNIT_LINE,
+                    2,
+                    scroll_delta(delta_y),
+                    scroll_delta(delta_x),
+                )
+            };
+            if event.is_null() {
+                return Err(OperatorError::Platform(
+                    "failed to create macOS scroll event".into(),
+                ));
+            }
+
+            Ok(Self(event))
+        }
+
         fn post(&self) {
             unsafe { CGEventPost(KCG_HID_EVENT_TAP, self.0) };
         }
@@ -152,6 +183,12 @@ mod platform {
         thread::sleep(Duration::from_millis(10));
         Event::mouse(point, button, mouse_down_event(button))?.post();
         Event::mouse(point, button, mouse_up_event(button))?.post();
+        Ok(())
+    }
+
+    pub fn scroll(delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
+        let source = EventSource::new()?;
+        Event::scroll(&source, delta_x, delta_y)?.post();
         Ok(())
     }
 
@@ -189,6 +226,12 @@ mod platform {
             MouseButton::Middle => KCG_EVENT_OTHER_MOUSE_UP,
         }
     }
+
+    fn scroll_delta(delta: f64) -> i32 {
+        delta
+            .round()
+            .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -196,6 +239,12 @@ mod platform {
     use operator_core::{MouseButton, OperatorError, Point};
 
     pub fn click(_point: Point, _button: MouseButton) -> Result<(), OperatorError> {
+        Err(OperatorError::Platform(
+            "macOS input synthesis is unavailable on non-macOS hosts".into(),
+        ))
+    }
+
+    pub fn scroll(_delta_x: f64, _delta_y: f64) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

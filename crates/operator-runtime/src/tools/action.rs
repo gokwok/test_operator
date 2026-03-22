@@ -13,6 +13,7 @@ use crate::{
 };
 
 const CLICK_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
+const SCROLL_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
@@ -20,6 +21,7 @@ const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement]
 pub(crate) fn registrations() -> Vec<ToolRegistration> {
     vec![
         click_registration(),
+        scroll_registration(),
         type_registration(),
         launch_app_registration(),
         focus_window_registration(),
@@ -54,6 +56,22 @@ fn type_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { r#type(input, core, ctx).await })
+        }),
+    }
+}
+
+fn scroll_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "scroll",
+            description: "Scroll by horizontal and vertical wheel deltas.",
+            input_schema: json_schema_for::<ScrollToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: SCROLL_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { scroll(input, core, ctx).await })
         }),
     }
 }
@@ -122,6 +140,28 @@ async fn r#type(
             ActionRequest {
                 action: Action::Type { text: input.text },
                 locator: input.locator,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn scroll(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<ScrollToolInput>("scroll", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::Scroll {
+                    delta_x: input.delta_x,
+                    delta_y: input.delta_y,
+                },
+                locator: None,
             },
             ctx,
         )
@@ -209,6 +249,16 @@ struct TypeToolInput {
     exec: ToolExecInput,
     text: String,
     locator: Option<Locator>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct ScrollToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    delta_x: f64,
+    delta_y: f64,
 }
 
 #[allow(dead_code)]

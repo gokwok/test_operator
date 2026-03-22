@@ -260,9 +260,13 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.type_text(req.locator, &text, &permissions)
             }
-            Action::Scroll { .. } | Action::Drag { .. } => Err(
-                OperatorError::CapabilityNotSupported(Capability::PointerInput),
-            ),
+            Action::Scroll { delta_x, delta_y } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.scroll(delta_x, delta_y, &permissions)
+            }
+            Action::Drag { .. } => Err(OperatorError::CapabilityNotSupported(
+                Capability::PointerInput,
+            )),
             Action::Hotkey { .. } => Err(OperatorError::CapabilityNotSupported(
                 Capability::KeyboardInput,
             )),
@@ -321,6 +325,21 @@ where
             success: true,
             duration_ms: 0,
             detail: Some(action_detail("typed text", warning.as_deref())),
+        })
+    }
+
+    fn scroll(
+        &self,
+        delta_x: f64,
+        delta_y: f64,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        self.input_synthesizer.scroll(delta_x, delta_y)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some("scrolled".into()),
         })
     }
 

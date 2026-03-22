@@ -42,6 +42,7 @@ enum Command {
     PermissionsStatus(CommonArgs),
     Capabilities(CommonArgs),
     Click(ClickArgs),
+    Scroll(ScrollArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
     FocusWindow(FocusWindowArgs),
@@ -58,6 +59,7 @@ impl Command {
             Self::PermissionsStatus(args) => args,
             Self::Capabilities(args) => args,
             Self::Click(args) => &args.common,
+            Self::Scroll(args) => &args.common,
             Self::Type(args) => &args.common,
             Self::LaunchApp(args) => &args.common,
             Self::FocusWindow(args) => &args.common,
@@ -76,6 +78,7 @@ impl Command {
             }
             Self::Capabilities(common) => invoke_without_specific_input("capabilities", common),
             Self::Click(args) => args.into_invocation(),
+            Self::Scroll(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
             Self::FocusWindow(args) => args.into_invocation(),
@@ -289,6 +292,29 @@ impl ClickArgs {
         }
         Ok(ToolInvocation {
             tool: "click",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct ScrollArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long, allow_hyphen_values = true)]
+    delta_x: f64,
+    #[arg(long, allow_hyphen_values = true)]
+    delta_y: f64,
+}
+
+impl ScrollArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        input.insert("delta_x".into(), Value::from(self.delta_x));
+        input.insert("delta_y".into(), Value::from(self.delta_y));
+        Ok(ToolInvocation {
+            tool: "scroll",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })

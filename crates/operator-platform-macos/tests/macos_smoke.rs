@@ -377,6 +377,11 @@ fn prepare_textedit_document() -> Result<(), OperatorError> {
 tell application id "com.apple.TextEdit"
   launch
   activate
+end tell
+
+delay 0.5
+
+tell application id "com.apple.TextEdit"
   make new document
 end tell
 "#,
