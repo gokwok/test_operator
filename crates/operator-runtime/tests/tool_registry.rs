@@ -2,9 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet, ExecContext, Locator,
-    MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
-    QueryRequest, QueryResult, Surface, SurfaceKind, WindowInfo,
+    Action, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet, ExecContext,
+    FocusInfo, Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError,
+    PermissionStatus, PermissionsReport, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
+    WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
@@ -196,6 +197,54 @@ async fn read_only_query_tools_forward_runtime_results() {
 }
 
 #[tokio::test]
+async fn get_focus_query_tool_forwards_runtime_results() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::InspectTree]),
+    ));
+    driver.push_query_result(Ok(QueryResult::Focus(Some(FocusInfo {
+        role: "AXTextField".into(),
+        label: Some("Search".into()),
+        bounds: Some(Rect {
+            x: 40.0,
+            y: 60.0,
+            width: 280.0,
+            height: 32.0,
+        }),
+        app_name: Some("Safari".into()),
+    }))));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let focus = runtime
+        .tools()
+        .invoke("get-focus", json!({ "target": "local:macos" }))
+        .await
+        .unwrap();
+
+    assert_eq!(focus["focus"]["role"], json!("AXTextField"));
+    assert_eq!(focus["focus"]["app_name"], json!("Safari"));
+
+    let calls = driver.query_calls().await;
+    assert_eq!(
+        calls,
+        vec![(
+            QueryRequest::GetFocus,
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
 async fn action_tools_are_blocked_when_side_effects_are_disabled() {
     let events = Arc::new(RecordingEventSink::default());
     let driver = Arc::new(MockPlatformDriver::new(
@@ -383,6 +432,7 @@ async fn action_tools_export_stable_specs() {
         vec![
             "capabilities",
             "click",
+            "get-focus",
             "launch-app",
             "list-apps",
             "list-windows",
@@ -419,6 +469,10 @@ async fn action_tools_export_stable_specs() {
     let observe = specs.iter().find(|spec| spec.name == "observe").unwrap();
     assert!(!observe.has_side_effects);
     assert!(observe.input_schema["properties"]["surface"].is_object());
+
+    let get_focus = specs.iter().find(|spec| spec.name == "get-focus").unwrap();
+    assert!(!get_focus.has_side_effects);
+    assert_eq!(get_focus.capabilities_required, &[Capability::InspectTree]);
 
     let snapshot_get = specs
         .iter()

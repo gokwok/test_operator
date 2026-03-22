@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use operator_core::{
-    AppInfo, Capability, OperatorError, PermissionsReport, QueryRequest, QueryResult, WindowInfo,
+    AppInfo, Capability, FocusInfo, OperatorError, PermissionsReport, QueryRequest, QueryResult,
+    WindowInfo,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ use crate::{
 
 const LIST_APPS_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const LIST_WINDOWS_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const GET_FOCUS_CAPABILITIES: &[Capability] = &[Capability::InspectTree];
 const PERMISSIONS_STATUS_CAPABILITIES: &[Capability] = &[Capability::Permissions];
 
 pub(crate) fn list_apps_registration() -> ToolRegistration {
@@ -60,6 +62,22 @@ pub(crate) fn permissions_status_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { permissions_status(input, core, ctx).await })
+        }),
+    }
+}
+
+pub(crate) fn get_focus_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "get-focus",
+            description: "Read the currently focused UI element for the selected target.",
+            input_schema: json_schema_for::<GetFocusToolInput>(),
+            output_schema: json_schema_for::<GetFocusToolOutput>(),
+            capabilities_required: GET_FOCUS_CAPABILITIES,
+            has_side_effects: false,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { get_focus(input, core, ctx).await })
         }),
     }
 }
@@ -125,6 +143,20 @@ async fn permissions_status(
         "permissions-status",
         PermissionsStatusToolOutput { permissions },
     )
+}
+
+async fn get_focus(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let _ = parse_input::<GetFocusToolInput>("get-focus", input)?;
+    let result = core.query(QueryRequest::GetFocus, ctx).await?;
+    let QueryResult::Focus(focus) = result else {
+        return unexpected_variant("get-focus", "focus");
+    };
+
+    serialize_output("get-focus", GetFocusToolOutput { focus })
 }
 
 async fn capabilities(
@@ -219,6 +251,19 @@ struct PermissionsStatusToolInput {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 struct PermissionsStatusToolOutput {
     permissions: PermissionsReport,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct GetFocusToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+struct GetFocusToolOutput {
+    focus: Option<FocusInfo>,
 }
 
 #[allow(dead_code)]

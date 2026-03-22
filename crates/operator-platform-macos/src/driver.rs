@@ -234,9 +234,7 @@ where
                 self.permission_reader.current_permissions()?,
             )),
             QueryRequest::Capabilities => Ok(QueryResult::Capabilities(self.capabilities())),
-            QueryRequest::GetFocus => Err(OperatorError::CapabilityNotSupported(
-                Capability::InspectTree,
-            )),
+            QueryRequest::GetFocus => Ok(QueryResult::Focus(self.app_service.get_focus()?)),
         }
     }
 

@@ -36,6 +36,7 @@ pub(crate) struct ToolInvocation {
 enum Command {
     Observe(ObserveArgs),
     SnapshotGet(SnapshotGetArgs),
+    GetFocus(CommonArgs),
     ListApps(CommonArgs),
     ListWindows(ListWindowsArgs),
     PermissionsStatus(CommonArgs),
@@ -50,6 +51,7 @@ impl Command {
         match self {
             Self::Observe(args) => &args.common,
             Self::SnapshotGet(args) => &args.common,
+            Self::GetFocus(args) => args,
             Self::ListApps(args) => args,
             Self::ListWindows(args) => &args.common,
             Self::PermissionsStatus(args) => args,
@@ -64,6 +66,7 @@ impl Command {
         match self {
             Self::Observe(args) => args.into_invocation(),
             Self::SnapshotGet(args) => args.into_invocation(),
+            Self::GetFocus(common) => invoke_without_specific_input("get-focus", common),
             Self::ListApps(common) => invoke_without_specific_input("list-apps", common),
             Self::ListWindows(args) => args.into_invocation(),
             Self::PermissionsStatus(common) => {

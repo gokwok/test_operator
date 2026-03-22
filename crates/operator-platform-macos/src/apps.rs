@@ -1,11 +1,12 @@
 use std::process::Command;
 
-use operator_core::{AppInfo, OperatorError, Rect, WindowId, WindowInfo};
+use operator_core::{AppInfo, FocusInfo, OperatorError, Rect, WindowId, WindowInfo};
 use serde::Deserialize;
 
 pub trait AppService: Send + Sync {
     fn list_apps(&self) -> Result<Vec<AppInfo>, OperatorError>;
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError>;
+    fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError>;
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError>;
 }
 
@@ -18,7 +19,9 @@ impl AppService for SystemAppService {
 const systemEvents = Application("System Events");
 const apps = systemEvents.applicationProcesses().map(function(process) {
   return {
-    bundle_id: null,
+    bundle_id: typeof process.bundleIdentifier === "function"
+      ? process.bundleIdentifier()
+      : null,
     name: process.name(),
     pid: process.unixId(),
     is_running: true
@@ -39,6 +42,27 @@ JSON.stringify(apps);
             r#"
 const filter = {app_literal};
 const systemEvents = Application("System Events");
+function safeAttr(target, name) {{
+  try {{
+    return target.attributes.byName(name).value();
+  }} catch (error) {{
+    return null;
+  }}
+}}
+function rectForElement(element) {{
+  try {{
+    const position = element.position();
+    const size = element.size();
+    return {{
+      x: Number(position[0]),
+      y: Number(position[1]),
+      width: Number(size[0]),
+      height: Number(size[1])
+    }};
+  }} catch (error) {{
+    return null;
+  }}
+}}
 const processes = filter
   ? systemEvents.applicationProcesses.whose({{name: filter}})()
   : systemEvents.applicationProcesses();
@@ -47,13 +71,15 @@ for (const process of processes) {{
   const appName = process.name();
   const isFrontmost = process.frontmost();
   for (const window of process.windows()) {{
+    const isMain = safeAttr(window, "AXMain");
+    const isFocused = safeAttr(window, "AXFocused");
     windows.push({{
       id: Number(window.id()),
       title: window.name() || null,
       app_name: appName,
-      bounds: null,
-      is_focused: Boolean(isFrontmost),
-      is_minimized: false
+      bounds: rectForElement(window),
+      is_focused: Boolean(isFrontmost && (isMain || isFocused)),
+      is_minimized: Boolean(safeAttr(window, "AXMinimized"))
     }});
   }}
 }}
@@ -63,6 +89,63 @@ JSON.stringify(windows);
 
         let windows: Vec<WindowRecord> = parse_jxa_json(run_jxa(&script)?)?;
         Ok(windows.into_iter().map(WindowInfo::from).collect())
+    }
+
+    fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError> {
+        let script = r#"
+const systemEvents = Application("System Events");
+function safeAttr(target, name) {
+  try {
+    return target.attributes.byName(name).value();
+  } catch (error) {
+    return null;
+  }
+}
+function safeCall(target, method) {
+  try {
+    return typeof target[method] === "function" ? target[method]() : null;
+  } catch (error) {
+    return null;
+  }
+}
+function rectForElement(element) {
+  try {
+    const position = element.position();
+    const size = element.size();
+    return {
+      x: Number(position[0]),
+      y: Number(position[1]),
+      width: Number(size[0]),
+      height: Number(size[1])
+    };
+  } catch (error) {
+    return null;
+  }
+}
+const processes = systemEvents.applicationProcesses.whose({frontmost: true})();
+if (processes.length === 0) {
+  JSON.stringify(null);
+} else {
+  const process = processes[0];
+  const focused = safeAttr(process, "AXFocusedUIElement");
+  if (!focused) {
+    JSON.stringify(null);
+  } else {
+    JSON.stringify({
+      role: safeCall(focused, "role") || safeAttr(focused, "AXRole") || "AXUnknown",
+      label: safeCall(focused, "description")
+        || safeCall(focused, "name")
+        || safeCall(focused, "title")
+        || null,
+      bounds: rectForElement(focused),
+      app_name: process.name() || null
+    });
+  }
+}
+"#;
+
+        let focus: Option<FocusRecord> = parse_jxa_json(run_jxa(script)?)?;
+        Ok(focus.map(FocusInfo::from))
     }
 
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
@@ -108,6 +191,25 @@ impl From<WindowRecord> for WindowInfo {
             bounds: value.bounds,
             is_focused: value.is_focused,
             is_minimized: value.is_minimized,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct FocusRecord {
+    role: String,
+    label: Option<String>,
+    bounds: Option<Rect>,
+    app_name: Option<String>,
+}
+
+impl From<FocusRecord> for FocusInfo {
+    fn from(value: FocusRecord) -> Self {
+        Self {
+            role: value.role,
+            label: value.label,
+            bounds: value.bounds,
+            app_name: value.app_name,
         }
     }
 }

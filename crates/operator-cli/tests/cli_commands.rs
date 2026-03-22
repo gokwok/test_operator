@@ -71,6 +71,29 @@ fn click_command_maps_snapshot_flags_to_tool_input() {
     );
 }
 
+#[test]
+fn get_focus_command_maps_common_flags_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "get-focus",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "get-focus");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250
+        })
+    );
+}
+
 #[tokio::test]
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([

@@ -14,6 +14,7 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
     let mut registrations = vec![
         observe::registration(),
         snapshot_get::registration(),
+        query::get_focus_registration(),
         query::list_apps_registration(),
         query::list_windows_registration(),
         query::permissions_status_registration(),

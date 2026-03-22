@@ -2,9 +2,9 @@ use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
     Action, ActionRequest, AppInfo, ArtifactId, Capability, ElementId, ElementSource, ExecContext,
-    Locator, MouseButton, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport,
-    PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, UiElement,
-    WindowInfo,
+    FocusInfo, Locator, MouseButton, ObserveRequest, OperatorError, PermissionStatus,
+    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
+    SurfaceKind, UiElement, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -146,6 +146,7 @@ async fn list_apps_and_windows_queries_forward_to_services() {
                 is_focused: true,
                 is_minimized: false,
             }],
+            focus: None,
             launched: Mutex::new(Vec::new()),
             last_window_filter: Mutex::new(None),
         },
@@ -190,6 +191,35 @@ async fn list_apps_and_windows_queries_forward_to_services() {
         driver.app_service().last_window_filter(),
         Some("TextEdit".to_string())
     );
+}
+
+#[tokio::test]
+async fn get_focus_query_returns_focus_info() {
+    let focus = FocusInfo {
+        role: "AXTextField".into(),
+        label: Some("Search".into()),
+        bounds: Some(Rect {
+            x: 120.0,
+            y: 80.0,
+            width: 300.0,
+            height: 28.0,
+        }),
+        app_name: Some("Safari".into()),
+    };
+    let driver = MacosDriver::new(
+        StubAppService {
+            focus: Some(focus.clone()),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let result = driver
+        .query(QueryRequest::GetFocus, &exec_context())
+        .await
+        .unwrap();
+
+    assert_eq!(result, QueryResult::Focus(Some(focus)));
 }
 
 #[tokio::test]
@@ -417,6 +447,7 @@ fn exec_context() -> ExecContext {
 struct StubAppService {
     apps: Vec<AppInfo>,
     windows: Vec<WindowInfo>,
+    focus: Option<FocusInfo>,
     launched: Mutex<Vec<String>>,
     last_window_filter: Mutex<Option<String>>,
 }
@@ -439,6 +470,10 @@ impl AppService for StubAppService {
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError> {
         *self.last_window_filter.lock().unwrap() = app.map(str::to_string);
         Ok(self.windows.clone())
+    }
+
+    fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError> {
+        Ok(self.focus.clone())
     }
 
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
