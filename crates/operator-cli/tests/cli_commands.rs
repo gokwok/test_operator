@@ -150,6 +150,49 @@ async fn scroll_command_maps_deltas_to_tool_input() {
 }
 
 #[tokio::test]
+async fn drag_command_maps_from_and_to_locators_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "drag",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--from-snapshot",
+        "s_123",
+        "--from-element",
+        "e_45",
+        "--to-x",
+        "640",
+        "--to-y",
+        "480",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "drag");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "from": {
+                "SnapshotElement": {
+                    "snapshot": "s_123",
+                    "element": "e_45"
+                }
+            },
+            "to": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",

@@ -42,6 +42,7 @@ enum Command {
     PermissionsStatus(CommonArgs),
     Capabilities(CommonArgs),
     Click(ClickArgs),
+    Drag(DragArgs),
     Scroll(ScrollArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
@@ -59,6 +60,7 @@ impl Command {
             Self::PermissionsStatus(args) => args,
             Self::Capabilities(args) => args,
             Self::Click(args) => &args.common,
+            Self::Drag(args) => &args.common,
             Self::Scroll(args) => &args.common,
             Self::Type(args) => &args.common,
             Self::LaunchApp(args) => &args.common,
@@ -78,6 +80,7 @@ impl Command {
             }
             Self::Capabilities(common) => invoke_without_specific_input("capabilities", common),
             Self::Click(args) => args.into_invocation(),
+            Self::Drag(args) => args.into_invocation(),
             Self::Scroll(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
@@ -299,6 +302,29 @@ impl ClickArgs {
 }
 
 #[derive(Debug, Clone, Args)]
+struct DragArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    from: DragFromLocatorArgs,
+    #[command(flatten)]
+    to: DragToLocatorArgs,
+}
+
+impl DragArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        insert_serialized(&mut input, "from", self.from.into_locator()?)?;
+        insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        Ok(ToolInvocation {
+            tool: "drag",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
 struct ScrollArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -415,6 +441,72 @@ impl ButtonArg {
 }
 
 #[derive(Debug, Clone, Args, Default)]
+struct DragFromLocatorArgs {
+    #[arg(long = "from-snapshot")]
+    from_snapshot: Option<String>,
+    #[arg(long = "from-element")]
+    from_element: Option<String>,
+    #[arg(long = "from-text")]
+    from_text: Option<String>,
+    #[arg(long = "from-role")]
+    from_role: Option<String>,
+    #[arg(long = "from-index", default_value_t = 0)]
+    from_index: usize,
+    #[arg(long = "from-x", allow_hyphen_values = true)]
+    from_x: Option<f64>,
+    #[arg(long = "from-y", allow_hyphen_values = true)]
+    from_y: Option<f64>,
+}
+
+impl DragFromLocatorArgs {
+    fn into_locator(self) -> Result<Locator, String> {
+        RawLocatorArgs {
+            snapshot: self.from_snapshot,
+            element: self.from_element,
+            text: self.from_text,
+            role: self.from_role,
+            index: self.from_index,
+            x: self.from_x,
+            y: self.from_y,
+        }
+        .into_required_locator("from")
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct DragToLocatorArgs {
+    #[arg(long = "to-snapshot")]
+    to_snapshot: Option<String>,
+    #[arg(long = "to-element")]
+    to_element: Option<String>,
+    #[arg(long = "to-text")]
+    to_text: Option<String>,
+    #[arg(long = "to-role")]
+    to_role: Option<String>,
+    #[arg(long = "to-index", default_value_t = 0)]
+    to_index: usize,
+    #[arg(long = "to-x", allow_hyphen_values = true)]
+    to_x: Option<f64>,
+    #[arg(long = "to-y", allow_hyphen_values = true)]
+    to_y: Option<f64>,
+}
+
+impl DragToLocatorArgs {
+    fn into_locator(self) -> Result<Locator, String> {
+        RawLocatorArgs {
+            snapshot: self.to_snapshot,
+            element: self.to_element,
+            text: self.to_text,
+            role: self.to_role,
+            index: self.to_index,
+            x: self.to_x,
+            y: self.to_y,
+        }
+        .into_required_locator("to")
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
 struct ClickLocatorArgs {
     #[arg(long)]
     snapshot: Option<String>,
@@ -492,6 +584,11 @@ struct RawLocatorArgs {
 }
 
 impl RawLocatorArgs {
+    fn into_required_locator(self, name: &str) -> Result<Locator, String> {
+        self.into_locator()?
+            .ok_or_else(|| format!("--{name}-* locator is required"))
+    }
+
     fn into_locator(self) -> Result<Option<Locator>, String> {
         let snapshot_variant = self.snapshot.is_some() || self.element.is_some();
         let text_variant = self.text.is_some();

@@ -5,10 +5,10 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
-    Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
-    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
-    SurfaceKind,
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ElementId, ElementSource,
+    ExecContext, HealthStatus, Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError,
+    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
+    Surface, SurfaceKind, UiElement,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
@@ -202,6 +202,96 @@ async fn runtime_rejects_drag_between_different_snapshots() {
     }
 
     assert!(driver.action_calls().await.is_empty());
+}
+
+#[tokio::test]
+async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-drag");
+    snapshot.elements.get_mut(&"el-1".into()).unwrap().bounds = Some(Rect {
+        x: 40.0,
+        y: 20.0,
+        width: 60.0,
+        height: 30.0,
+    });
+    snapshot.elements.insert(
+        ElementId("el-2".into()),
+        UiElement {
+            id: ElementId("el-2".into()),
+            role: "AXButton".into(),
+            label: Some("drop target".into()),
+            value: None,
+            bounds: Some(Rect {
+                x: 140.0,
+                y: 80.0,
+                width: 100.0,
+                height: 40.0,
+            }),
+            enabled: Some(true),
+            children: vec![],
+            confidence: Some(1.0),
+            source: ElementSource::Native,
+        },
+    );
+    snapshot.root_ids.push(ElementId("el-2".into()));
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 11,
+        detail: Some("dragged".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Drag {
+                    from: Locator::SnapshotElement {
+                        snapshot: snapshot.id.clone(),
+                        element: "el-1".into(),
+                    },
+                    to: Locator::SnapshotElement {
+                        snapshot: snapshot.id.clone(),
+                        element: "el-2".into(),
+                    },
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Drag {
+                from: Locator::Coords(Point { x: 70.0, y: 35.0 }),
+                to: Locator::Coords(Point { x: 190.0, y: 100.0 }),
+            },
+            locator: None,
+        }
+    );
 }
 
 #[tokio::test]

@@ -321,6 +321,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 16,
+        detail: Some("dragged".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 9,
         detail: Some("launched".into()),
     }));
@@ -377,6 +382,28 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let dragged = runtime
+        .tools()
+        .invoke(
+            "drag",
+            json!({
+                "target": "local:macos",
+                "from": {
+                    "Coords": {
+                        "x": 10.0,
+                        "y": 20.0
+                    }
+                },
+                "to": {
+                    "Coords": {
+                        "x": 30.0,
+                        "y": 60.0
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
     let launched = runtime
         .tools()
         .invoke(
@@ -403,6 +430,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(click["outcome"]["detail"], json!("clicked"));
     assert_eq!(typed["outcome"]["detail"], json!("typed"));
     assert_eq!(scrolled["outcome"]["detail"], json!("scrolled"));
+    assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
     assert_eq!(focused["outcome"]["detail"], json!("focused"));
 
@@ -441,6 +469,20 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     action: Action::Scroll {
                         delta_x: 0.0,
                         delta_y: -120.0,
+                    },
+                    locator: None,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Drag {
+                        from: Locator::Coords(operator_core::Point { x: 10.0, y: 20.0 }),
+                        to: Locator::Coords(operator_core::Point { x: 30.0, y: 60.0 }),
                     },
                     locator: None,
                 },
@@ -493,6 +535,7 @@ async fn action_tools_export_stable_specs() {
         vec![
             "capabilities",
             "click",
+            "drag",
             "focus-window",
             "get-focus",
             "launch-app",
@@ -514,6 +557,10 @@ async fn action_tools_export_stable_specs() {
     let click = specs.iter().find(|spec| spec.name == "click").unwrap();
     assert!(click.has_side_effects);
     assert_eq!(click.capabilities_required, &[Capability::PointerInput]);
+
+    let drag = specs.iter().find(|spec| spec.name == "drag").unwrap();
+    assert!(drag.has_side_effects);
+    assert_eq!(drag.capabilities_required, &[Capability::PointerInput]);
 
     let launch_app = specs.iter().find(|spec| spec.name == "launch-app").unwrap();
     assert!(launch_app.has_side_effects);

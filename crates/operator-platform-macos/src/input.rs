@@ -2,6 +2,7 @@ use operator_core::{MouseButton, OperatorError, Point};
 
 pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError>;
+    fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError>;
     fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError>;
     fn type_text(&self, text: &str) -> Result<(), OperatorError>;
 }
@@ -12,6 +13,10 @@ pub struct SystemInputSynthesizer;
 impl InputSynthesizer for SystemInputSynthesizer {
     fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError> {
         platform::click(point, button)
+    }
+
+    fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError> {
+        platform::drag(from, to)
     }
 
     fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
@@ -33,6 +38,7 @@ mod platform {
     const KCG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: u32 = 0;
     const KCG_EVENT_LEFT_MOUSE_DOWN: u32 = 1;
     const KCG_EVENT_LEFT_MOUSE_UP: u32 = 2;
+    const KCG_EVENT_LEFT_MOUSE_DRAGGED: u32 = 6;
     const KCG_EVENT_RIGHT_MOUSE_DOWN: u32 = 3;
     const KCG_EVENT_RIGHT_MOUSE_UP: u32 = 4;
     const KCG_EVENT_MOUSE_MOVED: u32 = 5;
@@ -186,6 +192,17 @@ mod platform {
         Ok(())
     }
 
+    pub fn drag(from: Point, to: Point) -> Result<(), OperatorError> {
+        Event::mouse(from, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
+        thread::sleep(Duration::from_millis(10));
+        Event::mouse(from, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_DOWN)?.post();
+        thread::sleep(Duration::from_millis(10));
+        Event::mouse(to, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_DRAGGED)?.post();
+        thread::sleep(Duration::from_millis(10));
+        Event::mouse(to, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_UP)?.post();
+        Ok(())
+    }
+
     pub fn scroll(delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
         let source = EventSource::new()?;
         Event::scroll(&source, delta_x, delta_y)?.post();
@@ -239,6 +256,12 @@ mod platform {
     use operator_core::{MouseButton, OperatorError, Point};
 
     pub fn click(_point: Point, _button: MouseButton) -> Result<(), OperatorError> {
+        Err(OperatorError::Platform(
+            "macOS input synthesis is unavailable on non-macOS hosts".into(),
+        ))
+    }
+
+    pub fn drag(_from: Point, _to: Point) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

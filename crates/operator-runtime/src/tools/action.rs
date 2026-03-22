@@ -13,6 +13,7 @@ use crate::{
 };
 
 const CLICK_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
+const DRAG_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const SCROLL_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
@@ -21,6 +22,7 @@ const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement]
 pub(crate) fn registrations() -> Vec<ToolRegistration> {
     vec![
         click_registration(),
+        drag_registration(),
         scroll_registration(),
         type_registration(),
         launch_app_registration(),
@@ -57,6 +59,20 @@ fn type_registration() -> ToolRegistration {
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { r#type(input, core, ctx).await })
         }),
+    }
+}
+
+fn drag_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "drag",
+            description: "Drag from one locator to another locator.",
+            input_schema: json_schema_for::<DragToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: DRAG_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| Box::pin(async move { drag(input, core, ctx).await })),
     }
 }
 
@@ -170,6 +186,28 @@ async fn scroll(
     serialize_output(outcome)
 }
 
+async fn drag(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<DragToolInput>("drag", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::Drag {
+                    from: input.from,
+                    to: input.to,
+                },
+                locator: None,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 async fn launch_app(
     input: Value,
     core: Arc<RuntimeCore>,
@@ -249,6 +287,16 @@ struct TypeToolInput {
     exec: ToolExecInput,
     text: String,
     locator: Option<Locator>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct DragToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    from: Locator,
+    to: Locator,
 }
 
 #[allow(dead_code)]

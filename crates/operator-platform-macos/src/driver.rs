@@ -264,9 +264,10 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.scroll(delta_x, delta_y, &permissions)
             }
-            Action::Drag { .. } => Err(OperatorError::CapabilityNotSupported(
-                Capability::PointerInput,
-            )),
+            Action::Drag { from, to } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.drag(from, to, &permissions)
+            }
             Action::Hotkey { .. } => Err(OperatorError::CapabilityNotSupported(
                 Capability::KeyboardInput,
             )),
@@ -340,6 +341,23 @@ where
             success: true,
             duration_ms: 0,
             detail: Some("scrolled".into()),
+        })
+    }
+
+    fn drag(
+        &self,
+        from: Locator,
+        to: Locator,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        let from = resolve_locator(&from, &self.tree_inspector)?;
+        let to = resolve_locator(&to, &self.tree_inspector)?;
+        self.input_synthesizer.drag(from.point, to.point)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some("dragged".into()),
         })
     }
 

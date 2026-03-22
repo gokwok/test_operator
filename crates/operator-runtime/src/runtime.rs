@@ -298,6 +298,13 @@ impl RuntimeCore {
             req.locator = Some(self.normalize_locator(locator).await?);
         }
 
+        if let Action::Drag { from, to } = req.action {
+            req.action = Action::Drag {
+                from: self.normalize_locator(from).await?,
+                to: self.normalize_locator(to).await?,
+            };
+        }
+
         Ok(req)
     }
 

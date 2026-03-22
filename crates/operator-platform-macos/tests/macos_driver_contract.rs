@@ -459,6 +459,90 @@ async fn scroll_action_returns_successful_outcome() {
 }
 
 #[tokio::test]
+async fn drag_action_resolves_between_locators_and_returns_successful_outcome() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([
+                (
+                    ElementId("ax-start".into()),
+                    UiElement {
+                        id: ElementId("ax-start".into()),
+                        role: "AXStaticText".into(),
+                        label: Some("Drag start".into()),
+                        value: None,
+                        bounds: Some(Rect {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 40.0,
+                            height: 20.0,
+                        }),
+                        enabled: Some(true),
+                        children: vec![],
+                        confidence: Some(1.0),
+                        source: ElementSource::Native,
+                    },
+                ),
+                (
+                    ElementId("ax-drop".into()),
+                    UiElement {
+                        id: ElementId("ax-drop".into()),
+                        role: "AXButton".into(),
+                        label: Some("Drop here".into()),
+                        value: None,
+                        bounds: Some(Rect {
+                            x: 100.0,
+                            y: 120.0,
+                            width: 80.0,
+                            height: 30.0,
+                        }),
+                        enabled: Some(true),
+                        children: vec![],
+                        confidence: Some(1.0),
+                        source: ElementSource::Native,
+                    },
+                ),
+            ]),
+            root_ids: vec![ElementId("ax-start".into()), ElementId("ax-drop".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Drag {
+                    from: Locator::Text("drag start".into()),
+                    to: Locator::Role {
+                        role: "AXButton".into(),
+                        index: 0,
+                    },
+                },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("dragged"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Drag {
+            from: Point { x: 30.0, y: 30.0 },
+            to: Point { x: 140.0, y: 135.0 },
+        }]
+    );
+}
+
+#[tokio::test]
 async fn health_check_requires_accessibility_for_ready_status() {
     let driver = MacosDriver::new(
         StubAppService::default(),
@@ -643,6 +727,7 @@ impl TreeInspector for StubTreeInspector {
 #[derive(Debug, Clone, PartialEq)]
 enum RecordedInput {
     Click { point: Point, button: MouseButton },
+    Drag { from: Point, to: Point },
     Scroll { delta_x: f64, delta_y: f64 },
     TypeText(String),
 }
@@ -664,6 +749,14 @@ impl InputSynthesizer for StubInputSynthesizer {
             .lock()
             .unwrap()
             .push(RecordedInput::Click { point, button });
+        Ok(())
+    }
+
+    fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(RecordedInput::Drag { from, to });
         Ok(())
     }
 
