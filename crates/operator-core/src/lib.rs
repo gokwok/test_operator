@@ -14,8 +14,8 @@ mod surface;
 mod target;
 
 pub use action::{
-    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, ClickMode,
-    DragModifier, DragMotion, MouseButton, TypeTrailingKey,
+    Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
+    ActionTargetSelector, ClickMode, DragModifier, DragMotion, MouseButton, TypeTrailingKey,
 };
 pub use capability::{Capability, CapabilityId, CapabilitySet};
 pub use driver::{HealthStatus, PlatformDriver};

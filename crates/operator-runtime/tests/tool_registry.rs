@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, AppInfo,
-    ArtifactId, Capability, CapabilitySet, ClickMode, DragModifier, DragMotion, ExecContext,
-    FocusInfo, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
-    PermissionsReport, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey,
-    WindowInfo,
+    Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
+    ActionTargetSelector, AppInfo, ArtifactId, Capability, CapabilitySet, ClickMode, DragModifier,
+    DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest, ObserveResult, OperatorError,
+    PermissionStatus, PermissionsReport, Point, QueryRequest, QueryResult, Rect, Surface,
+    SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
@@ -22,6 +22,19 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+    }
+}
+
+fn successful_action_outcome(detail: &str, duration_ms: u64) -> ActionOutcome {
+    ActionOutcome {
+        success: true,
+        duration_ms,
+        detail: Some(detail.into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
     }
 }
 
@@ -397,111 +410,36 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             Capability::WindowManagement,
         ]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 12,
-        detail: Some("clicked".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 18,
-        detail: Some("typed".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 14,
-        detail: Some("scrolled".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 6,
-        detail: Some("moved".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 16,
-        detail: Some("dragged".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 15,
-        detail: Some("swiped".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 11,
-        detail: Some("sent hotkey".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 7,
-        detail: Some("pressed down 3 times".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("launched".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("closed window 41".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("minimized window 42".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("maximized window 43".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("moved window 42 to x=120 y=240 width=640 height=480".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("resized window 42 to x=120 y=240 width=800 height=600".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("set window 42 bounds to x=80 y=120 width=900 height=700".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 10,
-        detail: Some("switched app".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 8,
-        detail: Some("quit app".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 13,
-        detail: Some("relaunched app".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 6,
-        detail: Some("hid app".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 6,
-        detail: Some("unhid app".into()),
-    }));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 5,
-        detail: Some("focused".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("clicked", 12)));
+    driver.push_action_result(Ok(successful_action_outcome("typed", 18)));
+    driver.push_action_result(Ok(successful_action_outcome("scrolled", 14)));
+    driver.push_action_result(Ok(successful_action_outcome("moved", 6)));
+    driver.push_action_result(Ok(successful_action_outcome("dragged", 16)));
+    driver.push_action_result(Ok(successful_action_outcome("swiped", 15)));
+    driver.push_action_result(Ok(successful_action_outcome("sent hotkey", 11)));
+    driver.push_action_result(Ok(successful_action_outcome("pressed down 3 times", 7)));
+    driver.push_action_result(Ok(successful_action_outcome("launched", 9)));
+    driver.push_action_result(Ok(successful_action_outcome("closed window 41", 9)));
+    driver.push_action_result(Ok(successful_action_outcome("minimized window 42", 9)));
+    driver.push_action_result(Ok(successful_action_outcome("maximized window 43", 9)));
+    driver.push_action_result(Ok(successful_action_outcome(
+        "moved window 42 to x=120 y=240 width=640 height=480",
+        9,
+    )));
+    driver.push_action_result(Ok(successful_action_outcome(
+        "resized window 42 to x=120 y=240 width=800 height=600",
+        9,
+    )));
+    driver.push_action_result(Ok(successful_action_outcome(
+        "set window 42 bounds to x=80 y=120 width=900 height=700",
+        9,
+    )));
+    driver.push_action_result(Ok(successful_action_outcome("switched app", 10)));
+    driver.push_action_result(Ok(successful_action_outcome("quit app", 8)));
+    driver.push_action_result(Ok(successful_action_outcome("relaunched app", 13)));
+    driver.push_action_result(Ok(successful_action_outcome("hid app", 6)));
+    driver.push_action_result(Ok(successful_action_outcome("unhid app", 6)));
+    driver.push_action_result(Ok(successful_action_outcome("focused", 5)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -1178,6 +1116,115 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
 }
 
 #[tokio::test]
+async fn action_tools_serialize_richer_action_outcomes() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 6,
+        detail: Some("moved".into()),
+        coordinates: Some(ActionCoordinates {
+            point: Some(Point { x: 320.0, y: 240.0 }),
+            from: None,
+            to: None,
+        }),
+        target_app: Some(AppInfo {
+            bundle_id: Some("com.apple.TextEdit".into()),
+            name: "TextEdit".into(),
+            pid: Some(101),
+            is_running: true,
+        }),
+        target_window: Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 80.0,
+                width: 400.0,
+                height: 300.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        }),
+        side_effects: vec![ActionSideEffect::MoveCursor],
+        warnings: vec!["locator matched fallback element".into()],
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver)
+        .build()
+        .await
+        .unwrap();
+
+    let moved = runtime
+        .tools()
+        .invoke(
+            "move",
+            json!({
+                "target": "local:macos",
+                "locator": {
+                    "Coords": {
+                        "x": 320.0,
+                        "y": 240.0
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(moved["outcome"]["detail"], json!("moved"));
+    assert_eq!(
+        moved["outcome"]["coordinates"]["point"],
+        json!({
+            "x": 320.0,
+            "y": 240.0
+        })
+    );
+    assert_eq!(
+        moved["outcome"]["target_app"],
+        json!({
+            "bundle_id": "com.apple.TextEdit",
+            "name": "TextEdit",
+            "pid": 101,
+            "is_running": true
+        })
+    );
+    assert_eq!(
+        moved["outcome"]["target_window"],
+        json!({
+            "id": 42,
+            "title": "Draft",
+            "app_name": "TextEdit",
+            "bounds": {
+                "x": 120.0,
+                "y": 80.0,
+                "width": 400.0,
+                "height": 300.0
+            },
+            "is_focused": true,
+            "is_minimized": false
+        })
+    );
+    assert_eq!(
+        moved["outcome"]["side_effects"],
+        json!([
+            {
+                "kind": "MoveCursor"
+            }
+        ])
+    );
+    assert_eq!(
+        moved["outcome"]["warnings"],
+        json!(["locator matched fallback element"])
+    );
+}
+
+#[tokio::test]
 async fn action_tools_export_stable_specs() {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -1386,11 +1433,7 @@ async fn drag_tool_forwards_motion_options_to_runtime_act() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 16,
-        detail: Some("dragged".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("dragged", 16)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -1457,11 +1500,7 @@ async fn swipe_tool_forwards_motion_options_to_runtime_act() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 15,
-        detail: Some("swiped".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("swiped", 15)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))

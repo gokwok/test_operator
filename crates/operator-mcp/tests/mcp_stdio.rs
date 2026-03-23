@@ -6,10 +6,10 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, Capability,
-    CapabilitySet, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
-    OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
-    QueryResult, Rect, TypeTrailingKey,
+    Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
+    ActionTargetSelector, Capability, CapabilitySet, ExecContext, HealthStatus, Locator,
+    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
+    PlatformDriver, Point, QueryRequest, QueryResult, Rect, TypeTrailingKey, WindowInfo,
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
@@ -24,6 +24,19 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+    }
+}
+
+fn successful_action_outcome(detail: &str, duration_ms: u64) -> ActionOutcome {
+    ActionOutcome {
+        success: true,
+        duration_ms,
+        detail: Some(detail.into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
     }
 }
 
@@ -557,11 +570,7 @@ async fn tools_call_executes_move_and_returns_structured_content() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 4,
-        detail: Some("moved".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("moved", 4)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -622,16 +631,113 @@ async fn tools_call_executes_move_and_returns_structured_content() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_returns_richer_action_outcomes_in_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 4,
+        detail: Some("moved".into()),
+        coordinates: Some(ActionCoordinates {
+            point: Some(Point { x: 320.0, y: 240.0 }),
+            from: None,
+            to: None,
+        }),
+        target_app: None,
+        target_window: Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 80.0,
+                width: 400.0,
+                height: 300.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        }),
+        side_effects: vec![ActionSideEffect::MoveCursor],
+        warnings: vec!["locator matched fallback element".into()],
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver)
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 119,
+            "method": "tools/call",
+            "params": {
+                "name": "move",
+                "arguments": {
+                    "target": "local:macos",
+                    "locator": {
+                        "Coords": {
+                            "x": 320.0,
+                            "y": 240.0
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["coordinates"]["point"],
+        json!({
+            "x": 320.0,
+            "y": 240.0
+        })
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["target_window"],
+        json!({
+            "id": 42,
+            "title": "Draft",
+            "app_name": "TextEdit",
+            "bounds": {
+                "x": 120.0,
+                "y": 80.0,
+                "width": 400.0,
+                "height": 300.0
+            },
+            "is_focused": true,
+            "is_minimized": false
+        })
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["side_effects"],
+        json!([
+            {
+                "kind": "MoveCursor"
+            }
+        ])
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["warnings"],
+        json!(["locator matched fallback element"])
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tools_call_executes_type_and_returns_structured_content() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
         CapabilitySet::new([Capability::KeyboardInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 8,
-        detail: Some("typed text".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("typed text", 8)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -703,11 +809,7 @@ async fn tools_call_executes_press_and_returns_structured_content() {
         "macos",
         CapabilitySet::new([Capability::KeyboardInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 5,
-        detail: Some("pressed down 3 times".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("pressed down 3 times", 5)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -767,11 +869,7 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 6,
-        detail: Some("swiped".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("swiped", 6)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -845,11 +943,7 @@ async fn tools_call_executes_close_window_and_returns_structured_content() {
         "macos",
         CapabilitySet::new([Capability::WindowManagement]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 10,
-        detail: Some("closed window 42".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("closed window 42", 10)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -909,11 +1003,10 @@ async fn tools_call_executes_set_window_bounds_and_returns_structured_content() 
         "macos",
         CapabilitySet::new([Capability::WindowManagement]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 10,
-        detail: Some("set window 42 bounds to x=80 y=120 width=900 height=700".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome(
+        "set window 42 bounds to x=80 y=120 width=900 height=700",
+        10,
+    )));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -984,11 +1077,7 @@ async fn tools_call_executes_switch_app_and_returns_structured_content() {
         "macos",
         CapabilitySet::new([Capability::AppLifecycle]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 10,
-        detail: Some("switched app".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("switched app", 10)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))

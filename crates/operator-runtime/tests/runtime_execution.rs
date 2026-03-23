@@ -24,6 +24,19 @@ fn default_action_request() -> ActionRequest {
     }
 }
 
+fn successful_action_outcome(detail: &str, duration_ms: u64) -> ActionOutcome {
+    ActionOutcome {
+        success: true,
+        duration_ms,
+        detail: Some(detail.into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }
+}
+
 #[tokio::test]
 async fn runtime_rejects_missing_capabilities_before_driver_call() {
     let events = Arc::new(RecordingEventSink::default());
@@ -304,11 +317,7 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 11,
-        detail: Some("dragged".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("dragged", 11)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(store)
@@ -406,11 +415,7 @@ async fn runtime_resolves_swipe_snapshot_element_locators_before_driver_call() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 14,
-        detail: Some("swiped".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("swiped", 14)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(store)
@@ -482,11 +487,7 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 7,
-        detail: Some("clicked".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("clicked", 7)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(store)
@@ -549,11 +550,7 @@ async fn runtime_resolves_scroll_snapshot_element_locator_before_driver_call() {
         "macos",
         CapabilitySet::new([Capability::PointerInput]),
     ));
-    driver.push_action_result(Ok(ActionOutcome {
-        success: true,
-        duration_ms: 9,
-        detail: Some("scrolled".into()),
-    }));
+    driver.push_action_result(Ok(successful_action_outcome("scrolled", 9)));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(store)

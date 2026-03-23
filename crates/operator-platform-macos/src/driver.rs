@@ -6,10 +6,10 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, AppInfo,
-    Capability, CapabilitySet, ClickMode, DragMotion, ExecContext, HealthStatus, Locator,
-    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, Point, QueryRequest,
-    QueryResult, Rect, Snapshot, SnapshotMetadata, TypeTrailingKey, WindowInfo,
+    Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
+    ActionTargetSelector, AppInfo, Capability, CapabilitySet, ClickMode, DragMotion, ExecContext,
+    HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, Point,
+    QueryRequest, QueryResult, Rect, Snapshot, SnapshotMetadata, TypeTrailingKey, WindowInfo,
 };
 
 use crate::{
@@ -255,110 +255,108 @@ where
         match action {
             Action::LaunchApp { bundle_id_or_name } => {
                 self.app_service.launch_app(&bundle_id_or_name)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(format!("launched {bundle_id_or_name}")),
-                })
+                let mut outcome =
+                    successful_action_outcome(format!("launched {bundle_id_or_name}"));
+                outcome.side_effects = vec![ActionSideEffect::LaunchApp];
+                Ok(outcome)
             }
             Action::CloseWindow => {
                 let window = self.window_action_target(target, "close-window")?;
                 self.app_service.close_window(window.id)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(format!("closed window {}", window.id)),
-                })
+                let mut outcome = successful_action_outcome(format!("closed window {}", window.id));
+                outcome.target_window = Some(window);
+                outcome.side_effects = vec![ActionSideEffect::CloseWindow];
+                Ok(outcome)
             }
             Action::MinimizeWindow => {
                 let window = self.window_action_target(target, "minimize-window")?;
                 self.app_service.minimize_window(window.id)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(format!("minimized window {}", window.id)),
-                })
+                let mut outcome =
+                    successful_action_outcome(format!("minimized window {}", window.id));
+                outcome.target_window = Some(window_with_minimized(&window, true));
+                outcome.side_effects = vec![ActionSideEffect::MinimizeWindow];
+                Ok(outcome)
             }
             Action::MaximizeWindow => {
                 let window = self.window_action_target(target, "maximize-window")?;
                 self.app_service.maximize_window(window.id)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(format!("maximized window {}", window.id)),
-                })
+                let mut outcome =
+                    successful_action_outcome(format!("maximized window {}", window.id));
+                outcome.target_window = Some(window);
+                outcome.side_effects = vec![ActionSideEffect::MaximizeWindow];
+                Ok(outcome)
             }
             Action::MoveWindow { x, y } => {
                 let window = self.window_action_target(target, "move-window")?;
                 let bounds = self.app_service.move_window(window.id, x, y)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(window_geometry_detail("moved", window.id, bounds)),
-                })
+                let mut outcome =
+                    successful_action_outcome(window_geometry_detail("moved", window.id, bounds));
+                outcome.target_window = Some(window_with_bounds(&window, bounds));
+                outcome.side_effects = vec![ActionSideEffect::MoveWindow { bounds }];
+                Ok(outcome)
             }
             Action::ResizeWindow { width, height } => {
                 let window = self.window_action_target(target, "resize-window")?;
                 let bounds = self.app_service.resize_window(window.id, width, height)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(window_geometry_detail("resized", window.id, bounds)),
-                })
+                let mut outcome =
+                    successful_action_outcome(window_geometry_detail("resized", window.id, bounds));
+                outcome.target_window = Some(window_with_bounds(&window, bounds));
+                outcome.side_effects = vec![ActionSideEffect::ResizeWindow { bounds }];
+                Ok(outcome)
             }
             Action::SetWindowBounds { bounds } => {
                 let window = self.window_action_target(target, "set-window-bounds")?;
                 let bounds = self.app_service.set_window_bounds(window.id, bounds)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(window_geometry_detail("set", window.id, bounds)),
-                })
+                let mut outcome =
+                    successful_action_outcome(window_geometry_detail("set", window.id, bounds));
+                outcome.target_window = Some(window_with_bounds(&window, bounds));
+                outcome.side_effects = vec![ActionSideEffect::SetWindowBounds { bounds }];
+                Ok(outcome)
             }
             Action::SwitchApp => {
-                let app_name = self.lifecycle_target_name(target.selector)?;
+                let prepared = self.lifecycle_action_target(target)?;
+                let app_name = prepared.app_name()?;
                 self.app_service.focus_app(&app_name)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some("switched app".into()),
-                })
+                let mut outcome = successful_action_outcome("switched app");
+                apply_prepared_target(&mut outcome, Some(&prepared));
+                outcome.side_effects = vec![ActionSideEffect::SwitchApp];
+                Ok(outcome)
             }
             Action::QuitApp => {
-                let app_name = self.lifecycle_target_name(target.selector)?;
+                let prepared = self.lifecycle_action_target(target)?;
+                let app_name = prepared.app_name()?;
                 self.app_service.quit_app(&app_name)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some("quit app".into()),
-                })
+                let mut outcome = successful_action_outcome("quit app");
+                apply_prepared_target(&mut outcome, Some(&prepared));
+                outcome.side_effects = vec![ActionSideEffect::QuitApp];
+                Ok(outcome)
             }
             Action::RelaunchApp => {
-                let app_name = self.lifecycle_target_name(target.selector)?;
+                let prepared = self.lifecycle_action_target(target)?;
+                let app_name = prepared.app_name()?;
                 self.app_service.relaunch_app(&app_name)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some("relaunched app".into()),
-                })
+                let mut outcome = successful_action_outcome("relaunched app");
+                apply_prepared_target(&mut outcome, Some(&prepared));
+                outcome.side_effects = vec![ActionSideEffect::RelaunchApp];
+                Ok(outcome)
             }
             Action::HideApp => {
-                let app_name = self.lifecycle_target_name(target.selector)?;
+                let prepared = self.lifecycle_action_target(target)?;
+                let app_name = prepared.app_name()?;
                 self.app_service.hide_app(&app_name)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some("hid app".into()),
-                })
+                let mut outcome = successful_action_outcome("hid app");
+                apply_prepared_target(&mut outcome, Some(&prepared));
+                outcome.side_effects = vec![ActionSideEffect::HideApp];
+                Ok(outcome)
             }
             Action::UnhideApp => {
-                let app_name = self.lifecycle_target_name(target.selector)?;
+                let prepared = self.lifecycle_action_target(target)?;
+                let app_name = prepared.app_name()?;
                 self.app_service.unhide_app(&app_name)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some("unhid app".into()),
-                })
+                let mut outcome = successful_action_outcome("unhid app");
+                apply_prepared_target(&mut outcome, Some(&prepared));
+                outcome.side_effects = vec![ActionSideEffect::UnhideApp];
+                Ok(outcome)
             }
             Action::Click { mode } => {
                 let permissions = self.permission_reader.current_permissions()?;
@@ -413,12 +411,12 @@ where
                 self.press(&key, count.get(), None, target, &permissions)
             }
             Action::FocusWindow { id } => {
+                let window = self.resolve_window_by_id(id)?;
                 self.app_service.focus_window(id)?;
-                Ok(ActionOutcome {
-                    success: true,
-                    duration_ms: 0,
-                    detail: Some(format!("focused window {id}")),
-                })
+                let mut outcome = successful_action_outcome(format!("focused window {id}"));
+                outcome.target_window = Some(window_with_focus(&window, true));
+                outcome.side_effects = vec![ActionSideEffect::FocusWindow];
+                Ok(outcome)
             }
         }
     }
@@ -449,11 +447,17 @@ where
             (None, None)
         };
         self.input_synthesizer.click(point, mode)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some(action_detail(click_detail(mode), warning.as_deref())),
-        })
+        let mut outcome =
+            successful_action_outcome(action_detail(click_detail(mode), warning.as_deref()));
+        outcome.coordinates = Some(ActionCoordinates {
+            point,
+            from: None,
+            to: None,
+        });
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        apply_warning(&mut outcome, warning);
+        outcome.side_effects = vec![ActionSideEffect::Click { mode }];
+        Ok(outcome)
     }
 
     fn type_text(
@@ -463,15 +467,16 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.prepare_action_target(input.target.selector, input.target.focus_policy)?;
-        let warning = if let Some(locator) = locator {
+        let prepared =
+            self.prepare_action_target(input.target.selector, input.target.focus_policy)?;
+        let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             self.input_synthesizer
                 .click(Some(resolved.point), ClickMode::Left)?;
             thread::sleep(std::time::Duration::from_millis(50));
-            resolved.warning
+            (Some(resolved.point), resolved.warning)
         } else {
-            None
+            (None, None)
         };
         if input.clear_before {
             let clear_keys = vec!["command".to_string(), "a".to_string()];
@@ -484,14 +489,22 @@ where
             self.input_synthesizer
                 .press(type_trailing_key_name(*key), 1, input.delay_ms)?;
         }
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some(action_detail(
-                &type_detail(input.clear_before, input.trailing_keys),
-                warning.as_deref(),
-            )),
-        })
+        let mut outcome = successful_action_outcome(action_detail(
+            &type_detail(input.clear_before, input.trailing_keys),
+            warning.as_deref(),
+        ));
+        outcome.coordinates = Some(ActionCoordinates {
+            point,
+            from: None,
+            to: None,
+        });
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        apply_warning(&mut outcome, warning);
+        outcome.side_effects = vec![ActionSideEffect::Type {
+            clear_before: input.clear_before,
+            trailing_keys: input.trailing_keys.to_vec(),
+        }];
+        Ok(outcome)
     }
 
     fn move_pointer(
@@ -513,11 +526,16 @@ where
             ));
         };
         self.input_synthesizer.move_pointer(point)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some(action_detail("moved", warning.as_deref())),
-        })
+        let mut outcome = successful_action_outcome(action_detail("moved", warning.as_deref()));
+        outcome.coordinates = Some(ActionCoordinates {
+            point: Some(point),
+            from: None,
+            to: None,
+        });
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        apply_warning(&mut outcome, warning);
+        outcome.side_effects = vec![ActionSideEffect::MoveCursor];
+        Ok(outcome)
     }
 
     fn scroll(
@@ -539,11 +557,16 @@ where
             (None, None)
         };
         self.input_synthesizer.scroll(point, delta_x, delta_y)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some(action_detail("scrolled", warning.as_deref())),
-        })
+        let mut outcome = successful_action_outcome(action_detail("scrolled", warning.as_deref()));
+        outcome.coordinates = Some(ActionCoordinates {
+            point,
+            from: None,
+            to: None,
+        });
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        apply_warning(&mut outcome, warning);
+        outcome.side_effects = vec![ActionSideEffect::Scroll { delta_x, delta_y }];
+        Ok(outcome)
     }
 
     fn drag(
@@ -555,15 +578,21 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer.drag(from.point, to.point, &motion)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some("dragged".into()),
-        })
+        let mut outcome = successful_action_outcome("dragged");
+        outcome.coordinates = Some(ActionCoordinates {
+            point: None,
+            from: Some(from.point),
+            to: Some(to.point),
+        });
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        apply_warning(&mut outcome, from.warning);
+        apply_warning(&mut outcome, to.warning);
+        outcome.side_effects = vec![ActionSideEffect::Drag { motion }];
+        Ok(outcome)
     }
 
     fn swipe(
@@ -576,16 +605,22 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer
             .swipe(from.point, to.point, duration_ms, steps)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some("swiped".into()),
-        })
+        let mut outcome = successful_action_outcome("swiped");
+        outcome.coordinates = Some(ActionCoordinates {
+            point: None,
+            from: Some(from.point),
+            to: Some(to.point),
+        });
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        apply_warning(&mut outcome, from.warning);
+        apply_warning(&mut outcome, to.warning);
+        outcome.side_effects = vec![ActionSideEffect::Swipe { duration_ms, steps }];
+        Ok(outcome)
     }
 
     fn hotkey(
@@ -595,13 +630,14 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
         self.input_synthesizer.hotkey(keys)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some("sent hotkey".into()),
-        })
+        let mut outcome = successful_action_outcome("sent hotkey");
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        outcome.side_effects = vec![ActionSideEffect::Hotkey {
+            keys: keys.to_vec(),
+        }];
+        Ok(outcome)
     }
 
     fn press(
@@ -613,13 +649,15 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
         self.input_synthesizer.press(key, count, delay_ms)?;
-        Ok(ActionOutcome {
-            success: true,
-            duration_ms: 0,
-            detail: Some(press_detail(key, count)),
-        })
+        let mut outcome = successful_action_outcome(press_detail(key, count));
+        apply_prepared_target(&mut outcome, prepared.as_ref());
+        outcome.side_effects = vec![ActionSideEffect::Press {
+            key: key.to_string(),
+            count,
+        }];
+        Ok(outcome)
     }
 
     fn prepare_action_target(
@@ -751,29 +789,15 @@ where
         })
     }
 
-    fn lifecycle_target_name(
+    fn lifecycle_action_target(
         &self,
-        selector: Option<&ActionTargetSelector>,
-    ) -> Result<String, OperatorError> {
-        let selector = selector.ok_or_else(|| {
+        target: ActionTargetConfig<'_>,
+    ) -> Result<PreparedActionTarget, OperatorError> {
+        let selector = target.selector.ok_or_else(|| {
             OperatorError::Platform("app lifecycle actions require a target selector".into())
         })?;
 
-        match selector {
-            ActionTargetSelector::App(bundle_id_or_name) => self
-                .resolve_app_by_identity(bundle_id_or_name)
-                .map(|app| app.name),
-            ActionTargetSelector::Pid(pid) => self.resolve_app_by_pid(*pid).map(|app| app.name),
-            ActionTargetSelector::WindowId(id) => {
-                self.resolve_window_by_id(*id).and_then(window_app_name)
-            }
-            ActionTargetSelector::WindowTitle(title) => self
-                .resolve_window_by_title(title)
-                .and_then(window_app_name),
-            ActionTargetSelector::WindowIndex(index) => self
-                .resolve_window_by_index(*index)
-                .and_then(window_app_name),
-        }
+        self.resolve_action_target(selector)
     }
 
     fn window_action_target(
@@ -800,6 +824,27 @@ impl PreparedActionTarget {
         match self {
             Self::App(target) => app_service.focus_app(&app_focus_identity(&target.app)),
             Self::Window(window) => app_service.focus_window(window.id),
+        }
+    }
+
+    fn app(&self) -> Option<&AppInfo> {
+        match self {
+            Self::App(target) => Some(&target.app),
+            Self::Window(_) => None,
+        }
+    }
+
+    fn target_window(&self) -> Option<&WindowInfo> {
+        match self {
+            Self::App(target) => target.anchor_window.as_ref(),
+            Self::Window(window) => Some(window),
+        }
+    }
+
+    fn app_name(&self) -> Result<String, OperatorError> {
+        match self {
+            Self::App(target) => Ok(target.app.name.clone()),
+            Self::Window(window) => window_app_name(window.clone()),
         }
     }
 
@@ -844,6 +889,50 @@ struct TypeActionConfig<'a> {
     delay_ms: Option<u64>,
     trailing_keys: &'a [TypeTrailingKey],
     target: ActionTargetConfig<'a>,
+}
+
+fn successful_action_outcome(detail: impl Into<String>) -> ActionOutcome {
+    ActionOutcome {
+        success: true,
+        duration_ms: 0,
+        detail: Some(detail.into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }
+}
+
+fn apply_prepared_target(outcome: &mut ActionOutcome, prepared: Option<&PreparedActionTarget>) {
+    if let Some(prepared) = prepared {
+        outcome.target_app = prepared.app().cloned();
+        outcome.target_window = prepared.target_window().cloned();
+    }
+}
+
+fn apply_warning(outcome: &mut ActionOutcome, warning: Option<String>) {
+    if let Some(warning) = warning {
+        outcome.warnings.push(warning);
+    }
+}
+
+fn window_with_bounds(window: &WindowInfo, bounds: Rect) -> WindowInfo {
+    let mut updated = window.clone();
+    updated.bounds = Some(bounds);
+    updated
+}
+
+fn window_with_minimized(window: &WindowInfo, is_minimized: bool) -> WindowInfo {
+    let mut updated = window.clone();
+    updated.is_minimized = is_minimized;
+    updated
+}
+
+fn window_with_focus(window: &WindowInfo, is_focused: bool) -> WindowInfo {
+    let mut updated = window.clone();
+    updated.is_focused = is_focused;
+    updated
 }
 
 fn select_single_app(

@@ -1060,6 +1060,103 @@ async fn cli_run_renders_move_window_detail_for_non_json_output() {
 }
 
 #[tokio::test]
+async fn cli_run_renders_move_window_from_structured_outcome_when_detail_is_missing() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "move-window",
+        "--window-id",
+        "42",
+        "--x",
+        "120",
+        "--y",
+        "240",
+    ])
+    .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 10,
+                "target_window": {
+                    "id": 42,
+                    "title": "Draft",
+                    "app_name": "TextEdit",
+                    "bounds": {
+                        "x": 120.0,
+                        "y": 240.0,
+                        "width": 640.0,
+                        "height": 480.0
+                    },
+                    "is_focused": true,
+                    "is_minimized": false
+                },
+                "side_effects": [
+                    {
+                        "kind": "MoveWindow",
+                        "data": {
+                            "bounds": {
+                                "x": 120.0,
+                                "y": 240.0,
+                                "width": 640.0,
+                                "height": 480.0
+                            }
+                        }
+                    }
+                ]
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(
+        rendered,
+        "moved window 42 to x=120 y=240 width=640 height=480"
+    );
+}
+
+#[tokio::test]
+async fn cli_run_renders_focus_window_from_structured_outcome_when_detail_is_missing() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "focus-window", "--window-id", "42"])
+            .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 5,
+                "target_window": {
+                    "id": 42,
+                    "title": "Draft",
+                    "app_name": "TextEdit",
+                    "bounds": {
+                        "x": 40.0,
+                        "y": 60.0,
+                        "width": 640.0,
+                        "height": 480.0
+                    },
+                    "is_focused": true,
+                    "is_minimized": false
+                },
+                "side_effects": [
+                    {
+                        "kind": "FocusWindow"
+                    }
+                ]
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "focused window 42");
+}
+
+#[tokio::test]
 async fn cli_run_renders_press_detail_for_non_json_output() {
     let cli =
         cli_main::args::Cli::try_parse_from(["operator", "press", "--key", "down", "--count", "3"])

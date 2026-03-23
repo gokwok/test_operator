@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
-    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, AppInfo, ArtifactId,
-    Capability, ClickMode, DragModifier, DragMotion, ElementId, ElementSource, ExecContext,
-    FocusInfo, Locator, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport,
-    PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey,
-    UiElement, WindowId, WindowInfo,
+    Action, ActionCoordinates, ActionFocusPolicy, ActionRequest, ActionSideEffect,
+    ActionTargetSelector, AppInfo, ArtifactId, Capability, ClickMode, DragModifier, DragMotion,
+    ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError,
+    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
+    Surface, SurfaceKind, TypeTrailingKey, UiElement, WindowId, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -265,7 +265,25 @@ async fn launch_app_action_returns_successful_outcome() {
 
 #[tokio::test]
 async fn focus_window_action_returns_successful_outcome() {
-    let driver = MacosDriver::new(StubAppService::default(), StubPermissionReader::granted());
+    let driver = MacosDriver::new(
+        StubAppService {
+            windows: vec![WindowInfo {
+                id: 42.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: Some(Rect {
+                    x: 40.0,
+                    y: 60.0,
+                    width: 640.0,
+                    height: 480.0,
+                }),
+                is_focused: false,
+                is_minimized: false,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
 
     let outcome = driver
         .act(
@@ -281,6 +299,23 @@ async fn focus_window_action_returns_successful_outcome() {
 
     assert!(outcome.success);
     assert_eq!(outcome.detail.as_deref(), Some("focused window 42"));
+    assert_eq!(
+        outcome.target_window,
+        Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 40.0,
+                y: 60.0,
+                width: 640.0,
+                height: 480.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        })
+    );
+    assert_eq!(outcome.side_effects, vec![ActionSideEffect::FocusWindow]);
     assert_eq!(
         driver.app_service().focused_windows(),
         vec![WindowId::from(42)]
@@ -477,6 +512,33 @@ async fn move_window_action_returns_post_action_geometry() {
     assert_eq!(
         outcome.detail.as_deref(),
         Some("moved window 42 to x=120 y=240 width=640 height=480")
+    );
+    assert_eq!(
+        outcome.target_window,
+        Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 240.0,
+                width: 640.0,
+                height: 480.0,
+            }),
+            is_focused: false,
+            is_minimized: false,
+        })
+    );
+    assert_eq!(
+        outcome.side_effects,
+        vec![ActionSideEffect::MoveWindow {
+            bounds: Rect {
+                x: 120.0,
+                y: 240.0,
+                width: 640.0,
+                height: 480.0,
+            },
+        }]
     );
     assert_eq!(
         driver.app_service().moved_windows(),
@@ -1336,6 +1398,15 @@ async fn move_action_resolves_text_locator_before_moving_cursor() {
     assert!(outcome.success);
     assert_eq!(outcome.detail.as_deref(), Some("moved"));
     assert_eq!(
+        outcome.coordinates,
+        Some(ActionCoordinates {
+            point: Some(Point { x: 160.0, y: 180.0 }),
+            from: None,
+            to: None,
+        })
+    );
+    assert_eq!(outcome.side_effects, vec![ActionSideEffect::MoveCursor]);
+    assert_eq!(
         input.calls(),
         vec![RecordedInput::Move {
             point: Point { x: 160.0, y: 180.0 },
@@ -1651,6 +1722,21 @@ async fn swipe_action_resolves_between_locators_and_returns_successful_outcome()
 
     assert!(outcome.success);
     assert_eq!(outcome.detail.as_deref(), Some("swiped"));
+    assert_eq!(
+        outcome.coordinates,
+        Some(ActionCoordinates {
+            point: None,
+            from: Some(Point { x: 30.0, y: 30.0 }),
+            to: Some(Point { x: 210.0, y: 30.0 }),
+        })
+    );
+    assert_eq!(
+        outcome.side_effects,
+        vec![ActionSideEffect::Swipe {
+            duration_ms: Some(240),
+            steps: Some(4.try_into().unwrap()),
+        }]
+    );
     assert_eq!(
         input.calls(),
         vec![RecordedInput::Swipe {
