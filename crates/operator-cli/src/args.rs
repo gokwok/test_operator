@@ -141,6 +141,28 @@ Options:
   -h, --help                   Print help
 ";
 
+const WINDOW_HELP: &str = "Window management actions
+
+Usage: operator window [OPTIONS] <COMMAND>
+
+Commands:
+  focus       Focus a specific window
+  close       Close a specific window
+  minimize    Minimize a specific window
+  maximize    Maximize a specific window
+  move        Move a specific window
+  resize      Resize a specific window
+  set-bounds  Set the full bounds of a specific window
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
 #[derive(Debug, Parser)]
 #[command(name = "operator", about = "Operator automation CLI")]
 pub(crate) struct Cli {
@@ -201,7 +223,7 @@ enum Command {
     Focus(CommonArgs),
     Input(InputArgs),
     App(AppArgs),
-    Window,
+    Window(WindowArgs),
     Mcp,
     #[command(hide = true, name = "artifact-get")]
     ArtifactGet(LegacyArtifactGetArgs),
@@ -271,7 +293,8 @@ impl Command {
             Self::Focus(args) => Some(args),
             Self::Input(args) => args.common(),
             Self::App(args) => Some(&args.common),
-            Self::Window | Self::Mcp => None,
+            Self::Window(args) => Some(&args.common),
+            Self::Mcp => None,
             Self::ArtifactGet(args) => Some(&args.common),
             Self::SnapshotGet(args) => Some(&args.common),
             Self::GetFocus(args) => Some(args),
@@ -320,7 +343,7 @@ impl Command {
             }
             Self::Input(args) => args.into_invocation(root_common),
             Self::App(args) => args.into_invocation(root_common),
-            Self::Window => Err("window commands are not implemented yet".to_string()),
+            Self::Window(args) => args.into_invocation(root_common),
             Self::Mcp => Err("mcp commands are not implemented yet".to_string()),
             Self::ArtifactGet(args) => args.into_invocation(root_common),
             Self::SnapshotGet(args) => args.into_invocation(root_common),
@@ -1007,6 +1030,235 @@ impl AppArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
         self.command
             .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(
+    about = "Window management actions",
+    override_help = WINDOW_HELP,
+    arg_required_else_help = true
+)]
+struct WindowArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: WindowCommand,
+}
+
+impl WindowArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command
+            .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum WindowCommand {
+    #[command(about = "Focus a specific window")]
+    Focus(WindowFocusArgs),
+    #[command(about = "Close a specific window")]
+    Close(WindowCloseArgs),
+    #[command(about = "Minimize a specific window")]
+    Minimize(WindowMinimizeArgs),
+    #[command(about = "Maximize a specific window")]
+    Maximize(WindowMaximizeArgs),
+    #[command(about = "Move a specific window")]
+    Move(WindowMoveArgs),
+    #[command(about = "Resize a specific window")]
+    Resize(WindowResizeArgs),
+    #[command(about = "Set the full bounds of a specific window")]
+    SetBounds(WindowSetBoundsArgs),
+}
+
+impl WindowCommand {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Focus(args) => args.into_invocation(common),
+            Self::Close(args) => args.into_invocation(common),
+            Self::Minimize(args) => args.into_invocation(common),
+            Self::Maximize(args) => args.into_invocation(common),
+            Self::Move(args) => args.into_invocation(common),
+            Self::Resize(args) => args.into_invocation(common),
+            Self::SetBounds(args) => args.into_invocation(common),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowFocusArgs {
+    #[arg(long)]
+    window_id: u64,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+}
+
+impl WindowFocusArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        insert_serialized(&mut input, "window_id", WindowId::from(self.window_id))?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        Ok(ToolInvocation {
+            tool: "focus-window",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowCloseArgs {
+    #[command(flatten)]
+    target: WindowTargetArgs,
+}
+
+impl WindowCloseArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        Ok(ToolInvocation {
+            tool: "close-window",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowMinimizeArgs {
+    #[command(flatten)]
+    target: WindowTargetArgs,
+    #[command(flatten)]
+    verification: WindowStateVerificationArgs,
+}
+
+impl WindowMinimizeArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        Ok(ToolInvocation {
+            tool: "minimize-window",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowMaximizeArgs {
+    #[command(flatten)]
+    target: WindowTargetArgs,
+}
+
+impl WindowMaximizeArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        Ok(ToolInvocation {
+            tool: "maximize-window",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowMoveArgs {
+    #[command(flatten)]
+    target: WindowTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[arg(long, allow_hyphen_values = true)]
+    x: f64,
+    #[arg(long, allow_hyphen_values = true)]
+    y: f64,
+}
+
+impl WindowMoveArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        input.insert("x".into(), Value::from(self.x));
+        input.insert("y".into(), Value::from(self.y));
+        Ok(ToolInvocation {
+            tool: "move-window",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowResizeArgs {
+    #[command(flatten)]
+    target: WindowTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[arg(long)]
+    width: f64,
+    #[arg(long)]
+    height: f64,
+}
+
+impl WindowResizeArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        input.insert("width".into(), Value::from(self.width));
+        input.insert("height".into(), Value::from(self.height));
+        Ok(ToolInvocation {
+            tool: "resize-window",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct WindowSetBoundsArgs {
+    #[command(flatten)]
+    target: WindowTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[arg(long, allow_hyphen_values = true)]
+    x: f64,
+    #[arg(long, allow_hyphen_values = true)]
+    y: f64,
+    #[arg(long)]
+    width: f64,
+    #[arg(long)]
+    height: f64,
+}
+
+impl WindowSetBoundsArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        input.insert("x".into(), Value::from(self.x));
+        input.insert("y".into(), Value::from(self.y));
+        input.insert("width".into(), Value::from(self.width));
+        input.insert("height".into(), Value::from(self.height));
+        Ok(ToolInvocation {
+            tool: "set-window-bounds",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
     }
 }
 
@@ -1916,6 +2168,23 @@ impl WindowChromeTargetArgs {
         Ok((
             self.selector.into_required_selector()?,
             self.focus_policy.focus_policy(),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct WindowTargetArgs {
+    #[command(flatten)]
+    selector: TargetSelectorArgs,
+    #[arg(long, value_enum, default_value_t = FocusPolicyArg::Auto)]
+    focus: FocusPolicyArg,
+}
+
+impl WindowTargetArgs {
+    fn into_parts(self) -> Result<(ActionTargetSelector, ActionFocusPolicy), String> {
+        Ok((
+            self.selector.into_required_selector()?,
+            self.focus.focus_policy(),
         ))
     }
 }

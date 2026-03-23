@@ -210,14 +210,13 @@ fn list_windows_command_moves_under_list_group() {
 
 #[test]
 fn grouped_top_level_command_placeholders_exist() {
-    for command in ["window", "mcp"] {
-        let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
-        let error = cli.into_invocation().unwrap_err();
-        assert!(
-            error.contains("not implemented"),
-            "unexpected error for {command}: {error}"
-        );
-    }
+    let command = "mcp";
+    let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
+    let error = cli.into_invocation().unwrap_err();
+    assert!(
+        error.contains("not implemented"),
+        "unexpected error for {command}: {error}"
+    );
 }
 
 #[test]
@@ -298,6 +297,27 @@ Usage: operator app [OPTIONS] <COMMAND>\n\n\
 Commands:\n  launch    Launch an application by bundle identifier or name\n  switch    Bring an application to the foreground\n  quit      Quit an application\n  relaunch  Relaunch an application\n  hide      Hide an application\n  unhide    Unhide an application\n  help      Print this message or the help of the given subcommand(s)\n\n\
 Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
     );
+}
+
+#[test]
+fn window_help_lists_window_management_subcommands() {
+    assert_eq!(
+        command_help(["operator", "window", "--help"]),
+        "Window management actions\n\n\
+Usage: operator window [OPTIONS] <COMMAND>\n\n\
+Commands:\n  focus       Focus a specific window\n  close       Close a specific window\n  minimize    Minimize a specific window\n  maximize    Maximize a specific window\n  move        Move a specific window\n  resize      Resize a specific window\n  set-bounds  Set the full bounds of a specific window\n  help        Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
+    );
+}
+
+#[test]
+fn window_resize_help_shows_focus_and_verify_flags() {
+    let help = command_help(["operator", "window", "resize", "--help"]);
+    assert!(
+        help.contains("Usage: operator window resize [OPTIONS] --width <WIDTH> --height <HEIGHT>")
+    );
+    assert!(help.contains("--focus <FOCUS>"));
+    assert!(help.contains("--verify <VERIFICATIONS>"));
 }
 
 #[test]
@@ -547,6 +567,265 @@ async fn focus_window_command_maps_window_id_to_tool_input() {
             "timeout_ms": 250,
             "window_id": 42,
             "verifications": ["Focus"]
+        })
+    );
+}
+
+#[tokio::test]
+async fn window_focus_command_maps_window_id_and_verification_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "focus",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--window-id",
+        "42",
+        "--verify",
+        "focus",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "focus-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "window_id": 42,
+            "verifications": ["Focus"]
+        })
+    );
+}
+
+#[tokio::test]
+async fn window_close_command_maps_target_selector_and_focus_policy() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "close",
+        "--target",
+        "local:macos",
+        "--window-title",
+        "Draft",
+        "--focus",
+        "never",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "close-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "WindowTitle": "Draft"
+            },
+            "focus_policy": "Never"
+        })
+    );
+}
+
+#[test]
+fn window_close_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "close",
+        "--window-id",
+        "42",
+        "--verify",
+        "window-state",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[tokio::test]
+async fn window_minimize_command_maps_selector_and_window_state_verification() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "minimize",
+        "--app",
+        "TextEdit",
+        "--verify",
+        "window-state",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "minimize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "App": "TextEdit"
+            },
+            "focus_policy": "Auto",
+            "verifications": ["WindowState"]
+        })
+    );
+}
+
+#[test]
+fn window_minimize_command_only_accepts_window_state_verification() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "minimize",
+        "--window-id",
+        "42",
+        "--verify",
+        "focus",
+    ])
+    .unwrap_err();
+    assert!(error.to_string().contains("invalid value 'focus'"));
+}
+
+#[tokio::test]
+async fn window_maximize_command_maps_pid_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "maximize",
+        "--target",
+        "local:macos",
+        "--pid",
+        "101",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "maximize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "Pid": 101
+            },
+            "focus_policy": "Auto"
+        })
+    );
+}
+
+#[test]
+fn window_maximize_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "maximize",
+        "--window-id",
+        "42",
+        "--verify",
+        "window-state",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[tokio::test]
+async fn window_move_command_maps_coordinates_selector_focus_and_verification() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "move",
+        "--target",
+        "local:macos",
+        "--window-id",
+        "42",
+        "--x",
+        "120",
+        "--y",
+        "240",
+        "--focus",
+        "never",
+        "--verify",
+        "geometry",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "move-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "WindowId": 42
+            },
+            "focus_policy": "Never",
+            "verifications": ["Geometry"],
+            "x": 120.0,
+            "y": 240.0
+        })
+    );
+}
+
+#[tokio::test]
+async fn window_resize_command_maps_size_and_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator", "window", "resize", "--app", "TextEdit", "--width", "640", "--height", "480",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "resize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "App": "TextEdit"
+            },
+            "focus_policy": "Auto",
+            "width": 640.0,
+            "height": 480.0
+        })
+    );
+}
+
+#[tokio::test]
+async fn window_set_bounds_command_maps_rect_and_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "window",
+        "set-bounds",
+        "--target",
+        "local:macos",
+        "--pid",
+        "101",
+        "--x",
+        "80",
+        "--y",
+        "120",
+        "--width",
+        "900",
+        "--height",
+        "700",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "set-window-bounds");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "Pid": 101
+            },
+            "focus_policy": "Auto",
+            "x": 80.0,
+            "y": 120.0,
+            "width": 900.0,
+            "height": 700.0
         })
     );
 }
