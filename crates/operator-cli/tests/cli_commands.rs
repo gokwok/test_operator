@@ -209,14 +209,22 @@ fn list_windows_command_moves_under_list_group() {
 }
 
 #[test]
-fn grouped_top_level_command_placeholders_exist() {
-    let command = "mcp";
-    let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
-    let error = cli.into_invocation().unwrap_err();
-    assert!(
-        error.contains("not implemented"),
-        "unexpected error for {command}: {error}"
+fn mcp_help_lists_serve_subcommand() {
+    assert_eq!(
+        command_help(["operator", "mcp", "--help"]),
+        "MCP server commands\n\n\
+Usage: operator mcp [OPTIONS] <COMMAND>\n\n\
+Commands:\n  serve  Run the MCP stdio server\n  help   Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
     );
+}
+
+#[test]
+fn mcp_serve_command_maps_to_mcp_execution_mode() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "mcp", "serve"]).unwrap();
+
+    let execution = cli.into_execution().unwrap();
+    assert!(matches!(execution, cli_main::args::CliExecution::McpServe));
 }
 
 #[test]

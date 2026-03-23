@@ -163,6 +163,22 @@ Options:
   -h, --help                   Print help
 ";
 
+const MCP_HELP: &str = "MCP server commands
+
+Usage: operator mcp [OPTIONS] <COMMAND>
+
+Commands:
+  serve  Run the MCP stdio server
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
 #[derive(Debug, Parser)]
 #[command(name = "operator", about = "Operator automation CLI")]
 pub(crate) struct Cli {
@@ -200,8 +216,18 @@ impl Cli {
                 .unwrap_or(false)
     }
 
+    pub(crate) fn into_execution(self) -> Result<CliExecution, String> {
+        self.command.into_execution(self.common)
+    }
+
+    #[cfg(test)]
     pub(crate) fn into_invocation(self) -> Result<ToolInvocation, String> {
-        self.command.into_invocation(self.common)
+        match self.into_execution()? {
+            CliExecution::Tool(invocation) => Ok(invocation),
+            CliExecution::McpServe => {
+                Err("mcp serve does not map to a runtime tool invocation".to_string())
+            }
+        }
     }
 }
 
@@ -210,6 +236,12 @@ pub(crate) struct ToolInvocation {
     pub(crate) tool: &'static str,
     pub(crate) input: Value,
     pub(crate) json_output: bool,
+}
+
+#[derive(Debug)]
+pub(crate) enum CliExecution {
+    Tool(ToolInvocation),
+    McpServe,
 }
 
 #[derive(Debug, Subcommand)]
@@ -224,7 +256,7 @@ enum Command {
     Input(InputArgs),
     App(AppArgs),
     Window(WindowArgs),
-    Mcp,
+    Mcp(McpArgs),
     #[command(hide = true, name = "artifact-get")]
     ArtifactGet(LegacyArtifactGetArgs),
     #[command(hide = true, name = "snapshot-get")]
@@ -294,7 +326,7 @@ impl Command {
             Self::Input(args) => args.common(),
             Self::App(args) => Some(&args.common),
             Self::Window(args) => Some(&args.common),
-            Self::Mcp => None,
+            Self::Mcp(args) => Some(&args.common),
             Self::ArtifactGet(args) => Some(&args.common),
             Self::SnapshotGet(args) => Some(&args.common),
             Self::GetFocus(args) => Some(args),
@@ -344,7 +376,7 @@ impl Command {
             Self::Input(args) => args.into_invocation(root_common),
             Self::App(args) => args.into_invocation(root_common),
             Self::Window(args) => args.into_invocation(root_common),
-            Self::Mcp => Err("mcp commands are not implemented yet".to_string()),
+            Self::Mcp(args) => args.into_invocation(root_common),
             Self::ArtifactGet(args) => args.into_invocation(root_common),
             Self::SnapshotGet(args) => args.into_invocation(root_common),
             Self::GetFocus(common) => {
@@ -379,6 +411,13 @@ impl Command {
             Self::HideApp(args) => args.into_invocation("hide-app", root_common),
             Self::UnhideApp(args) => args.into_invocation("unhide-app", root_common),
             Self::FocusWindow(args) => args.into_invocation(root_common),
+        }
+    }
+
+    fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
+        match self {
+            Self::Mcp(args) => args.into_execution(root_common),
+            other => other.into_invocation(root_common).map(CliExecution::Tool),
         }
     }
 }
@@ -1050,6 +1089,49 @@ impl WindowArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
         self.command
             .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(
+    about = "MCP server commands",
+    override_help = MCP_HELP,
+    arg_required_else_help = true
+)]
+struct McpArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: McpCommand,
+}
+
+impl McpArgs {
+    fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
+        self.command
+            .into_execution(merge_common(root_common, self.common))
+    }
+
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self.into_execution(root_common)? {
+            CliExecution::Tool(invocation) => Ok(invocation),
+            CliExecution::McpServe => {
+                Err("mcp serve does not map to a runtime tool invocation".to_string())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum McpCommand {
+    #[command(about = "Run the MCP stdio server")]
+    Serve,
+}
+
+impl McpCommand {
+    fn into_execution(self, _common: CommonArgs) -> Result<CliExecution, String> {
+        match self {
+            Self::Serve => Ok(CliExecution::McpServe),
+        }
     }
 }
 

@@ -6,6 +6,8 @@ mod output;
 use std::{env, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use operator_core::OperatorError;
+#[cfg(not(test))]
+use operator_mcp::run_stdio_server;
 use operator_platform_macos::{
     MacosDriver, SystemAppService, SystemCaptureProvider, SystemPermissionReader,
     SystemTreeInspector,
@@ -15,7 +17,9 @@ use operator_runtime::{
 };
 use serde_json::Value;
 
-use self::args::Cli;
+#[cfg(not(test))]
+use self::args::CliExecution;
+use self::args::{Cli, ToolInvocation};
 
 type InvokeFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>>;
 
@@ -68,35 +72,50 @@ async fn main_entry() -> i32 {
     let cli = Cli::parse();
     let json_output = cli.prefers_json();
 
-    let invoker = match RuntimeToolInvoker::build().await {
-        Ok(invoker) => invoker,
+    let execution = match cli.into_execution() {
+        Ok(execution) => execution,
         Err(error) => {
-            eprintln!("{}", output::render_error(json_output, &error.to_string()));
+            eprintln!("{}", output::render_error(json_output, &error));
             return 1;
         }
     };
 
-    match run_with_invoker(cli, &invoker).await {
-        Ok(rendered) => {
-            println!("{rendered}");
-            0
+    match execution {
+        CliExecution::Tool(invocation) => {
+            let invoker = match RuntimeToolInvoker::build().await {
+                Ok(invoker) => invoker,
+                Err(error) => {
+                    eprintln!("{}", output::render_error(json_output, &error.to_string()));
+                    return 1;
+                }
+            };
+
+            match run_invocation_with_invoker(invocation, &invoker).await {
+                Ok(rendered) => {
+                    println!("{rendered}");
+                    0
+                }
+                Err(error) => {
+                    eprintln!("{}", output::render_error(json_output, &error.to_string()));
+                    1
+                }
+            }
         }
-        Err(error) => {
-            eprintln!("{}", output::render_error(json_output, &error.to_string()));
-            1
-        }
+        CliExecution::McpServe => match run_stdio_server().await {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("{error}");
+                1
+            }
+        },
     }
 }
 
-pub(crate) async fn run_with_invoker(
-    cli: Cli,
+async fn run_invocation_with_invoker(
+    invocation: ToolInvocation,
     invoker: &impl ToolInvoker,
-) -> Result<String, CliError> {
-    let invocation = cli.into_invocation().map_err(CliError::Argument)?;
-    let output = invoker
-        .invoke(invocation.tool, invocation.input)
-        .await
-        .map_err(CliError::Operator)?;
+) -> Result<String, OperatorError> {
+    let output = invoker.invoke(invocation.tool, invocation.input).await?;
 
     Ok(output::render_success(
         invocation.tool,
@@ -117,12 +136,25 @@ fn operator_home_dir() -> PathBuf {
     PathBuf::from(".operator")
 }
 
+#[cfg(test)]
+pub(crate) async fn run_with_invoker(
+    cli: Cli,
+    invoker: &impl ToolInvoker,
+) -> Result<String, CliError> {
+    let invocation = cli.into_invocation().map_err(CliError::Argument)?;
+    run_invocation_with_invoker(invocation, invoker)
+        .await
+        .map_err(CliError::Operator)
+}
+
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) enum CliError {
     Argument(String),
     Operator(OperatorError),
 }
 
+#[cfg(test)]
 impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

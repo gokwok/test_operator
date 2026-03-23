@@ -7,6 +7,7 @@ version.workspace = true
 [dependencies]
 clap = { workspace = true }
 operator-core = { path = "../operator-core" }
+operator-mcp = { path = "../operator-mcp" }
 operator-platform-macos = { path = "../operator-platform-macos" }
 operator-runtime = { path = "../operator-runtime" }
 serde = { workspace = true }
