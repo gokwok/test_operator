@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
-    Action, ActionRequest, AppInfo, ArtifactId, Capability, ElementId, ElementSource, ExecContext,
-    FocusInfo, Locator, MouseButton, ObserveRequest, OperatorError, PermissionStatus,
+    Action, ActionRequest, AppInfo, ArtifactId, Capability, ClickMode, ElementId, ElementSource,
+    ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError, PermissionStatus,
     PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
     SurfaceKind, UiElement, WindowId, WindowInfo,
 };
@@ -309,7 +309,7 @@ async fn click_action_resolves_text_locator_to_button_center() {
         .act(
             ActionRequest {
                 action: Action::Click {
-                    button: MouseButton::Right,
+                    mode: ClickMode::Right,
                 },
                 locator: Some(Locator::Text("submit".into())),
             },
@@ -319,11 +319,112 @@ async fn click_action_resolves_text_locator_to_button_center() {
         .unwrap();
 
     assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("right-clicked"));
     assert_eq!(
         input.calls(),
         vec![RecordedInput::Click {
-            point: Point { x: 140.0, y: 50.0 },
-            button: MouseButton::Right,
+            point: Some(Point { x: 140.0, y: 50.0 }),
+            mode: ClickMode::Right,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn click_action_without_locator_uses_current_cursor_position() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("clicked"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Click {
+            point: None,
+            mode: ClickMode::Left,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn click_action_supports_double_click_mode() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-item".into()),
+                UiElement {
+                    id: ElementId("ax-item".into()),
+                    role: "AXButton".into(),
+                    label: Some("Open".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 20.0,
+                        y: 30.0,
+                        width: 40.0,
+                        height: 20.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-item".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Double,
+                },
+                locator: Some(Locator::Text("open".into())),
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("double-clicked"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Click {
+            point: Some(Point { x: 40.0, y: 40.0 }),
+            mode: ClickMode::Double,
         }]
     );
 }
@@ -408,8 +509,8 @@ async fn type_action_clicks_role_target_before_typing() {
         input.calls(),
         vec![
             RecordedInput::Click {
-                point: Point { x: 260.0, y: 72.0 },
-                button: MouseButton::Left,
+                point: Some(Point { x: 260.0, y: 72.0 }),
+                mode: ClickMode::Left,
             },
             RecordedInput::TypeText("hello operator".into()),
         ]
@@ -768,10 +869,19 @@ impl TreeInspector for StubTreeInspector {
 
 #[derive(Debug, Clone, PartialEq)]
 enum RecordedInput {
-    Click { point: Point, button: MouseButton },
-    Drag { from: Point, to: Point },
+    Click {
+        point: Option<Point>,
+        mode: ClickMode,
+    },
+    Drag {
+        from: Point,
+        to: Point,
+    },
     Hotkey(Vec<String>),
-    Scroll { delta_x: f64, delta_y: f64 },
+    Scroll {
+        delta_x: f64,
+        delta_y: f64,
+    },
     TypeText(String),
 }
 
@@ -787,11 +897,11 @@ impl StubInputSynthesizer {
 }
 
 impl InputSynthesizer for StubInputSynthesizer {
-    fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError> {
+    fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError> {
         self.calls
             .lock()
             .unwrap()
-            .push(RecordedInput::Click { point, button });
+            .push(RecordedInput::Click { point, mode });
         Ok(())
     }
 

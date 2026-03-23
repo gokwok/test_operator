@@ -11,13 +11,21 @@ pub struct ActionRequest {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Action {
-    Click { button: MouseButton },
+    Click { mode: ClickMode },
     Type { text: String },
     Scroll { delta_x: f64, delta_y: f64 },
     Hotkey { keys: Vec<String> },
     Drag { from: Locator, to: Locator },
     LaunchApp { bundle_id_or_name: String },
     FocusWindow { id: WindowId },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ClickMode {
+    Left,
+    Right,
+    Middle,
+    Double,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

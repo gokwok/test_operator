@@ -86,13 +86,36 @@ fn click_command_maps_snapshot_flags_to_tool_input() {
         json!({
             "target": "local:macos",
             "timeout_ms": 250,
-            "button": "Left",
+            "mode": "Left",
             "locator": {
                 "SnapshotElement": {
                     "snapshot": "s_123",
                     "element": "e_45"
                 }
             }
+        })
+    );
+}
+
+#[test]
+fn click_command_accepts_explicit_mode_without_locator() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "click",
+        "--target",
+        "local:macos",
+        "--mode",
+        "double",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "click");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "mode": "Double"
         })
     );
 }

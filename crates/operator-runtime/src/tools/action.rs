@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, Locator, MouseButton, OperatorError, WindowId,
+    Action, ActionOutcome, ActionRequest, Capability, ClickMode, Locator, OperatorError, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -151,9 +151,7 @@ async fn click(
     let outcome = core
         .act(
             ActionRequest {
-                action: Action::Click {
-                    button: input.button,
-                },
+                action: Action::Click { mode: input.mode },
                 locator: input.locator,
             },
             ctx,
@@ -301,8 +299,8 @@ fn serialize_output(outcome: ActionOutcome) -> Result<Value, OperatorError> {
     })
 }
 
-fn default_button() -> MouseButton {
-    MouseButton::Left
+fn default_click_mode() -> ClickMode {
+    ClickMode::Left
 }
 
 #[allow(dead_code)]
@@ -311,8 +309,8 @@ struct ClickToolInput {
     #[serde(flatten)]
     #[schemars(flatten)]
     exec: ToolExecInput,
-    #[serde(default = "default_button")]
-    button: MouseButton,
+    #[serde(default = "default_click_mode", alias = "button")]
+    mode: ClickMode,
     locator: Option<Locator>,
 }
 

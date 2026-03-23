@@ -5,10 +5,10 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ElementId, ElementSource,
-    ExecContext, HealthStatus, Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError,
-    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
-    Surface, SurfaceKind, UiElement,
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, ElementId,
+    ElementSource, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
+    OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
+    QueryResult, Rect, Surface, SurfaceKind, UiElement,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
@@ -36,7 +36,7 @@ async fn runtime_rejects_missing_capabilities_before_driver_call() {
         .act(
             ActionRequest {
                 action: Action::Click {
-                    button: MouseButton::Left,
+                    mode: ClickMode::Left,
                 },
                 locator: None,
             },
@@ -328,7 +328,7 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
         .act(
             ActionRequest {
                 action: Action::Click {
-                    button: MouseButton::Left,
+                    mode: ClickMode::Left,
                 },
                 locator: Some(Locator::SnapshotElement {
                     snapshot: snapshot.id.clone(),
@@ -352,7 +352,7 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
         calls[0].0,
         ActionRequest {
             action: Action::Click {
-                button: MouseButton::Left,
+                mode: ClickMode::Left,
             },
             locator: Some(Locator::Coords(Point { x: 70.0, y: 35.0 })),
         }

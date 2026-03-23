@@ -6,8 +6,8 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
-    Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, ExecContext,
+    HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
     QueryRequest, QueryResult, Snapshot, SnapshotMetadata,
 };
 
@@ -252,9 +252,9 @@ where
                     detail: Some(format!("launched {bundle_id_or_name}")),
                 })
             }
-            Action::Click { button } => {
+            Action::Click { mode } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.click(req.locator, button, &permissions)
+                self.click(req.locator, mode, &permissions)
             }
             Action::Type { text } => {
                 let permissions = self.permission_reader.current_permissions()?;
@@ -293,16 +293,21 @@ where
     fn click(
         &self,
         locator: Option<Locator>,
-        button: MouseButton,
+        mode: ClickMode,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let resolved = self.resolve_required_locator(locator, "click")?;
-        self.input_synthesizer.click(resolved.point, button)?;
+        let (point, warning) = if let Some(locator) = locator {
+            let resolved = resolve_locator(&locator, &self.tree_inspector)?;
+            (Some(resolved.point), resolved.warning)
+        } else {
+            (None, None)
+        };
+        self.input_synthesizer.click(point, mode)?;
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,
-            detail: Some(action_detail("clicked", resolved.warning.as_deref())),
+            detail: Some(action_detail(click_detail(mode), warning.as_deref())),
         })
     }
 
@@ -316,7 +321,7 @@ where
         let warning = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             self.input_synthesizer
-                .click(resolved.point, MouseButton::Left)?;
+                .click(Some(resolved.point), ClickMode::Left)?;
             thread::sleep(std::time::Duration::from_millis(50));
             resolved.warning
         } else {
@@ -375,16 +380,6 @@ where
             detail: Some("sent hotkey".into()),
         })
     }
-
-    fn resolve_required_locator(
-        &self,
-        locator: Option<Locator>,
-        action: &str,
-    ) -> Result<crate::locator::ResolvedLocator, OperatorError> {
-        let locator = locator
-            .ok_or_else(|| OperatorError::Platform(format!("macOS {action} requires a locator")))?;
-        resolve_locator(&locator, &self.tree_inspector)
-    }
 }
 
 fn require_observe_permissions(
@@ -422,6 +417,15 @@ fn action_detail(action: &str, warning: Option<&str>) -> String {
     match warning {
         Some(warning) => format!("{action}; {warning}"),
         None => action.to_string(),
+    }
+}
+
+fn click_detail(mode: ClickMode) -> &'static str {
+    match mode {
+        ClickMode::Left => "clicked",
+        ClickMode::Right => "right-clicked",
+        ClickMode::Middle => "middle-clicked",
+        ClickMode::Double => "double-clicked",
     }
 }
 

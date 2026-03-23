@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionOutcome, ActionRequest, AppInfo, ArtifactId, Capability, CapabilitySet,
-    ExecContext, FocusInfo, Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError,
+    ClickMode, ExecContext, FocusInfo, Locator, ObserveRequest, ObserveResult, OperatorError,
     PermissionStatus, PermissionsReport, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
     WindowInfo,
 };
@@ -352,7 +352,7 @@ async fn action_tools_are_blocked_when_side_effects_are_disabled() {
             "click",
             json!({
                 "target": "local:macos",
-                "button": "Left"
+                "mode": "Left"
             }),
         )
         .await
@@ -436,7 +436,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             "click",
             json!({
                 "target": "local:macos",
-                "button": "Right",
+                "mode": "Double",
                 "locator": {
                     "Text": "Submit"
                 }
@@ -541,7 +541,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             (
                 ActionRequest {
                     action: Action::Click {
-                        button: MouseButton::Right,
+                        mode: ClickMode::Double
                     },
                     locator: Some(Locator::Text("Submit".into())),
                 },
@@ -672,6 +672,8 @@ async fn action_tools_export_stable_specs() {
     let click = specs.iter().find(|spec| spec.name == "click").unwrap();
     assert!(click.has_side_effects);
     assert_eq!(click.capabilities_required, &[Capability::PointerInput]);
+    assert!(click.input_schema["properties"]["mode"].is_object());
+    assert!(click.input_schema["properties"]["button"].is_null());
 
     let drag = specs.iter().find(|spec| spec.name == "drag").unwrap();
     assert!(drag.has_side_effects);

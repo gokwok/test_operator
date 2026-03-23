@@ -1,7 +1,7 @@
-use operator_core::{MouseButton, OperatorError, Point};
+use operator_core::{ClickMode, OperatorError, Point};
 
 pub trait InputSynthesizer: Send + Sync {
-    fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError>;
+    fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError>;
     fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
     fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError>;
@@ -12,8 +12,8 @@ pub trait InputSynthesizer: Send + Sync {
 pub struct SystemInputSynthesizer;
 
 impl InputSynthesizer for SystemInputSynthesizer {
-    fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError> {
-        platform::click(point, button)
+    fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError> {
+        platform::click(point, mode)
     }
 
     fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError> {
@@ -295,7 +295,7 @@ fn hotkey_key_code(token: &str) -> Option<u16> {
 mod platform {
     use std::{ffi::c_void, thread, time::Duration};
 
-    use operator_core::{MouseButton, OperatorError, Point};
+    use operator_core::{ClickMode, MouseButton, OperatorError, Point};
 
     use super::{parse_hotkey, HotkeyModifier};
 
@@ -309,6 +309,7 @@ mod platform {
     const KCG_EVENT_MOUSE_MOVED: u32 = 5;
     const KCG_EVENT_OTHER_MOUSE_DOWN: u32 = 25;
     const KCG_EVENT_OTHER_MOUSE_UP: u32 = 26;
+    const KCG_MOUSE_EVENT_CLICK_STATE: u32 = 1;
     const KCG_SCROLL_EVENT_UNIT_LINE: u32 = 1;
     const KCG_EVENT_FLAG_MASK_SHIFT: u64 = 0x0002_0000;
     const KCG_EVENT_FLAG_MASK_CONTROL: u64 = 0x0004_0000;
@@ -327,6 +328,7 @@ mod platform {
 
     #[link(name = "ApplicationServices", kind = "framework")]
     unsafe extern "C" {
+        fn CGEventCreate(source: CGEventSourceRef) -> CGEventRef;
         fn CGEventSourceCreate(state_id: u32) -> CGEventSourceRef;
         fn CGEventCreateMouseEvent(
             source: CGEventSourceRef,
@@ -350,7 +352,9 @@ mod platform {
             string_length: u64,
             unicode_string: *const u16,
         );
+        fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
         fn CGEventSetFlags(event: CGEventRef, flags: u64);
+        fn CGEventSetIntegerValueField(event: CGEventRef, field: u32, value: i64);
         fn CGEventPost(tap: u32, event: CGEventRef);
     }
 
@@ -384,6 +388,17 @@ mod platform {
     struct Event(CGEventRef);
 
     impl Event {
+        fn current() -> Result<Self, OperatorError> {
+            let event = unsafe { CGEventCreate(std::ptr::null_mut()) };
+            if event.is_null() {
+                return Err(OperatorError::Platform(
+                    "failed to read current macOS event state".into(),
+                ));
+            }
+
+            Ok(Self(event))
+        }
+
         fn mouse(
             point: Point,
             button: MouseButton,
@@ -463,6 +478,20 @@ mod platform {
             unsafe { CGEventSetFlags(self.0, flags) };
         }
 
+        fn point(&self) -> Point {
+            let point = unsafe { CGEventGetLocation(self.0) };
+            Point {
+                x: point.x,
+                y: point.y,
+            }
+        }
+
+        fn set_click_state(&self, click_state: i64) {
+            unsafe {
+                CGEventSetIntegerValueField(self.0, KCG_MOUSE_EVENT_CLICK_STATE, click_state)
+            };
+        }
+
         fn post(&self) {
             unsafe { CGEventPost(KCG_HID_EVENT_TAP, self.0) };
         }
@@ -474,11 +503,31 @@ mod platform {
         }
     }
 
-    pub fn click(point: Point, button: MouseButton) -> Result<(), OperatorError> {
-        Event::mouse(point, button, KCG_EVENT_MOUSE_MOVED)?.post();
-        thread::sleep(Duration::from_millis(10));
-        Event::mouse(point, button, mouse_down_event(button))?.post();
-        Event::mouse(point, button, mouse_up_event(button))?.post();
+    pub fn click(point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError> {
+        let should_move = point.is_some();
+        let point = point.unwrap_or(current_pointer_position()?);
+        let button = click_button(mode);
+        let click_count = click_count(mode);
+
+        if should_move {
+            Event::mouse(point, button, KCG_EVENT_MOUSE_MOVED)?.post();
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        for click_state in 1..=click_count {
+            let down = Event::mouse(point, button, mouse_down_event(button))?;
+            down.set_click_state(click_state);
+            down.post();
+
+            let up = Event::mouse(point, button, mouse_up_event(button))?;
+            up.set_click_state(click_state);
+            up.post();
+
+            if click_state < click_count {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+
         Ok(())
     }
 
@@ -578,13 +627,32 @@ mod platform {
             .round()
             .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
     }
+
+    fn current_pointer_position() -> Result<Point, OperatorError> {
+        Ok(Event::current()?.point())
+    }
+
+    fn click_button(mode: ClickMode) -> MouseButton {
+        match mode {
+            ClickMode::Left | ClickMode::Double => MouseButton::Left,
+            ClickMode::Right => MouseButton::Right,
+            ClickMode::Middle => MouseButton::Middle,
+        }
+    }
+
+    fn click_count(mode: ClickMode) -> i64 {
+        match mode {
+            ClickMode::Double => 2,
+            ClickMode::Left | ClickMode::Right | ClickMode::Middle => 1,
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
 mod platform {
-    use operator_core::{MouseButton, OperatorError, Point};
+    use operator_core::{ClickMode, OperatorError, Point};
 
-    pub fn click(_point: Point, _button: MouseButton) -> Result<(), OperatorError> {
+    pub fn click(_point: Option<Point>, _mode: ClickMode) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

@@ -1,8 +1,8 @@
 use std::{process::Command, thread, time::Duration};
 
 use operator_core::{
-    Action, ActionRequest, ExecContext, Locator, ObserveRequest, OperatorError, PermissionStatus,
-    PlatformDriver, QueryRequest, QueryResult, Surface, SurfaceKind,
+    Action, ActionRequest, ClickMode, ExecContext, Locator, ObserveRequest, OperatorError,
+    PermissionStatus, PlatformDriver, QueryRequest, QueryResult, Surface, SurfaceKind,
 };
 use operator_platform_macos::MacosDriver;
 
@@ -91,7 +91,7 @@ async fn click_and_type_with_system_driver() {
     for request in [
         ActionRequest {
             action: Action::Click {
-                button: operator_core::MouseButton::Left,
+                mode: ClickMode::Left,
             },
             locator: Some(Locator::Role {
                 role: "AXTextArea".into(),
@@ -168,7 +168,7 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
     for request in [
         ActionRequest {
             action: Action::Click {
-                button: operator_core::MouseButton::Left,
+                mode: ClickMode::Left,
             },
             locator: Some(Locator::Role {
                 role: "AXTextArea".into(),

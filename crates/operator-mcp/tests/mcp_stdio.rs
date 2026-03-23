@@ -189,6 +189,8 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         .unwrap();
     assert_eq!(click["annotations"]["readOnlyHint"], json!(false));
     assert_eq!(click["annotations"]["destructiveHint"], json!(true));
+    assert!(click["inputSchema"]["properties"]["mode"].is_object());
+    assert!(click["inputSchema"]["properties"]["button"].is_null());
 }
 
 #[test]
@@ -380,7 +382,7 @@ fn mcp_blocks_side_effect_tools_when_security_mode_is_disabled() {
             "params": {
                 "name": "click",
                 "arguments": {
-                    "button": "Left"
+                    "mode": "Left"
                 }
             }
         }))

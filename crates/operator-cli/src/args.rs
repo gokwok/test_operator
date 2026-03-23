@@ -2,7 +2,7 @@
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use operator_core::{
-    ArtifactId, Locator, MouseButton, Point, SnapshotId, Surface, SurfaceKind, WindowId,
+    ArtifactId, ClickMode, Locator, Point, SnapshotId, Surface, SurfaceKind, WindowId,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -312,8 +312,8 @@ impl ListWindowsArgs {
 struct ClickArgs {
     #[command(flatten)]
     common: CommonArgs,
-    #[arg(long, value_enum, default_value_t = ButtonArg::Left)]
-    button: ButtonArg,
+    #[arg(long, value_enum, default_value_t = ClickModeArg::Left)]
+    mode: ClickModeArg,
     #[command(flatten)]
     locator: ClickLocatorArgs,
 }
@@ -321,7 +321,7 @@ struct ClickArgs {
 impl ClickArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
-        insert_serialized(&mut input, "button", self.button.mouse_button())?;
+        insert_serialized(&mut input, "mode", self.mode.click_mode())?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -476,18 +476,20 @@ enum ObserveSurface {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum ButtonArg {
+enum ClickModeArg {
     Left,
     Right,
     Middle,
+    Double,
 }
 
-impl ButtonArg {
-    fn mouse_button(self) -> MouseButton {
+impl ClickModeArg {
+    fn click_mode(self) -> ClickMode {
         match self {
-            Self::Left => MouseButton::Left,
-            Self::Right => MouseButton::Right,
-            Self::Middle => MouseButton::Middle,
+            Self::Left => ClickMode::Left,
+            Self::Right => ClickMode::Right,
+            Self::Middle => ClickMode::Middle,
+            Self::Double => ClickMode::Double,
         }
     }
 }
