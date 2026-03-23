@@ -501,6 +501,146 @@ async fn tools_call_executes_move_and_returns_structured_content() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_press_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::KeyboardInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 5,
+        detail: Some("pressed down 3 times".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "press",
+                "arguments": {
+                    "target": "local:macos",
+                    "key": "down",
+                    "count": 3
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("pressed down 3 times")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Press {
+                    key: "down".into(),
+                    count: 3.try_into().unwrap(),
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_swipe_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 6,
+        detail: Some("swiped".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 21,
+            "method": "tools/call",
+            "params": {
+                "name": "swipe",
+                "arguments": {
+                    "target": "local:macos",
+                    "from": {
+                        "Coords": {
+                            "x": 15.0,
+                            "y": 25.0
+                        }
+                    },
+                    "to": {
+                        "Coords": {
+                            "x": 90.0,
+                            "y": 25.0
+                        }
+                    },
+                    "duration_ms": 240,
+                    "steps": 4
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("swiped")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Swipe {
+                    from: Locator::Coords(Point { x: 15.0, y: 25.0 }),
+                    to: Locator::Coords(Point { x: 90.0, y: 25.0 }),
+                    duration_ms: Some(240),
+                    steps: Some(4.try_into().unwrap()),
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_serializes_same_target_requests() {
     let driver = Arc::new(BlockingQueryDriver::default());
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())

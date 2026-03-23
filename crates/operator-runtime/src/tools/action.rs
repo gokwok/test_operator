@@ -105,7 +105,8 @@ fn swipe_registration() -> ToolRegistration {
     ToolRegistration {
         spec: ToolSpec {
             name: "swipe",
-            description: "Swipe from one locator to another locator.",
+            description:
+                "Perform gesture-style pointer motion between two locator-resolved points.",
             input_schema: json_schema_for::<SwipeToolInput>(),
             output_schema: json_schema_for::<ActionToolOutput>(),
             capabilities_required: SWIPE_CAPABILITIES,

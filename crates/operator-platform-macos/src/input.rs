@@ -303,8 +303,48 @@ fn parse_press_key(key: &str) -> Result<u16, OperatorError> {
         )));
     }
 
-    hotkey_key_code(&normalized)
+    press_key_code(&normalized)
         .ok_or_else(|| OperatorError::Platform(format!("unsupported macOS press key: {token}")))
+}
+
+fn press_key_code(token: &str) -> Option<u16> {
+    Some(match token {
+        "return" | "enter" => KEY_CODE_RETURN,
+        "tab" => KEY_CODE_TAB,
+        "space" | "spacebar" => KEY_CODE_SPACE,
+        "delete" | "backspace" => KEY_CODE_DELETE,
+        "forward-delete" | "forwarddelete" => KEY_CODE_FORWARD_DELETE,
+        "escape" | "esc" => KEY_CODE_ESCAPE,
+        "left" | "left-arrow" | "arrowleft" => KEY_CODE_LEFT_ARROW,
+        "right" | "right-arrow" | "arrowright" => KEY_CODE_RIGHT_ARROW,
+        "up" | "up-arrow" | "arrowup" => KEY_CODE_UP_ARROW,
+        "down" | "down-arrow" | "arrowdown" => KEY_CODE_DOWN_ARROW,
+        "home" => KEY_CODE_HOME,
+        "end" => KEY_CODE_END,
+        "pageup" | "page-up" => KEY_CODE_PAGE_UP,
+        "pagedown" | "page-down" => KEY_CODE_PAGE_DOWN,
+        "f1" => KEY_CODE_F1,
+        "f2" => KEY_CODE_F2,
+        "f3" => KEY_CODE_F3,
+        "f4" => KEY_CODE_F4,
+        "f5" => KEY_CODE_F5,
+        "f6" => KEY_CODE_F6,
+        "f7" => KEY_CODE_F7,
+        "f8" => KEY_CODE_F8,
+        "f9" => KEY_CODE_F9,
+        "f10" => KEY_CODE_F10,
+        "f11" => KEY_CODE_F11,
+        "f12" => KEY_CODE_F12,
+        "f13" => KEY_CODE_F13,
+        "f14" => KEY_CODE_F14,
+        "f15" => KEY_CODE_F15,
+        "f16" => KEY_CODE_F16,
+        "f17" => KEY_CODE_F17,
+        "f18" => KEY_CODE_F18,
+        "f19" => KEY_CODE_F19,
+        "f20" => KEY_CODE_F20,
+        _ => return None,
+    })
 }
 
 fn hotkey_key_code(token: &str) -> Option<u16> {
@@ -691,15 +731,17 @@ mod platform {
         duration_ms: Option<u64>,
         steps: Option<std::num::NonZeroU32>,
     ) -> Result<(), OperatorError> {
-        drag(
-            from,
-            to,
-            &DragMotion {
-                duration_ms,
-                steps,
-                modifiers: Vec::new(),
-            },
-        )
+        let steps = steps.map(std::num::NonZeroU32::get).unwrap_or(1);
+        Event::mouse(from, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
+
+        let step_delay_ms = drag_step_delay_ms(duration_ms, steps);
+        for step in 1..=steps {
+            thread::sleep(Duration::from_millis(step_delay_ms));
+            let point = drag_interpolated_point(from, to, step, steps);
+            Event::mouse(point, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
+        }
+
+        Ok(())
     }
 
     pub fn scroll(point: Option<Point>, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
@@ -961,6 +1003,15 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "platform error: unsupported macOS press key: shift"
+        );
+    }
+
+    #[test]
+    fn parse_press_rejects_printable_keys() {
+        let error = parse_press_key("a").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "platform error: unsupported macOS press key: a"
         );
     }
 
