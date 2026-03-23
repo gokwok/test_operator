@@ -41,6 +41,36 @@ fn successful_action_outcome(detail: &str, duration_ms: u64) -> ActionOutcome {
     }
 }
 
+fn schema_ref<'a>(schema: &'a Value, reference: &str) -> &'a Value {
+    let key = reference.rsplit('/').next().unwrap();
+    schema
+        .get("$defs")
+        .and_then(|defs| defs.get(key))
+        .or_else(|| schema.get("definitions").and_then(|defs| defs.get(key)))
+        .unwrap_or_else(|| panic!("missing schema reference: {reference}"))
+}
+
+fn verification_enum_values(schema: &Value) -> Vec<String> {
+    let verifications = &schema["properties"]["verifications"];
+    if verifications.is_null() {
+        return Vec::new();
+    }
+
+    let items = &verifications["items"];
+    let enum_schema = if let Some(reference) = items["$ref"].as_str() {
+        schema_ref(schema, reference)
+    } else {
+        items
+    };
+
+    enum_schema["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_string())
+        .collect()
+}
+
 #[test]
 fn tools_list_requires_initialized_notification() {
     let server = discovery_server();
@@ -270,16 +300,50 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(drag["inputSchema"]["properties"]["steps"].is_object());
     assert!(drag["inputSchema"]["properties"]["modifiers"].is_object());
 
-    for tool_name in ["close-window", "maximize-window", "minimize-window"] {
-        let tool = tools
-            .iter()
-            .find(|tool| tool["name"] == json!(tool_name))
-            .unwrap();
-        assert_eq!(tool["annotations"]["readOnlyHint"], json!(false));
-        assert_eq!(tool["annotations"]["destructiveHint"], json!(true));
-        assert!(tool["inputSchema"]["properties"]["target_selector"].is_object());
-        assert!(tool["inputSchema"]["properties"]["focus_policy"].is_object());
-    }
+    let launch_app = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("launch-app"))
+        .unwrap();
+    assert!(launch_app["inputSchema"]["properties"]["verifications"].is_null());
+
+    let close_window = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("close-window"))
+        .unwrap();
+    assert_eq!(close_window["annotations"]["readOnlyHint"], json!(false));
+    assert_eq!(close_window["annotations"]["destructiveHint"], json!(true));
+    assert!(close_window["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(close_window["inputSchema"]["properties"]["focus_policy"].is_object());
+    assert!(close_window["inputSchema"]["properties"]["verifications"].is_null());
+
+    let minimize_window = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("minimize-window"))
+        .unwrap();
+    assert_eq!(minimize_window["annotations"]["readOnlyHint"], json!(false));
+    assert_eq!(
+        minimize_window["annotations"]["destructiveHint"],
+        json!(true)
+    );
+    assert!(minimize_window["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(minimize_window["inputSchema"]["properties"]["focus_policy"].is_object());
+    assert_eq!(
+        verification_enum_values(&minimize_window["inputSchema"]),
+        vec!["WindowState"]
+    );
+
+    let maximize_window = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("maximize-window"))
+        .unwrap();
+    assert_eq!(maximize_window["annotations"]["readOnlyHint"], json!(false));
+    assert_eq!(
+        maximize_window["annotations"]["destructiveHint"],
+        json!(true)
+    );
+    assert!(maximize_window["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(maximize_window["inputSchema"]["properties"]["focus_policy"].is_object());
+    assert!(maximize_window["inputSchema"]["properties"]["verifications"].is_null());
 
     for tool_name in ["move-window", "resize-window", "set-window-bounds"] {
         let tool = tools

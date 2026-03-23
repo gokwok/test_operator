@@ -331,6 +331,25 @@ impl RuntimeCore {
     }
 
     fn validate_action_request(&self, req: &ActionRequest) -> Result<(), OperatorError> {
+        for verification in &req.verifications {
+            let supported = match (&req.action, verification) {
+                (Action::LaunchApp { .. } | Action::CloseWindow | Action::MaximizeWindow, _) => {
+                    false
+                }
+                (Action::MinimizeWindow, ActionVerification::WindowState) => true,
+                (Action::MinimizeWindow, _) => false,
+                _ => true,
+            };
+
+            if !supported {
+                return Err(OperatorError::Platform(format!(
+                    "post-action {:?} verification is not supported for {}",
+                    verification,
+                    action_name(&req.action)
+                )));
+            }
+        }
+
         if !req.verifications.is_empty()
             && req.target_selector.is_none()
             && !matches!(req.action, Action::FocusWindow { .. })
@@ -709,6 +728,32 @@ impl RuntimeCore {
 
 fn find_window(windows: &[WindowInfo], id: operator_core::WindowId) -> Option<&WindowInfo> {
     windows.iter().find(|window| window.id == id)
+}
+
+fn action_name(action: &Action) -> &'static str {
+    match action {
+        Action::Click { .. } => "click",
+        Action::Move => "move",
+        Action::Type { .. } => "type",
+        Action::Press { .. } => "press",
+        Action::Scroll { .. } => "scroll",
+        Action::Hotkey { .. } => "hotkey",
+        Action::Drag { .. } => "drag",
+        Action::Swipe { .. } => "swipe",
+        Action::LaunchApp { .. } => "launch-app",
+        Action::CloseWindow => "close-window",
+        Action::MinimizeWindow => "minimize-window",
+        Action::MaximizeWindow => "maximize-window",
+        Action::MoveWindow { .. } => "move-window",
+        Action::ResizeWindow { .. } => "resize-window",
+        Action::SetWindowBounds { .. } => "set-window-bounds",
+        Action::SwitchApp => "switch-app",
+        Action::QuitApp => "quit-app",
+        Action::RelaunchApp => "relaunch-app",
+        Action::HideApp => "hide-app",
+        Action::UnhideApp => "unhide-app",
+        Action::FocusWindow { .. } => "focus-window",
+    }
 }
 
 #[derive(Clone)]

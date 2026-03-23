@@ -56,9 +56,9 @@ enum Command {
     Press(PressArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
-    CloseWindow(WindowChromeActionArgs),
-    MinimizeWindow(WindowChromeActionArgs),
-    MaximizeWindow(WindowChromeActionArgs),
+    CloseWindow(CloseWindowArgs),
+    MinimizeWindow(MinimizeWindowArgs),
+    MaximizeWindow(MaximizeWindowArgs),
     MoveWindow(MoveWindowArgs),
     ResizeWindow(ResizeWindowArgs),
     SetWindowBounds(SetWindowBoundsArgs),
@@ -126,9 +126,9 @@ impl Command {
             Self::Press(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
-            Self::CloseWindow(args) => args.into_invocation("close-window"),
-            Self::MinimizeWindow(args) => args.into_invocation("minimize-window"),
-            Self::MaximizeWindow(args) => args.into_invocation("maximize-window"),
+            Self::CloseWindow(args) => args.into_invocation(),
+            Self::MinimizeWindow(args) => args.into_invocation(),
+            Self::MaximizeWindow(args) => args.into_invocation(),
             Self::MoveWindow(args) => args.into_invocation(),
             Self::ResizeWindow(args) => args.into_invocation(),
             Self::SetWindowBounds(args) => args.into_invocation(),
@@ -651,8 +651,6 @@ struct LaunchAppArgs {
     common: CommonArgs,
     #[arg(long)]
     bundle_id_or_name: String,
-    #[command(flatten)]
-    verification: ActionVerificationArgs,
 }
 
 impl LaunchAppArgs {
@@ -662,7 +660,6 @@ impl LaunchAppArgs {
             "bundle_id_or_name".into(),
             Value::String(self.bundle_id_or_name),
         );
-        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "launch-app",
             input: Value::Object(input),
@@ -672,24 +669,68 @@ impl LaunchAppArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-struct WindowChromeActionArgs {
+struct CloseWindowArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: WindowChromeTargetArgs,
+}
+
+impl CloseWindowArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        Ok(ToolInvocation {
+            tool: "close-window",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct MinimizeWindowArgs {
     #[command(flatten)]
     common: CommonArgs,
     #[command(flatten)]
     target: WindowChromeTargetArgs,
     #[command(flatten)]
-    verification: ActionVerificationArgs,
+    verification: WindowStateVerificationArgs,
 }
 
-impl WindowChromeActionArgs {
-    fn into_invocation(self, tool: &'static str) -> Result<ToolInvocation, String> {
+impl MinimizeWindowArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
         insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
-            tool,
+            tool: "minimize-window",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct MaximizeWindowArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: WindowChromeTargetArgs,
+}
+
+impl MaximizeWindowArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        Ok(ToolInvocation {
+            tool: "maximize-window",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })
@@ -919,6 +960,19 @@ impl VerificationArg {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum WindowStateVerificationArg {
+    WindowState,
+}
+
+impl WindowStateVerificationArg {
+    fn verification(self) -> ActionVerification {
+        match self {
+            Self::WindowState => ActionVerification::WindowState,
+        }
+    }
+}
+
 impl FocusPolicyArg {
     fn focus_policy(self) -> ActionFocusPolicy {
         match self {
@@ -1043,6 +1097,21 @@ impl ActionVerificationArgs {
         self.verifications
             .into_iter()
             .map(VerificationArg::verification)
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct WindowStateVerificationArgs {
+    #[arg(long = "verify", value_enum)]
+    verifications: Vec<WindowStateVerificationArg>,
+}
+
+impl WindowStateVerificationArgs {
+    fn into_verifications(self) -> Vec<ActionVerification> {
+        self.verifications
+            .into_iter()
+            .map(WindowStateVerificationArg::verification)
             .collect()
     }
 }

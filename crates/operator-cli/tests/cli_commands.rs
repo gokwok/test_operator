@@ -231,6 +231,36 @@ async fn close_window_command_maps_window_target_selector_and_focus_policy() {
     );
 }
 
+#[test]
+fn launch_app_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "launch-app",
+        "--bundle-id-or-name",
+        "Calculator",
+        "--verify",
+        "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[test]
+fn close_window_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "close-window",
+        "--window-id",
+        "42",
+        "--verify",
+        "window-state",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
 #[tokio::test]
 async fn minimize_window_command_maps_app_target_selector_to_tool_input() {
     let cli =
@@ -248,6 +278,43 @@ async fn minimize_window_command_maps_app_target_selector_to_tool_input() {
             "focus_policy": "Auto"
         })
     );
+}
+
+#[tokio::test]
+async fn minimize_window_command_only_accepts_window_state_verification() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "minimize-window",
+        "--window-id",
+        "42",
+        "--verify",
+        "window-state",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "minimize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowId": 42
+            },
+            "focus_policy": "Auto",
+            "verifications": ["WindowState"]
+        })
+    );
+
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "minimize-window",
+        "--window-id",
+        "42",
+        "--verify",
+        "focus",
+    ])
+    .unwrap_err();
+    assert!(error.to_string().contains("invalid value 'focus'"));
 }
 
 #[tokio::test]
@@ -274,6 +341,21 @@ async fn maximize_window_command_maps_pid_target_selector_to_tool_input() {
             "focus_policy": "Auto"
         })
     );
+}
+
+#[test]
+fn maximize_window_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "maximize-window",
+        "--window-id",
+        "42",
+        "--verify",
+        "window-state",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
 }
 
 #[tokio::test]

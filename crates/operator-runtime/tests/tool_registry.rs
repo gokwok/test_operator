@@ -13,7 +13,7 @@ use operator_runtime::{
     SnapshotStore,
 };
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
-use serde_json::json;
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 fn default_action_request() -> ActionRequest {
@@ -37,6 +37,36 @@ fn successful_action_outcome(detail: &str, duration_ms: u64) -> ActionOutcome {
         side_effects: Vec::new(),
         warnings: Vec::new(),
     }
+}
+
+fn schema_ref<'a>(schema: &'a Value, reference: &str) -> &'a Value {
+    let key = reference.rsplit('/').next().unwrap();
+    schema
+        .get("$defs")
+        .and_then(|defs| defs.get(key))
+        .or_else(|| schema.get("definitions").and_then(|defs| defs.get(key)))
+        .unwrap_or_else(|| panic!("missing schema reference: {reference}"))
+}
+
+fn verification_enum_values(schema: &Value) -> Vec<String> {
+    let verifications = &schema["properties"]["verifications"];
+    if verifications.is_null() {
+        return Vec::new();
+    }
+
+    let items = &verifications["items"];
+    let enum_schema = if let Some(reference) = items["$ref"].as_str() {
+        schema_ref(schema, reference)
+    } else {
+        items
+    };
+
+    enum_schema["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_string())
+        .collect()
 }
 
 #[tokio::test]
@@ -1464,6 +1494,80 @@ async fn action_tools_fail_when_post_action_focus_verification_misses_target_win
 }
 
 #[tokio::test]
+async fn runtime_act_rejects_unsupported_post_action_verifications() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::AppLifecycle, Capability::WindowManagement]),
+    ));
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+    let ctx = ExecContext {
+        target: "local:macos".into(),
+        session: None,
+        timeout_ms: Some(10_000),
+    };
+
+    let cases = vec![
+        (
+            ActionRequest {
+                action: Action::LaunchApp {
+                    bundle_id_or_name: "Calculator".into(),
+                },
+                locator: None,
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::Focus],
+            },
+            "post-action Focus verification is not supported for launch-app",
+        ),
+        (
+            ActionRequest {
+                action: Action::CloseWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::WindowState],
+            },
+            "post-action WindowState verification is not supported for close-window",
+        ),
+        (
+            ActionRequest {
+                action: Action::MinimizeWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::Focus],
+            },
+            "post-action Focus verification is not supported for minimize-window",
+        ),
+        (
+            ActionRequest {
+                action: Action::MaximizeWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::WindowState],
+            },
+            "post-action WindowState verification is not supported for maximize-window",
+        ),
+    ];
+
+    for (req, expected) in cases {
+        let error = runtime.core().act(req, ctx.clone()).await.unwrap_err();
+        match error {
+            OperatorError::Platform(message) => assert_eq!(message, expected),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    assert!(driver.action_calls().await.is_empty());
+}
+
+#[tokio::test]
 async fn action_tools_export_stable_specs() {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -1535,15 +1639,49 @@ async fn action_tools_export_stable_specs() {
         launch_app.capabilities_required,
         &[Capability::AppLifecycle]
     );
+    assert!(launch_app.input_schema["properties"]["verifications"].is_null());
 
-    for tool_name in ["close-window", "maximize-window", "minimize-window"] {
-        let spec = specs.iter().find(|spec| spec.name == tool_name).unwrap();
-        assert!(spec.has_side_effects);
-        assert_eq!(spec.capabilities_required, &[Capability::WindowManagement]);
-        assert!(spec.input_schema["properties"]["target_selector"].is_object());
-        assert!(spec.input_schema["properties"]["focus_policy"].is_object());
-        assert!(spec.input_schema["properties"]["verifications"].is_object());
-    }
+    let close_window = specs
+        .iter()
+        .find(|spec| spec.name == "close-window")
+        .unwrap();
+    assert!(close_window.has_side_effects);
+    assert_eq!(
+        close_window.capabilities_required,
+        &[Capability::WindowManagement]
+    );
+    assert!(close_window.input_schema["properties"]["target_selector"].is_object());
+    assert!(close_window.input_schema["properties"]["focus_policy"].is_object());
+    assert!(close_window.input_schema["properties"]["verifications"].is_null());
+
+    let minimize_window = specs
+        .iter()
+        .find(|spec| spec.name == "minimize-window")
+        .unwrap();
+    assert!(minimize_window.has_side_effects);
+    assert_eq!(
+        minimize_window.capabilities_required,
+        &[Capability::WindowManagement]
+    );
+    assert!(minimize_window.input_schema["properties"]["target_selector"].is_object());
+    assert!(minimize_window.input_schema["properties"]["focus_policy"].is_object());
+    assert_eq!(
+        verification_enum_values(&minimize_window.input_schema),
+        vec!["WindowState"]
+    );
+
+    let maximize_window = specs
+        .iter()
+        .find(|spec| spec.name == "maximize-window")
+        .unwrap();
+    assert!(maximize_window.has_side_effects);
+    assert_eq!(
+        maximize_window.capabilities_required,
+        &[Capability::WindowManagement]
+    );
+    assert!(maximize_window.input_schema["properties"]["target_selector"].is_object());
+    assert!(maximize_window.input_schema["properties"]["focus_policy"].is_object());
+    assert!(maximize_window.input_schema["properties"]["verifications"].is_null());
 
     for tool_name in ["move-window", "resize-window", "set-window-bounds"] {
         let spec = specs.iter().find(|spec| spec.name == tool_name).unwrap();

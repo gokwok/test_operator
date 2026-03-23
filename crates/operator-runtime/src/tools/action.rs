@@ -179,7 +179,7 @@ fn close_window_registration() -> ToolRegistration {
         spec: ToolSpec {
             name: "close-window",
             description: "Close a target window using a shared selector and focus policy.",
-            input_schema: json_schema_for::<WindowChromeToolInput>(),
+            input_schema: json_schema_for::<WindowTargetToolInput>(),
             output_schema: json_schema_for::<ActionToolOutput>(),
             capabilities_required: CLOSE_WINDOW_CAPABILITIES,
             has_side_effects: true,
@@ -195,7 +195,7 @@ fn minimize_window_registration() -> ToolRegistration {
         spec: ToolSpec {
             name: "minimize-window",
             description: "Minimize a target window using a shared selector and focus policy.",
-            input_schema: json_schema_for::<WindowChromeToolInput>(),
+            input_schema: json_schema_for::<MinimizeWindowToolInput>(),
             output_schema: json_schema_for::<ActionToolOutput>(),
             capabilities_required: MINIMIZE_WINDOW_CAPABILITIES,
             has_side_effects: true,
@@ -211,7 +211,7 @@ fn maximize_window_registration() -> ToolRegistration {
         spec: ToolSpec {
             name: "maximize-window",
             description: "Maximize a target window using a shared selector and focus policy.",
-            input_schema: json_schema_for::<WindowChromeToolInput>(),
+            input_schema: json_schema_for::<WindowTargetToolInput>(),
             output_schema: json_schema_for::<ActionToolOutput>(),
             capabilities_required: MAXIMIZE_WINDOW_CAPABILITIES,
             has_side_effects: true,
@@ -602,7 +602,7 @@ async fn launch_app(
                 locator: None,
                 target_selector: None,
                 focus_policy: ActionFocusPolicy::Auto,
-                verifications: input.verification.verifications,
+                verifications: Vec::new(),
             },
             ctx,
         )
@@ -640,10 +640,15 @@ async fn close_window(
     core: Arc<RuntimeCore>,
     ctx: operator_core::ExecContext,
 ) -> Result<Value, OperatorError> {
-    let input = parse_input::<WindowChromeToolInput>("close-window", input)?;
+    let input = parse_input::<WindowTargetToolInput>("close-window", input)?;
     let outcome = core
         .act(
-            build_window_chrome_action_request(Action::CloseWindow, input),
+            build_window_geometry_action_request(
+                Action::CloseWindow,
+                input.target_selector,
+                input.focus_policy,
+                Vec::new(),
+            ),
             ctx,
         )
         .await?;
@@ -656,10 +661,15 @@ async fn minimize_window(
     core: Arc<RuntimeCore>,
     ctx: operator_core::ExecContext,
 ) -> Result<Value, OperatorError> {
-    let input = parse_input::<WindowChromeToolInput>("minimize-window", input)?;
+    let input = parse_input::<MinimizeWindowToolInput>("minimize-window", input)?;
     let outcome = core
         .act(
-            build_window_chrome_action_request(Action::MinimizeWindow, input),
+            build_window_geometry_action_request(
+                Action::MinimizeWindow,
+                input.target_selector,
+                input.focus_policy,
+                input.verification.into_verifications(),
+            ),
             ctx,
         )
         .await?;
@@ -672,10 +682,15 @@ async fn maximize_window(
     core: Arc<RuntimeCore>,
     ctx: operator_core::ExecContext,
 ) -> Result<Value, OperatorError> {
-    let input = parse_input::<WindowChromeToolInput>("maximize-window", input)?;
+    let input = parse_input::<WindowTargetToolInput>("maximize-window", input)?;
     let outcome = core
         .act(
-            build_window_chrome_action_request(Action::MaximizeWindow, input),
+            build_window_geometry_action_request(
+                Action::MaximizeWindow,
+                input.target_selector,
+                input.focus_policy,
+                Vec::new(),
+            ),
             ctx,
         )
         .await?;
@@ -895,18 +910,6 @@ fn build_lifecycle_action_request(
     }
 }
 
-fn build_window_chrome_action_request(
-    action: Action,
-    input: WindowChromeToolInput,
-) -> ActionRequest {
-    build_window_geometry_action_request(
-        action,
-        input.target_selector,
-        input.focus_policy,
-        input.verification.verifications,
-    )
-}
-
 fn build_window_geometry_action_request(
     action: Action,
     target_selector: ActionTargetSelector,
@@ -1079,9 +1082,6 @@ struct LaunchAppToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     bundle_id_or_name: String,
-    #[serde(flatten, default)]
-    #[schemars(flatten)]
-    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1098,7 +1098,18 @@ struct FocusWindowToolInput {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-struct WindowChromeToolInput {
+struct WindowTargetToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    target_selector: ActionTargetSelector,
+    #[serde(default)]
+    focus_policy: ActionFocusPolicy,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct MinimizeWindowToolInput {
     #[serde(flatten)]
     #[schemars(flatten)]
     exec: ToolExecInput,
@@ -1107,7 +1118,7 @@ struct WindowChromeToolInput {
     focus_policy: ActionFocusPolicy,
     #[serde(flatten, default)]
     #[schemars(flatten)]
-    verification: ActionVerificationToolInput,
+    verification: WindowStateVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1183,6 +1194,28 @@ struct ActionTargetToolInput {
 struct ActionVerificationToolInput {
     #[serde(default)]
     verifications: Vec<ActionVerification>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+enum WindowStateVerification {
+    WindowState,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, Default)]
+struct WindowStateVerificationToolInput {
+    #[serde(default)]
+    verifications: Vec<WindowStateVerification>,
+}
+
+impl WindowStateVerificationToolInput {
+    fn into_verifications(self) -> Vec<ActionVerification> {
+        self.verifications
+            .into_iter()
+            .map(|verification| match verification {
+                WindowStateVerification::WindowState => ActionVerification::WindowState,
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
