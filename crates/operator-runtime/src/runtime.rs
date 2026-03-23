@@ -236,7 +236,11 @@ impl RuntimeCore {
         ctx: &ExecContext,
     ) -> Result<(), OperatorError> {
         let capability = match &req.action {
-            Action::Click { .. } | Action::Move | Action::Scroll { .. } | Action::Drag { .. } => {
+            Action::Click { .. }
+            | Action::Move
+            | Action::Scroll { .. }
+            | Action::Drag { .. }
+            | Action::Swipe { .. } => {
                 Capability::PointerInput
             }
             Action::Type { .. } | Action::Hotkey { .. } | Action::Press { .. } => {
@@ -274,25 +278,46 @@ impl RuntimeCore {
     }
 
     fn validate_action_request(&self, req: &ActionRequest) -> Result<(), OperatorError> {
-        if let Action::Drag {
-            from:
-                Locator::SnapshotElement {
-                    snapshot: from_snapshot,
-                    ..
-                },
-            to:
-                Locator::SnapshotElement {
-                    snapshot: to_snapshot,
-                    ..
-                },
-            ..
-        } = &req.action
-        {
-            if from_snapshot != to_snapshot {
-                return Err(OperatorError::Platform(
-                    "drag: from/to must reference the same snapshot".into(),
-                ));
+        match &req.action {
+            Action::Drag {
+                from:
+                    Locator::SnapshotElement {
+                        snapshot: from_snapshot,
+                        ..
+                    },
+                to:
+                    Locator::SnapshotElement {
+                        snapshot: to_snapshot,
+                        ..
+                    },
+                ..
+            } => {
+                if from_snapshot != to_snapshot {
+                    return Err(OperatorError::Platform(
+                        "drag: from/to must reference the same snapshot".into(),
+                    ));
+                }
             }
+            Action::Swipe {
+                from:
+                    Locator::SnapshotElement {
+                        snapshot: from_snapshot,
+                        ..
+                    },
+                to:
+                    Locator::SnapshotElement {
+                        snapshot: to_snapshot,
+                        ..
+                    },
+                ..
+            } => {
+                if from_snapshot != to_snapshot {
+                    return Err(OperatorError::Platform(
+                        "swipe: from/to must reference the same snapshot".into(),
+                    ));
+                }
+            }
+            _ => {}
         }
 
         Ok(())
@@ -306,13 +331,25 @@ impl RuntimeCore {
             req.locator = Some(self.normalize_locator(locator).await?);
         }
 
-        if let Action::Drag { from, to, motion } = req.action {
-            req.action = Action::Drag {
+        req.action = match req.action {
+            Action::Drag { from, to, motion } => Action::Drag {
                 from: self.normalize_locator(from).await?,
                 to: self.normalize_locator(to).await?,
                 motion,
-            };
-        }
+            },
+            Action::Swipe {
+                from,
+                to,
+                duration_ms,
+                steps,
+            } => Action::Swipe {
+                from: self.normalize_locator(from).await?,
+                to: self.normalize_locator(to).await?,
+                duration_ms,
+                steps,
+            },
+            other => other,
+        };
 
         Ok(req)
     }

@@ -1,9 +1,18 @@
+use std::num::NonZeroU32;
+
 use operator_core::{ClickMode, DragModifier, DragMotion, OperatorError, Point};
 
 pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError>;
     fn move_pointer(&self, point: Point) -> Result<(), OperatorError>;
     fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError>;
+    fn swipe(
+        &self,
+        from: Point,
+        to: Point,
+        duration_ms: Option<u64>,
+        steps: Option<std::num::NonZeroU32>,
+    ) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
     fn press(&self, key: &str, count: u32) -> Result<(), OperatorError>;
     fn scroll(&self, point: Option<Point>, delta_x: f64, delta_y: f64)
@@ -25,6 +34,16 @@ impl InputSynthesizer for SystemInputSynthesizer {
 
     fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError> {
         platform::drag(from, to, motion)
+    }
+
+    fn swipe(
+        &self,
+        from: Point,
+        to: Point,
+        duration_ms: Option<u64>,
+        steps: Option<NonZeroU32>,
+    ) -> Result<(), OperatorError> {
+        platform::swipe(from, to, duration_ms, steps)
     }
 
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError> {
@@ -666,6 +685,23 @@ mod platform {
         Ok(())
     }
 
+    pub fn swipe(
+        from: Point,
+        to: Point,
+        duration_ms: Option<u64>,
+        steps: Option<std::num::NonZeroU32>,
+    ) -> Result<(), OperatorError> {
+        drag(
+            from,
+            to,
+            &DragMotion {
+                duration_ms,
+                steps,
+                modifiers: Vec::new(),
+            },
+        )
+    }
+
     pub fn scroll(point: Option<Point>, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
         let source = EventSource::new()?;
         if let Some(point) = point {
@@ -819,6 +855,17 @@ mod platform {
     }
 
     pub fn drag(_from: Point, _to: Point, _motion: &DragMotion) -> Result<(), OperatorError> {
+        Err(OperatorError::Platform(
+            "macOS input synthesis is unavailable on non-macOS hosts".into(),
+        ))
+    }
+
+    pub fn swipe(
+        _from: Point,
+        _to: Point,
+        _duration_ms: Option<u64>,
+        _steps: Option<std::num::NonZeroU32>,
+    ) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

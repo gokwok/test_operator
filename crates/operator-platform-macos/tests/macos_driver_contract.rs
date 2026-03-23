@@ -772,6 +772,94 @@ async fn drag_action_resolves_between_locators_and_returns_successful_outcome() 
 }
 
 #[tokio::test]
+async fn swipe_action_resolves_between_locators_and_returns_successful_outcome() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([
+                (
+                    ElementId("ax-start".into()),
+                    UiElement {
+                        id: ElementId("ax-start".into()),
+                        role: "AXStaticText".into(),
+                        label: Some("Swipe start".into()),
+                        value: None,
+                        bounds: Some(Rect {
+                            x: 10.0,
+                            y: 20.0,
+                            width: 40.0,
+                            height: 20.0,
+                        }),
+                        enabled: Some(true),
+                        children: vec![],
+                        confidence: Some(1.0),
+                        source: ElementSource::Native,
+                    },
+                ),
+                (
+                    ElementId("ax-end".into()),
+                    UiElement {
+                        id: ElementId("ax-end".into()),
+                        role: "AXButton".into(),
+                        label: Some("Swipe end".into()),
+                        value: None,
+                        bounds: Some(Rect {
+                            x: 180.0,
+                            y: 20.0,
+                            width: 60.0,
+                            height: 20.0,
+                        }),
+                        enabled: Some(true),
+                        children: vec![],
+                        confidence: Some(1.0),
+                        source: ElementSource::Native,
+                    },
+                ),
+            ]),
+            root_ids: vec![ElementId("ax-start".into()), ElementId("ax-end".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Swipe {
+                    from: Locator::Text("swipe start".into()),
+                    to: Locator::Role {
+                        role: "AXButton".into(),
+                        index: 0,
+                    },
+                    duration_ms: Some(240),
+                    steps: Some(4.try_into().unwrap()),
+                },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("swiped"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Swipe {
+            from: Point { x: 30.0, y: 30.0 },
+            to: Point { x: 210.0, y: 30.0 },
+            duration_ms: Some(240),
+            steps: Some(4.try_into().unwrap()),
+        }]
+    );
+}
+
+#[tokio::test]
 async fn hotkey_action_returns_successful_outcome() {
     let input = StubInputSynthesizer::default();
     let driver = MacosDriver::with_components(
@@ -1051,6 +1139,12 @@ enum RecordedInput {
         to: Point,
         motion: DragMotion,
     },
+    Swipe {
+        from: Point,
+        to: Point,
+        duration_ms: Option<u64>,
+        steps: Option<std::num::NonZeroU32>,
+    },
     Hotkey(Vec<String>),
     Press {
         key: String,
@@ -1094,6 +1188,22 @@ impl InputSynthesizer for StubInputSynthesizer {
             from,
             to,
             motion: motion.clone(),
+        });
+        Ok(())
+    }
+
+    fn swipe(
+        &self,
+        from: Point,
+        to: Point,
+        duration_ms: Option<u64>,
+        steps: Option<std::num::NonZeroU32>,
+    ) -> Result<(), OperatorError> {
+        self.calls.lock().unwrap().push(RecordedInput::Swipe {
+            from,
+            to,
+            duration_ms,
+            steps,
         });
         Ok(())
     }

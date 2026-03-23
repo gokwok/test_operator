@@ -223,6 +223,14 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert_eq!(press["annotations"]["destructiveHint"], json!(true));
     assert!(press["inputSchema"]["properties"]["key"].is_object());
     assert!(press["inputSchema"]["properties"]["count"].is_object());
+
+    let swipe = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("swipe"))
+        .unwrap();
+    assert!(swipe["inputSchema"]["properties"]["duration_ms"].is_object());
+    assert!(swipe["inputSchema"]["properties"]["steps"].is_object());
+    assert!(swipe["inputSchema"]["properties"]["modifiers"].is_null());
 }
 
 #[test]

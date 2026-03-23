@@ -206,6 +206,57 @@ async fn runtime_rejects_drag_between_different_snapshots() {
 }
 
 #[tokio::test]
+async fn runtime_rejects_swipe_between_different_snapshots() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Swipe {
+                    from: Locator::SnapshotElement {
+                        snapshot: "snap-1".into(),
+                        element: "el-1".into(),
+                    },
+                    to: Locator::SnapshotElement {
+                        snapshot: "snap-2".into(),
+                        element: "el-2".into(),
+                    },
+                    duration_ms: Some(250),
+                    steps: Some(4.try_into().unwrap()),
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(100),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::Platform(message) => {
+            assert_eq!(message, "swipe: from/to must reference the same snapshot")
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    assert!(driver.action_calls().await.is_empty());
+}
+
+#[tokio::test]
 async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
     let store = Arc::new(InMemorySnapshotStore::new());
     let mut snapshot = test_snapshot("snap-drag");
@@ -299,6 +350,100 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
                     steps: Some(6.try_into().unwrap()),
                     modifiers: vec![],
                 },
+            },
+            locator: None,
+        }
+    );
+}
+
+#[tokio::test]
+async fn runtime_resolves_swipe_snapshot_element_locators_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-swipe");
+    snapshot.elements.get_mut(&"el-1".into()).unwrap().bounds = Some(Rect {
+        x: 20.0,
+        y: 40.0,
+        width: 50.0,
+        height: 20.0,
+    });
+    snapshot.elements.insert(
+        ElementId("el-2".into()),
+        UiElement {
+            id: ElementId("el-2".into()),
+            role: "AXButton".into(),
+            label: Some("swipe target".into()),
+            value: None,
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 44.0,
+                width: 80.0,
+                height: 24.0,
+            }),
+            enabled: Some(true),
+            children: vec![],
+            confidence: Some(1.0),
+            source: ElementSource::Native,
+        },
+    );
+    snapshot.root_ids.push(ElementId("el-2".into()));
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 14,
+        detail: Some("swiped".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Swipe {
+                    from: Locator::SnapshotElement {
+                        snapshot: snapshot.id.clone(),
+                        element: "el-1".into(),
+                    },
+                    to: Locator::SnapshotElement {
+                        snapshot: snapshot.id.clone(),
+                        element: "el-2".into(),
+                    },
+                    duration_ms: Some(240),
+                    steps: Some(4.try_into().unwrap()),
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Swipe {
+                from: Locator::Coords(Point { x: 45.0, y: 50.0 }),
+                to: Locator::Coords(Point { x: 160.0, y: 56.0 }),
+                duration_ms: Some(240),
+                steps: Some(4.try_into().unwrap()),
             },
             locator: None,
         }

@@ -38,6 +38,12 @@ pub enum Action {
         #[serde(default)]
         motion: DragMotion,
     },
+    Swipe {
+        from: Locator,
+        to: Locator,
+        duration_ms: Option<u64>,
+        steps: Option<NonZeroU32>,
+    },
     LaunchApp {
         bundle_id_or_name: String,
     },

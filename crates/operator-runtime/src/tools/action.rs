@@ -17,6 +17,7 @@ const CLICK_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const MOVE_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const DRAG_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const SCROLL_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
+const SWIPE_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const HOTKEY_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const PRESS_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
@@ -28,6 +29,7 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
         click_registration(),
         move_registration(),
         drag_registration(),
+        swipe_registration(),
         scroll_registration(),
         type_registration(),
         hotkey_registration(),
@@ -96,6 +98,22 @@ fn drag_registration() -> ToolRegistration {
             has_side_effects: true,
         },
         handler: Arc::new(|input, core, ctx| Box::pin(async move { drag(input, core, ctx).await })),
+    }
+}
+
+fn swipe_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "swipe",
+            description: "Swipe from one locator to another locator.",
+            input_schema: json_schema_for::<SwipeToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: SWIPE_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { swipe(input, core, ctx).await })
+        }),
     }
 }
 
@@ -282,6 +300,30 @@ async fn drag(
     serialize_output(outcome)
 }
 
+async fn swipe(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<SwipeToolInput>("swipe", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::Swipe {
+                    from: input.from,
+                    to: input.to,
+                    duration_ms: input.duration_ms,
+                    steps: input.steps,
+                },
+                locator: None,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 async fn hotkey(
     input: Value,
     core: Arc<RuntimeCore>,
@@ -444,6 +486,18 @@ struct DragToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     motion: DragMotion,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct SwipeToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    from: Locator,
+    to: Locator,
+    duration_ms: Option<u64>,
+    steps: Option<NonZeroU32>,
 }
 
 #[allow(dead_code)]

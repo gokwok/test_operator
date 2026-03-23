@@ -368,6 +368,55 @@ async fn drag_command_maps_motion_options_to_tool_input() {
 }
 
 #[tokio::test]
+async fn swipe_command_maps_motion_options_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "swipe",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--from-x",
+        "12",
+        "--from-y",
+        "24",
+        "--to-x",
+        "640",
+        "--to-y",
+        "480",
+        "--duration-ms",
+        "300",
+        "--steps",
+        "6",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "swipe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "from": {
+                "Coords": {
+                    "x": 12.0,
+                    "y": 24.0
+                }
+            },
+            "to": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            },
+            "duration_ms": 300,
+            "steps": 6
+        })
+    );
+}
+
+#[tokio::test]
 async fn hotkey_command_maps_repeated_key_flags_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -568,6 +617,41 @@ async fn cli_run_renders_artifact_path_for_non_json_output() {
     let recorded = calls.lock().unwrap();
     assert_eq!(recorded[0].0, "artifact-get");
     assert_eq!(recorded[0].1, json!({ "artifact_id": "capture-1.png" }));
+}
+
+#[tokio::test]
+async fn cli_run_renders_swipe_detail_for_non_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "swipe",
+        "--from-x",
+        "10",
+        "--from-y",
+        "20",
+        "--to-x",
+        "100",
+        "--to-y",
+        "20",
+    ])
+    .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 15,
+                "detail": "swiped"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "swiped");
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "swipe");
 }
 
 struct RecordingInvoker {

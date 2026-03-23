@@ -414,6 +414,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 15,
+        detail: Some("swiped".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 11,
         detail: Some("sent hotkey".into()),
     }));
@@ -521,6 +526,30 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let swiped = runtime
+        .tools()
+        .invoke(
+            "swipe",
+            json!({
+                "target": "local:macos",
+                "from": {
+                    "Coords": {
+                        "x": 15.0,
+                        "y": 25.0
+                    }
+                },
+                "to": {
+                    "Coords": {
+                        "x": 90.0,
+                        "y": 25.0
+                    }
+                },
+                "duration_ms": 240,
+                "steps": 4
+            }),
+        )
+        .await
+        .unwrap();
     let hotkey = runtime
         .tools()
         .invoke(
@@ -572,6 +601,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(scrolled["outcome"]["detail"], json!("scrolled"));
     assert_eq!(moved["outcome"]["detail"], json!("moved"));
     assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
+    assert_eq!(swiped["outcome"]["detail"], json!("swiped"));
     assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
     assert_eq!(pressed["outcome"]["detail"], json!("pressed down 3 times"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
@@ -638,6 +668,22 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         from: Locator::Coords(operator_core::Point { x: 10.0, y: 20.0 }),
                         to: Locator::Coords(operator_core::Point { x: 30.0, y: 60.0 }),
                         motion: DragMotion::default(),
+                    },
+                    locator: None,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Swipe {
+                        from: Locator::Coords(operator_core::Point { x: 15.0, y: 25.0 }),
+                        to: Locator::Coords(operator_core::Point { x: 90.0, y: 25.0 }),
+                        duration_ms: Some(240),
+                        steps: Some(4.try_into().unwrap()),
                     },
                     locator: None,
                 },
@@ -731,6 +777,7 @@ async fn action_tools_export_stable_specs() {
             "press",
             "scroll",
             "snapshot-get",
+            "swipe",
             "type",
         ]
     );
@@ -789,6 +836,13 @@ async fn action_tools_export_stable_specs() {
     assert_eq!(press.capabilities_required, &[Capability::KeyboardInput]);
     assert!(press.input_schema["properties"]["key"].is_object());
     assert!(press.input_schema["properties"]["count"].is_object());
+
+    let swipe = specs.iter().find(|spec| spec.name == "swipe").unwrap();
+    assert!(swipe.has_side_effects);
+    assert_eq!(swipe.capabilities_required, &[Capability::PointerInput]);
+    assert!(swipe.input_schema["properties"]["duration_ms"].is_object());
+    assert!(swipe.input_schema["properties"]["steps"].is_object());
+    assert!(swipe.input_schema["properties"]["modifiers"].is_null());
 
     let type_spec = specs.iter().find(|spec| spec.name == "type").unwrap();
     assert!(type_spec.has_side_effects);
@@ -880,6 +934,72 @@ async fn drag_tool_forwards_motion_options_to_runtime_act() {
                         steps: Some(6.try_into().unwrap()),
                         modifiers: vec![DragModifier::Command, DragModifier::Shift],
                     },
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
+async fn swipe_tool_forwards_motion_options_to_runtime_act() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 15,
+        detail: Some("swiped".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let swiped = runtime
+        .tools()
+        .invoke(
+            "swipe",
+            json!({
+                "target": "local:macos",
+                "from": {
+                    "Coords": {
+                        "x": 12.0,
+                        "y": 24.0
+                    }
+                },
+                "to": {
+                    "Coords": {
+                        "x": 240.0,
+                        "y": 24.0
+                    }
+                },
+                "duration_ms": 180,
+                "steps": 3
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(swiped["outcome"]["detail"], json!("swiped"));
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Swipe {
+                    from: Locator::Coords(operator_core::Point { x: 12.0, y: 24.0 }),
+                    to: Locator::Coords(operator_core::Point { x: 240.0, y: 24.0 }),
+                    duration_ms: Some(180),
+                    steps: Some(3.try_into().unwrap()),
                 },
                 locator: None,
             },

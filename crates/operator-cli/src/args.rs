@@ -49,6 +49,7 @@ enum Command {
     Click(ClickArgs),
     Move(MoveArgs),
     Drag(DragArgs),
+    Swipe(SwipeArgs),
     Scroll(ScrollArgs),
     Hotkey(HotkeyArgs),
     Press(PressArgs),
@@ -71,6 +72,7 @@ impl Command {
             Self::Click(args) => &args.common,
             Self::Move(args) => &args.common,
             Self::Drag(args) => &args.common,
+            Self::Swipe(args) => &args.common,
             Self::Scroll(args) => &args.common,
             Self::Hotkey(args) => &args.common,
             Self::Press(args) => &args.common,
@@ -95,6 +97,7 @@ impl Command {
             Self::Click(args) => args.into_invocation(),
             Self::Move(args) => args.into_invocation(),
             Self::Drag(args) => args.into_invocation(),
+            Self::Swipe(args) => args.into_invocation(),
             Self::Scroll(args) => args.into_invocation(),
             Self::Hotkey(args) => args.into_invocation(),
             Self::Press(args) => args.into_invocation(),
@@ -397,6 +400,39 @@ impl DragArgs {
         }
         Ok(ToolInvocation {
             tool: "drag",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct SwipeArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    from: DragFromLocatorArgs,
+    #[command(flatten)]
+    to: DragToLocatorArgs,
+    #[arg(long)]
+    duration_ms: Option<u64>,
+    #[arg(long)]
+    steps: Option<u32>,
+}
+
+impl SwipeArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        insert_serialized(&mut input, "from", self.from.into_locator()?)?;
+        insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        if let Some(duration_ms) = self.duration_ms {
+            input.insert("duration_ms".into(), Value::from(duration_ms));
+        }
+        if let Some(steps) = self.steps {
+            input.insert("steps".into(), Value::from(steps));
+        }
+        Ok(ToolInvocation {
+            tool: "swipe",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })

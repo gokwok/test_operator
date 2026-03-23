@@ -272,6 +272,15 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.drag(from, to, motion, &permissions)
             }
+            Action::Swipe {
+                from,
+                to,
+                duration_ms,
+                steps,
+            } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.swipe(from, to, duration_ms, steps, &permissions)
+            }
             Action::Hotkey { keys } => {
                 let permissions = self.permission_reader.current_permissions()?;
                 self.hotkey(&keys, &permissions)
@@ -397,6 +406,26 @@ where
             success: true,
             duration_ms: 0,
             detail: Some("dragged".into()),
+        })
+    }
+
+    fn swipe(
+        &self,
+        from: Locator,
+        to: Locator,
+        duration_ms: Option<u64>,
+        steps: Option<std::num::NonZeroU32>,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        let from = resolve_locator(&from, &self.tree_inspector)?;
+        let to = resolve_locator(&to, &self.tree_inspector)?;
+        self.input_synthesizer
+            .swipe(from.point, to.point, duration_ms, steps)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some("swiped".into()),
         })
     }
 
