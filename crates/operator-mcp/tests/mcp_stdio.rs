@@ -9,7 +9,7 @@ use operator_core::{
     Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, Capability,
     CapabilitySet, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
     OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
-    QueryResult, TypeTrailingKey,
+    QueryResult, Rect, TypeTrailingKey,
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
@@ -190,6 +190,15 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         .iter()
         .any(|tool| tool["name"] == json!("minimize-window")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("move")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("move-window")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("resize-window")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("set-window-bounds")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("switch-app")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("quit-app")));
     assert!(tools
@@ -255,6 +264,40 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         assert!(tool["inputSchema"]["properties"]["target_selector"].is_object());
         assert!(tool["inputSchema"]["properties"]["focus_policy"].is_object());
     }
+
+    for tool_name in ["move-window", "resize-window", "set-window-bounds"] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"] == json!(tool_name))
+            .unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"], json!(false));
+        assert_eq!(tool["annotations"]["destructiveHint"], json!(true));
+        assert!(tool["inputSchema"]["properties"]["target_selector"].is_object());
+        assert!(tool["inputSchema"]["properties"]["focus_policy"].is_object());
+    }
+
+    let move_window = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("move-window"))
+        .unwrap();
+    assert!(move_window["inputSchema"]["properties"]["x"].is_object());
+    assert!(move_window["inputSchema"]["properties"]["y"].is_object());
+
+    let resize_window = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("resize-window"))
+        .unwrap();
+    assert!(resize_window["inputSchema"]["properties"]["width"].is_object());
+    assert!(resize_window["inputSchema"]["properties"]["height"].is_object());
+
+    let set_window_bounds = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("set-window-bounds"))
+        .unwrap();
+    assert!(set_window_bounds["inputSchema"]["properties"]["x"].is_object());
+    assert!(set_window_bounds["inputSchema"]["properties"]["y"].is_object());
+    assert!(set_window_bounds["inputSchema"]["properties"]["width"].is_object());
+    assert!(set_window_bounds["inputSchema"]["properties"]["height"].is_object());
 
     let press = tools
         .iter()
@@ -850,6 +893,81 @@ async fn tools_call_executes_close_window_and_returns_structured_content() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
                 focus_policy: ActionFocusPolicy::Never,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_set_window_bounds_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::WindowManagement]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 10,
+        detail: Some("set window 42 bounds to x=80 y=120 width=900 height=700".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 24,
+            "method": "tools/call",
+            "params": {
+                "name": "set-window-bounds",
+                "arguments": {
+                    "target": "local:macos",
+                    "target_selector": {
+                        "Pid": 101
+                    },
+                    "focus_policy": "Auto",
+                    "x": 80.0,
+                    "y": 120.0,
+                    "width": 900.0,
+                    "height": 700.0
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("set window 42 bounds to x=80 y=120 width=900 height=700")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::SetWindowBounds {
+                    bounds: Rect {
+                        x: 80.0,
+                        y: 120.0,
+                        width: 900.0,
+                        height: 700.0,
+                    },
+                },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::Pid(101)),
+                focus_policy: ActionFocusPolicy::Auto,
             },
             ExecContext {
                 target: "local:macos".into(),

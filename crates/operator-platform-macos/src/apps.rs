@@ -11,6 +11,9 @@ pub trait AppService: Send + Sync {
     fn close_window(&self, id: WindowId) -> Result<(), OperatorError>;
     fn minimize_window(&self, id: WindowId) -> Result<(), OperatorError>;
     fn maximize_window(&self, id: WindowId) -> Result<(), OperatorError>;
+    fn move_window(&self, id: WindowId, x: f64, y: f64) -> Result<Rect, OperatorError>;
+    fn resize_window(&self, id: WindowId, width: f64, height: f64) -> Result<Rect, OperatorError>;
+    fn set_window_bounds(&self, id: WindowId, bounds: Rect) -> Result<Rect, OperatorError>;
     fn focus_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         self.launch_app(bundle_id_or_name)
     }
@@ -178,6 +181,36 @@ if (processes.length === 0) {
         maximize_window_with_osascript(id)
     }
 
+    fn move_window(&self, id: WindowId, x: f64, y: f64) -> Result<Rect, OperatorError> {
+        let current = window_bounds_by_id(self, id)?;
+        self.set_window_bounds(
+            id,
+            Rect {
+                x,
+                y,
+                width: current.width,
+                height: current.height,
+            },
+        )
+    }
+
+    fn resize_window(&self, id: WindowId, width: f64, height: f64) -> Result<Rect, OperatorError> {
+        let current = window_bounds_by_id(self, id)?;
+        self.set_window_bounds(
+            id,
+            Rect {
+                x: current.x,
+                y: current.y,
+                width,
+                height,
+            },
+        )
+    }
+
+    fn set_window_bounds(&self, id: WindowId, bounds: Rect) -> Result<Rect, OperatorError> {
+        set_window_bounds_with_osascript(id, bounds)
+    }
+
     fn quit_app(&self, app_name: &str) -> Result<(), OperatorError> {
         tell_application(app_name, "quit")
     }
@@ -268,6 +301,20 @@ where
 {
     serde_json::from_str(&json).map_err(|error| {
         OperatorError::Platform(format!("failed to decode macOS command output: {error}"))
+    })
+}
+
+fn window_bounds_by_id<A: AppService + ?Sized>(
+    app_service: &A,
+    id: WindowId,
+) -> Result<Rect, OperatorError> {
+    let windows = app_service.list_windows(None)?;
+    let window = windows
+        .into_iter()
+        .find(|window| window.id == id)
+        .ok_or_else(|| OperatorError::Platform(format!("window {id} not found")))?;
+    window.bounds.ok_or_else(|| {
+        OperatorError::Platform(format!("window {id} has no bounds available on macOS"))
     })
 }
 
@@ -394,6 +441,70 @@ fn maximize_window_with_osascript(_id: WindowId) -> Result<(), OperatorError> {
     Err(OperatorError::Platform(
         "macOS window chrome actions are unavailable on non-macOS hosts".into(),
     ))
+}
+
+#[cfg(target_os = "macos")]
+fn set_window_bounds_with_osascript(id: WindowId, bounds: Rect) -> Result<Rect, OperatorError> {
+    let right = bounds.x + bounds.width;
+    let bottom = bounds.y + bounds.height;
+    let script = format!(
+        r#"
+tell application "System Events"
+  repeat with proc in application processes
+    repeat with win in windows of proc
+      if id of win is {window_id} then
+        set bounds of win to {{{left}, {top}, {right}, {bottom}}}
+        set updatedBounds to bounds of win
+        return (item 1 of updatedBounds as string) & "," & (item 2 of updatedBounds as string) & "," & (item 3 of updatedBounds as string) & "," & (item 4 of updatedBounds as string)
+      end if
+    end repeat
+  end repeat
+end tell
+error "window {window_id} not found"
+"#,
+        window_id = id.0,
+        left = bounds.x,
+        top = bounds.y,
+        right = right,
+        bottom = bottom
+    );
+
+    parse_window_bounds_csv(&run_osascript(&script)?)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_window_bounds_with_osascript(_id: WindowId, _bounds: Rect) -> Result<Rect, OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS window geometry actions are unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn parse_window_bounds_csv(csv: &str) -> Result<Rect, OperatorError> {
+    let values = csv
+        .split(',')
+        .map(str::trim)
+        .map(|value| {
+            value.parse::<f64>().map_err(|error| {
+                OperatorError::Platform(format!(
+                    "failed to parse macOS window bounds component {value:?}: {error}"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if values.len() != 4 {
+        return Err(OperatorError::Platform(format!(
+            "failed to parse macOS window bounds: {csv}"
+        )));
+    }
+
+    Ok(Rect {
+        x: values[0],
+        y: values[1],
+        width: values[2] - values[0],
+        height: values[3] - values[1],
+    })
 }
 
 #[cfg(target_os = "macos")]

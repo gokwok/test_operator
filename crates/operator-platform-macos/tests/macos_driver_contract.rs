@@ -153,12 +153,18 @@ async fn list_apps_and_windows_queries_forward_to_services() {
             closed_windows: Mutex::new(Vec::new()),
             minimized_windows: Mutex::new(Vec::new()),
             maximized_windows: Mutex::new(Vec::new()),
+            moved_windows: Mutex::new(Vec::new()),
+            resized_windows: Mutex::new(Vec::new()),
+            set_window_bounds_calls: Mutex::new(Vec::new()),
             quit: Mutex::new(Vec::new()),
             relaunched: Mutex::new(Vec::new()),
             hidden: Mutex::new(Vec::new()),
             unhidden: Mutex::new(Vec::new()),
             focused_windows: Mutex::new(Vec::new()),
             last_window_filter: Mutex::new(None),
+            move_window_result: None,
+            resize_window_result: None,
+            set_window_bounds_result: None,
         },
         StubPermissionReader::granted(),
     );
@@ -423,6 +429,197 @@ async fn maximize_window_action_uses_pid_target_anchor_window() {
     assert_eq!(
         driver.app_service().focused_apps(),
         vec!["com.apple.TextEdit".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn move_window_action_returns_post_action_geometry() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            windows: vec![WindowInfo {
+                id: 42.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: Some(Rect {
+                    x: 40.0,
+                    y: 60.0,
+                    width: 640.0,
+                    height: 480.0,
+                }),
+                is_focused: false,
+                is_minimized: false,
+            }],
+            move_window_result: Some(Rect {
+                x: 120.0,
+                y: 240.0,
+                width: 640.0,
+                height: 480.0,
+            }),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::MoveWindow { x: 120.0, y: 240.0 },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                focus_policy: ActionFocusPolicy::Never,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        outcome.detail.as_deref(),
+        Some("moved window 42 to x=120 y=240 width=640 height=480")
+    );
+    assert_eq!(
+        driver.app_service().moved_windows(),
+        vec![(WindowId::from(42), 120.0, 240.0)]
+    );
+    assert!(driver.app_service().focused_windows().is_empty());
+}
+
+#[tokio::test]
+async fn resize_window_action_uses_app_target_anchor_window_and_auto_focuses() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            windows: vec![WindowInfo {
+                id: 42.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: Some(Rect {
+                    x: 120.0,
+                    y: 240.0,
+                    width: 640.0,
+                    height: 480.0,
+                }),
+                is_focused: true,
+                is_minimized: false,
+            }],
+            resize_window_result: Some(Rect {
+                x: 120.0,
+                y: 240.0,
+                width: 800.0,
+                height: 600.0,
+            }),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::ResizeWindow {
+                    width: 800.0,
+                    height: 600.0,
+                },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        outcome.detail.as_deref(),
+        Some("resized window 42 to x=120 y=240 width=800 height=600")
+    );
+    assert_eq!(
+        driver.app_service().resized_windows(),
+        vec![(WindowId::from(42), 800.0, 600.0)]
+    );
+    assert_eq!(
+        driver.app_service().focused_apps(),
+        vec!["com.apple.TextEdit".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn set_window_bounds_action_uses_pid_target_and_returns_post_action_geometry() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            windows: vec![WindowInfo {
+                id: 42.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: Some(Rect {
+                    x: 40.0,
+                    y: 60.0,
+                    width: 640.0,
+                    height: 480.0,
+                }),
+                is_focused: true,
+                is_minimized: false,
+            }],
+            set_window_bounds_result: Some(Rect {
+                x: 80.0,
+                y: 120.0,
+                width: 900.0,
+                height: 700.0,
+            }),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::SetWindowBounds {
+                    bounds: Rect {
+                        x: 80.0,
+                        y: 120.0,
+                        width: 900.0,
+                        height: 700.0,
+                    },
+                },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::Pid(101)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        outcome.detail.as_deref(),
+        Some("set window 42 bounds to x=80 y=120 width=900 height=700")
+    );
+    assert_eq!(
+        driver.app_service().set_window_bounds_calls(),
+        vec![(
+            WindowId::from(42),
+            Rect {
+                x: 80.0,
+                y: 120.0,
+                width: 900.0,
+                height: 700.0,
+            }
+        )]
     );
 }
 
@@ -1622,12 +1819,18 @@ struct StubAppService {
     closed_windows: Mutex<Vec<WindowId>>,
     minimized_windows: Mutex<Vec<WindowId>>,
     maximized_windows: Mutex<Vec<WindowId>>,
+    moved_windows: Mutex<Vec<(WindowId, f64, f64)>>,
+    resized_windows: Mutex<Vec<(WindowId, f64, f64)>>,
+    set_window_bounds_calls: Mutex<Vec<(WindowId, Rect)>>,
     quit: Mutex<Vec<String>>,
     relaunched: Mutex<Vec<String>>,
     hidden: Mutex<Vec<String>>,
     unhidden: Mutex<Vec<String>>,
     focused_windows: Mutex<Vec<WindowId>>,
     last_window_filter: Mutex<Option<String>>,
+    move_window_result: Option<Rect>,
+    resize_window_result: Option<Rect>,
+    set_window_bounds_result: Option<Rect>,
 }
 
 impl StubAppService {
@@ -1653,6 +1856,18 @@ impl StubAppService {
 
     fn maximized_windows(&self) -> Vec<WindowId> {
         self.maximized_windows.lock().unwrap().clone()
+    }
+
+    fn moved_windows(&self) -> Vec<(WindowId, f64, f64)> {
+        self.moved_windows.lock().unwrap().clone()
+    }
+
+    fn resized_windows(&self) -> Vec<(WindowId, f64, f64)> {
+        self.resized_windows.lock().unwrap().clone()
+    }
+
+    fn set_window_bounds_calls(&self) -> Vec<(WindowId, Rect)> {
+        self.set_window_bounds_calls.lock().unwrap().clone()
     }
 
     fn quit_apps(&self) -> Vec<String> {
@@ -1719,6 +1934,35 @@ impl AppService for StubAppService {
     fn maximize_window(&self, id: WindowId) -> Result<(), OperatorError> {
         self.maximized_windows.lock().unwrap().push(id);
         Ok(())
+    }
+
+    fn move_window(&self, id: WindowId, x: f64, y: f64) -> Result<Rect, OperatorError> {
+        self.moved_windows.lock().unwrap().push((id, x, y));
+        self.move_window_result.ok_or_else(|| {
+            OperatorError::Platform(format!("stub move_window result missing for window {id}"))
+        })
+    }
+
+    fn resize_window(&self, id: WindowId, width: f64, height: f64) -> Result<Rect, OperatorError> {
+        self.resized_windows
+            .lock()
+            .unwrap()
+            .push((id, width, height));
+        self.resize_window_result.ok_or_else(|| {
+            OperatorError::Platform(format!("stub resize_window result missing for window {id}"))
+        })
+    }
+
+    fn set_window_bounds(&self, id: WindowId, bounds: Rect) -> Result<Rect, OperatorError> {
+        self.set_window_bounds_calls
+            .lock()
+            .unwrap()
+            .push((id, bounds));
+        self.set_window_bounds_result.ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "stub set_window_bounds result missing for window {id}"
+            ))
+        })
     }
 
     fn quit_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {

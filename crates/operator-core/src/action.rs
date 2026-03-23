@@ -75,6 +75,17 @@ pub enum Action {
     CloseWindow,
     MinimizeWindow,
     MaximizeWindow,
+    MoveWindow {
+        x: f64,
+        y: f64,
+    },
+    ResizeWindow {
+        width: f64,
+        height: f64,
+    },
+    SetWindowBounds {
+        bounds: crate::Rect,
+    },
     SwitchApp,
     QuitApp,
     RelaunchApp,

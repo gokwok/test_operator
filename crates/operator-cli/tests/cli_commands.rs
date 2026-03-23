@@ -274,6 +274,107 @@ async fn maximize_window_command_maps_pid_target_selector_to_tool_input() {
 }
 
 #[tokio::test]
+async fn move_window_command_maps_coordinates_and_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "move-window",
+        "--target",
+        "local:macos",
+        "--window-id",
+        "42",
+        "--x",
+        "120",
+        "--y",
+        "240",
+        "--focus-policy",
+        "never",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "move-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "WindowId": 42
+            },
+            "focus_policy": "Never",
+            "x": 120.0,
+            "y": 240.0
+        })
+    );
+}
+
+#[tokio::test]
+async fn resize_window_command_maps_size_and_app_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "resize-window",
+        "--app",
+        "TextEdit",
+        "--width",
+        "640",
+        "--height",
+        "480",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "resize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "App": "TextEdit"
+            },
+            "focus_policy": "Auto",
+            "width": 640.0,
+            "height": 480.0
+        })
+    );
+}
+
+#[tokio::test]
+async fn set_window_bounds_command_maps_rect_and_pid_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "set-window-bounds",
+        "--target",
+        "local:macos",
+        "--pid",
+        "101",
+        "--x",
+        "80",
+        "--y",
+        "120",
+        "--width",
+        "900",
+        "--height",
+        "700",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "set-window-bounds");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "Pid": 101
+            },
+            "focus_policy": "Auto",
+            "x": 80.0,
+            "y": 120.0,
+            "width": 900.0,
+            "height": 700.0
+        })
+    );
+}
+
+#[tokio::test]
 async fn type_command_maps_app_target_selector_with_default_focus_policy() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -907,6 +1008,53 @@ async fn cli_run_renders_close_window_detail_for_non_json_output() {
                 "WindowId": 42
             },
             "focus_policy": "Auto"
+        })
+    );
+}
+
+#[tokio::test]
+async fn cli_run_renders_move_window_detail_for_non_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "move-window",
+        "--window-id",
+        "42",
+        "--x",
+        "120",
+        "--y",
+        "240",
+    ])
+    .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 10,
+                "detail": "moved window 42 to x=120 y=240 width=640 height=480"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(
+        rendered,
+        "moved window 42 to x=120 y=240 width=640 height=480"
+    );
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "move-window");
+    assert_eq!(
+        recorded[0].1,
+        json!({
+            "target_selector": {
+                "WindowId": 42
+            },
+            "focus_policy": "Auto",
+            "x": 120.0,
+            "y": 240.0
         })
     );
 }

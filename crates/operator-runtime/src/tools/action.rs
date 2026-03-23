@@ -2,7 +2,7 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use operator_core::{
     Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, Capability,
-    ClickMode, DragMotion, Locator, OperatorError, TypeTrailingKey, WindowId,
+    ClickMode, DragMotion, Locator, OperatorError, Rect, TypeTrailingKey, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,9 @@ const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const CLOSE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 const MINIMIZE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 const MAXIMIZE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const MOVE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const RESIZE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const SET_WINDOW_BOUNDS_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 const SWITCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const QUIT_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const RELAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
@@ -46,6 +49,9 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
         close_window_registration(),
         minimize_window_registration(),
         maximize_window_registration(),
+        move_window_registration(),
+        resize_window_registration(),
+        set_window_bounds_registration(),
         switch_app_registration(),
         quit_app_registration(),
         relaunch_app_registration(),
@@ -211,6 +217,55 @@ fn maximize_window_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { maximize_window(input, core, ctx).await })
+        }),
+    }
+}
+
+fn move_window_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "move-window",
+            description:
+                "Move a target window to explicit top-left coordinates using a shared selector.",
+            input_schema: json_schema_for::<MoveWindowToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: MOVE_WINDOW_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { move_window(input, core, ctx).await })
+        }),
+    }
+}
+
+fn resize_window_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "resize-window",
+            description: "Resize a target window to explicit width and height.",
+            input_schema: json_schema_for::<ResizeWindowToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: RESIZE_WINDOW_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { resize_window(input, core, ctx).await })
+        }),
+    }
+}
+
+fn set_window_bounds_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "set-window-bounds",
+            description: "Set a target window to explicit bounds using a shared selector.",
+            input_schema: json_schema_for::<SetWindowBoundsToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: SET_WINDOW_BOUNDS_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { set_window_bounds(input, core, ctx).await })
         }),
     }
 }
@@ -609,6 +664,79 @@ async fn maximize_window(
     serialize_output(outcome)
 }
 
+async fn move_window(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<MoveWindowToolInput>("move-window", input)?;
+    let outcome = core
+        .act(
+            build_window_geometry_action_request(
+                Action::MoveWindow {
+                    x: input.x,
+                    y: input.y,
+                },
+                input.target_selector,
+                input.focus_policy,
+            ),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn resize_window(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<ResizeWindowToolInput>("resize-window", input)?;
+    let outcome = core
+        .act(
+            build_window_geometry_action_request(
+                Action::ResizeWindow {
+                    width: input.width,
+                    height: input.height,
+                },
+                input.target_selector,
+                input.focus_policy,
+            ),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn set_window_bounds(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<SetWindowBoundsToolInput>("set-window-bounds", input)?;
+    let outcome = core
+        .act(
+            build_window_geometry_action_request(
+                Action::SetWindowBounds {
+                    bounds: Rect {
+                        x: input.x,
+                        y: input.y,
+                        width: input.width,
+                        height: input.height,
+                    },
+                },
+                input.target_selector,
+                input.focus_policy,
+            ),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 async fn switch_app(
     input: Value,
     core: Arc<RuntimeCore>,
@@ -725,11 +853,19 @@ fn build_window_chrome_action_request(
     action: Action,
     input: WindowChromeToolInput,
 ) -> ActionRequest {
+    build_window_geometry_action_request(action, input.target_selector, input.focus_policy)
+}
+
+fn build_window_geometry_action_request(
+    action: Action,
+    target_selector: ActionTargetSelector,
+    focus_policy: ActionFocusPolicy,
+) -> ActionRequest {
     ActionRequest {
         action,
         locator: None,
-        target_selector: Some(input.target_selector),
-        focus_policy: input.focus_policy,
+        target_selector: Some(target_selector),
+        focus_policy,
     }
 }
 
@@ -886,6 +1022,47 @@ struct WindowChromeToolInput {
     target_selector: ActionTargetSelector,
     #[serde(default)]
     focus_policy: ActionFocusPolicy,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct MoveWindowToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    target_selector: ActionTargetSelector,
+    #[serde(default)]
+    focus_policy: ActionFocusPolicy,
+    x: f64,
+    y: f64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct ResizeWindowToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    target_selector: ActionTargetSelector,
+    #[serde(default)]
+    focus_policy: ActionFocusPolicy,
+    width: f64,
+    height: f64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct SetWindowBoundsToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    target_selector: ActionTargetSelector,
+    #[serde(default)]
+    focus_policy: ActionFocusPolicy,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 }
 
 #[allow(dead_code)]

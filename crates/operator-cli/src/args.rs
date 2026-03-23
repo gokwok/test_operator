@@ -59,6 +59,9 @@ enum Command {
     CloseWindow(WindowChromeActionArgs),
     MinimizeWindow(WindowChromeActionArgs),
     MaximizeWindow(WindowChromeActionArgs),
+    MoveWindow(MoveWindowArgs),
+    ResizeWindow(ResizeWindowArgs),
+    SetWindowBounds(SetWindowBoundsArgs),
     SwitchApp(LifecycleActionArgs),
     QuitApp(LifecycleActionArgs),
     RelaunchApp(LifecycleActionArgs),
@@ -90,6 +93,9 @@ impl Command {
             Self::CloseWindow(args) => &args.common,
             Self::MinimizeWindow(args) => &args.common,
             Self::MaximizeWindow(args) => &args.common,
+            Self::MoveWindow(args) => &args.common,
+            Self::ResizeWindow(args) => &args.common,
+            Self::SetWindowBounds(args) => &args.common,
             Self::SwitchApp(args) => &args.common,
             Self::QuitApp(args) => &args.common,
             Self::RelaunchApp(args) => &args.common,
@@ -123,6 +129,9 @@ impl Command {
             Self::CloseWindow(args) => args.into_invocation("close-window"),
             Self::MinimizeWindow(args) => args.into_invocation("minimize-window"),
             Self::MaximizeWindow(args) => args.into_invocation("maximize-window"),
+            Self::MoveWindow(args) => args.into_invocation(),
+            Self::ResizeWindow(args) => args.into_invocation(),
+            Self::SetWindowBounds(args) => args.into_invocation(),
             Self::SwitchApp(args) => args.into_invocation("switch-app"),
             Self::QuitApp(args) => args.into_invocation("quit-app"),
             Self::RelaunchApp(args) => args.into_invocation("relaunch-app"),
@@ -651,6 +660,96 @@ impl WindowChromeActionArgs {
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
         Ok(ToolInvocation {
             tool,
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct MoveWindowArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: WindowChromeTargetArgs,
+    #[arg(long, allow_hyphen_values = true)]
+    x: f64,
+    #[arg(long, allow_hyphen_values = true)]
+    y: f64,
+}
+
+impl MoveWindowArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        input.insert("x".into(), Value::from(self.x));
+        input.insert("y".into(), Value::from(self.y));
+        Ok(ToolInvocation {
+            tool: "move-window",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct ResizeWindowArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: WindowChromeTargetArgs,
+    #[arg(long)]
+    width: f64,
+    #[arg(long)]
+    height: f64,
+}
+
+impl ResizeWindowArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        input.insert("width".into(), Value::from(self.width));
+        input.insert("height".into(), Value::from(self.height));
+        Ok(ToolInvocation {
+            tool: "resize-window",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct SetWindowBoundsArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: WindowChromeTargetArgs,
+    #[arg(long, allow_hyphen_values = true)]
+    x: f64,
+    #[arg(long, allow_hyphen_values = true)]
+    y: f64,
+    #[arg(long)]
+    width: f64,
+    #[arg(long)]
+    height: f64,
+}
+
+impl SetWindowBoundsArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        input.insert("x".into(), Value::from(self.x));
+        input.insert("y".into(), Value::from(self.y));
+        input.insert("width".into(), Value::from(self.width));
+        input.insert("height".into(), Value::from(self.height));
+        Ok(ToolInvocation {
+            tool: "set-window-bounds",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })

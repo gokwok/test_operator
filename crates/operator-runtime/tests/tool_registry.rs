@@ -459,6 +459,21 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 9,
+        detail: Some("moved window 42 to x=120 y=240 width=640 height=480".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("resized window 42 to x=120 y=240 width=800 height=600".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("set window 42 bounds to x=80 y=120 width=900 height=700".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 10,
         detail: Some("switched app".into()),
     }));
@@ -687,6 +702,56 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let moved_window = runtime
+        .tools()
+        .invoke(
+            "move-window",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "WindowId": 42
+                },
+                "focus_policy": "Never",
+                "x": 120.0,
+                "y": 240.0
+            }),
+        )
+        .await
+        .unwrap();
+    let resized_window = runtime
+        .tools()
+        .invoke(
+            "resize-window",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "App": "TextEdit"
+                },
+                "focus_policy": "Auto",
+                "width": 800.0,
+                "height": 600.0
+            }),
+        )
+        .await
+        .unwrap();
+    let set_window_bounds = runtime
+        .tools()
+        .invoke(
+            "set-window-bounds",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "Pid": 101
+                },
+                "focus_policy": "Auto",
+                "x": 80.0,
+                "y": 120.0,
+                "width": 900.0,
+                "height": 700.0
+            }),
+        )
+        .await
+        .unwrap();
     let switched = runtime
         .tools()
         .invoke(
@@ -776,6 +841,18 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(closed["outcome"]["detail"], json!("closed window 41"));
     assert_eq!(minimized["outcome"]["detail"], json!("minimized window 42"));
     assert_eq!(maximized["outcome"]["detail"], json!("maximized window 43"));
+    assert_eq!(
+        moved_window["outcome"]["detail"],
+        json!("moved window 42 to x=120 y=240 width=640 height=480")
+    );
+    assert_eq!(
+        resized_window["outcome"]["detail"],
+        json!("resized window 42 to x=120 y=240 width=800 height=600")
+    );
+    assert_eq!(
+        set_window_bounds["outcome"]["detail"],
+        json!("set window 42 bounds to x=80 y=120 width=900 height=700")
+    );
     assert_eq!(switched["outcome"]["detail"], json!("switched app"));
     assert_eq!(quit["outcome"]["detail"], json!("quit app"));
     assert_eq!(relaunched["outcome"]["detail"], json!("relaunched app"));
@@ -971,6 +1048,55 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             ),
             (
                 ActionRequest {
+                    action: Action::MoveWindow { x: 120.0, y: 240.0 },
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                    focus_policy: ActionFocusPolicy::Never,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::ResizeWindow {
+                        width: 800.0,
+                        height: 600.0,
+                    },
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::SetWindowBounds {
+                        bounds: Rect {
+                            x: 80.0,
+                            y: 120.0,
+                            width: 900.0,
+                            height: 700.0,
+                        },
+                    },
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::Pid(101)),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
                     action: Action::SwitchApp,
                     locator: None,
                     target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
@@ -1079,12 +1205,15 @@ async fn action_tools_export_stable_specs() {
             "maximize-window",
             "minimize-window",
             "move",
+            "move-window",
             "observe",
             "permissions-status",
             "press",
             "quit-app",
             "relaunch-app",
+            "resize-window",
             "scroll",
+            "set-window-bounds",
             "snapshot-get",
             "swipe",
             "switch-app",
@@ -1127,6 +1256,37 @@ async fn action_tools_export_stable_specs() {
         assert!(spec.input_schema["properties"]["target_selector"].is_object());
         assert!(spec.input_schema["properties"]["focus_policy"].is_object());
     }
+
+    for tool_name in ["move-window", "resize-window", "set-window-bounds"] {
+        let spec = specs.iter().find(|spec| spec.name == tool_name).unwrap();
+        assert!(spec.has_side_effects);
+        assert_eq!(spec.capabilities_required, &[Capability::WindowManagement]);
+        assert!(spec.input_schema["properties"]["target_selector"].is_object());
+        assert!(spec.input_schema["properties"]["focus_policy"].is_object());
+    }
+
+    let move_window = specs
+        .iter()
+        .find(|spec| spec.name == "move-window")
+        .unwrap();
+    assert!(move_window.input_schema["properties"]["x"].is_object());
+    assert!(move_window.input_schema["properties"]["y"].is_object());
+
+    let resize_window = specs
+        .iter()
+        .find(|spec| spec.name == "resize-window")
+        .unwrap();
+    assert!(resize_window.input_schema["properties"]["width"].is_object());
+    assert!(resize_window.input_schema["properties"]["height"].is_object());
+
+    let set_window_bounds = specs
+        .iter()
+        .find(|spec| spec.name == "set-window-bounds")
+        .unwrap();
+    assert!(set_window_bounds.input_schema["properties"]["x"].is_object());
+    assert!(set_window_bounds.input_schema["properties"]["y"].is_object());
+    assert!(set_window_bounds.input_schema["properties"]["width"].is_object());
+    assert!(set_window_bounds.input_schema["properties"]["height"].is_object());
 
     for tool_name in [
         "switch-app",

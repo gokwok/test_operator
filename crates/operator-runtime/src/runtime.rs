@@ -253,6 +253,9 @@ impl RuntimeCore {
             Action::CloseWindow
             | Action::MinimizeWindow
             | Action::MaximizeWindow
+            | Action::MoveWindow { .. }
+            | Action::ResizeWindow { .. }
+            | Action::SetWindowBounds { .. }
             | Action::FocusWindow { .. } => Capability::WindowManagement,
         };
 

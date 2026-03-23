@@ -9,7 +9,7 @@ use operator_core::{
     Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, AppInfo,
     Capability, CapabilitySet, ClickMode, DragMotion, ExecContext, HealthStatus, Locator,
     ObserveRequest, ObserveResult, OperatorError, PermissionStatus, Point, QueryRequest,
-    QueryResult, Snapshot, SnapshotMetadata, TypeTrailingKey, WindowInfo,
+    QueryResult, Rect, Snapshot, SnapshotMetadata, TypeTrailingKey, WindowInfo,
 };
 
 use crate::{
@@ -286,6 +286,33 @@ where
                     success: true,
                     duration_ms: 0,
                     detail: Some(format!("maximized window {}", window.id)),
+                })
+            }
+            Action::MoveWindow { x, y } => {
+                let window = self.window_action_target(target, "move-window")?;
+                let bounds = self.app_service.move_window(window.id, x, y)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(window_geometry_detail("moved", window.id, bounds)),
+                })
+            }
+            Action::ResizeWindow { width, height } => {
+                let window = self.window_action_target(target, "resize-window")?;
+                let bounds = self.app_service.resize_window(window.id, width, height)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(window_geometry_detail("resized", window.id, bounds)),
+                })
+            }
+            Action::SetWindowBounds { bounds } => {
+                let window = self.window_action_target(target, "set-window-bounds")?;
+                let bounds = self.app_service.set_window_bounds(window.id, bounds)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(window_geometry_detail("set", window.id, bounds)),
                 })
             }
             Action::SwitchApp => {
@@ -937,6 +964,33 @@ fn press_detail(key: &str, count: u32) -> String {
         format!("pressed {key}")
     } else {
         format!("pressed {key} {count} times")
+    }
+}
+
+fn window_geometry_detail(action: &str, id: operator_core::WindowId, bounds: Rect) -> String {
+    match action {
+        "set" => format!(
+            "set window {id} bounds to x={} y={} width={} height={}",
+            trim_trailing_zero(bounds.x),
+            trim_trailing_zero(bounds.y),
+            trim_trailing_zero(bounds.width),
+            trim_trailing_zero(bounds.height)
+        ),
+        _ => format!(
+            "{action} window {id} to x={} y={} width={} height={}",
+            trim_trailing_zero(bounds.x),
+            trim_trailing_zero(bounds.y),
+            trim_trailing_zero(bounds.width),
+            trim_trailing_zero(bounds.height)
+        ),
+    }
+}
+
+fn trim_trailing_zero(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
     }
 }
 
