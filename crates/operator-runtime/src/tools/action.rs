@@ -22,6 +22,11 @@ const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const HOTKEY_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const PRESS_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const SWITCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const QUIT_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const RELAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const HIDE_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const UNHIDE_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 
 pub(crate) fn registrations() -> Vec<ToolRegistration> {
@@ -35,6 +40,11 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
         hotkey_registration(),
         press_registration(),
         launch_app_registration(),
+        switch_app_registration(),
+        quit_app_registration(),
+        relaunch_app_registration(),
+        hide_app_registration(),
+        unhide_app_registration(),
         focus_window_registration(),
     ]
 }
@@ -179,6 +189,86 @@ fn press_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { press(input, core, ctx).await })
+        }),
+    }
+}
+
+fn switch_app_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "switch-app",
+            description: "Bring a target app to the foreground using a shared selector.",
+            input_schema: json_schema_for::<LifecycleToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: SWITCH_APP_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { switch_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn quit_app_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "quit-app",
+            description: "Quit a target app using a shared selector.",
+            input_schema: json_schema_for::<LifecycleToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: QUIT_APP_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { quit_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn relaunch_app_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "relaunch-app",
+            description: "Quit and launch a target app using a shared selector.",
+            input_schema: json_schema_for::<LifecycleToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: RELAUNCH_APP_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { relaunch_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn hide_app_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "hide-app",
+            description: "Hide a target app using a shared selector.",
+            input_schema: json_schema_for::<LifecycleToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: HIDE_APP_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { hide_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn unhide_app_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "unhide-app",
+            description: "Unhide a target app using a shared selector.",
+            input_schema: json_schema_for::<LifecycleToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: UNHIDE_APP_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { unhide_app(input, core, ctx).await })
         }),
     }
 }
@@ -417,6 +507,86 @@ async fn focus_window(
     serialize_output(outcome)
 }
 
+async fn switch_app(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<LifecycleToolInput>("switch-app", input)?;
+    let outcome = core
+        .act(
+            build_lifecycle_action_request(Action::SwitchApp, input.target_selector),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn quit_app(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<LifecycleToolInput>("quit-app", input)?;
+    let outcome = core
+        .act(
+            build_lifecycle_action_request(Action::QuitApp, input.target_selector),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn relaunch_app(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<LifecycleToolInput>("relaunch-app", input)?;
+    let outcome = core
+        .act(
+            build_lifecycle_action_request(Action::RelaunchApp, input.target_selector),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn hide_app(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<LifecycleToolInput>("hide-app", input)?;
+    let outcome = core
+        .act(
+            build_lifecycle_action_request(Action::HideApp, input.target_selector),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn unhide_app(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<LifecycleToolInput>("unhide-app", input)?;
+    let outcome = core
+        .act(
+            build_lifecycle_action_request(Action::UnhideApp, input.target_selector),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 fn parse_input<T: for<'de> Deserialize<'de>>(tool: &str, input: Value) -> Result<T, OperatorError> {
     serde_json::from_value(input).map_err(|error| OperatorError::Tool {
         tool: tool.to_string(),
@@ -434,6 +604,18 @@ fn build_action_request(
         locator,
         target_selector: target.target_selector,
         focus_policy: target.focus_policy,
+    }
+}
+
+fn build_lifecycle_action_request(
+    action: Action,
+    target_selector: ActionTargetSelector,
+) -> ActionRequest {
+    ActionRequest {
+        action,
+        locator: None,
+        target_selector: Some(target_selector),
+        focus_policy: ActionFocusPolicy::Auto,
     }
 }
 
@@ -579,6 +761,15 @@ struct FocusWindowToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     window_id: WindowId,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct LifecycleToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    target_selector: ActionTargetSelector,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema, Default)]

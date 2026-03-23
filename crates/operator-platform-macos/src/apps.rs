@@ -11,6 +11,13 @@ pub trait AppService: Send + Sync {
     fn focus_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         self.launch_app(bundle_id_or_name)
     }
+    fn quit_app(&self, app_name: &str) -> Result<(), OperatorError>;
+    fn relaunch_app(&self, app_name: &str) -> Result<(), OperatorError> {
+        self.quit_app(app_name)?;
+        self.launch_app(app_name)
+    }
+    fn hide_app(&self, app_name: &str) -> Result<(), OperatorError>;
+    fn unhide_app(&self, app_name: &str) -> Result<(), OperatorError>;
     fn focus_window(&self, id: WindowId) -> Result<(), OperatorError>;
 }
 
@@ -154,6 +161,24 @@ if (processes.length === 0) {
 
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         launch_with_open(bundle_id_or_name)
+    }
+
+    fn quit_app(&self, app_name: &str) -> Result<(), OperatorError> {
+        tell_application(app_name, "quit")
+    }
+
+    fn relaunch_app(&self, app_name: &str) -> Result<(), OperatorError> {
+        tell_application(app_name, "quit")?;
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        launch_with_open(app_name)
+    }
+
+    fn hide_app(&self, app_name: &str) -> Result<(), OperatorError> {
+        set_application_visible(app_name, false)
+    }
+
+    fn unhide_app(&self, app_name: &str) -> Result<(), OperatorError> {
+        set_application_visible(app_name, true)
     }
 
     fn focus_window(&self, id: WindowId) -> Result<(), OperatorError> {
@@ -311,6 +336,54 @@ fn run_osascript(script: &str) -> Result<String, OperatorError> {
         .map_err(|error| OperatorError::Platform(format!("failed to invoke osascript: {error}")))?;
 
     command_output("osascript", output)
+}
+
+#[cfg(target_os = "macos")]
+fn tell_application(app_name: &str, command: &str) -> Result<(), OperatorError> {
+    let app_name = applescript_string_literal(app_name);
+    let script = format!(
+        r#"
+tell application "{app_name}"
+  {command}
+end tell
+"#
+    );
+
+    run_osascript(&script).map(|_| ())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn tell_application(_app_name: &str, _command: &str) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS app lifecycle actions are unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn set_application_visible(app_name: &str, visible: bool) -> Result<(), OperatorError> {
+    let app_name = applescript_string_literal(app_name);
+    let visible = if visible { "true" } else { "false" };
+    let script = format!(
+        r#"
+tell application "System Events"
+  set visible of application process "{app_name}" to {visible}
+end tell
+"#
+    );
+
+    run_osascript(&script).map(|_| ())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_application_visible(_app_name: &str, _visible: bool) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS app lifecycle actions are unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn applescript_string_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(target_os = "macos")]

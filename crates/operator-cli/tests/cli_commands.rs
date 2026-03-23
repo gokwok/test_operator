@@ -231,6 +231,115 @@ async fn type_command_maps_app_target_selector_with_default_focus_policy() {
 }
 
 #[tokio::test]
+async fn switch_app_command_maps_app_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "switch-app",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--app",
+        "TextEdit",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "switch-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "target_selector": {
+                "App": "TextEdit"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn quit_app_command_maps_pid_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "quit-app",
+        "--target",
+        "local:macos",
+        "--pid",
+        "101",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "quit-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "Pid": 101
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn relaunch_app_command_maps_window_title_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "relaunch-app",
+        "--window-title",
+        "Draft",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "relaunch-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowTitle": "Draft"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn hide_app_command_maps_window_index_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "hide-app", "--window-index", "1"])
+        .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "hide-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowIndex": 1
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn unhide_app_command_maps_window_id_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "unhide-app", "--window-id", "42"])
+        .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "unhide-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowId": 42
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn scroll_command_maps_deltas_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -659,6 +768,38 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
         json!({
             "target": "local:macos",
             "bundle_id_or_name": "Calculator"
+        })
+    );
+}
+
+#[tokio::test]
+async fn cli_run_renders_switch_app_detail_for_non_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "switch-app", "--app", "TextEdit"])
+        .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 10,
+                "detail": "switched app"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "switched app");
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "switch-app");
+    assert_eq!(
+        recorded[0].1,
+        json!({
+            "target_selector": {
+                "App": "TextEdit"
+            }
         })
     );
 }

@@ -56,6 +56,11 @@ enum Command {
     Press(PressArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
+    SwitchApp(LifecycleActionArgs),
+    QuitApp(LifecycleActionArgs),
+    RelaunchApp(LifecycleActionArgs),
+    HideApp(LifecycleActionArgs),
+    UnhideApp(LifecycleActionArgs),
     FocusWindow(FocusWindowArgs),
 }
 
@@ -79,6 +84,11 @@ impl Command {
             Self::Press(args) => &args.common,
             Self::Type(args) => &args.common,
             Self::LaunchApp(args) => &args.common,
+            Self::SwitchApp(args) => &args.common,
+            Self::QuitApp(args) => &args.common,
+            Self::RelaunchApp(args) => &args.common,
+            Self::HideApp(args) => &args.common,
+            Self::UnhideApp(args) => &args.common,
             Self::FocusWindow(args) => &args.common,
         }
     }
@@ -104,6 +114,11 @@ impl Command {
             Self::Press(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
+            Self::SwitchApp(args) => args.into_invocation("switch-app"),
+            Self::QuitApp(args) => args.into_invocation("quit-app"),
+            Self::RelaunchApp(args) => args.into_invocation("relaunch-app"),
+            Self::HideApp(args) => args.into_invocation("hide-app"),
+            Self::UnhideApp(args) => args.into_invocation("unhide-app"),
             Self::FocusWindow(args) => args.into_invocation(),
         }
     }
@@ -612,6 +627,26 @@ impl LaunchAppArgs {
 }
 
 #[derive(Debug, Clone, Args)]
+struct LifecycleActionArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: LifecycleTargetArgs,
+}
+
+impl LifecycleActionArgs {
+    fn into_invocation(self, tool: &'static str) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        insert_serialized(&mut input, "target_selector", self.target.into_selector()?)?;
+        Ok(ToolInvocation {
+            tool,
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
 struct FocusWindowArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -708,7 +743,7 @@ impl Default for FocusPolicyArg {
 }
 
 #[derive(Debug, Clone, Args, Default)]
-struct ActionTargetArgs {
+struct TargetSelectorArgs {
     #[arg(long)]
     app: Option<String>,
     #[arg(long)]
@@ -719,12 +754,10 @@ struct ActionTargetArgs {
     window_title: Option<String>,
     #[arg(long = "window-index")]
     window_index: Option<usize>,
-    #[arg(long, value_enum, default_value_t = FocusPolicyArg::Auto)]
-    focus_policy: FocusPolicyArg,
 }
 
-impl ActionTargetArgs {
-    fn into_parts(self) -> Result<(Option<ActionTargetSelector>, ActionFocusPolicy), String> {
+impl TargetSelectorArgs {
+    fn into_optional_selector(self) -> Result<Option<ActionTargetSelector>, String> {
         let selector_count = [
             self.app.is_some(),
             self.pid.is_some(),
@@ -752,7 +785,41 @@ impl ActionTargetArgs {
             self.window_index.map(ActionTargetSelector::WindowIndex)
         };
 
-        Ok((selector, self.focus_policy.focus_policy()))
+        Ok(selector)
+    }
+
+    fn into_required_selector(self) -> Result<ActionTargetSelector, String> {
+        self.into_optional_selector()?
+            .ok_or_else(|| "a target selector flag is required".to_string())
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct ActionTargetArgs {
+    #[command(flatten)]
+    selector: TargetSelectorArgs,
+    #[arg(long, value_enum, default_value_t = FocusPolicyArg::Auto)]
+    focus_policy: FocusPolicyArg,
+}
+
+impl ActionTargetArgs {
+    fn into_parts(self) -> Result<(Option<ActionTargetSelector>, ActionFocusPolicy), String> {
+        Ok((
+            self.selector.into_optional_selector()?,
+            self.focus_policy.focus_policy(),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct LifecycleTargetArgs {
+    #[command(flatten)]
+    selector: TargetSelectorArgs,
+}
+
+impl LifecycleTargetArgs {
+    fn into_selector(self) -> Result<ActionTargetSelector, String> {
+        self.selector.into_required_selector()
     }
 }
 

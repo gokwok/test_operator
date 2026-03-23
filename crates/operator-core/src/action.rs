@@ -72,6 +72,11 @@ pub enum Action {
     LaunchApp {
         bundle_id_or_name: String,
     },
+    SwitchApp,
+    QuitApp,
+    RelaunchApp,
+    HideApp,
+    UnhideApp,
     FocusWindow {
         id: WindowId,
     },

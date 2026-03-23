@@ -513,6 +513,113 @@ async fn focus_window_with_system_driver() {
 
 #[tokio::test]
 #[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn switch_app_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS switch-app smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare TextEdit smoke target: {error}");
+    }
+
+    if let Err(error) = launch_calculator() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS switch-app smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare Calculator smoke target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let cleanup_calculator = CleanupCalculatorApp;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS switch-app smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let apps = match driver.query(QueryRequest::ListApps, &exec_context()).await {
+        Ok(apps) => apps,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS switch-app smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("app query failed: {error}"),
+    };
+
+    let QueryResult::Apps(apps) = apps else {
+        panic!("expected apps query result");
+    };
+    let calculator_name = apps
+        .iter()
+        .find(|app| app.bundle_id.as_deref() == Some("com.apple.calculator"))
+        .map(|app| app.name.clone())
+        .unwrap_or_else(|| "Calculator".to_string());
+
+    match driver
+        .act(
+            ActionRequest {
+                action: Action::SwitchApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("com.apple.calculator".into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS switch-app smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("switch-app action failed: {error}"),
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let refreshed = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some(calculator_name.clone()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS switch-app smoke verification in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query after switch-app failed: {error}"),
+    };
+
+    let QueryResult::Windows(refreshed) = refreshed else {
+        panic!("expected windows query result");
+    };
+    assert!(
+        refreshed.iter().any(|window| window.is_focused),
+        "expected one {calculator_name} window to become focused after switch-app: {refreshed:?}"
+    );
+
+    drop(cleanup_calculator);
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
 async fn move_with_window_target_selector_with_system_driver() {
     if !cfg!(target_os = "macos") {
         eprintln!("Skipping macOS smoke test on non-macOS host.");
@@ -668,6 +775,20 @@ end tell
     }
 }
 
+struct CleanupCalculatorApp;
+
+impl Drop for CleanupCalculatorApp {
+    fn drop(&mut self) {
+        let _ = run_osascript(
+            r#"
+tell application id "com.apple.calculator"
+  quit
+end tell
+"#,
+        );
+    }
+}
+
 fn prepare_textedit_document() -> Result<(), OperatorError> {
     run_osascript(
         r#"
@@ -679,6 +800,17 @@ delay 0.5
 
 tell application "TextEdit"
   make new document
+end tell
+"#,
+    )?;
+    Ok(())
+}
+
+fn launch_calculator() -> Result<(), OperatorError> {
+    run_osascript(
+        r#"
+tell application id "com.apple.calculator"
+  activate
 end tell
 "#,
     )?;

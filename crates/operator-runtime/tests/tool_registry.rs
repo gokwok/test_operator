@@ -444,6 +444,31 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 10,
+        detail: Some("switched app".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 8,
+        detail: Some("quit app".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 13,
+        detail: Some("relaunched app".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 6,
+        detail: Some("hid app".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 6,
+        detail: Some("unhid app".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 5,
         detail: Some("focused".into()),
     }));
@@ -605,6 +630,71 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let switched = runtime
+        .tools()
+        .invoke(
+            "switch-app",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "App": "TextEdit"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let quit = runtime
+        .tools()
+        .invoke(
+            "quit-app",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "Pid": 101
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let relaunched = runtime
+        .tools()
+        .invoke(
+            "relaunch-app",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "WindowTitle": "Draft"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let hid = runtime
+        .tools()
+        .invoke(
+            "hide-app",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "WindowIndex": 2
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let unhid = runtime
+        .tools()
+        .invoke(
+            "unhide-app",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "WindowId": 77
+                }
+            }),
+        )
+        .await
+        .unwrap();
     let focused = runtime
         .tools()
         .invoke(
@@ -626,6 +716,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
     assert_eq!(pressed["outcome"]["detail"], json!("pressed down 3 times"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
+    assert_eq!(switched["outcome"]["detail"], json!("switched app"));
+    assert_eq!(quit["outcome"]["detail"], json!("quit app"));
+    assert_eq!(relaunched["outcome"]["detail"], json!("relaunched app"));
+    assert_eq!(hid["outcome"]["detail"], json!("hid app"));
+    assert_eq!(unhid["outcome"]["detail"], json!("unhid app"));
     assert_eq!(focused["outcome"]["detail"], json!("focused"));
 
     let calls = driver.action_calls().await;
@@ -777,6 +872,71 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             ),
             (
                 ActionRequest {
+                    action: Action::SwitchApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::QuitApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::Pid(101)),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::RelaunchApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::HideApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::WindowIndex(2)),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::UnhideApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::WindowId(77.into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
                     action: Action::FocusWindow { id: 42.into() },
                     locator: None,
                     target_selector: None,
@@ -811,6 +971,7 @@ async fn action_tools_export_stable_specs() {
             "drag",
             "focus-window",
             "get-focus",
+            "hide-app",
             "hotkey",
             "launch-app",
             "list-apps",
@@ -819,10 +980,14 @@ async fn action_tools_export_stable_specs() {
             "observe",
             "permissions-status",
             "press",
+            "quit-app",
+            "relaunch-app",
             "scroll",
             "snapshot-get",
             "swipe",
+            "switch-app",
             "type",
+            "unhide-app",
         ]
     );
 
@@ -852,6 +1017,20 @@ async fn action_tools_export_stable_specs() {
         launch_app.capabilities_required,
         &[Capability::AppLifecycle]
     );
+
+    for tool_name in [
+        "switch-app",
+        "quit-app",
+        "relaunch-app",
+        "hide-app",
+        "unhide-app",
+    ] {
+        let spec = specs.iter().find(|spec| spec.name == tool_name).unwrap();
+        assert!(spec.has_side_effects);
+        assert_eq!(spec.capabilities_required, &[Capability::AppLifecycle]);
+        assert!(spec.input_schema["properties"]["target_selector"].is_object());
+        assert!(spec.input_schema["properties"]["focus_policy"].is_null());
+    }
 
     let scroll = specs.iter().find(|spec| spec.name == "scroll").unwrap();
     assert!(scroll.has_side_effects);

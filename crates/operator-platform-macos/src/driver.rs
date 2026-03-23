@@ -261,6 +261,51 @@ where
                     detail: Some(format!("launched {bundle_id_or_name}")),
                 })
             }
+            Action::SwitchApp => {
+                let app_name = self.lifecycle_target_name(target.selector)?;
+                self.app_service.focus_app(&app_name)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some("switched app".into()),
+                })
+            }
+            Action::QuitApp => {
+                let app_name = self.lifecycle_target_name(target.selector)?;
+                self.app_service.quit_app(&app_name)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some("quit app".into()),
+                })
+            }
+            Action::RelaunchApp => {
+                let app_name = self.lifecycle_target_name(target.selector)?;
+                self.app_service.relaunch_app(&app_name)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some("relaunched app".into()),
+                })
+            }
+            Action::HideApp => {
+                let app_name = self.lifecycle_target_name(target.selector)?;
+                self.app_service.hide_app(&app_name)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some("hid app".into()),
+                })
+            }
+            Action::UnhideApp => {
+                let app_name = self.lifecycle_target_name(target.selector)?;
+                self.app_service.unhide_app(&app_name)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some("unhid app".into()),
+                })
+            }
             Action::Click { mode } => {
                 let permissions = self.permission_reader.current_permissions()?;
                 self.click(locator, mode, target, &permissions)
@@ -651,6 +696,31 @@ where
             ))
         })
     }
+
+    fn lifecycle_target_name(
+        &self,
+        selector: Option<&ActionTargetSelector>,
+    ) -> Result<String, OperatorError> {
+        let selector = selector.ok_or_else(|| {
+            OperatorError::Platform("app lifecycle actions require a target selector".into())
+        })?;
+
+        match selector {
+            ActionTargetSelector::App(bundle_id_or_name) => self
+                .resolve_app_by_identity(bundle_id_or_name)
+                .map(|app| app.name),
+            ActionTargetSelector::Pid(pid) => self.resolve_app_by_pid(*pid).map(|app| app.name),
+            ActionTargetSelector::WindowId(id) => {
+                self.resolve_window_by_id(*id).and_then(window_app_name)
+            }
+            ActionTargetSelector::WindowTitle(title) => self
+                .resolve_window_by_title(title)
+                .and_then(window_app_name),
+            ActionTargetSelector::WindowIndex(index) => self
+                .resolve_window_by_index(*index)
+                .and_then(window_app_name),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -729,6 +799,15 @@ fn select_anchor_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
         .cloned()
         .or_else(|| windows.iter().find(|window| !window.is_minimized).cloned())
         .or_else(|| windows.first().cloned())
+}
+
+fn window_app_name(window: WindowInfo) -> Result<String, OperatorError> {
+    window.app_name.ok_or_else(|| {
+        OperatorError::Platform(format!(
+            "macOS action target window has no owning app metadata: {}",
+            window.id
+        ))
+    })
 }
 
 fn target_pointer_point(target: &PreparedActionTarget) -> Result<Point, OperatorError> {

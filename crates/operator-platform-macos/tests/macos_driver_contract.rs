@@ -149,6 +149,11 @@ async fn list_apps_and_windows_queries_forward_to_services() {
             }],
             focus: None,
             launched: Mutex::new(Vec::new()),
+            focused_apps: Mutex::new(Vec::new()),
+            quit: Mutex::new(Vec::new()),
+            relaunched: Mutex::new(Vec::new()),
+            hidden: Mutex::new(Vec::new()),
+            unhidden: Mutex::new(Vec::new()),
             focused_windows: Mutex::new(Vec::new()),
             last_window_filter: Mutex::new(None),
         },
@@ -270,6 +275,202 @@ async fn focus_window_action_returns_successful_outcome() {
     assert_eq!(
         driver.app_service().focused_windows(),
         vec![WindowId::from(42)]
+    );
+}
+
+#[tokio::test]
+async fn switch_app_action_uses_target_app_identity() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::SwitchApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("switched app"));
+    assert_eq!(
+        driver.app_service().focused_apps(),
+        vec!["TextEdit".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn quit_app_action_uses_pid_target_selector() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::QuitApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::Pid(101)),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("quit app"));
+    assert_eq!(
+        driver.app_service().quit_apps(),
+        vec!["TextEdit".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn relaunch_app_action_resolves_window_title_to_app_identity() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            windows: vec![WindowInfo {
+                id: 41.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: None,
+                is_focused: true,
+                is_minimized: false,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::RelaunchApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("relaunched app"));
+    assert_eq!(
+        driver.app_service().relaunched_apps(),
+        vec!["TextEdit".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn hide_app_action_uses_window_index_target_selector() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            windows: vec![
+                WindowInfo {
+                    id: 40.into(),
+                    title: Some("First".into()),
+                    app_name: Some("TextEdit".into()),
+                    bounds: None,
+                    is_focused: false,
+                    is_minimized: false,
+                },
+                WindowInfo {
+                    id: 41.into(),
+                    title: Some("Second".into()),
+                    app_name: Some("Notes".into()),
+                    bounds: None,
+                    is_focused: true,
+                    is_minimized: false,
+                },
+            ],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::HideApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowIndex(1)),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("hid app"));
+    assert_eq!(
+        driver.app_service().hidden_apps(),
+        vec!["Notes".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn unhide_app_action_uses_window_id_target_selector() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            windows: vec![WindowInfo {
+                id: 42.into(),
+                title: Some("Inbox".into()),
+                app_name: Some("Mail".into()),
+                bounds: None,
+                is_focused: false,
+                is_minimized: false,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::UnhideApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("unhid app"));
+    assert_eq!(
+        driver.app_service().unhidden_apps(),
+        vec!["Mail".to_string()]
     );
 }
 
@@ -1269,6 +1470,11 @@ struct StubAppService {
     windows: Vec<WindowInfo>,
     focus: Option<FocusInfo>,
     launched: Mutex<Vec<String>>,
+    focused_apps: Mutex<Vec<String>>,
+    quit: Mutex<Vec<String>>,
+    relaunched: Mutex<Vec<String>>,
+    hidden: Mutex<Vec<String>>,
+    unhidden: Mutex<Vec<String>>,
     focused_windows: Mutex<Vec<WindowId>>,
     last_window_filter: Mutex<Option<String>>,
 }
@@ -1280,6 +1486,26 @@ impl StubAppService {
 
     fn last_window_filter(&self) -> Option<String> {
         self.last_window_filter.lock().unwrap().clone()
+    }
+
+    fn focused_apps(&self) -> Vec<String> {
+        self.focused_apps.lock().unwrap().clone()
+    }
+
+    fn quit_apps(&self) -> Vec<String> {
+        self.quit.lock().unwrap().clone()
+    }
+
+    fn relaunched_apps(&self) -> Vec<String> {
+        self.relaunched.lock().unwrap().clone()
+    }
+
+    fn hidden_apps(&self) -> Vec<String> {
+        self.hidden.lock().unwrap().clone()
+    }
+
+    fn unhidden_apps(&self) -> Vec<String> {
+        self.unhidden.lock().unwrap().clone()
     }
 
     fn focused_windows(&self) -> Vec<WindowId> {
@@ -1303,6 +1529,46 @@ impl AppService for StubAppService {
 
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         self.launched
+            .lock()
+            .unwrap()
+            .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn focus_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
+        self.focused_apps
+            .lock()
+            .unwrap()
+            .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn quit_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
+        self.quit
+            .lock()
+            .unwrap()
+            .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn relaunch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
+        self.relaunched
+            .lock()
+            .unwrap()
+            .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn hide_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
+        self.hidden
+            .lock()
+            .unwrap()
+            .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn unhide_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
+        self.unhidden
             .lock()
             .unwrap()
             .push(bundle_id_or_name.to_string());

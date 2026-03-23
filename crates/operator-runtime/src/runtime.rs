@@ -244,7 +244,12 @@ impl RuntimeCore {
             Action::Type { .. } | Action::Hotkey { .. } | Action::Press { .. } => {
                 Capability::KeyboardInput
             }
-            Action::LaunchApp { .. } => Capability::AppLifecycle,
+            Action::LaunchApp { .. }
+            | Action::SwitchApp
+            | Action::QuitApp
+            | Action::RelaunchApp
+            | Action::HideApp
+            | Action::UnhideApp => Capability::AppLifecycle,
             Action::FocusWindow { .. } => Capability::WindowManagement,
         };
 

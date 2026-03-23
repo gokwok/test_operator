@@ -181,6 +181,13 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(tools.iter().any(|tool| tool["name"] == json!("observe")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("click")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("move")));
+    assert!(tools.iter().any(|tool| tool["name"] == json!("switch-app")));
+    assert!(tools.iter().any(|tool| tool["name"] == json!("quit-app")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("relaunch-app")));
+    assert!(tools.iter().any(|tool| tool["name"] == json!("hide-app")));
+    assert!(tools.iter().any(|tool| tool["name"] == json!("unhide-app")));
 
     let artifact_get = tools
         .iter()
@@ -259,6 +266,23 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(swipe["inputSchema"]["properties"]["duration_ms"].is_object());
     assert!(swipe["inputSchema"]["properties"]["steps"].is_object());
     assert!(swipe["inputSchema"]["properties"]["modifiers"].is_null());
+
+    for tool_name in [
+        "switch-app",
+        "quit-app",
+        "relaunch-app",
+        "hide-app",
+        "unhide-app",
+    ] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"] == json!(tool_name))
+            .unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"], json!(false));
+        assert_eq!(tool["annotations"]["destructiveHint"], json!(true));
+        assert!(tool["inputSchema"]["properties"]["target_selector"].is_object());
+        assert!(tool["inputSchema"]["properties"]["focus_policy"].is_null());
+    }
 }
 
 #[test]
@@ -742,6 +766,69 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
                 },
                 locator: None,
                 ..default_action_request()
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_switch_app_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::AppLifecycle]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 10,
+        detail: Some("switched app".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 23,
+            "method": "tools/call",
+            "params": {
+                "name": "switch-app",
+                "arguments": {
+                    "target": "local:macos",
+                    "target_selector": {
+                        "WindowTitle": "Draft"
+                    }
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("switched app")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::SwitchApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                focus_policy: ActionFocusPolicy::Auto,
             },
             ExecContext {
                 target: "local:macos".into(),
