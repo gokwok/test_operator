@@ -9,6 +9,26 @@ use crate::{Locator, WindowId};
 pub struct ActionRequest {
     pub action: Action,
     pub locator: Option<Locator>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_selector: Option<ActionTargetSelector>,
+    #[serde(default)]
+    pub focus_policy: ActionFocusPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub enum ActionTargetSelector {
+    App(String),
+    Pid(u32),
+    WindowId(WindowId),
+    WindowTitle(String),
+    WindowIndex(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+pub enum ActionFocusPolicy {
+    #[default]
+    Auto,
+    Never,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

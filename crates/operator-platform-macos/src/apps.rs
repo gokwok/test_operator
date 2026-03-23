@@ -8,6 +8,9 @@ pub trait AppService: Send + Sync {
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError>;
     fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError>;
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError>;
+    fn focus_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
+        self.launch_app(bundle_id_or_name)
+    }
     fn focus_window(&self, id: WindowId) -> Result<(), OperatorError>;
 }
 

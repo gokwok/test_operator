@@ -121,6 +121,37 @@ fn click_command_accepts_explicit_mode_without_locator() {
 }
 
 #[test]
+fn click_command_maps_window_target_selector_and_focus_policy() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "click",
+        "--target",
+        "local:macos",
+        "--mode",
+        "double",
+        "--window-title",
+        "Project Notes",
+        "--focus-policy",
+        "never",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "click");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "mode": "Double",
+            "target_selector": {
+                "WindowTitle": "Project Notes"
+            },
+            "focus_policy": "Never"
+        })
+    );
+}
+
+#[test]
 fn get_focus_command_maps_common_flags_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -165,6 +196,36 @@ async fn focus_window_command_maps_window_id_to_tool_input() {
             "target": "local:macos",
             "timeout_ms": 250,
             "window_id": 42
+        })
+    );
+}
+
+#[tokio::test]
+async fn type_command_maps_app_target_selector_with_default_focus_policy() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "type",
+        "--target",
+        "local:macos",
+        "--text",
+        "hello operator",
+        "--app",
+        "TextEdit",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "type");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "text": "hello operator",
+            "clear_before": false,
+            "target_selector": {
+                "App": "TextEdit"
+            },
+            "focus_policy": "Auto"
         })
     );
 }

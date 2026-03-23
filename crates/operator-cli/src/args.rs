@@ -4,8 +4,8 @@ use std::num::NonZeroU32;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use operator_core::{
-    ArtifactId, ClickMode, Locator, Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey,
-    WindowId,
+    ActionFocusPolicy, ActionTargetSelector, ArtifactId, ClickMode, Locator, Point, SnapshotId,
+    Surface, SurfaceKind, TypeTrailingKey, WindowId,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -327,6 +327,8 @@ struct ClickArgs {
     #[arg(long, value_enum, default_value_t = ClickModeArg::Left)]
     mode: ClickModeArg,
     #[command(flatten)]
+    action_target: ActionTargetArgs,
+    #[command(flatten)]
     locator: ClickLocatorArgs,
 }
 
@@ -334,6 +336,8 @@ impl ClickArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
         insert_serialized(&mut input, "mode", self.mode.click_mode())?;
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -350,17 +354,23 @@ struct MoveArgs {
     #[command(flatten)]
     common: CommonArgs,
     #[command(flatten)]
+    action_target: ActionTargetArgs,
+    #[command(flatten)]
     locator: MoveLocatorArgs,
 }
 
 impl MoveArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
-        let locator = self
-            .locator
-            .into_locator()?
-            .ok_or_else(|| "move requires a locator or coordinates".to_string())?;
-        insert_serialized(&mut input, "locator", locator)?;
+        let locator = self.locator.into_locator()?;
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        if locator.is_none() && target_selector.is_none() {
+            return Err("move requires a locator, coordinates, or target selector".to_string());
+        }
+        if let Some(locator) = locator {
+            insert_serialized(&mut input, "locator", locator)?;
+        }
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         Ok(ToolInvocation {
             tool: "move",
             input: Value::Object(input),
@@ -373,6 +383,8 @@ impl MoveArgs {
 struct DragArgs {
     #[command(flatten)]
     common: CommonArgs,
+    #[command(flatten)]
+    action_target: ActionTargetArgs,
     #[command(flatten)]
     from: DragFromLocatorArgs,
     #[command(flatten)]
@@ -388,8 +400,10 @@ struct DragArgs {
 impl DragArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         if let Some(duration_ms) = self.duration_ms {
             input.insert("duration_ms".into(), Value::from(duration_ms));
         }
@@ -412,6 +426,8 @@ struct SwipeArgs {
     #[command(flatten)]
     common: CommonArgs,
     #[command(flatten)]
+    action_target: ActionTargetArgs,
+    #[command(flatten)]
     from: DragFromLocatorArgs,
     #[command(flatten)]
     to: DragToLocatorArgs,
@@ -424,8 +440,10 @@ struct SwipeArgs {
 impl SwipeArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         if let Some(duration_ms) = self.duration_ms {
             input.insert("duration_ms".into(), Value::from(duration_ms));
         }
@@ -449,14 +467,18 @@ struct ScrollArgs {
     #[arg(long, allow_hyphen_values = true)]
     delta_y: f64,
     #[command(flatten)]
+    action_target: ActionTargetArgs,
+    #[command(flatten)]
     locator: ScrollLocatorArgs,
 }
 
 impl ScrollArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
         input.insert("delta_x".into(), Value::from(self.delta_x));
         input.insert("delta_y".into(), Value::from(self.delta_y));
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -474,12 +496,16 @@ struct HotkeyArgs {
     common: CommonArgs,
     #[arg(long = "key", required = true)]
     keys: Vec<String>,
+    #[command(flatten)]
+    action_target: ActionTargetArgs,
 }
 
 impl HotkeyArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "keys", self.keys)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         Ok(ToolInvocation {
             tool: "hotkey",
             input: Value::Object(input),
@@ -496,13 +522,17 @@ struct PressArgs {
     key: String,
     #[arg(long, default_value = "1")]
     count: NonZeroU32,
+    #[command(flatten)]
+    action_target: ActionTargetArgs,
 }
 
 impl PressArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
         input.insert("key".into(), Value::String(self.key));
         insert_serialized(&mut input, "count", self.count)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         Ok(ToolInvocation {
             tool: "press",
             input: Value::Object(input),
@@ -524,12 +554,15 @@ struct TypeArgs {
     #[arg(long = "trailing-key", value_enum)]
     trailing_keys: Vec<TypeTrailingKeyArg>,
     #[command(flatten)]
+    action_target: ActionTargetArgs,
+    #[command(flatten)]
     locator: TypeLocatorArgs,
 }
 
 impl TypeArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
         input.insert("text".into(), Value::String(self.text));
         input.insert("clear_before".into(), Value::Bool(self.clear_before));
         if let Some(delay_ms) = self.delay_ms {
@@ -543,6 +576,7 @@ impl TypeArgs {
                 .collect::<Vec<_>>();
             insert_serialized(&mut input, "trailing_keys", trailing_keys)?;
         }
+        insert_action_target(&mut input, target_selector, focus_policy)?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -649,6 +683,76 @@ impl TypeTrailingKeyArg {
             Self::Escape => TypeTrailingKey::Escape,
             Self::Delete => TypeTrailingKey::Delete,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FocusPolicyArg {
+    Auto,
+    Never,
+}
+
+impl FocusPolicyArg {
+    fn focus_policy(self) -> ActionFocusPolicy {
+        match self {
+            Self::Auto => ActionFocusPolicy::Auto,
+            Self::Never => ActionFocusPolicy::Never,
+        }
+    }
+}
+
+impl Default for FocusPolicyArg {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct ActionTargetArgs {
+    #[arg(long)]
+    app: Option<String>,
+    #[arg(long)]
+    pid: Option<u32>,
+    #[arg(long = "window-id")]
+    window_id: Option<u64>,
+    #[arg(long = "window-title")]
+    window_title: Option<String>,
+    #[arg(long = "window-index")]
+    window_index: Option<usize>,
+    #[arg(long, value_enum, default_value_t = FocusPolicyArg::Auto)]
+    focus_policy: FocusPolicyArg,
+}
+
+impl ActionTargetArgs {
+    fn into_parts(self) -> Result<(Option<ActionTargetSelector>, ActionFocusPolicy), String> {
+        let selector_count = [
+            self.app.is_some(),
+            self.pid.is_some(),
+            self.window_id.is_some(),
+            self.window_title.is_some(),
+            self.window_index.is_some(),
+        ]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count();
+
+        if selector_count > 1 {
+            return Err("target selector flags are mutually exclusive".into());
+        }
+
+        let selector = if let Some(app) = self.app {
+            Some(ActionTargetSelector::App(app))
+        } else if let Some(pid) = self.pid {
+            Some(ActionTargetSelector::Pid(pid))
+        } else if let Some(window_id) = self.window_id {
+            Some(ActionTargetSelector::WindowId(WindowId::from(window_id)))
+        } else if let Some(window_title) = self.window_title {
+            Some(ActionTargetSelector::WindowTitle(window_title))
+        } else {
+            self.window_index.map(ActionTargetSelector::WindowIndex)
+        };
+
+        Ok((selector, self.focus_policy.focus_policy()))
     }
 }
 
@@ -949,6 +1053,21 @@ fn insert_serialized<T: Serialize>(
     let value = serde_json::to_value(value)
         .map_err(|error| format!("failed to serialize {key}: {error}"))?;
     map.insert(key.to_string(), value);
+    Ok(())
+}
+
+fn insert_action_target(
+    map: &mut Map<String, Value>,
+    target_selector: Option<ActionTargetSelector>,
+    focus_policy: ActionFocusPolicy,
+) -> Result<(), String> {
+    if let Some(target_selector) = target_selector {
+        insert_serialized(map, "target_selector", target_selector)?;
+        insert_serialized(map, "focus_policy", focus_policy)?;
+    } else if !matches!(focus_policy, ActionFocusPolicy::Auto) {
+        insert_serialized(map, "focus_policy", focus_policy)?;
+    }
+
     Ok(())
 }
 

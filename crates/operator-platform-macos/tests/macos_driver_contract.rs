@@ -1,10 +1,11 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
-    Action, ActionRequest, AppInfo, ArtifactId, Capability, ClickMode, DragModifier, DragMotion,
-    ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError,
-    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
-    Surface, SurfaceKind, TypeTrailingKey, UiElement, WindowId, WindowInfo,
+    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, AppInfo, ArtifactId,
+    Capability, ClickMode, DragModifier, DragMotion, ElementId, ElementSource, ExecContext,
+    FocusInfo, Locator, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport,
+    PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey,
+    UiElement, WindowId, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -234,6 +235,7 @@ async fn launch_app_action_returns_successful_outcome() {
                     bundle_id_or_name: "TextEdit".into(),
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -256,6 +258,7 @@ async fn focus_window_action_returns_successful_outcome() {
             ActionRequest {
                 action: Action::FocusWindow { id: 42.into() },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -312,6 +315,7 @@ async fn click_action_resolves_text_locator_to_button_center() {
                     mode: ClickMode::Right,
                 },
                 locator: Some(Locator::Text("submit".into())),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -353,6 +357,7 @@ async fn click_action_without_locator_uses_current_cursor_position() {
                     mode: ClickMode::Left,
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -412,6 +417,7 @@ async fn click_action_supports_double_click_mode() {
                     mode: ClickMode::Double,
                 },
                 locator: Some(Locator::Text("open".into())),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -425,6 +431,85 @@ async fn click_action_supports_double_click_mode() {
         vec![RecordedInput::Click {
             point: Some(Point { x: 40.0, y: 40.0 }),
             mode: ClickMode::Double,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn click_action_focuses_window_selector_before_resolving_locator() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService {
+            windows: vec![WindowInfo {
+                id: WindowId::from(84),
+                title: Some("Submit Sheet".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: Some(Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    width: 300.0,
+                    height: 180.0,
+                }),
+                is_focused: false,
+                is_minimized: false,
+            }],
+            ..StubAppService::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-button".into()),
+                UiElement {
+                    id: ElementId("ax-button".into()),
+                    role: "AXButton".into(),
+                    label: Some("Submit".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 100.0,
+                        y: 40.0,
+                        width: 80.0,
+                        height: 20.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-button".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::Text("submit".into())),
+                target_selector: Some(ActionTargetSelector::WindowTitle("Submit Sheet".into())),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        driver.app_service().focused_windows(),
+        vec![WindowId::from(84)]
+    );
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Click {
+            point: Some(Point { x: 140.0, y: 50.0 }),
+            mode: ClickMode::Left,
         }]
     );
 }
@@ -501,6 +586,7 @@ async fn type_action_clicks_role_target_before_typing() {
                     role: "AXTextField".into(),
                     index: 1,
                 }),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -571,6 +657,7 @@ async fn type_action_supports_clear_delay_and_trailing_keys() {
                     role: "AXTextField".into(),
                     index: 0,
                 }),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -634,6 +721,7 @@ async fn scroll_action_returns_successful_outcome() {
                     delta_y: -12.0,
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -692,6 +780,7 @@ async fn move_action_resolves_text_locator_before_moving_cursor() {
             ActionRequest {
                 action: Action::Move,
                 locator: Some(Locator::Text("Open".into())),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -704,6 +793,79 @@ async fn move_action_resolves_text_locator_before_moving_cursor() {
         input.calls(),
         vec![RecordedInput::Move {
             point: Point { x: 160.0, y: 180.0 },
+        }]
+    );
+}
+
+#[tokio::test]
+async fn move_action_uses_window_index_selector_when_locator_is_absent() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService {
+            windows: vec![
+                WindowInfo {
+                    id: WindowId::from(7),
+                    title: Some("Ignored".into()),
+                    app_name: Some("Notes".into()),
+                    bounds: Some(Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 200.0,
+                        height: 100.0,
+                    }),
+                    is_focused: false,
+                    is_minimized: false,
+                },
+                WindowInfo {
+                    id: WindowId::from(8),
+                    title: Some("Target".into()),
+                    app_name: Some("TextEdit".into()),
+                    bounds: Some(Rect {
+                        x: 300.0,
+                        y: 120.0,
+                        width: 400.0,
+                        height: 240.0,
+                    }),
+                    is_focused: false,
+                    is_minimized: false,
+                },
+            ],
+            ..StubAppService::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Move,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowIndex(1)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        driver.app_service().focused_windows(),
+        vec![WindowId::from(8)]
+    );
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Move {
+            point: Point { x: 500.0, y: 240.0 },
         }]
     );
 }
@@ -751,6 +913,7 @@ async fn scroll_action_resolves_text_locator_before_scrolling() {
                     delta_y: -12.0,
                 },
                 locator: Some(Locator::Text("Results".into())),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -841,6 +1004,7 @@ async fn drag_action_resolves_between_locators_and_returns_successful_outcome() 
                     },
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -932,6 +1096,7 @@ async fn swipe_action_resolves_between_locators_and_returns_successful_outcome()
                     steps: Some(4.try_into().unwrap()),
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -975,6 +1140,7 @@ async fn hotkey_action_returns_successful_outcome() {
                     keys: vec!["command".into(), "shift".into(), "p".into()],
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -1018,6 +1184,7 @@ async fn press_action_returns_successful_outcome() {
                     count: 3.try_into().unwrap(),
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -1084,6 +1251,15 @@ fn exec_context() -> ExecContext {
         target: "local:macos".into(),
         session: None,
         timeout_ms: Some(500),
+    }
+}
+
+fn default_action_request() -> ActionRequest {
+    ActionRequest {
+        action: Action::Move,
+        locator: None,
+        target_selector: None,
+        focus_policy: ActionFocusPolicy::Auto,
     }
 }
 

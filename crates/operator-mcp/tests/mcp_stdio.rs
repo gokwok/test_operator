@@ -6,9 +6,10 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
-    Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
-    PlatformDriver, Point, QueryRequest, QueryResult, TypeTrailingKey,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, Capability,
+    CapabilitySet, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
+    OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
+    QueryResult, TypeTrailingKey,
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
@@ -16,6 +17,15 @@ use operator_runtime::{FileArtifactStore, RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
+
+fn default_action_request() -> ActionRequest {
+    ActionRequest {
+        action: Action::Move,
+        locator: None,
+        target_selector: None,
+        focus_policy: ActionFocusPolicy::Auto,
+    }
+}
 
 #[test]
 fn tools_list_requires_initialized_notification() {
@@ -192,6 +202,8 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert_eq!(click["annotations"]["destructiveHint"], json!(true));
     assert!(click["inputSchema"]["properties"]["mode"].is_object());
     assert!(click["inputSchema"]["properties"]["button"].is_null());
+    assert!(click["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(click["inputSchema"]["properties"]["focus_policy"].is_object());
 
     let scroll = tools
         .iter()
@@ -206,6 +218,8 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert_eq!(move_tool["annotations"]["readOnlyHint"], json!(false));
     assert_eq!(move_tool["annotations"]["destructiveHint"], json!(true));
     assert!(move_tool["inputSchema"]["properties"]["locator"].is_object());
+    assert!(move_tool["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(move_tool["inputSchema"]["properties"]["focus_policy"].is_object());
 
     let drag = tools
         .iter()
@@ -223,6 +237,8 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert_eq!(press["annotations"]["destructiveHint"], json!(true));
     assert!(press["inputSchema"]["properties"]["key"].is_object());
     assert!(press["inputSchema"]["properties"]["count"].is_object());
+    assert!(press["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(press["inputSchema"]["properties"]["focus_policy"].is_object());
 
     let type_tool = tools
         .iter()
@@ -233,6 +249,8 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(type_tool["inputSchema"]["properties"]["clear_before"].is_object());
     assert!(type_tool["inputSchema"]["properties"]["delay_ms"].is_object());
     assert!(type_tool["inputSchema"]["properties"]["trailing_keys"].is_object());
+    assert!(type_tool["inputSchema"]["properties"]["target_selector"].is_object());
+    assert!(type_tool["inputSchema"]["properties"]["focus_policy"].is_object());
 
     let swipe = tools
         .iter()
@@ -477,6 +495,10 @@ async fn tools_call_executes_move_and_returns_structured_content() {
                 "name": "move",
                 "arguments": {
                     "target": "local:macos",
+                    "target_selector": {
+                        "WindowIndex": 1
+                    },
+                    "focus_policy": "Auto",
                     "locator": {
                         "Coords": {
                             "x": 320.0,
@@ -500,6 +522,8 @@ async fn tools_call_executes_move_and_returns_structured_content() {
             ActionRequest {
                 action: Action::Move,
                 locator: Some(Locator::Coords(Point { x: 320.0, y: 240.0 })),
+                target_selector: Some(ActionTargetSelector::WindowIndex(1)),
+                focus_policy: ActionFocusPolicy::Auto,
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -545,6 +569,10 @@ async fn tools_call_executes_type_and_returns_structured_content() {
                     "clear_before": true,
                     "delay_ms": 25,
                     "trailing_keys": ["Return", "Tab"],
+                    "target_selector": {
+                        "App": "TextEdit"
+                    },
+                    "focus_policy": "Auto",
                     "locator": {
                         "Text": "Search"
                     }
@@ -570,6 +598,8 @@ async fn tools_call_executes_type_and_returns_structured_content() {
                     trailing_keys: vec![TypeTrailingKey::Return, TypeTrailingKey::Tab],
                 },
                 locator: Some(Locator::Text("Search".into())),
+                target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                focus_policy: ActionFocusPolicy::Auto,
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -633,6 +663,7 @@ async fn tools_call_executes_press_and_returns_structured_content() {
                     count: 3.try_into().unwrap(),
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -710,6 +741,7 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
                     steps: Some(4.try_into().unwrap()),
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),

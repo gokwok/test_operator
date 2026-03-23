@@ -1,10 +1,20 @@
 use std::{process::Command, thread, time::Duration};
 
 use operator_core::{
-    Action, ActionRequest, ClickMode, ExecContext, Locator, ObserveRequest, OperatorError,
-    PermissionStatus, PlatformDriver, QueryRequest, QueryResult, Surface, SurfaceKind,
+    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, ClickMode, ExecContext,
+    Locator, ObserveRequest, OperatorError, PermissionStatus, PlatformDriver, QueryRequest,
+    QueryResult, Surface, SurfaceKind,
 };
 use operator_platform_macos::MacosDriver;
+
+fn default_action_request() -> ActionRequest {
+    ActionRequest {
+        action: Action::Move,
+        locator: None,
+        target_selector: None,
+        focus_policy: ActionFocusPolicy::Auto,
+    }
+}
 
 #[tokio::test]
 #[ignore = "requires a macOS GUI session with screen recording and accessibility permission"]
@@ -97,6 +107,7 @@ async fn click_and_type_with_system_driver() {
                 role: "AXTextArea".into(),
                 index: 0,
             }),
+            ..default_action_request()
         },
         ActionRequest {
             action: Action::Type {
@@ -106,6 +117,7 @@ async fn click_and_type_with_system_driver() {
                 trailing_keys: Vec::new(),
             },
             locator: None,
+            ..default_action_request()
         },
     ] {
         match driver.act(request, &exec_context()).await {
@@ -177,6 +189,7 @@ async fn scroll_with_locator_with_system_driver() {
                     role: "AXTextArea".into(),
                     index: 0,
                 }),
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -235,6 +248,7 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
                 role: "AXTextArea".into(),
                 index: 0,
             }),
+            ..default_action_request()
         },
         ActionRequest {
             action: Action::Type {
@@ -244,12 +258,14 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
                 trailing_keys: Vec::new(),
             },
             locator: None,
+            ..default_action_request()
         },
         ActionRequest {
             action: Action::Hotkey {
                 keys: vec!["command".into(), "a".into()],
             },
             locator: None,
+            ..default_action_request()
         },
         ActionRequest {
             action: Action::Type {
@@ -259,6 +275,7 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
                 trailing_keys: Vec::new(),
             },
             locator: None,
+            ..default_action_request()
         },
     ] {
         match driver.act(request, &exec_context()).await {
@@ -445,6 +462,7 @@ async fn focus_window_with_system_driver() {
                     id: target_window.id,
                 },
                 locator: None,
+                ..default_action_request()
             },
             &exec_context(),
         )
@@ -488,6 +506,125 @@ async fn focus_window_with_system_driver() {
     assert!(
         focused.is_some(),
         "expected target window to become focused after focus-window: {refreshed:?}"
+    );
+
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn move_with_window_target_selector_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS selector smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare first TextEdit selector target: {error}");
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS selector smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare second TextEdit selector target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS selector smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let windows = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS selector smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query failed: {error}"),
+    };
+
+    let QueryResult::Windows(windows) = windows else {
+        panic!("expected windows query result");
+    };
+    assert!(
+        windows.len() >= 2,
+        "expected at least two TextEdit windows for selector smoke test: {windows:?}"
+    );
+    let target_window = windows
+        .iter()
+        .find(|window| !window.is_focused)
+        .unwrap_or(&windows[0]);
+
+    match driver
+        .act(
+            ActionRequest {
+                action: Action::Move,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS selector smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("move action with selector failed: {error}"),
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let refreshed = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS selector smoke verification in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query after selector move failed: {error}"),
+    };
+
+    let QueryResult::Windows(refreshed) = refreshed else {
+        panic!("expected windows query result");
+    };
+    let focused = refreshed
+        .iter()
+        .find(|window| window.id == target_window.id && window.is_focused);
+    assert!(
+        focused.is_some(),
+        "expected target window to become focused after selector move: {refreshed:?}"
     );
 
     drop(cleanup);

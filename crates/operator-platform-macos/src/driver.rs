@@ -6,9 +6,10 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, DragMotion,
-    ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError,
-    PermissionStatus, QueryRequest, QueryResult, Snapshot, SnapshotMetadata, TypeTrailingKey,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, AppInfo,
+    Capability, CapabilitySet, ClickMode, DragMotion, ExecContext, HealthStatus, Locator,
+    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, Point, QueryRequest,
+    QueryResult, Snapshot, SnapshotMetadata, TypeTrailingKey, WindowInfo,
 };
 
 use crate::{
@@ -243,7 +244,15 @@ where
         req: ActionRequest,
         _ctx: &ExecContext,
     ) -> Result<ActionOutcome, OperatorError> {
-        match req.action {
+        let ActionRequest {
+            action,
+            locator,
+            target_selector,
+            focus_policy,
+        } = req;
+        let target = ActionTargetConfig::new(target_selector.as_ref(), focus_policy);
+
+        match action {
             Action::LaunchApp { bundle_id_or_name } => {
                 self.app_service.launch_app(&bundle_id_or_name)?;
                 Ok(ActionOutcome {
@@ -254,11 +263,11 @@ where
             }
             Action::Click { mode } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.click(req.locator, mode, &permissions)
+                self.click(locator, mode, target, &permissions)
             }
             Action::Move => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.move_pointer(req.locator, &permissions)
+                self.move_pointer(locator, target, &permissions)
             }
             Action::Type {
                 text,
@@ -268,21 +277,24 @@ where
             } => {
                 let permissions = self.permission_reader.current_permissions()?;
                 self.type_text(
-                    req.locator,
-                    &text,
-                    clear_before,
-                    delay_ms,
-                    &trailing_keys,
+                    locator,
+                    TypeActionConfig {
+                        text: &text,
+                        clear_before,
+                        delay_ms,
+                        trailing_keys: &trailing_keys,
+                        target,
+                    },
                     &permissions,
                 )
             }
             Action::Scroll { delta_x, delta_y } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.scroll(req.locator, delta_x, delta_y, &permissions)
+                self.scroll(locator, delta_x, delta_y, target, &permissions)
             }
             Action::Drag { from, to, motion } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.drag(from, to, motion, &permissions)
+                self.drag(from, to, motion, target, &permissions)
             }
             Action::Swipe {
                 from,
@@ -291,15 +303,15 @@ where
                 steps,
             } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.swipe(from, to, duration_ms, steps, &permissions)
+                self.swipe(from, to, duration_ms, steps, target, &permissions)
             }
             Action::Hotkey { keys } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.hotkey(&keys, &permissions)
+                self.hotkey(&keys, target, &permissions)
             }
             Action::Press { key, count } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.press(&key, count.get(), None, &permissions)
+                self.press(&key, count.get(), None, target, &permissions)
             }
             Action::FocusWindow { id } => {
                 self.app_service.focus_window(id)?;
@@ -315,6 +327,7 @@ where
 
 impl<A, P, C, I, S> MacosDriver<A, P, C, I, S>
 where
+    A: AppService,
     P: PermissionReader,
     I: TreeInspector,
     S: InputSynthesizer,
@@ -323,12 +336,16 @@ where
         &self,
         locator: Option<Locator>,
         mode: ClickMode,
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
         let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             (Some(resolved.point), resolved.warning)
+        } else if let Some(target) = prepared.as_ref() {
+            (Some(target_pointer_point(target)?), None)
         } else {
             (None, None)
         };
@@ -343,13 +360,11 @@ where
     fn type_text(
         &self,
         locator: Option<Locator>,
-        text: &str,
-        clear_before: bool,
-        delay_ms: Option<u64>,
-        trailing_keys: &[TypeTrailingKey],
+        input: TypeActionConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        self.prepare_action_target(input.target.selector, input.target.focus_policy)?;
         let warning = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             self.input_synthesizer
@@ -359,21 +374,22 @@ where
         } else {
             None
         };
-        if clear_before {
+        if input.clear_before {
             let clear_keys = vec!["command".to_string(), "a".to_string()];
             self.input_synthesizer.hotkey(&clear_keys)?;
-            self.input_synthesizer.press("delete", 1, delay_ms)?;
+            self.input_synthesizer.press("delete", 1, input.delay_ms)?;
         }
-        self.input_synthesizer.type_text(text, delay_ms)?;
-        for key in trailing_keys {
+        self.input_synthesizer
+            .type_text(input.text, input.delay_ms)?;
+        for key in input.trailing_keys {
             self.input_synthesizer
-                .press(type_trailing_key_name(*key), 1, delay_ms)?;
+                .press(type_trailing_key_name(*key), 1, input.delay_ms)?;
         }
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,
             detail: Some(action_detail(
-                &type_detail(clear_before, trailing_keys),
+                &type_detail(input.clear_before, input.trailing_keys),
                 warning.as_deref(),
             )),
         })
@@ -382,17 +398,26 @@ where
     fn move_pointer(
         &self,
         locator: Option<Locator>,
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let locator =
-            locator.ok_or_else(|| OperatorError::Platform("move requires a locator".into()))?;
-        let resolved = resolve_locator(&locator, &self.tree_inspector)?;
-        self.input_synthesizer.move_pointer(resolved.point)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let (point, warning) = if let Some(locator) = locator {
+            let resolved = resolve_locator(&locator, &self.tree_inspector)?;
+            (resolved.point, resolved.warning)
+        } else if let Some(target) = prepared.as_ref() {
+            (target_pointer_point(target)?, None)
+        } else {
+            return Err(OperatorError::Platform(
+                "move requires a locator or target selector".into(),
+            ));
+        };
+        self.input_synthesizer.move_pointer(point)?;
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,
-            detail: Some(action_detail("moved", resolved.warning.as_deref())),
+            detail: Some(action_detail("moved", warning.as_deref())),
         })
     }
 
@@ -401,12 +426,16 @@ where
         locator: Option<Locator>,
         delta_x: f64,
         delta_y: f64,
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
         let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             (Some(resolved.point), resolved.warning)
+        } else if let Some(target) = prepared.as_ref() {
+            (Some(target_pointer_point(target)?), None)
         } else {
             (None, None)
         };
@@ -423,9 +452,11 @@ where
         from: Locator,
         to: Locator,
         motion: DragMotion,
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        self.prepare_action_target(target.selector, target.focus_policy)?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer.drag(from.point, to.point, &motion)?;
@@ -442,9 +473,11 @@ where
         to: Locator,
         duration_ms: Option<u64>,
         steps: Option<std::num::NonZeroU32>,
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        self.prepare_action_target(target.selector, target.focus_policy)?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer
@@ -459,9 +492,11 @@ where
     fn hotkey(
         &self,
         keys: &[String],
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        self.prepare_action_target(target.selector, target.focus_policy)?;
         self.input_synthesizer.hotkey(keys)?;
         Ok(ActionOutcome {
             success: true,
@@ -475,9 +510,11 @@ where
         key: &str,
         count: u32,
         delay_ms: Option<u64>,
+        target: ActionTargetConfig<'_>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
+        self.prepare_action_target(target.selector, target.focus_policy)?;
         self.input_synthesizer.press(key, count, delay_ms)?;
         Ok(ActionOutcome {
             success: true,
@@ -485,6 +522,237 @@ where
             detail: Some(press_detail(key, count)),
         })
     }
+
+    fn prepare_action_target(
+        &self,
+        selector: Option<&ActionTargetSelector>,
+        focus_policy: ActionFocusPolicy,
+    ) -> Result<Option<PreparedActionTarget>, OperatorError> {
+        let prepared = selector
+            .map(|selector| self.resolve_action_target(selector))
+            .transpose()?;
+
+        if matches!(focus_policy, ActionFocusPolicy::Auto) {
+            if let Some(target) = prepared.as_ref() {
+                target.focus(&self.app_service)?;
+                thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+
+        Ok(prepared)
+    }
+
+    fn resolve_action_target(
+        &self,
+        selector: &ActionTargetSelector,
+    ) -> Result<PreparedActionTarget, OperatorError> {
+        match selector {
+            ActionTargetSelector::App(bundle_id_or_name) => {
+                let app = self.resolve_app_by_identity(bundle_id_or_name)?;
+                Ok(PreparedActionTarget::App(PreparedAppTarget {
+                    anchor_window: self.resolve_anchor_window(&app)?,
+                    app,
+                }))
+            }
+            ActionTargetSelector::Pid(pid) => {
+                let app = self.resolve_app_by_pid(*pid)?;
+                Ok(PreparedActionTarget::App(PreparedAppTarget {
+                    anchor_window: self.resolve_anchor_window(&app)?,
+                    app,
+                }))
+            }
+            ActionTargetSelector::WindowId(id) => self
+                .resolve_window_by_id(*id)
+                .map(PreparedActionTarget::Window),
+            ActionTargetSelector::WindowTitle(title) => self
+                .resolve_window_by_title(title)
+                .map(PreparedActionTarget::Window),
+            ActionTargetSelector::WindowIndex(index) => self
+                .resolve_window_by_index(*index)
+                .map(PreparedActionTarget::Window),
+        }
+    }
+
+    fn resolve_app_by_identity(&self, bundle_id_or_name: &str) -> Result<AppInfo, OperatorError> {
+        let apps = self.app_service.list_apps()?;
+        let matches =
+            apps.into_iter()
+                .filter(|app| {
+                    app.name.eq_ignore_ascii_case(bundle_id_or_name)
+                        || app.bundle_id.as_deref().is_some_and(|bundle_id| {
+                            bundle_id.eq_ignore_ascii_case(bundle_id_or_name)
+                        })
+                })
+                .collect::<Vec<_>>();
+
+        select_single_app(
+            matches,
+            &format!("macOS action target app not found: {bundle_id_or_name}"),
+            &format!("macOS action target app is ambiguous: {bundle_id_or_name}"),
+        )
+    }
+
+    fn resolve_app_by_pid(&self, pid: u32) -> Result<AppInfo, OperatorError> {
+        let apps = self.app_service.list_apps()?;
+        let matches = apps
+            .into_iter()
+            .filter(|app| app.pid == Some(pid))
+            .collect::<Vec<_>>();
+
+        select_single_app(
+            matches,
+            &format!("macOS action target pid not found: {pid}"),
+            &format!("macOS action target pid is ambiguous: {pid}"),
+        )
+    }
+
+    fn resolve_anchor_window(&self, app: &AppInfo) -> Result<Option<WindowInfo>, OperatorError> {
+        let windows = self.app_service.list_windows(Some(&app.name))?;
+        Ok(select_anchor_window(&windows))
+    }
+
+    fn resolve_window_by_id(
+        &self,
+        id: operator_core::WindowId,
+    ) -> Result<WindowInfo, OperatorError> {
+        let windows = self.app_service.list_windows(None)?;
+        windows
+            .into_iter()
+            .find(|window| window.id == id)
+            .ok_or_else(|| {
+                OperatorError::Platform(format!("macOS action target window not found: {id}"))
+            })
+    }
+
+    fn resolve_window_by_title(&self, title: &str) -> Result<WindowInfo, OperatorError> {
+        let windows = self.app_service.list_windows(None)?;
+        let matches = windows
+            .into_iter()
+            .filter(|window| {
+                window
+                    .title
+                    .as_deref()
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(title))
+            })
+            .collect::<Vec<_>>();
+
+        select_single_window(
+            matches,
+            &format!("macOS action target window title not found: {title}"),
+            &format!("macOS action target window title is ambiguous: {title}"),
+        )
+    }
+
+    fn resolve_window_by_index(&self, index: usize) -> Result<WindowInfo, OperatorError> {
+        let windows = self.app_service.list_windows(None)?;
+        windows.get(index).cloned().ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "macOS action target window index not found: {index}"
+            ))
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+enum PreparedActionTarget {
+    App(PreparedAppTarget),
+    Window(WindowInfo),
+}
+
+impl PreparedActionTarget {
+    fn focus<A: AppService>(&self, app_service: &A) -> Result<(), OperatorError> {
+        match self {
+            Self::App(target) => app_service.focus_app(&app_focus_identity(&target.app)),
+            Self::Window(window) => app_service.focus_window(window.id),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PreparedAppTarget {
+    app: AppInfo,
+    anchor_window: Option<WindowInfo>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActionTargetConfig<'a> {
+    selector: Option<&'a ActionTargetSelector>,
+    focus_policy: ActionFocusPolicy,
+}
+
+impl<'a> ActionTargetConfig<'a> {
+    fn new(selector: Option<&'a ActionTargetSelector>, focus_policy: ActionFocusPolicy) -> Self {
+        Self {
+            selector,
+            focus_policy,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TypeActionConfig<'a> {
+    text: &'a str,
+    clear_before: bool,
+    delay_ms: Option<u64>,
+    trailing_keys: &'a [TypeTrailingKey],
+    target: ActionTargetConfig<'a>,
+}
+
+fn select_single_app(
+    matches: Vec<AppInfo>,
+    not_found: &str,
+    ambiguous: &str,
+) -> Result<AppInfo, OperatorError> {
+    match matches.len() {
+        0 => Err(OperatorError::Platform(not_found.into())),
+        1 => Ok(matches.into_iter().next().unwrap()),
+        _ => Err(OperatorError::Platform(ambiguous.into())),
+    }
+}
+
+fn select_single_window(
+    matches: Vec<WindowInfo>,
+    not_found: &str,
+    ambiguous: &str,
+) -> Result<WindowInfo, OperatorError> {
+    match matches.len() {
+        0 => Err(OperatorError::Platform(not_found.into())),
+        1 => Ok(matches.into_iter().next().unwrap()),
+        _ => Err(OperatorError::Platform(ambiguous.into())),
+    }
+}
+
+fn select_anchor_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
+    windows
+        .iter()
+        .find(|window| window.is_focused)
+        .cloned()
+        .or_else(|| windows.iter().find(|window| !window.is_minimized).cloned())
+        .or_else(|| windows.first().cloned())
+}
+
+fn target_pointer_point(target: &PreparedActionTarget) -> Result<Point, OperatorError> {
+    let point = match target {
+        PreparedActionTarget::App(target) => target.anchor_window.as_ref().and_then(window_center),
+        PreparedActionTarget::Window(window) => window_center(window),
+    };
+
+    point.ok_or_else(|| {
+        OperatorError::Platform(
+            "macOS action target does not resolve to a window with bounds".into(),
+        )
+    })
+}
+
+fn window_center(window: &WindowInfo) -> Option<Point> {
+    window.bounds.map(|bounds| Point {
+        x: bounds.x + bounds.width / 2.0,
+        y: bounds.y + bounds.height / 2.0,
+    })
+}
+
+fn app_focus_identity(app: &AppInfo) -> String {
+    app.bundle_id.clone().unwrap_or_else(|| app.name.clone())
 }
 
 fn require_observe_permissions(

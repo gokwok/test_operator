@@ -5,15 +5,24 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, DragMotion,
-    ElementId, ElementSource, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
-    OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
-    QueryResult, Rect, Surface, SurfaceKind, UiElement,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode,
+    DragMotion, ElementId, ElementSource, ExecContext, HealthStatus, Locator, ObserveRequest,
+    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point,
+    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, UiElement,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
 };
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
+
+fn default_action_request() -> ActionRequest {
+    ActionRequest {
+        action: Action::Move,
+        locator: None,
+        target_selector: None,
+        focus_policy: ActionFocusPolicy::Auto,
+    }
+}
 
 #[tokio::test]
 async fn runtime_rejects_missing_capabilities_before_driver_call() {
@@ -39,6 +48,7 @@ async fn runtime_rejects_missing_capabilities_before_driver_call() {
                     mode: ClickMode::Left,
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -185,6 +195,7 @@ async fn runtime_rejects_drag_between_different_snapshots() {
                     motion: DragMotion::default(),
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -236,6 +247,7 @@ async fn runtime_rejects_swipe_between_different_snapshots() {
                     steps: Some(4.try_into().unwrap()),
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -325,6 +337,7 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
                     },
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -352,6 +365,7 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
                 },
             },
             locator: None,
+            ..default_action_request()
         }
     );
 }
@@ -422,6 +436,7 @@ async fn runtime_resolves_swipe_snapshot_element_locators_before_driver_call() {
                     steps: Some(4.try_into().unwrap()),
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -446,6 +461,7 @@ async fn runtime_resolves_swipe_snapshot_element_locators_before_driver_call() {
                 steps: Some(4.try_into().unwrap()),
             },
             locator: None,
+            ..default_action_request()
         }
     );
 }
@@ -490,6 +506,7 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
                     snapshot: snapshot.id.clone(),
                     element: "el-1".into(),
                 }),
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -511,6 +528,7 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
                 mode: ClickMode::Left,
             },
             locator: Some(Locator::Coords(Point { x: 70.0, y: 35.0 })),
+            ..default_action_request()
         }
     );
 }
@@ -556,6 +574,7 @@ async fn runtime_resolves_scroll_snapshot_element_locator_before_driver_call() {
                     snapshot: snapshot.id.clone(),
                     element: "el-1".into(),
                 }),
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -578,6 +597,7 @@ async fn runtime_resolves_scroll_snapshot_element_locator_before_driver_call() {
                 delta_y: -120.0,
             },
             locator: Some(Locator::Coords(Point { x: 60.0, y: 50.0 })),
+            ..default_action_request()
         }
     );
 }

@@ -1,8 +1,8 @@
 use std::{num::NonZeroU32, sync::Arc};
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, ClickMode, DragMotion, Locator,
-    OperatorError, TypeTrailingKey, WindowId,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, Capability,
+    ClickMode, DragMotion, Locator, OperatorError, TypeTrailingKey, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -207,10 +207,11 @@ async fn click(
     let input = parse_input::<ClickToolInput>("click", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Click { mode: input.mode },
-                locator: input.locator,
-            },
+            build_action_request(
+                Action::Click { mode: input.mode },
+                input.locator,
+                input.target,
+            ),
             ctx,
         )
         .await?;
@@ -226,15 +227,16 @@ async fn r#type(
     let input = parse_input::<TypeToolInput>("type", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Type {
+            build_action_request(
+                Action::Type {
                     text: input.text,
                     clear_before: input.clear_before,
                     delay_ms: input.delay_ms,
                     trailing_keys: input.trailing_keys,
                 },
-                locator: input.locator,
-            },
+                input.locator,
+                input.target,
+            ),
             ctx,
         )
         .await?;
@@ -250,10 +252,7 @@ async fn move_cursor(
     let input = parse_input::<MoveToolInput>("move", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Move,
-                locator: Some(input.locator),
-            },
+            build_action_request(Action::Move, input.locator, input.target),
             ctx,
         )
         .await?;
@@ -269,13 +268,14 @@ async fn scroll(
     let input = parse_input::<ScrollToolInput>("scroll", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Scroll {
+            build_action_request(
+                Action::Scroll {
                     delta_x: input.delta_x,
                     delta_y: input.delta_y,
                 },
-                locator: input.locator,
-            },
+                input.locator,
+                input.target,
+            ),
             ctx,
         )
         .await?;
@@ -291,14 +291,15 @@ async fn drag(
     let input = parse_input::<DragToolInput>("drag", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Drag {
+            build_action_request(
+                Action::Drag {
                     from: input.from,
                     to: input.to,
                     motion: input.motion,
                 },
-                locator: None,
-            },
+                None,
+                input.target,
+            ),
             ctx,
         )
         .await?;
@@ -314,15 +315,16 @@ async fn swipe(
     let input = parse_input::<SwipeToolInput>("swipe", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Swipe {
+            build_action_request(
+                Action::Swipe {
                     from: input.from,
                     to: input.to,
                     duration_ms: input.duration_ms,
                     steps: input.steps,
                 },
-                locator: None,
-            },
+                None,
+                input.target,
+            ),
             ctx,
         )
         .await?;
@@ -338,10 +340,7 @@ async fn hotkey(
     let input = parse_input::<HotkeyToolInput>("hotkey", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Hotkey { keys: input.keys },
-                locator: None,
-            },
+            build_action_request(Action::Hotkey { keys: input.keys }, None, input.target),
             ctx,
         )
         .await?;
@@ -357,13 +356,14 @@ async fn press(
     let input = parse_input::<PressToolInput>("press", input)?;
     let outcome = core
         .act(
-            ActionRequest {
-                action: Action::Press {
+            build_action_request(
+                Action::Press {
                     key: input.key,
                     count: input.count,
                 },
-                locator: None,
-            },
+                None,
+                input.target,
+            ),
             ctx,
         )
         .await?;
@@ -384,6 +384,8 @@ async fn launch_app(
                     bundle_id_or_name: input.bundle_id_or_name,
                 },
                 locator: None,
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
             },
             ctx,
         )
@@ -405,6 +407,8 @@ async fn focus_window(
                     id: input.window_id,
                 },
                 locator: None,
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
             },
             ctx,
         )
@@ -418,6 +422,19 @@ fn parse_input<T: for<'de> Deserialize<'de>>(tool: &str, input: Value) -> Result
         tool: tool.to_string(),
         message: format!("invalid input: {error}"),
     })
+}
+
+fn build_action_request(
+    action: Action,
+    locator: Option<Locator>,
+    target: ActionTargetToolInput,
+) -> ActionRequest {
+    ActionRequest {
+        action,
+        locator,
+        target_selector: target.target_selector,
+        focus_policy: target.focus_policy,
+    }
 }
 
 fn serialize_output(outcome: ActionOutcome) -> Result<Value, OperatorError> {
@@ -440,6 +457,9 @@ struct ClickToolInput {
     #[serde(default = "default_click_mode", alias = "button")]
     mode: ClickMode,
     locator: Option<Locator>,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -455,6 +475,9 @@ struct TypeToolInput {
     #[serde(default)]
     trailing_keys: Vec<TypeTrailingKey>,
     locator: Option<Locator>,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -463,7 +486,10 @@ struct MoveToolInput {
     #[serde(flatten)]
     #[schemars(flatten)]
     exec: ToolExecInput,
-    locator: Locator,
+    locator: Option<Locator>,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -473,6 +499,9 @@ struct HotkeyToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     keys: Vec<String>,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -484,6 +513,9 @@ struct PressToolInput {
     key: String,
     #[serde(default = "default_press_count")]
     count: NonZeroU32,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -497,6 +529,9 @@ struct DragToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     motion: DragMotion,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -509,6 +544,9 @@ struct SwipeToolInput {
     to: Locator,
     duration_ms: Option<u64>,
     steps: Option<NonZeroU32>,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -520,6 +558,9 @@ struct ScrollToolInput {
     delta_x: f64,
     delta_y: f64,
     locator: Option<Locator>,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    target: ActionTargetToolInput,
 }
 
 #[allow(dead_code)]
@@ -538,6 +579,13 @@ struct FocusWindowToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     window_id: WindowId,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, Default)]
+struct ActionTargetToolInput {
+    target_selector: Option<ActionTargetSelector>,
+    #[serde(default)]
+    focus_policy: ActionFocusPolicy,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

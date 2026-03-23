@@ -2,10 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, AppInfo, ArtifactId, Capability, CapabilitySet,
-    ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest,
-    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, QueryRequest, QueryResult,
-    Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, AppInfo,
+    ArtifactId, Capability, CapabilitySet, ClickMode, DragModifier, DragMotion, ExecContext,
+    FocusInfo, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
+    PermissionsReport, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey,
+    WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
@@ -14,6 +15,15 @@ use operator_runtime::{
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::json;
 use tempfile::tempdir;
+
+fn default_action_request() -> ActionRequest {
+    ActionRequest {
+        action: Action::Move,
+        locator: None,
+        target_selector: None,
+        focus_policy: ActionFocusPolicy::Auto,
+    }
+}
 
 #[tokio::test]
 async fn snapshot_get_reads_from_store_without_driver() {
@@ -452,6 +462,10 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             json!({
                 "target": "local:macos",
                 "mode": "Double",
+                "target_selector": {
+                    "WindowTitle": "Submit Sheet"
+                },
+                "focus_policy": "Never",
                 "locator": {
                     "Text": "Submit"
                 }
@@ -469,6 +483,10 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                 "clear_before": true,
                 "delay_ms": 25,
                 "trailing_keys": ["Return", "Tab"],
+                "target_selector": {
+                    "App": "TextEdit"
+                },
+                "focus_policy": "Auto",
                 "locator": {
                     "Text": "Search"
                 }
@@ -620,6 +638,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         mode: ClickMode::Double
                     },
                     locator: Some(Locator::Text("Submit".into())),
+                    target_selector: Some(ActionTargetSelector::WindowTitle("Submit Sheet".into())),
+                    focus_policy: ActionFocusPolicy::Never,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -636,6 +656,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         trailing_keys: vec![TypeTrailingKey::Return, TypeTrailingKey::Tab],
                     },
                     locator: Some(Locator::Text("Search".into())),
+                    target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -650,6 +672,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         delta_y: -120.0,
                     },
                     locator: Some(Locator::Text("Results".into())),
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -661,6 +685,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                 ActionRequest {
                     action: Action::Move,
                     locator: Some(Locator::Coords(operator_core::Point { x: 320.0, y: 240.0 })),
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -676,6 +702,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         motion: DragMotion::default(),
                     },
                     locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -692,6 +720,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         steps: Some(4.try_into().unwrap()),
                     },
                     locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -705,6 +735,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         keys: vec!["command".into(), "shift".into(), "p".into()],
                     },
                     locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -719,6 +751,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         count: 3.try_into().unwrap(),
                     },
                     locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -732,6 +766,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         bundle_id_or_name: "Calculator".into(),
                     },
                     locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -743,6 +779,8 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                 ActionRequest {
                     action: Action::FocusWindow { id: 42.into() },
                     locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -798,6 +836,8 @@ async fn action_tools_export_stable_specs() {
     assert_eq!(click.capabilities_required, &[Capability::PointerInput]);
     assert!(click.input_schema["properties"]["mode"].is_object());
     assert!(click.input_schema["properties"]["button"].is_null());
+    assert!(click.input_schema["properties"]["target_selector"].is_object());
+    assert!(click.input_schema["properties"]["focus_policy"].is_object());
 
     let drag = specs.iter().find(|spec| spec.name == "drag").unwrap();
     assert!(drag.has_side_effects);
@@ -822,6 +862,8 @@ async fn action_tools_export_stable_specs() {
     assert!(move_spec.has_side_effects);
     assert_eq!(move_spec.capabilities_required, &[Capability::PointerInput]);
     assert!(move_spec.input_schema["properties"]["locator"].is_object());
+    assert!(move_spec.input_schema["properties"]["target_selector"].is_object());
+    assert!(move_spec.input_schema["properties"]["focus_policy"].is_object());
 
     let focus_window = specs
         .iter()
@@ -842,6 +884,8 @@ async fn action_tools_export_stable_specs() {
     assert_eq!(press.capabilities_required, &[Capability::KeyboardInput]);
     assert!(press.input_schema["properties"]["key"].is_object());
     assert!(press.input_schema["properties"]["count"].is_object());
+    assert!(press.input_schema["properties"]["target_selector"].is_object());
+    assert!(press.input_schema["properties"]["focus_policy"].is_object());
 
     let swipe = specs.iter().find(|spec| spec.name == "swipe").unwrap();
     assert!(swipe.has_side_effects);
@@ -859,6 +903,8 @@ async fn action_tools_export_stable_specs() {
     assert!(type_spec.input_schema["properties"]["clear_before"].is_object());
     assert!(type_spec.input_schema["properties"]["delay_ms"].is_object());
     assert!(type_spec.input_schema["properties"]["trailing_keys"].is_object());
+    assert!(type_spec.input_schema["properties"]["target_selector"].is_object());
+    assert!(type_spec.input_schema["properties"]["focus_policy"].is_object());
 
     let observe = specs.iter().find(|spec| spec.name == "observe").unwrap();
     assert!(!observe.has_side_effects);
@@ -945,6 +991,7 @@ async fn drag_tool_forwards_motion_options_to_runtime_act() {
                     },
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -1011,6 +1058,7 @@ async fn swipe_tool_forwards_motion_options_to_runtime_act() {
                     steps: Some(3.try_into().unwrap()),
                 },
                 locator: None,
+                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),

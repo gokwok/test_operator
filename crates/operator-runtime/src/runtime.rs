@@ -277,6 +277,11 @@ impl RuntimeCore {
 
     fn validate_action_request(&self, req: &ActionRequest) -> Result<(), OperatorError> {
         match &req.action {
+            Action::Move if req.locator.is_none() && req.target_selector.is_none() => {
+                return Err(OperatorError::Platform(
+                    "move requires a locator or target selector".into(),
+                ));
+            }
             Action::Drag {
                 from:
                     Locator::SnapshotElement {
