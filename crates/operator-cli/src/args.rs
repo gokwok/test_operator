@@ -97,6 +97,29 @@ Options:
   -h, --help                   Print help
 ";
 
+const INPUT_HELP: &str = "Pointer and keyboard actions
+
+Usage: operator input [OPTIONS] <COMMAND>
+
+Commands:
+  click   Click at a locator or target
+  move    Move the pointer to a locator, coordinates, or target
+  type    Type text into the focused or resolved target
+  press   Press a special key
+  hotkey  Press a key chord
+  scroll  Scroll by delta against a locator or target
+  drag    Drag between two locators
+  swipe   Swipe between two locators
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
 #[derive(Debug, Parser)]
 #[command(name = "operator", about = "Operator automation CLI")]
 pub(crate) struct Cli {
@@ -155,7 +178,7 @@ enum Command {
     Artifact(ArtifactArgs),
     List(ListArgs),
     Focus(CommonArgs),
-    Input,
+    Input(InputArgs),
     App,
     Window,
     Mcp,
@@ -225,7 +248,8 @@ impl Command {
             Self::Artifact(args) => Some(&args.common),
             Self::List(args) => args.common(),
             Self::Focus(args) => Some(args),
-            Self::Input | Self::App | Self::Window | Self::Mcp => None,
+            Self::Input(args) => args.common(),
+            Self::App | Self::Window | Self::Mcp => None,
             Self::ArtifactGet(args) => Some(&args.common),
             Self::SnapshotGet(args) => Some(&args.common),
             Self::GetFocus(args) => Some(args),
@@ -272,7 +296,7 @@ impl Command {
             Self::Focus(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
-            Self::Input => Err("input commands are not implemented yet".to_string()),
+            Self::Input(args) => args.into_invocation(root_common),
             Self::App => Err("app commands are not implemented yet".to_string()),
             Self::Window => Err("window commands are not implemented yet".to_string()),
             Self::Mcp => Err("mcp commands are not implemented yet".to_string()),
@@ -573,6 +597,374 @@ impl ArtifactCommand {
         match self {
             Self::Get(args) => args.into_invocation(common),
         }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(
+    about = "Pointer and keyboard actions",
+    override_help = INPUT_HELP,
+    arg_required_else_help = true
+)]
+struct InputArgs {
+    #[command(subcommand)]
+    command: InputCommand,
+}
+
+impl InputArgs {
+    fn common(&self) -> Option<&CommonArgs> {
+        self.command.common()
+    }
+
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command.into_invocation(root_common)
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum InputCommand {
+    #[command(about = "Click at a locator or target")]
+    Click(InputClickArgs),
+    #[command(about = "Move the pointer to a locator, coordinates, or target")]
+    Move(InputMoveArgs),
+    #[command(about = "Type text into the focused or resolved target")]
+    Type(InputTypeArgs),
+    #[command(about = "Press a special key")]
+    Press(InputPressArgs),
+    #[command(about = "Press a key chord")]
+    Hotkey(InputHotkeyArgs),
+    #[command(about = "Scroll by delta against a locator or target")]
+    Scroll(InputScrollArgs),
+    #[command(about = "Drag between two locators")]
+    Drag(InputDragArgs),
+    #[command(about = "Swipe between two locators")]
+    Swipe(InputSwipeArgs),
+}
+
+impl InputCommand {
+    fn common(&self) -> Option<&CommonArgs> {
+        match self {
+            Self::Click(args) => Some(&args.common),
+            Self::Move(args) => Some(&args.common),
+            Self::Type(args) => Some(&args.common),
+            Self::Press(args) => Some(&args.common),
+            Self::Hotkey(args) => Some(&args.common),
+            Self::Scroll(args) => Some(&args.common),
+            Self::Drag(args) => Some(&args.common),
+            Self::Swipe(args) => Some(&args.common),
+        }
+    }
+
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Click(args) => args.into_invocation(root_common),
+            Self::Move(args) => args.into_invocation(root_common),
+            Self::Type(args) => args.into_invocation(root_common),
+            Self::Press(args) => args.into_invocation(root_common),
+            Self::Hotkey(args) => args.into_invocation(root_common),
+            Self::Scroll(args) => args.into_invocation(root_common),
+            Self::Drag(args) => args.into_invocation(root_common),
+            Self::Swipe(args) => args.into_invocation(root_common),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputClickArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long, value_enum, default_value_t = ClickModeArg::Left)]
+    mode: ClickModeArg,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
+    locator: InputLocatorArgs,
+}
+
+impl InputClickArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        insert_serialized(&mut input, "mode", self.mode.click_mode())?;
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        if let Some(locator) = self.locator.into_locator()? {
+            insert_serialized(&mut input, "locator", locator)?;
+        }
+        Ok(ToolInvocation {
+            tool: "click",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputMoveArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
+    locator: InputLocatorArgs,
+}
+
+impl InputMoveArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let locator = self.locator.into_locator()?;
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        if locator.is_none() && target_selector.is_none() {
+            return Err("move requires a locator, coordinates, or target selector".to_string());
+        }
+        if let Some(locator) = locator {
+            insert_serialized(&mut input, "locator", locator)?;
+        }
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        Ok(ToolInvocation {
+            tool: "move",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputTypeArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(value_name = "TEXT")]
+    payload: String,
+    #[arg(long)]
+    clear_before: bool,
+    #[arg(long)]
+    delay_ms: Option<u64>,
+    #[arg(long = "after-key", value_enum)]
+    after_keys: Vec<TypeTrailingKeyArg>,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
+    locator: InputLocatorArgs,
+}
+
+impl InputTypeArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        input.insert("text".into(), Value::String(self.payload));
+        input.insert("clear_before".into(), Value::Bool(self.clear_before));
+        if let Some(delay_ms) = self.delay_ms {
+            input.insert("delay_ms".into(), Value::from(delay_ms));
+        }
+        if !self.after_keys.is_empty() {
+            let trailing_keys = self
+                .after_keys
+                .into_iter()
+                .map(TypeTrailingKeyArg::trailing_key)
+                .collect::<Vec<_>>();
+            insert_serialized(&mut input, "trailing_keys", trailing_keys)?;
+        }
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        if let Some(locator) = self.locator.into_locator()? {
+            insert_serialized(&mut input, "locator", locator)?;
+        }
+        Ok(ToolInvocation {
+            tool: "type",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputPressArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    key: String,
+    #[arg(long, default_value = "1")]
+    count: NonZeroU32,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+}
+
+impl InputPressArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        input.insert("key".into(), Value::String(self.key));
+        insert_serialized(&mut input, "count", self.count)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        Ok(ToolInvocation {
+            tool: "press",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputHotkeyArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(required = true)]
+    keys: Vec<String>,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+}
+
+impl InputHotkeyArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        insert_serialized(&mut input, "keys", self.keys)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        Ok(ToolInvocation {
+            tool: "hotkey",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputScrollArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long, allow_hyphen_values = true)]
+    delta_x: f64,
+    #[arg(long, allow_hyphen_values = true)]
+    delta_y: f64,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
+    locator: InputLocatorArgs,
+}
+
+impl InputScrollArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        input.insert("delta_x".into(), Value::from(self.delta_x));
+        input.insert("delta_y".into(), Value::from(self.delta_y));
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        if let Some(locator) = self.locator.into_locator()? {
+            insert_serialized(&mut input, "locator", locator)?;
+        }
+        Ok(ToolInvocation {
+            tool: "scroll",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputDragArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
+    from: DragFromLocatorArgs,
+    #[command(flatten)]
+    to: DragToLocatorArgs,
+    #[arg(long)]
+    duration_ms: Option<u64>,
+    #[arg(long)]
+    steps: Option<u32>,
+    #[arg(long = "modifier", value_enum)]
+    modifiers: Vec<DragModifierArg>,
+}
+
+impl InputDragArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        insert_serialized(&mut input, "from", self.from.into_locator()?)?;
+        insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        if let Some(duration_ms) = self.duration_ms {
+            input.insert("duration_ms".into(), Value::from(duration_ms));
+        }
+        if let Some(steps) = self.steps {
+            input.insert("steps".into(), Value::from(steps));
+        }
+        if !self.modifiers.is_empty() {
+            insert_serialized(&mut input, "modifiers", self.modifiers)?;
+        }
+        Ok(ToolInvocation {
+            tool: "drag",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct InputSwipeArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    action_target: InputActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
+    from: DragFromLocatorArgs,
+    #[command(flatten)]
+    to: DragToLocatorArgs,
+    #[arg(long)]
+    duration_ms: Option<u64>,
+    #[arg(long)]
+    steps: Option<u32>,
+}
+
+impl InputSwipeArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        insert_serialized(&mut input, "from", self.from.into_locator()?)?;
+        insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
+        if let Some(duration_ms) = self.duration_ms {
+            input.insert("duration_ms".into(), Value::from(duration_ms));
+        }
+        if let Some(steps) = self.steps {
+            input.insert("steps".into(), Value::from(steps));
+        }
+        Ok(ToolInvocation {
+            tool: "swipe",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
     }
 }
 
@@ -1393,6 +1785,23 @@ impl ActionTargetArgs {
 }
 
 #[derive(Debug, Clone, Args, Default)]
+struct InputActionTargetArgs {
+    #[command(flatten)]
+    selector: TargetSelectorArgs,
+    #[arg(long, value_enum, default_value_t = FocusPolicyArg::Auto)]
+    focus: FocusPolicyArg,
+}
+
+impl InputActionTargetArgs {
+    fn into_parts(self) -> Result<(Option<ActionTargetSelector>, ActionFocusPolicy), String> {
+        Ok((
+            self.selector.into_optional_selector()?,
+            self.focus.focus_policy(),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
 struct LifecycleTargetArgs {
     #[command(flatten)]
     selector: TargetSelectorArgs,
@@ -1514,6 +1923,39 @@ impl DragToLocatorArgs {
             y: self.to_y,
         }
         .into_required_locator("to")
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct InputLocatorArgs {
+    #[arg(long)]
+    snapshot: Option<String>,
+    #[arg(long)]
+    element: Option<String>,
+    #[arg(long)]
+    text: Option<String>,
+    #[arg(long)]
+    role: Option<String>,
+    #[arg(long, default_value_t = 0)]
+    index: usize,
+    #[arg(long)]
+    x: Option<f64>,
+    #[arg(long)]
+    y: Option<f64>,
+}
+
+impl InputLocatorArgs {
+    fn into_locator(self) -> Result<Option<Locator>, String> {
+        RawLocatorArgs {
+            snapshot: self.snapshot,
+            element: self.element,
+            text: self.text,
+            role: self.role,
+            index: self.index,
+            x: self.x,
+            y: self.y,
+        }
+        .into_locator()
     }
 }
 

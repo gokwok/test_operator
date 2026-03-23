@@ -210,7 +210,7 @@ fn list_windows_command_moves_under_list_group() {
 
 #[test]
 fn grouped_top_level_command_placeholders_exist() {
-    for command in ["input", "app", "window", "mcp"] {
+    for command in ["app", "window", "mcp"] {
         let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
         let error = cli.into_invocation().unwrap_err();
         assert!(
@@ -268,6 +268,25 @@ Usage: operator artifact [OPTIONS] <COMMAND>\n\n\
 Commands:\n  get   Resolve a persisted artifact\n  help  Print this message or the help of the given subcommand(s)\n\n\
 Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
     );
+}
+
+#[test]
+fn input_help_lists_pointer_and_keyboard_subcommands() {
+    assert_eq!(
+        command_help(["operator", "input", "--help"]),
+        "Pointer and keyboard actions\n\n\
+Usage: operator input [OPTIONS] <COMMAND>\n\n\
+Commands:\n  click   Click at a locator or target\n  move    Move the pointer to a locator, coordinates, or target\n  type    Type text into the focused or resolved target\n  press   Press a special key\n  hotkey  Press a key chord\n  scroll  Scroll by delta against a locator or target\n  drag    Drag between two locators\n  swipe   Swipe between two locators\n  help    Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
+    );
+}
+
+#[test]
+fn input_type_help_shows_positional_text_and_after_key() {
+    let help = command_help(["operator", "input", "type", "--help"]);
+    assert!(help.contains("Usage: operator input type [OPTIONS] <TEXT>"));
+    assert!(help.contains("--after-key <AFTER_KEYS>"));
+    assert!(help.contains("--focus <FOCUS>"));
 }
 
 #[test]
@@ -354,6 +373,65 @@ fn click_command_maps_snapshot_flags_to_tool_input() {
             }
         })
     );
+}
+
+#[tokio::test]
+async fn input_click_command_maps_locator_target_focus_and_verification() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "click",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--mode",
+        "double",
+        "--snapshot",
+        "s_123",
+        "--element",
+        "e_45",
+        "--window-title",
+        "Project Notes",
+        "--focus",
+        "never",
+        "--verify",
+        "focus",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "click");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "mode": "Double",
+            "locator": {
+                "SnapshotElement": {
+                    "snapshot": "s_123",
+                    "element": "e_45"
+                }
+            },
+            "target_selector": {
+                "WindowTitle": "Project Notes"
+            },
+            "focus_policy": "Never",
+            "verifications": ["Focus"]
+        })
+    );
+}
+
+#[test]
+fn input_click_command_rejects_conflicting_locator_variants() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator", "input", "click", "--text", "Save", "--x", "24", "--y", "48",
+    ])
+    .unwrap();
+
+    let error = cli.into_invocation().unwrap_err();
+    assert_eq!(error, "locator flags are mutually exclusive");
 }
 
 #[test]
@@ -929,9 +1007,105 @@ async fn scroll_command_accepts_snapshot_locator() {
 }
 
 #[tokio::test]
+async fn input_scroll_command_maps_locator_and_deltas_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "scroll",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--delta-x",
+        "0",
+        "--delta-y",
+        "-120",
+        "--snapshot",
+        "s_123",
+        "--element",
+        "e_45",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "scroll");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "delta_x": 0.0,
+            "delta_y": -120.0,
+            "locator": {
+                "SnapshotElement": {
+                    "snapshot": "s_123",
+                    "element": "e_45"
+                }
+            }
+        })
+    );
+}
+
+#[test]
+fn input_scroll_command_rejects_incomplete_snapshot_locator() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "scroll",
+        "--delta-x",
+        "0",
+        "--delta-y",
+        "-120",
+        "--snapshot",
+        "s_123",
+    ])
+    .unwrap();
+
+    let error = cli.into_invocation().unwrap_err();
+    assert_eq!(error, "--element is required when --snapshot is provided");
+}
+
+#[tokio::test]
 async fn move_command_maps_coordinate_target_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
+        "move",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--x",
+        "640",
+        "--y",
+        "480",
+        "--verify",
+        "focus",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "move");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "locator": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            },
+            "verifications": ["Focus"]
+        })
+    );
+}
+
+#[tokio::test]
+async fn input_move_command_maps_coordinate_locator_and_verification() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
         "move",
         "--target",
         "local:macos",
@@ -1062,9 +1236,114 @@ async fn drag_command_maps_motion_options_to_tool_input() {
 }
 
 #[tokio::test]
+async fn input_drag_command_maps_motion_options_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "drag",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--from-x",
+        "12",
+        "--from-y",
+        "24",
+        "--to-x",
+        "640",
+        "--to-y",
+        "480",
+        "--duration-ms",
+        "300",
+        "--steps",
+        "6",
+        "--modifier",
+        "command",
+        "--modifier",
+        "shift",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "drag");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "from": {
+                "Coords": {
+                    "x": 12.0,
+                    "y": 24.0
+                }
+            },
+            "to": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            },
+            "duration_ms": 300,
+            "steps": 6,
+            "modifiers": ["Command", "Shift"]
+        })
+    );
+}
+
+#[tokio::test]
 async fn swipe_command_maps_motion_options_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
+        "swipe",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--from-x",
+        "12",
+        "--from-y",
+        "24",
+        "--to-x",
+        "640",
+        "--to-y",
+        "480",
+        "--duration-ms",
+        "300",
+        "--steps",
+        "6",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "swipe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "from": {
+                "Coords": {
+                    "x": 12.0,
+                    "y": 24.0
+                }
+            },
+            "to": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            },
+            "duration_ms": 300,
+            "steps": 6
+        })
+    );
+}
+
+#[tokio::test]
+async fn input_swipe_command_maps_motion_options_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
         "swipe",
         "--target",
         "local:macos",
@@ -1141,6 +1420,34 @@ async fn hotkey_command_maps_repeated_key_flags_to_tool_input() {
 }
 
 #[tokio::test]
+async fn input_hotkey_command_maps_positional_keys_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "hotkey",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "command",
+        "shift",
+        "p",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "hotkey");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "keys": ["command", "shift", "p"]
+        })
+    );
+}
+
+#[tokio::test]
 async fn press_command_maps_key_and_count_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -1150,6 +1457,35 @@ async fn press_command_maps_key_and_count_to_tool_input() {
         "--timeout-ms",
         "250",
         "--key",
+        "down",
+        "--count",
+        "3",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "press");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "key": "down",
+            "count": 3
+        })
+    );
+}
+
+#[tokio::test]
+async fn input_press_command_maps_positional_key_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "press",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
         "down",
         "--count",
         "3",
@@ -1188,6 +1524,64 @@ async fn type_command_maps_clear_delay_and_trailing_keys_to_tool_input() {
         "--trailing-key",
         "tab",
         "--locator-text",
+        "Search",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "type");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "text": "hello world",
+            "clear_before": true,
+            "delay_ms": 25,
+            "trailing_keys": ["Return", "Tab"],
+            "locator": {
+                "Text": "Search"
+            }
+        })
+    );
+}
+
+#[test]
+fn input_type_command_rejects_legacy_trailing_key_flag() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "type",
+        "hello world",
+        "--trailing-key",
+        "return",
+    ])
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("unexpected argument '--trailing-key'"));
+}
+
+#[tokio::test]
+async fn input_type_command_maps_positional_text_after_keys_and_locator_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "input",
+        "type",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "hello world",
+        "--clear-before",
+        "--delay-ms",
+        "25",
+        "--after-key",
+        "return",
+        "--after-key",
+        "tab",
+        "--text",
         "Search",
     ])
     .unwrap();
