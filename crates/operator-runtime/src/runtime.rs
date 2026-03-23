@@ -240,9 +240,7 @@ impl RuntimeCore {
             | Action::Move
             | Action::Scroll { .. }
             | Action::Drag { .. }
-            | Action::Swipe { .. } => {
-                Capability::PointerInput
-            }
+            | Action::Swipe { .. } => Capability::PointerInput,
             Action::Type { .. } | Action::Hotkey { .. } | Action::Press { .. } => {
                 Capability::KeyboardInput
             }

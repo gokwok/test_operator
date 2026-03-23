@@ -622,16 +622,7 @@ async fn cli_run_renders_artifact_path_for_non_json_output() {
 #[tokio::test]
 async fn cli_run_renders_swipe_detail_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "swipe",
-        "--from-x",
-        "10",
-        "--from-y",
-        "20",
-        "--to-x",
-        "100",
-        "--to-y",
-        "20",
+        "operator", "swipe", "--from-x", "10", "--from-y", "20", "--to-x", "100", "--to-y", "20",
     ])
     .unwrap();
 

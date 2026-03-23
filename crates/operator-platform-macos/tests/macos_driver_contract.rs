@@ -1179,7 +1179,10 @@ impl InputSynthesizer for StubInputSynthesizer {
     }
 
     fn move_pointer(&self, point: Point) -> Result<(), OperatorError> {
-        self.calls.lock().unwrap().push(RecordedInput::Move { point });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(RecordedInput::Move { point });
         Ok(())
     }
 
