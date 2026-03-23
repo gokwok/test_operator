@@ -36,6 +36,62 @@ async fn file_artifact_store_resolves_runtime_artifact_paths() {
 }
 
 #[tokio::test]
+async fn file_artifact_store_rejects_invalid_artifact_ids() {
+    let dir = tempdir().unwrap();
+    let store = FileArtifactStore::new(dir.path());
+
+    for invalid_id in [
+        "../escape.png",
+        "nested/escape.png",
+        "nested\\escape.png",
+        "/tmp/escape.png",
+    ] {
+        let error = store
+            .resolve_artifact(&ArtifactId(invalid_id.into()))
+            .await
+            .unwrap_err();
+
+        match error {
+            operator_core::OperatorError::Platform(message) => {
+                assert!(
+                    message.contains("invalid artifact id"),
+                    "unexpected message for {invalid_id}: {message}"
+                );
+            }
+            other => panic!("unexpected error for {invalid_id}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn file_snapshot_store_rejects_invalid_artifact_ids() {
+    let dir = tempdir().unwrap();
+    let store = FileSnapshotStore::new(dir.path(), RuntimeConfig::default());
+
+    for invalid_id in [
+        "../escape.png",
+        "nested/escape.png",
+        "nested\\escape.png",
+        "/tmp/escape.png",
+    ] {
+        let error = store
+            .resolve_artifact(&ArtifactId(invalid_id.into()))
+            .await
+            .unwrap_err();
+
+        match error {
+            operator_core::OperatorError::Platform(message) => {
+                assert!(
+                    message.contains("invalid artifact id"),
+                    "unexpected message for {invalid_id}: {message}"
+                );
+            }
+            other => panic!("unexpected error for {invalid_id}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
 async fn null_session_store_is_a_safe_noop() {
     let store = NullSessionStore;
     let session = test_session("sess-1");

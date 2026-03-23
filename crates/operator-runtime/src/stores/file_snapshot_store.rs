@@ -37,8 +37,8 @@ impl FileSnapshotStore {
         self.snapshots_dir().join(format!("{}.json", id.0))
     }
 
-    fn artifact_path(&self, id: &ArtifactId) -> PathBuf {
-        self.artifacts_dir().join(&id.0)
+    fn artifact_path(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError> {
+        Ok(self.artifacts_dir().join(id.as_file_name()?))
     }
 
     async fn ensure_dirs(&self) -> Result<(), OperatorError> {
@@ -68,7 +68,7 @@ impl FileSnapshotStore {
         remove_if_exists(self.snapshot_path(&snapshot.id)).await?;
 
         if let Some(artifact_id) = &snapshot.image_artifact {
-            remove_if_exists(self.artifact_path(artifact_id)).await?;
+            remove_if_exists(self.artifact_path(artifact_id)?).await?;
         }
 
         Ok(())
@@ -123,7 +123,7 @@ impl SnapshotStore for FileSnapshotStore {
 
     async fn resolve_artifact(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError> {
         self.ensure_dirs().await?;
-        Ok(self.artifact_path(id))
+        self.artifact_path(id)
     }
 
     async fn evict_expired(&self) -> Result<u32, OperatorError> {

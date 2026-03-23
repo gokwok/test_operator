@@ -21,8 +21,8 @@ impl FileArtifactStore {
         self.root.join("artifacts")
     }
 
-    fn artifact_path(&self, id: &ArtifactId) -> PathBuf {
-        self.artifacts_dir().join(&id.0)
+    fn artifact_path(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError> {
+        Ok(self.artifacts_dir().join(id.as_file_name()?))
     }
 
     async fn ensure_dir(&self) -> Result<(), OperatorError> {
@@ -35,6 +35,6 @@ impl FileArtifactStore {
 impl ArtifactStore for FileArtifactStore {
     async fn resolve_artifact(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError> {
         self.ensure_dir().await?;
-        Ok(self.artifact_path(id))
+        self.artifact_path(id)
     }
 }

@@ -28,11 +28,22 @@ async fn invoke(input: Value, core: Arc<RuntimeCore>) -> Result<Value, OperatorE
             message: format!("invalid input: {error}"),
         }
     })?;
+    input
+        .artifact_id
+        .as_file_name()
+        .map_err(|_| OperatorError::Tool {
+            tool: "artifact-get".into(),
+            message: format!("invalid artifact id: {}", input.artifact_id),
+        })?;
 
     let path = core
         .artifacts()
         .resolve_artifact(&input.artifact_id)
-        .await?;
+        .await
+        .map_err(|error| OperatorError::Tool {
+            tool: "artifact-get".into(),
+            message: error.to_string(),
+        })?;
     if !path.exists() {
         return Err(OperatorError::Tool {
             tool: "artifact-get".into(),

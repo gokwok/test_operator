@@ -92,6 +92,33 @@ async fn artifact_get_returns_not_found_when_artifact_is_missing() {
 }
 
 #[tokio::test]
+async fn artifact_get_rejects_invalid_artifact_ids() {
+    let dir = tempdir().unwrap();
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .artifact_store(Arc::new(FileArtifactStore::new(dir.path())))
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .build()
+        .await
+        .unwrap();
+
+    for invalid_id in ["../escape.png", "nested\\escape.png"] {
+        let error = runtime
+            .tools()
+            .invoke("artifact-get", json!({ "artifact_id": invalid_id }))
+            .await
+            .unwrap_err();
+
+        match error {
+            OperatorError::Tool { tool, message } => {
+                assert_eq!(tool, "artifact-get");
+                assert!(message.contains("invalid artifact id"));
+            }
+            other => panic!("unexpected error for {invalid_id}: {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
 async fn observe_tool_extracts_exec_context_from_json() {
     let config = RuntimeConfig {
         default_timeout_ms: 250,

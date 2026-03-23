@@ -12,7 +12,7 @@ use operator_core::{
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
-use operator_runtime::{RuntimeBuilder, RuntimeConfig};
+use operator_runtime::{FileArtifactStore, RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
@@ -281,6 +281,32 @@ fn tools_call_executes_artifact_get_and_returns_structured_content() {
 }
 
 #[test]
+fn tools_call_reports_invalid_artifact_ids_as_tool_errors() {
+    let server = initialized_server_with_file_artifact_store("valid-artifact.png");
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 18,
+            "method": "tools/call",
+            "params": {
+                "name": "artifact-get",
+                "arguments": {
+                    "artifact_id": "../escape.png"
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(response["result"]["isError"], json!(true));
+    assert!(response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("invalid artifact id"));
+}
+
+#[test]
 fn tools_call_wraps_runtime_failures_as_tool_results() {
     let server = initialized_server_with_snapshots(&[]);
 
@@ -493,6 +519,29 @@ fn initialized_server_with_artifacts(artifact_id: &str) -> (McpServer, std::path
     let server = McpServer::new(runtime.tools().clone());
     initialize_server(&server);
     (server, artifact_path)
+}
+
+fn initialized_server_with_file_artifact_store(artifact_id: &str) -> McpServer {
+    let root = std::env::temp_dir().join(unique_artifact_id("operator-mcp-artifacts-file-store"));
+    let artifact_store = Arc::new(FileArtifactStore::new(&root));
+    let artifacts_dir = artifact_store.artifacts_dir();
+    std::fs::create_dir_all(&artifacts_dir).unwrap();
+    std::fs::write(artifacts_dir.join(artifact_id), b"png-bytes").unwrap();
+
+    let runtime = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(async {
+            RuntimeBuilder::new(RuntimeConfig::default())
+                .artifact_store(artifact_store)
+                .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+                .build()
+                .await
+        })
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+    server
 }
 
 fn initialize_server(server: &McpServer) {

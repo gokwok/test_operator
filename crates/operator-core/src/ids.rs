@@ -1,4 +1,7 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    path::{Component, Path},
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -33,6 +36,28 @@ string_id!(ElementId);
 string_id!(SessionId);
 string_id!(TargetId);
 string_id!(ArtifactId);
+
+impl ArtifactId {
+    pub fn as_file_name(&self) -> Result<&str, crate::OperatorError> {
+        if self.0.is_empty()
+            || self.0.contains('/')
+            || self.0.contains('\\')
+            || self.0.contains('\0')
+        {
+            return Err(invalid_artifact_id(&self.0));
+        }
+
+        let mut components = Path::new(&self.0).components();
+        match (components.next(), components.next()) {
+            (Some(Component::Normal(_)), None) => Ok(self.0.as_str()),
+            _ => Err(invalid_artifact_id(&self.0)),
+        }
+    }
+}
+
+fn invalid_artifact_id(value: &str) -> crate::OperatorError {
+    crate::OperatorError::Platform(format!("invalid artifact id: {value}"))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct WindowId(pub u64);
