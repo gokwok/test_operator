@@ -2,7 +2,7 @@ use std::{num::NonZeroU32, sync::Arc};
 
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, ClickMode, DragMotion, Locator,
-    OperatorError, WindowId,
+    OperatorError, TypeTrailingKey, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -227,7 +227,12 @@ async fn r#type(
     let outcome = core
         .act(
             ActionRequest {
-                action: Action::Type { text: input.text },
+                action: Action::Type {
+                    text: input.text,
+                    clear_before: input.clear_before,
+                    delay_ms: input.delay_ms,
+                    trailing_keys: input.trailing_keys,
+                },
                 locator: input.locator,
             },
             ctx,
@@ -444,6 +449,11 @@ struct TypeToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     text: String,
+    #[serde(default)]
+    clear_before: bool,
+    delay_ms: Option<u64>,
+    #[serde(default)]
+    trailing_keys: Vec<TypeTrailingKey>,
     locator: Option<Locator>,
 }
 

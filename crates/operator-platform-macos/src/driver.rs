@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, DragMotion,
     ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError,
-    PermissionStatus, QueryRequest, QueryResult, Snapshot, SnapshotMetadata,
+    PermissionStatus, QueryRequest, QueryResult, Snapshot, SnapshotMetadata, TypeTrailingKey,
 };
 
 use crate::{
@@ -260,9 +260,21 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.move_pointer(req.locator, &permissions)
             }
-            Action::Type { text } => {
+            Action::Type {
+                text,
+                clear_before,
+                delay_ms,
+                trailing_keys,
+            } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.type_text(req.locator, &text, &permissions)
+                self.type_text(
+                    req.locator,
+                    &text,
+                    clear_before,
+                    delay_ms,
+                    &trailing_keys,
+                    &permissions,
+                )
             }
             Action::Scroll { delta_x, delta_y } => {
                 let permissions = self.permission_reader.current_permissions()?;
@@ -287,7 +299,7 @@ where
             }
             Action::Press { key, count } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.press(&key, count.get(), &permissions)
+                self.press(&key, count.get(), None, &permissions)
             }
             Action::FocusWindow { id } => {
                 self.app_service.focus_window(id)?;
@@ -332,6 +344,9 @@ where
         &self,
         locator: Option<Locator>,
         text: &str,
+        clear_before: bool,
+        delay_ms: Option<u64>,
+        trailing_keys: &[TypeTrailingKey],
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
@@ -344,11 +359,23 @@ where
         } else {
             None
         };
-        self.input_synthesizer.type_text(text)?;
+        if clear_before {
+            let clear_keys = vec!["command".to_string(), "a".to_string()];
+            self.input_synthesizer.hotkey(&clear_keys)?;
+            self.input_synthesizer.press("delete", 1, delay_ms)?;
+        }
+        self.input_synthesizer.type_text(text, delay_ms)?;
+        for key in trailing_keys {
+            self.input_synthesizer
+                .press(type_trailing_key_name(*key), 1, delay_ms)?;
+        }
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,
-            detail: Some(action_detail("typed text", warning.as_deref())),
+            detail: Some(action_detail(
+                &type_detail(clear_before, trailing_keys),
+                warning.as_deref(),
+            )),
         })
     }
 
@@ -447,10 +474,11 @@ where
         &self,
         key: &str,
         count: u32,
+        delay_ms: Option<u64>,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.input_synthesizer.press(key, count)?;
+        self.input_synthesizer.press(key, count, delay_ms)?;
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,
@@ -511,6 +539,35 @@ fn press_detail(key: &str, count: u32) -> String {
         format!("pressed {key}")
     } else {
         format!("pressed {key} {count} times")
+    }
+}
+
+fn type_detail(clear_before: bool, trailing_keys: &[TypeTrailingKey]) -> String {
+    let mut detail = if clear_before {
+        "cleared and typed text".to_string()
+    } else {
+        "typed text".to_string()
+    };
+
+    if !trailing_keys.is_empty() {
+        let trailing = trailing_keys
+            .iter()
+            .map(|key| type_trailing_key_name(*key))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        detail.push_str(", then ");
+        detail.push_str(&trailing);
+    }
+
+    detail
+}
+
+fn type_trailing_key_name(key: TypeTrailingKey) -> &'static str {
+    match key {
+        TypeTrailingKey::Return => "return",
+        TypeTrailingKey::Tab => "tab",
+        TypeTrailingKey::Escape => "escape",
+        TypeTrailingKey::Delete => "delete",
     }
 }
 

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
     Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
-    PlatformDriver, Point, QueryRequest, QueryResult,
+    PlatformDriver, Point, QueryRequest, QueryResult, TypeTrailingKey,
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
@@ -223,6 +223,16 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert_eq!(press["annotations"]["destructiveHint"], json!(true));
     assert!(press["inputSchema"]["properties"]["key"].is_object());
     assert!(press["inputSchema"]["properties"]["count"].is_object());
+
+    let type_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("type"))
+        .unwrap();
+    assert_eq!(type_tool["annotations"]["readOnlyHint"], json!(false));
+    assert_eq!(type_tool["annotations"]["destructiveHint"], json!(true));
+    assert!(type_tool["inputSchema"]["properties"]["clear_before"].is_object());
+    assert!(type_tool["inputSchema"]["properties"]["delay_ms"].is_object());
+    assert!(type_tool["inputSchema"]["properties"]["trailing_keys"].is_object());
 
     let swipe = tools
         .iter()
@@ -501,6 +511,76 @@ async fn tools_call_executes_move_and_returns_structured_content() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_type_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::KeyboardInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 8,
+        detail: Some("typed text".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "type",
+                "arguments": {
+                    "target": "local:macos",
+                    "text": "hello world",
+                    "clear_before": true,
+                    "delay_ms": 25,
+                    "trailing_keys": ["Return", "Tab"],
+                    "locator": {
+                        "Text": "Search"
+                    }
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("typed text")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Type {
+                    text: "hello world".into(),
+                    clear_before: true,
+                    delay_ms: Some(25),
+                    trailing_keys: vec![TypeTrailingKey::Return, TypeTrailingKey::Tab],
+                },
+                locator: Some(Locator::Text("Search".into())),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tools_call_executes_press_and_returns_structured_content() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
@@ -525,7 +605,7 @@ async fn tools_call_executes_press_and_returns_structured_content() {
     let response = server
         .handle_message(json!({
             "jsonrpc": "2.0",
-            "id": 20,
+            "id": 21,
             "method": "tools/call",
             "params": {
                 "name": "press",
@@ -588,7 +668,7 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
     let response = server
         .handle_message(json!({
             "jsonrpc": "2.0",
-            "id": 21,
+            "id": 22,
             "method": "tools/call",
             "params": {
                 "name": "swipe",

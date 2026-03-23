@@ -19,6 +19,11 @@ pub enum Action {
     Move,
     Type {
         text: String,
+        #[serde(default)]
+        clear_before: bool,
+        delay_ms: Option<u64>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        trailing_keys: Vec<TypeTrailingKey>,
     },
     Press {
         key: String,
@@ -67,6 +72,14 @@ pub enum DragModifier {
     Option,
     Shift,
     Function,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum TypeTrailingKey {
+    Return,
+    Tab,
+    Escape,
+    Delete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

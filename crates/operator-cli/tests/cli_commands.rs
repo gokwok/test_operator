@@ -476,6 +476,47 @@ async fn press_command_maps_key_and_count_to_tool_input() {
 }
 
 #[tokio::test]
+async fn type_command_maps_clear_delay_and_trailing_keys_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "type",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--text",
+        "hello world",
+        "--clear-before",
+        "--delay-ms",
+        "25",
+        "--trailing-key",
+        "return",
+        "--trailing-key",
+        "tab",
+        "--locator-text",
+        "Search",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "type");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "text": "hello world",
+            "clear_before": true,
+            "delay_ms": 25,
+            "trailing_keys": ["Return", "Tab"],
+            "locator": {
+                "Text": "Search"
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_renders_move_action_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",

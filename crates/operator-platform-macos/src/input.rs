@@ -14,10 +14,10 @@ pub trait InputSynthesizer: Send + Sync {
         steps: Option<std::num::NonZeroU32>,
     ) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
-    fn press(&self, key: &str, count: u32) -> Result<(), OperatorError>;
+    fn press(&self, key: &str, count: u32, delay_ms: Option<u64>) -> Result<(), OperatorError>;
     fn scroll(&self, point: Option<Point>, delta_x: f64, delta_y: f64)
         -> Result<(), OperatorError>;
-    fn type_text(&self, text: &str) -> Result<(), OperatorError>;
+    fn type_text(&self, text: &str, delay_ms: Option<u64>) -> Result<(), OperatorError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -50,8 +50,8 @@ impl InputSynthesizer for SystemInputSynthesizer {
         platform::hotkey(keys)
     }
 
-    fn press(&self, key: &str, count: u32) -> Result<(), OperatorError> {
-        platform::press(key, count)
+    fn press(&self, key: &str, count: u32, delay_ms: Option<u64>) -> Result<(), OperatorError> {
+        platform::press(key, count, delay_ms)
     }
 
     fn scroll(
@@ -63,8 +63,8 @@ impl InputSynthesizer for SystemInputSynthesizer {
         platform::scroll(point, delta_x, delta_y)
     }
 
-    fn type_text(&self, text: &str) -> Result<(), OperatorError> {
-        platform::type_text(text)
+    fn type_text(&self, text: &str, delay_ms: Option<u64>) -> Result<(), OperatorError> {
+        platform::type_text(text, delay_ms)
     }
 }
 
@@ -783,29 +783,35 @@ mod platform {
         Ok(())
     }
 
-    pub fn press(key: &str, count: u32) -> Result<(), OperatorError> {
+    pub fn press(key: &str, count: u32, delay_ms: Option<u64>) -> Result<(), OperatorError> {
         let key_code = super::parse_press_key(key)?;
         let source = EventSource::new()?;
+        let delay_ms = delay_ms.unwrap_or(INPUT_EVENT_DELAY_MS);
 
         for press_index in 0..count {
             Event::keyboard_keycode(&source, key_code, true)?.post();
-            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+            thread::sleep(Duration::from_millis(delay_ms));
             Event::keyboard_keycode(&source, key_code, false)?.post();
             if press_index + 1 < count {
-                thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+                thread::sleep(Duration::from_millis(delay_ms));
             }
         }
 
         Ok(())
     }
 
-    pub fn type_text(text: &str) -> Result<(), OperatorError> {
+    pub fn type_text(text: &str, delay_ms: Option<u64>) -> Result<(), OperatorError> {
         let source = EventSource::new()?;
-        for character in text.chars() {
+        let delay_ms = delay_ms.unwrap_or(0);
+        let mut characters = text.chars().peekable();
+        while let Some(character) = characters.next() {
             let mut units = [0u16; 2];
             let encoded = character.encode_utf16(&mut units);
             Event::keyboard(&source, encoded, true)?.post();
             Event::keyboard(&source, encoded, false)?.post();
+            if characters.peek().is_some() {
+                thread::sleep(Duration::from_millis(delay_ms));
+            }
         }
         Ok(())
     }
@@ -929,13 +935,13 @@ mod platform {
         ))
     }
 
-    pub fn press(_key: &str, _count: u32) -> Result<(), OperatorError> {
+    pub fn press(_key: &str, _count: u32, _delay_ms: Option<u64>) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))
     }
 
-    pub fn type_text(_text: &str) -> Result<(), OperatorError> {
+    pub fn type_text(_text: &str, _delay_ms: Option<u64>) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

@@ -5,7 +5,7 @@ use operator_core::{
     Action, ActionOutcome, ActionRequest, AppInfo, ArtifactId, Capability, CapabilitySet,
     ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest,
     ObserveResult, OperatorError, PermissionStatus, PermissionsReport, QueryRequest, QueryResult,
-    Rect, Surface, SurfaceKind, WindowInfo,
+    Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
@@ -466,6 +466,9 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             json!({
                 "target": "local:macos",
                 "text": "hello world",
+                "clear_before": true,
+                "delay_ms": 25,
+                "trailing_keys": ["Return", "Tab"],
                 "locator": {
                     "Text": "Search"
                 }
@@ -628,6 +631,9 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                 ActionRequest {
                     action: Action::Type {
                         text: "hello world".into(),
+                        clear_before: true,
+                        delay_ms: Some(25),
+                        trailing_keys: vec![TypeTrailingKey::Return, TypeTrailingKey::Tab],
                     },
                     locator: Some(Locator::Text("Search".into())),
                 },
@@ -850,6 +856,9 @@ async fn action_tools_export_stable_specs() {
         type_spec.capabilities_required,
         &[Capability::KeyboardInput]
     );
+    assert!(type_spec.input_schema["properties"]["clear_before"].is_object());
+    assert!(type_spec.input_schema["properties"]["delay_ms"].is_object());
+    assert!(type_spec.input_schema["properties"]["trailing_keys"].is_object());
 
     let observe = specs.iter().find(|spec| spec.name == "observe").unwrap();
     assert!(!observe.has_side_effects);

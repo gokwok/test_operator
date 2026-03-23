@@ -4,7 +4,7 @@ use operator_core::{
     Action, ActionRequest, AppInfo, ArtifactId, Capability, ClickMode, DragModifier, DragMotion,
     ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError,
     PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
-    Surface, SurfaceKind, UiElement, WindowId, WindowInfo,
+    Surface, SurfaceKind, TypeTrailingKey, UiElement, WindowId, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -493,6 +493,9 @@ async fn type_action_clicks_role_target_before_typing() {
             ActionRequest {
                 action: Action::Type {
                     text: "hello operator".into(),
+                    clear_before: false,
+                    delay_ms: None,
+                    trailing_keys: Vec::new(),
                 },
                 locator: Some(Locator::Role {
                     role: "AXTextField".into(),
@@ -512,7 +515,96 @@ async fn type_action_clicks_role_target_before_typing() {
                 point: Some(Point { x: 260.0, y: 72.0 }),
                 mode: ClickMode::Left,
             },
-            RecordedInput::TypeText("hello operator".into()),
+            RecordedInput::TypeText {
+                text: "hello operator".into(),
+                delay_ms: None,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn type_action_supports_clear_delay_and_trailing_keys() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-field-0".into()),
+                UiElement {
+                    id: ElementId("ax-field-0".into()),
+                    role: "AXTextField".into(),
+                    label: Some("Primary".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 200.0,
+                        y: 60.0,
+                        width: 120.0,
+                        height: 24.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-field-0".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Type {
+                    text: "hello operator".into(),
+                    clear_before: true,
+                    delay_ms: Some(25),
+                    trailing_keys: vec![TypeTrailingKey::Return, TypeTrailingKey::Tab],
+                },
+                locator: Some(Locator::Role {
+                    role: "AXTextField".into(),
+                    index: 0,
+                }),
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(
+        input.calls(),
+        vec![
+            RecordedInput::Click {
+                point: Some(Point { x: 260.0, y: 72.0 }),
+                mode: ClickMode::Left,
+            },
+            RecordedInput::Hotkey(vec!["command".into(), "a".into()]),
+            RecordedInput::Press {
+                key: "delete".into(),
+                count: 1,
+                delay_ms: Some(25),
+            },
+            RecordedInput::TypeText {
+                text: "hello operator".into(),
+                delay_ms: Some(25),
+            },
+            RecordedInput::Press {
+                key: "return".into(),
+                count: 1,
+                delay_ms: Some(25),
+            },
+            RecordedInput::Press {
+                key: "tab".into(),
+                count: 1,
+                delay_ms: Some(25),
+            },
         ]
     );
 }
@@ -939,6 +1031,7 @@ async fn press_action_returns_successful_outcome() {
         vec![RecordedInput::Press {
             key: "down".into(),
             count: 3,
+            delay_ms: None,
         }]
     );
 }
@@ -1149,13 +1242,17 @@ enum RecordedInput {
     Press {
         key: String,
         count: u32,
+        delay_ms: Option<u64>,
     },
     Scroll {
         point: Option<Point>,
         delta_x: f64,
         delta_y: f64,
     },
-    TypeText(String),
+    TypeText {
+        text: String,
+        delay_ms: Option<u64>,
+    },
 }
 
 #[derive(Default, Clone)]
@@ -1219,10 +1316,11 @@ impl InputSynthesizer for StubInputSynthesizer {
         Ok(())
     }
 
-    fn press(&self, key: &str, count: u32) -> Result<(), OperatorError> {
+    fn press(&self, key: &str, count: u32, delay_ms: Option<u64>) -> Result<(), OperatorError> {
         self.calls.lock().unwrap().push(RecordedInput::Press {
             key: key.to_string(),
             count,
+            delay_ms,
         });
         Ok(())
     }
@@ -1241,11 +1339,11 @@ impl InputSynthesizer for StubInputSynthesizer {
         Ok(())
     }
 
-    fn type_text(&self, text: &str) -> Result<(), OperatorError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(RecordedInput::TypeText(text.to_string()));
+    fn type_text(&self, text: &str, delay_ms: Option<u64>) -> Result<(), OperatorError> {
+        self.calls.lock().unwrap().push(RecordedInput::TypeText {
+            text: text.to_string(),
+            delay_ms,
+        });
         Ok(())
     }
 }

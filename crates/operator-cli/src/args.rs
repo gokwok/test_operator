@@ -4,7 +4,8 @@ use std::num::NonZeroU32;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use operator_core::{
-    ArtifactId, ClickMode, Locator, Point, SnapshotId, Surface, SurfaceKind, WindowId,
+    ArtifactId, ClickMode, Locator, Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey,
+    WindowId,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -516,6 +517,12 @@ struct TypeArgs {
     common: CommonArgs,
     #[arg(long)]
     text: String,
+    #[arg(long)]
+    clear_before: bool,
+    #[arg(long)]
+    delay_ms: Option<u64>,
+    #[arg(long = "trailing-key", value_enum)]
+    trailing_keys: Vec<TypeTrailingKeyArg>,
     #[command(flatten)]
     locator: TypeLocatorArgs,
 }
@@ -524,6 +531,18 @@ impl TypeArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
         input.insert("text".into(), Value::String(self.text));
+        input.insert("clear_before".into(), Value::Bool(self.clear_before));
+        if let Some(delay_ms) = self.delay_ms {
+            input.insert("delay_ms".into(), Value::from(delay_ms));
+        }
+        if !self.trailing_keys.is_empty() {
+            let trailing_keys = self
+                .trailing_keys
+                .into_iter()
+                .map(TypeTrailingKeyArg::trailing_key)
+                .collect::<Vec<_>>();
+            insert_serialized(&mut input, "trailing_keys", trailing_keys)?;
+        }
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -612,6 +631,25 @@ enum DragModifierArg {
     Option,
     Shift,
     Function,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ValueEnum)]
+enum TypeTrailingKeyArg {
+    Return,
+    Tab,
+    Escape,
+    Delete,
+}
+
+impl TypeTrailingKeyArg {
+    fn trailing_key(self) -> TypeTrailingKey {
+        match self {
+            Self::Return => TypeTrailingKey::Return,
+            Self::Tab => TypeTrailingKey::Tab,
+            Self::Escape => TypeTrailingKey::Escape,
+            Self::Delete => TypeTrailingKey::Delete,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args, Default)]
@@ -786,7 +824,7 @@ struct TypeLocatorArgs {
     #[arg(long)]
     element: Option<String>,
     #[arg(long = "locator-text")]
-    text: Option<String>,
+    locator_text: Option<String>,
     #[arg(long)]
     role: Option<String>,
     #[arg(long, default_value_t = 0)]
@@ -802,7 +840,7 @@ impl TypeLocatorArgs {
         RawLocatorArgs {
             snapshot: self.snapshot,
             element: self.element,
-            text: self.text,
+            text: self.locator_text,
             role: self.role,
             index: self.index,
             x: self.x,

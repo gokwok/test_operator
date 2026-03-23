@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::SystemTime};
 
 use operator_core::{
     Action, Capability, CapabilitySet, ElementSource, ExecContext, Locator, ObserveResult,
-    QueryRequest, Snapshot, SnapshotMetadata, Surface, SurfaceKind, UiElement,
+    QueryRequest, Snapshot, SnapshotMetadata, Surface, SurfaceKind, TypeTrailingKey, UiElement,
 };
 
 #[test]
@@ -31,8 +31,11 @@ fn action_and_query_variants_are_serializable() {
     let query = QueryRequest::ListWindows {
         app: Some("Safari".into()),
     };
-    let action = Action::LaunchApp {
-        bundle_id_or_name: "Safari".into(),
+    let action = Action::Type {
+        text: "hello".into(),
+        clear_before: true,
+        delay_ms: Some(25),
+        trailing_keys: vec![TypeTrailingKey::Return],
     };
 
     assert!(serde_json::to_value(&query).is_ok());

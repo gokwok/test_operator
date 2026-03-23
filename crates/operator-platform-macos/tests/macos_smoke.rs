@@ -101,6 +101,9 @@ async fn click_and_type_with_system_driver() {
         ActionRequest {
             action: Action::Type {
                 text: "operator smoke typing".into(),
+                clear_before: false,
+                delay_ms: None,
+                trailing_keys: Vec::new(),
             },
             locator: None,
         },
@@ -236,6 +239,9 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
         ActionRequest {
             action: Action::Type {
                 text: initial_text.into(),
+                clear_before: false,
+                delay_ms: None,
+                trailing_keys: Vec::new(),
             },
             locator: None,
         },
@@ -248,6 +254,9 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
         ActionRequest {
             action: Action::Type {
                 text: replacement_text.into(),
+                clear_before: false,
+                delay_ms: None,
+                trailing_keys: Vec::new(),
             },
             locator: None,
         },
