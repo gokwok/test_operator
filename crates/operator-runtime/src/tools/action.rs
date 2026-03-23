@@ -16,6 +16,7 @@ const CLICK_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const DRAG_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const SCROLL_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
+const HOTKEY_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 
@@ -25,6 +26,7 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
         drag_registration(),
         scroll_registration(),
         type_registration(),
+        hotkey_registration(),
         launch_app_registration(),
         focus_window_registration(),
     ]
@@ -104,6 +106,22 @@ fn launch_app_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { launch_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn hotkey_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "hotkey",
+            description: "Send a modifier-aware key chord such as command-k.",
+            input_schema: json_schema_for::<HotkeyToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: HOTKEY_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { hotkey(input, core, ctx).await })
         }),
     }
 }
@@ -208,6 +226,25 @@ async fn drag(
     serialize_output(outcome)
 }
 
+async fn hotkey(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<HotkeyToolInput>("hotkey", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::Hotkey { keys: input.keys },
+                locator: None,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 async fn launch_app(
     input: Value,
     core: Arc<RuntimeCore>,
@@ -287,6 +324,15 @@ struct TypeToolInput {
     exec: ToolExecInput,
     text: String,
     locator: Option<Locator>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct HotkeyToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    keys: Vec<String>,
 }
 
 #[allow(dead_code)]

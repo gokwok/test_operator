@@ -3,6 +3,7 @@ use operator_core::{MouseButton, OperatorError, Point};
 pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Point, button: MouseButton) -> Result<(), OperatorError>;
     fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError>;
+    fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
     fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError>;
     fn type_text(&self, text: &str) -> Result<(), OperatorError>;
 }
@@ -19,6 +20,10 @@ impl InputSynthesizer for SystemInputSynthesizer {
         platform::drag(from, to)
     }
 
+    fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError> {
+        platform::hotkey(keys)
+    }
+
     fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
         platform::scroll(delta_x, delta_y)
     }
@@ -28,11 +33,271 @@ impl InputSynthesizer for SystemInputSynthesizer {
     }
 }
 
+const KEY_CODE_A: u16 = 0x00;
+const KEY_CODE_S: u16 = 0x01;
+const KEY_CODE_D: u16 = 0x02;
+const KEY_CODE_F: u16 = 0x03;
+const KEY_CODE_H: u16 = 0x04;
+const KEY_CODE_G: u16 = 0x05;
+const KEY_CODE_Z: u16 = 0x06;
+const KEY_CODE_X: u16 = 0x07;
+const KEY_CODE_C: u16 = 0x08;
+const KEY_CODE_V: u16 = 0x09;
+const KEY_CODE_B: u16 = 0x0B;
+const KEY_CODE_Q: u16 = 0x0C;
+const KEY_CODE_W: u16 = 0x0D;
+const KEY_CODE_E: u16 = 0x0E;
+const KEY_CODE_R: u16 = 0x0F;
+const KEY_CODE_Y: u16 = 0x10;
+const KEY_CODE_T: u16 = 0x11;
+const KEY_CODE_1: u16 = 0x12;
+const KEY_CODE_2: u16 = 0x13;
+const KEY_CODE_3: u16 = 0x14;
+const KEY_CODE_4: u16 = 0x15;
+const KEY_CODE_6: u16 = 0x16;
+const KEY_CODE_5: u16 = 0x17;
+const KEY_CODE_EQUAL: u16 = 0x18;
+const KEY_CODE_9: u16 = 0x19;
+const KEY_CODE_7: u16 = 0x1A;
+const KEY_CODE_MINUS: u16 = 0x1B;
+const KEY_CODE_8: u16 = 0x1C;
+const KEY_CODE_0: u16 = 0x1D;
+const KEY_CODE_RIGHT_BRACKET: u16 = 0x1E;
+const KEY_CODE_O: u16 = 0x1F;
+const KEY_CODE_U: u16 = 0x20;
+const KEY_CODE_LEFT_BRACKET: u16 = 0x21;
+const KEY_CODE_I: u16 = 0x22;
+const KEY_CODE_P: u16 = 0x23;
+const KEY_CODE_RETURN: u16 = 0x24;
+const KEY_CODE_L: u16 = 0x25;
+const KEY_CODE_J: u16 = 0x26;
+const KEY_CODE_QUOTE: u16 = 0x27;
+const KEY_CODE_K: u16 = 0x28;
+const KEY_CODE_SEMICOLON: u16 = 0x29;
+const KEY_CODE_BACKSLASH: u16 = 0x2A;
+const KEY_CODE_COMMA: u16 = 0x2B;
+const KEY_CODE_SLASH: u16 = 0x2C;
+const KEY_CODE_N: u16 = 0x2D;
+const KEY_CODE_M: u16 = 0x2E;
+const KEY_CODE_PERIOD: u16 = 0x2F;
+const KEY_CODE_TAB: u16 = 0x30;
+const KEY_CODE_SPACE: u16 = 0x31;
+const KEY_CODE_GRAVE: u16 = 0x32;
+const KEY_CODE_DELETE: u16 = 0x33;
+const KEY_CODE_ESCAPE: u16 = 0x35;
+const KEY_CODE_COMMAND: u16 = 0x37;
+const KEY_CODE_SHIFT: u16 = 0x38;
+const KEY_CODE_OPTION: u16 = 0x3A;
+const KEY_CODE_CONTROL: u16 = 0x3B;
+const KEY_CODE_FUNCTION: u16 = 0x3F;
+const KEY_CODE_F17: u16 = 0x40;
+const KEY_CODE_F18: u16 = 0x4F;
+const KEY_CODE_F19: u16 = 0x50;
+const KEY_CODE_F20: u16 = 0x5A;
+const KEY_CODE_F5: u16 = 0x60;
+const KEY_CODE_F6: u16 = 0x61;
+const KEY_CODE_F7: u16 = 0x62;
+const KEY_CODE_F3: u16 = 0x63;
+const KEY_CODE_F8: u16 = 0x64;
+const KEY_CODE_F9: u16 = 0x65;
+const KEY_CODE_F11: u16 = 0x67;
+const KEY_CODE_F13: u16 = 0x69;
+const KEY_CODE_F16: u16 = 0x6A;
+const KEY_CODE_F14: u16 = 0x6B;
+const KEY_CODE_F10: u16 = 0x6D;
+const KEY_CODE_F12: u16 = 0x6F;
+const KEY_CODE_F15: u16 = 0x71;
+const KEY_CODE_HOME: u16 = 0x73;
+const KEY_CODE_PAGE_UP: u16 = 0x74;
+const KEY_CODE_FORWARD_DELETE: u16 = 0x75;
+const KEY_CODE_F4: u16 = 0x76;
+const KEY_CODE_END: u16 = 0x77;
+const KEY_CODE_F2: u16 = 0x78;
+const KEY_CODE_PAGE_DOWN: u16 = 0x79;
+const KEY_CODE_F1: u16 = 0x7A;
+const KEY_CODE_LEFT_ARROW: u16 = 0x7B;
+const KEY_CODE_RIGHT_ARROW: u16 = 0x7C;
+const KEY_CODE_DOWN_ARROW: u16 = 0x7D;
+const KEY_CODE_UP_ARROW: u16 = 0x7E;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HotkeyModifier {
+    Command,
+    Control,
+    Option,
+    Shift,
+    Function,
+}
+
+impl HotkeyModifier {
+    fn key_code(self) -> u16 {
+        match self {
+            Self::Command => KEY_CODE_COMMAND,
+            Self::Control => KEY_CODE_CONTROL,
+            Self::Option => KEY_CODE_OPTION,
+            Self::Shift => KEY_CODE_SHIFT,
+            Self::Function => KEY_CODE_FUNCTION,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedHotkey {
+    modifiers: Vec<HotkeyModifier>,
+    key_code: u16,
+}
+
+fn parse_hotkey(keys: &[String]) -> Result<ParsedHotkey, OperatorError> {
+    if keys.is_empty() {
+        return Err(OperatorError::Platform(
+            "macOS hotkey requires at least one key".into(),
+        ));
+    }
+
+    let mut modifiers = Vec::new();
+    let mut key_code = None;
+
+    for raw in keys {
+        let token = raw.trim();
+        if token.is_empty() {
+            return Err(OperatorError::Platform(
+                "macOS hotkey does not allow empty key tokens".into(),
+            ));
+        }
+
+        let normalized = token.to_ascii_lowercase();
+        if let Some(modifier) = hotkey_modifier(&normalized) {
+            if !modifiers.contains(&modifier) {
+                modifiers.push(modifier);
+            }
+            continue;
+        }
+
+        let resolved_key = hotkey_key_code(&normalized).ok_or_else(|| {
+            OperatorError::Platform(format!("unsupported macOS hotkey key: {token}"))
+        })?;
+        if key_code.replace(resolved_key).is_some() {
+            return Err(OperatorError::Platform(
+                "macOS hotkey supports exactly one non-modifier key".into(),
+            ));
+        }
+    }
+
+    let key_code = key_code.ok_or_else(|| {
+        OperatorError::Platform("macOS hotkey requires a non-modifier key".into())
+    })?;
+
+    Ok(ParsedHotkey {
+        modifiers,
+        key_code,
+    })
+}
+
+fn hotkey_modifier(token: &str) -> Option<HotkeyModifier> {
+    match token {
+        "command" | "cmd" | "meta" | "super" => Some(HotkeyModifier::Command),
+        "control" | "ctrl" | "ctl" => Some(HotkeyModifier::Control),
+        "option" | "opt" | "alt" => Some(HotkeyModifier::Option),
+        "shift" => Some(HotkeyModifier::Shift),
+        "function" | "fn" => Some(HotkeyModifier::Function),
+        _ => None,
+    }
+}
+
+fn hotkey_key_code(token: &str) -> Option<u16> {
+    Some(match token {
+        "a" => KEY_CODE_A,
+        "b" => KEY_CODE_B,
+        "c" => KEY_CODE_C,
+        "d" => KEY_CODE_D,
+        "e" => KEY_CODE_E,
+        "f" => KEY_CODE_F,
+        "g" => KEY_CODE_G,
+        "h" => KEY_CODE_H,
+        "i" => KEY_CODE_I,
+        "j" => KEY_CODE_J,
+        "k" => KEY_CODE_K,
+        "l" => KEY_CODE_L,
+        "m" => KEY_CODE_M,
+        "n" => KEY_CODE_N,
+        "o" => KEY_CODE_O,
+        "p" => KEY_CODE_P,
+        "q" => KEY_CODE_Q,
+        "r" => KEY_CODE_R,
+        "s" => KEY_CODE_S,
+        "t" => KEY_CODE_T,
+        "u" => KEY_CODE_U,
+        "v" => KEY_CODE_V,
+        "w" => KEY_CODE_W,
+        "x" => KEY_CODE_X,
+        "y" => KEY_CODE_Y,
+        "z" => KEY_CODE_Z,
+        "0" => KEY_CODE_0,
+        "1" => KEY_CODE_1,
+        "2" => KEY_CODE_2,
+        "3" => KEY_CODE_3,
+        "4" => KEY_CODE_4,
+        "5" => KEY_CODE_5,
+        "6" => KEY_CODE_6,
+        "7" => KEY_CODE_7,
+        "8" => KEY_CODE_8,
+        "9" => KEY_CODE_9,
+        "-" => KEY_CODE_MINUS,
+        "=" => KEY_CODE_EQUAL,
+        "[" => KEY_CODE_LEFT_BRACKET,
+        "]" => KEY_CODE_RIGHT_BRACKET,
+        "\\" => KEY_CODE_BACKSLASH,
+        ";" => KEY_CODE_SEMICOLON,
+        "'" => KEY_CODE_QUOTE,
+        "," => KEY_CODE_COMMA,
+        "." => KEY_CODE_PERIOD,
+        "/" => KEY_CODE_SLASH,
+        "`" => KEY_CODE_GRAVE,
+        "return" | "enter" => KEY_CODE_RETURN,
+        "tab" => KEY_CODE_TAB,
+        "space" | "spacebar" => KEY_CODE_SPACE,
+        "delete" | "backspace" => KEY_CODE_DELETE,
+        "forward-delete" | "forwarddelete" => KEY_CODE_FORWARD_DELETE,
+        "escape" | "esc" => KEY_CODE_ESCAPE,
+        "left" | "left-arrow" | "arrowleft" => KEY_CODE_LEFT_ARROW,
+        "right" | "right-arrow" | "arrowright" => KEY_CODE_RIGHT_ARROW,
+        "up" | "up-arrow" | "arrowup" => KEY_CODE_UP_ARROW,
+        "down" | "down-arrow" | "arrowdown" => KEY_CODE_DOWN_ARROW,
+        "home" => KEY_CODE_HOME,
+        "end" => KEY_CODE_END,
+        "pageup" | "page-up" => KEY_CODE_PAGE_UP,
+        "pagedown" | "page-down" => KEY_CODE_PAGE_DOWN,
+        "f1" => KEY_CODE_F1,
+        "f2" => KEY_CODE_F2,
+        "f3" => KEY_CODE_F3,
+        "f4" => KEY_CODE_F4,
+        "f5" => KEY_CODE_F5,
+        "f6" => KEY_CODE_F6,
+        "f7" => KEY_CODE_F7,
+        "f8" => KEY_CODE_F8,
+        "f9" => KEY_CODE_F9,
+        "f10" => KEY_CODE_F10,
+        "f11" => KEY_CODE_F11,
+        "f12" => KEY_CODE_F12,
+        "f13" => KEY_CODE_F13,
+        "f14" => KEY_CODE_F14,
+        "f15" => KEY_CODE_F15,
+        "f16" => KEY_CODE_F16,
+        "f17" => KEY_CODE_F17,
+        "f18" => KEY_CODE_F18,
+        "f19" => KEY_CODE_F19,
+        "f20" => KEY_CODE_F20,
+        _ => return None,
+    })
+}
+
 #[cfg(target_os = "macos")]
 mod platform {
     use std::{ffi::c_void, thread, time::Duration};
 
     use operator_core::{MouseButton, OperatorError, Point};
+
+    use super::{parse_hotkey, HotkeyModifier};
 
     const KCG_HID_EVENT_TAP: u32 = 0;
     const KCG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: u32 = 0;
@@ -45,6 +310,11 @@ mod platform {
     const KCG_EVENT_OTHER_MOUSE_DOWN: u32 = 25;
     const KCG_EVENT_OTHER_MOUSE_UP: u32 = 26;
     const KCG_SCROLL_EVENT_UNIT_LINE: u32 = 1;
+    const KCG_EVENT_FLAG_MASK_SHIFT: u64 = 0x0002_0000;
+    const KCG_EVENT_FLAG_MASK_CONTROL: u64 = 0x0004_0000;
+    const KCG_EVENT_FLAG_MASK_OPTION: u64 = 0x0008_0000;
+    const KCG_EVENT_FLAG_MASK_COMMAND: u64 = 0x0010_0000;
+    const KCG_EVENT_FLAG_MASK_FUNCTION: u64 = 0x0080_0000;
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct CGPoint {
@@ -80,6 +350,7 @@ mod platform {
             string_length: u64,
             unicode_string: *const u16,
         );
+        fn CGEventSetFlags(event: CGEventRef, flags: u64);
         fn CGEventPost(tap: u32, event: CGEventRef);
     }
 
@@ -154,6 +425,21 @@ mod platform {
             Ok(Self(event))
         }
 
+        fn keyboard_keycode(
+            source: &EventSource,
+            key_code: u16,
+            key_down: bool,
+        ) -> Result<Self, OperatorError> {
+            let event = unsafe { CGEventCreateKeyboardEvent(source.0, key_code, key_down) };
+            if event.is_null() {
+                return Err(OperatorError::Platform(
+                    "failed to create macOS keyboard event".into(),
+                ));
+            }
+
+            Ok(Self(event))
+        }
+
         fn scroll(source: &EventSource, delta_x: f64, delta_y: f64) -> Result<Self, OperatorError> {
             let event = unsafe {
                 CGEventCreateScrollWheelEvent(
@@ -171,6 +457,10 @@ mod platform {
             }
 
             Ok(Self(event))
+        }
+
+        fn set_flags(&self, flags: u64) {
+            unsafe { CGEventSetFlags(self.0, flags) };
         }
 
         fn post(&self) {
@@ -209,6 +499,35 @@ mod platform {
         Ok(())
     }
 
+    pub fn hotkey(keys: &[String]) -> Result<(), OperatorError> {
+        let parsed = parse_hotkey(keys)?;
+        let source = EventSource::new()?;
+        let flags = parsed.modifiers.iter().fold(0u64, |combined, modifier| {
+            combined | modifier_flag(*modifier)
+        });
+
+        for modifier in &parsed.modifiers {
+            Event::keyboard_keycode(&source, modifier.key_code(), true)?.post();
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let key_down = Event::keyboard_keycode(&source, parsed.key_code, true)?;
+        key_down.set_flags(flags);
+        key_down.post();
+        thread::sleep(Duration::from_millis(10));
+
+        let key_up = Event::keyboard_keycode(&source, parsed.key_code, false)?;
+        key_up.set_flags(flags);
+        key_up.post();
+
+        for modifier in parsed.modifiers.iter().rev() {
+            thread::sleep(Duration::from_millis(10));
+            Event::keyboard_keycode(&source, modifier.key_code(), false)?.post();
+        }
+
+        Ok(())
+    }
+
     pub fn type_text(text: &str) -> Result<(), OperatorError> {
         let source = EventSource::new()?;
         for character in text.chars() {
@@ -244,6 +563,16 @@ mod platform {
         }
     }
 
+    fn modifier_flag(modifier: HotkeyModifier) -> u64 {
+        match modifier {
+            HotkeyModifier::Command => KCG_EVENT_FLAG_MASK_COMMAND,
+            HotkeyModifier::Control => KCG_EVENT_FLAG_MASK_CONTROL,
+            HotkeyModifier::Option => KCG_EVENT_FLAG_MASK_OPTION,
+            HotkeyModifier::Shift => KCG_EVENT_FLAG_MASK_SHIFT,
+            HotkeyModifier::Function => KCG_EVENT_FLAG_MASK_FUNCTION,
+        }
+    }
+
     fn scroll_delta(delta: f64) -> i32 {
         delta
             .round()
@@ -273,9 +602,60 @@ mod platform {
         ))
     }
 
+    pub fn hotkey(_keys: &[String]) -> Result<(), OperatorError> {
+        Err(OperatorError::Platform(
+            "macOS input synthesis is unavailable on non-macOS hosts".into(),
+        ))
+    }
+
     pub fn type_text(_text: &str) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_hotkey, HotkeyModifier, ParsedHotkey, KEY_CODE_P, KEY_CODE_RETURN};
+
+    #[test]
+    fn parse_hotkey_accepts_modifier_synonyms_and_deduplicates() {
+        let parsed = parse_hotkey(&[
+            "cmd".to_string(),
+            "shift".to_string(),
+            "command".to_string(),
+            "P".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            parsed,
+            ParsedHotkey {
+                modifiers: vec![HotkeyModifier::Command, HotkeyModifier::Shift],
+                key_code: KEY_CODE_P,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_hotkey_rejects_missing_primary_key() {
+        let error = parse_hotkey(&["command".to_string(), "shift".to_string()]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "platform error: macOS hotkey requires a non-modifier key"
+        );
+    }
+
+    #[test]
+    fn parse_hotkey_supports_named_non_modifier_keys() {
+        let parsed = parse_hotkey(&["control".to_string(), "return".to_string()]).unwrap();
+        assert_eq!(
+            parsed,
+            ParsedHotkey {
+                modifiers: vec![HotkeyModifier::Control],
+                key_code: KEY_CODE_RETURN,
+            }
+        );
     }
 }

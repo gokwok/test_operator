@@ -193,6 +193,36 @@ async fn drag_command_maps_from_and_to_locators_to_tool_input() {
 }
 
 #[tokio::test]
+async fn hotkey_command_maps_repeated_key_flags_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "hotkey",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--key",
+        "command",
+        "--key",
+        "shift",
+        "--key",
+        "p",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "hotkey");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "keys": ["command", "shift", "p"]
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",

@@ -44,6 +44,7 @@ enum Command {
     Click(ClickArgs),
     Drag(DragArgs),
     Scroll(ScrollArgs),
+    Hotkey(HotkeyArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
     FocusWindow(FocusWindowArgs),
@@ -62,6 +63,7 @@ impl Command {
             Self::Click(args) => &args.common,
             Self::Drag(args) => &args.common,
             Self::Scroll(args) => &args.common,
+            Self::Hotkey(args) => &args.common,
             Self::Type(args) => &args.common,
             Self::LaunchApp(args) => &args.common,
             Self::FocusWindow(args) => &args.common,
@@ -82,6 +84,7 @@ impl Command {
             Self::Click(args) => args.into_invocation(),
             Self::Drag(args) => args.into_invocation(),
             Self::Scroll(args) => args.into_invocation(),
+            Self::Hotkey(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
             Self::FocusWindow(args) => args.into_invocation(),
@@ -341,6 +344,26 @@ impl ScrollArgs {
         input.insert("delta_y".into(), Value::from(self.delta_y));
         Ok(ToolInvocation {
             tool: "scroll",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct HotkeyArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long = "key", required = true)]
+    keys: Vec<String>,
+}
+
+impl HotkeyArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        insert_serialized(&mut input, "keys", self.keys)?;
+        Ok(ToolInvocation {
+            tool: "hotkey",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })

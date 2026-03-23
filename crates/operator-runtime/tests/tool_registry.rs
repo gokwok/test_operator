@@ -326,6 +326,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 11,
+        detail: Some("sent hotkey".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 9,
         detail: Some("launched".into()),
     }));
@@ -404,6 +409,17 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let hotkey = runtime
+        .tools()
+        .invoke(
+            "hotkey",
+            json!({
+                "target": "local:macos",
+                "keys": ["command", "shift", "p"]
+            }),
+        )
+        .await
+        .unwrap();
     let launched = runtime
         .tools()
         .invoke(
@@ -431,6 +447,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(typed["outcome"]["detail"], json!("typed"));
     assert_eq!(scrolled["outcome"]["detail"], json!("scrolled"));
     assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
+    assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
     assert_eq!(focused["outcome"]["detail"], json!("focused"));
 
@@ -494,6 +511,19 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             ),
             (
                 ActionRequest {
+                    action: Action::Hotkey {
+                        keys: vec!["command".into(), "shift".into(), "p".into()],
+                    },
+                    locator: None,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
                     action: Action::LaunchApp {
                         bundle_id_or_name: "Calculator".into(),
                     },
@@ -538,6 +568,7 @@ async fn action_tools_export_stable_specs() {
             "drag",
             "focus-window",
             "get-focus",
+            "hotkey",
             "launch-app",
             "list-apps",
             "list-windows",
@@ -582,6 +613,10 @@ async fn action_tools_export_stable_specs() {
         focus_window.capabilities_required,
         &[Capability::WindowManagement]
     );
+
+    let hotkey = specs.iter().find(|spec| spec.name == "hotkey").unwrap();
+    assert!(hotkey.has_side_effects);
+    assert_eq!(hotkey.capabilities_required, &[Capability::KeyboardInput]);
 
     let type_spec = specs.iter().find(|spec| spec.name == "type").unwrap();
     assert!(type_spec.has_side_effects);

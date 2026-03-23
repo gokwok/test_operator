@@ -543,6 +543,48 @@ async fn drag_action_resolves_between_locators_and_returns_successful_outcome() 
 }
 
 #[tokio::test]
+async fn hotkey_action_returns_successful_outcome() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Hotkey {
+                    keys: vec!["command".into(), "shift".into(), "p".into()],
+                },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("sent hotkey"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Hotkey(vec![
+            "command".into(),
+            "shift".into(),
+            "p".into()
+        ])]
+    );
+}
+
+#[tokio::test]
 async fn health_check_requires_accessibility_for_ready_status() {
     let driver = MacosDriver::new(
         StubAppService::default(),
@@ -728,6 +770,7 @@ impl TreeInspector for StubTreeInspector {
 enum RecordedInput {
     Click { point: Point, button: MouseButton },
     Drag { from: Point, to: Point },
+    Hotkey(Vec<String>),
     Scroll { delta_x: f64, delta_y: f64 },
     TypeText(String),
 }
@@ -757,6 +800,14 @@ impl InputSynthesizer for StubInputSynthesizer {
             .lock()
             .unwrap()
             .push(RecordedInput::Drag { from, to });
+        Ok(())
+    }
+
+    fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(RecordedInput::Hotkey(keys.to_vec()));
         Ok(())
     }
 

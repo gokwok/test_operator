@@ -136,6 +136,99 @@ async fn click_and_type_with_system_driver() {
 
 #[tokio::test]
 #[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS hotkey smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare TextEdit hotkey target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS hotkey smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let initial_text = "operator hotkey original";
+    let replacement_text = "operator hotkey replaced";
+    for request in [
+        ActionRequest {
+            action: Action::Click {
+                button: operator_core::MouseButton::Left,
+            },
+            locator: Some(Locator::Role {
+                role: "AXTextArea".into(),
+                index: 0,
+            }),
+        },
+        ActionRequest {
+            action: Action::Type {
+                text: initial_text.into(),
+            },
+            locator: None,
+        },
+        ActionRequest {
+            action: Action::Hotkey {
+                keys: vec!["command".into(), "a".into()],
+            },
+            locator: None,
+        },
+        ActionRequest {
+            action: Action::Type {
+                text: replacement_text.into(),
+            },
+            locator: None,
+        },
+    ] {
+        match driver.act(request, &exec_context()).await {
+            Ok(_) => {}
+            Err(error) if is_sandboxed_macos_failure(&error) => {
+                eprintln!("Skipping macOS hotkey smoke test in sandboxed session: {error}");
+                return;
+            }
+            Err(error) => panic!("hotkey action failed: {error}"),
+        }
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let text = match read_textedit_document() {
+        Ok(text) => text,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS hotkey smoke verification in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("failed to read TextEdit document: {error}"),
+    };
+
+    assert!(
+        text.contains(replacement_text),
+        "expected TextEdit front document to contain replacement text, got: {text:?}"
+    );
+    assert!(
+        !text.contains(initial_text),
+        "expected command-a hotkey to replace the original text, got: {text:?}"
+    );
+
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
 async fn list_windows_and_get_focus_with_system_driver() {
     if !cfg!(target_os = "macos") {
         eprintln!("Skipping macOS smoke test on non-macOS host.");
@@ -361,7 +454,7 @@ impl Drop for CleanupTextEditDocument {
     fn drop(&mut self) {
         let _ = run_osascript(
             r#"
-tell application id "com.apple.TextEdit"
+tell application "TextEdit"
   repeat while (count of documents) > 0
     close front document saving no
   end repeat
@@ -374,14 +467,13 @@ end tell
 fn prepare_textedit_document() -> Result<(), OperatorError> {
     run_osascript(
         r#"
-tell application id "com.apple.TextEdit"
-  launch
+tell application "TextEdit"
   activate
 end tell
 
 delay 0.5
 
-tell application id "com.apple.TextEdit"
+tell application "TextEdit"
   make new document
 end tell
 "#,
@@ -392,7 +484,7 @@ end tell
 fn read_textedit_document() -> Result<String, OperatorError> {
     run_osascript(
         r#"
-tell application id "com.apple.TextEdit"
+tell application "TextEdit"
   activate
   text of front document
 end tell

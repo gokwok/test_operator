@@ -268,9 +268,10 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.drag(from, to, &permissions)
             }
-            Action::Hotkey { .. } => Err(OperatorError::CapabilityNotSupported(
-                Capability::KeyboardInput,
-            )),
+            Action::Hotkey { keys } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.hotkey(&keys, &permissions)
+            }
             Action::FocusWindow { id } => {
                 self.app_service.focus_window(id)?;
                 Ok(ActionOutcome {
@@ -358,6 +359,20 @@ where
             success: true,
             duration_ms: 0,
             detail: Some("dragged".into()),
+        })
+    }
+
+    fn hotkey(
+        &self,
+        keys: &[String],
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        self.input_synthesizer.hotkey(keys)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some("sent hotkey".into()),
         })
     }
 
