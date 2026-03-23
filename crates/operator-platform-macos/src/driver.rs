@@ -256,6 +256,10 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.click(req.locator, mode, &permissions)
             }
+            Action::Move => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.move_pointer(req.locator, &permissions)
+            }
             Action::Type { text } => {
                 let permissions = self.permission_reader.current_permissions()?;
                 self.type_text(req.locator, &text, &permissions)
@@ -336,6 +340,23 @@ where
             success: true,
             duration_ms: 0,
             detail: Some(action_detail("typed text", warning.as_deref())),
+        })
+    }
+
+    fn move_pointer(
+        &self,
+        locator: Option<Locator>,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        let locator =
+            locator.ok_or_else(|| OperatorError::Platform("move requires a locator".into()))?;
+        let resolved = resolve_locator(&locator, &self.tree_inspector)?;
+        self.input_synthesizer.move_pointer(resolved.point)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some(action_detail("moved", resolved.warning.as_deref())),
         })
     }
 

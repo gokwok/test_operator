@@ -238,6 +238,39 @@ async fn scroll_command_accepts_snapshot_locator() {
 }
 
 #[tokio::test]
+async fn move_command_maps_coordinate_target_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "move",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--x",
+        "640",
+        "--y",
+        "480",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "move");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "locator": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn drag_command_maps_from_and_to_locators_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -389,6 +422,51 @@ async fn press_command_maps_key_and_count_to_tool_input() {
             "timeout_ms": 250,
             "key": "down",
             "count": 3
+        })
+    );
+}
+
+#[tokio::test]
+async fn cli_run_renders_move_action_for_non_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "move",
+        "--target",
+        "local:macos",
+        "--x",
+        "24",
+        "--y",
+        "48",
+    ])
+    .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 7,
+                "detail": "moved"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "moved");
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "move");
+    assert_eq!(
+        recorded[0].1,
+        json!({
+            "target": "local:macos",
+            "locator": {
+                "Coords": {
+                    "x": 24.0,
+                    "y": 48.0
+                }
+            }
         })
     );
 }

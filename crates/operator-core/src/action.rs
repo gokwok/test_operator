@@ -16,6 +16,7 @@ pub enum Action {
     Click {
         mode: ClickMode,
     },
+    Move,
     Type {
         text: String,
     },

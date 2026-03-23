@@ -236,7 +236,7 @@ impl RuntimeCore {
         ctx: &ExecContext,
     ) -> Result<(), OperatorError> {
         let capability = match &req.action {
-            Action::Click { .. } | Action::Scroll { .. } | Action::Drag { .. } => {
+            Action::Click { .. } | Action::Move | Action::Scroll { .. } | Action::Drag { .. } => {
                 Capability::PointerInput
             }
             Action::Type { .. } | Action::Hotkey { .. } | Action::Press { .. } => {

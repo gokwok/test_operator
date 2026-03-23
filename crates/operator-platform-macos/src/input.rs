@@ -2,6 +2,7 @@ use operator_core::{ClickMode, DragModifier, DragMotion, OperatorError, Point};
 
 pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError>;
+    fn move_pointer(&self, point: Point) -> Result<(), OperatorError>;
     fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
     fn press(&self, key: &str, count: u32) -> Result<(), OperatorError>;
@@ -16,6 +17,10 @@ pub struct SystemInputSynthesizer;
 impl InputSynthesizer for SystemInputSynthesizer {
     fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError> {
         platform::click(point, mode)
+    }
+
+    fn move_pointer(&self, point: Point) -> Result<(), OperatorError> {
+        platform::move_pointer(point)
     }
 
     fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError> {
@@ -613,6 +618,11 @@ mod platform {
         Ok(())
     }
 
+    pub fn move_pointer(point: Point) -> Result<(), OperatorError> {
+        Event::mouse(point, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
+        Ok(())
+    }
+
     pub fn drag(from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError> {
         let motion = parse_drag_motion(motion);
         let source = EventSource::new()?;
@@ -797,6 +807,12 @@ mod platform {
     use operator_core::{ClickMode, DragMotion, OperatorError, Point};
 
     pub fn click(_point: Option<Point>, _mode: ClickMode) -> Result<(), OperatorError> {
+        Err(OperatorError::Platform(
+            "macOS input synthesis is unavailable on non-macOS hosts".into(),
+        ))
+    }
+
+    pub fn move_pointer(_point: Point) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

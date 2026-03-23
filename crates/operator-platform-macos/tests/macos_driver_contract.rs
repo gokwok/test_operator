@@ -561,6 +561,62 @@ async fn scroll_action_returns_successful_outcome() {
 }
 
 #[tokio::test]
+async fn move_action_resolves_text_locator_before_moving_cursor() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-hover-target".into()),
+                UiElement {
+                    id: ElementId("ax-hover-target".into()),
+                    role: "AXButton".into(),
+                    label: Some("Open".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 120.0,
+                        y: 160.0,
+                        width: 80.0,
+                        height: 40.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-hover-target".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Move,
+                locator: Some(Locator::Text("Open".into())),
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("moved"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Move {
+            point: Point { x: 160.0, y: 180.0 },
+        }]
+    );
+}
+
+#[tokio::test]
 async fn scroll_action_resolves_text_locator_before_scrolling() {
     let input = StubInputSynthesizer::default();
     let driver = MacosDriver::with_components(
@@ -987,6 +1043,9 @@ enum RecordedInput {
         point: Option<Point>,
         mode: ClickMode,
     },
+    Move {
+        point: Point,
+    },
     Drag {
         from: Point,
         to: Point,
@@ -1022,6 +1081,11 @@ impl InputSynthesizer for StubInputSynthesizer {
             .lock()
             .unwrap()
             .push(RecordedInput::Click { point, mode });
+        Ok(())
+    }
+
+    fn move_pointer(&self, point: Point) -> Result<(), OperatorError> {
+        self.calls.lock().unwrap().push(RecordedInput::Move { point });
         Ok(())
     }
 

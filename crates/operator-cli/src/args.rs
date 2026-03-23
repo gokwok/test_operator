@@ -47,6 +47,7 @@ enum Command {
     PermissionsStatus(CommonArgs),
     Capabilities(CommonArgs),
     Click(ClickArgs),
+    Move(MoveArgs),
     Drag(DragArgs),
     Scroll(ScrollArgs),
     Hotkey(HotkeyArgs),
@@ -68,6 +69,7 @@ impl Command {
             Self::PermissionsStatus(args) => args,
             Self::Capabilities(args) => args,
             Self::Click(args) => &args.common,
+            Self::Move(args) => &args.common,
             Self::Drag(args) => &args.common,
             Self::Scroll(args) => &args.common,
             Self::Hotkey(args) => &args.common,
@@ -91,6 +93,7 @@ impl Command {
             }
             Self::Capabilities(common) => invoke_without_specific_input("capabilities", common),
             Self::Click(args) => args.into_invocation(),
+            Self::Move(args) => args.into_invocation(),
             Self::Drag(args) => args.into_invocation(),
             Self::Scroll(args) => args.into_invocation(),
             Self::Hotkey(args) => args.into_invocation(),
@@ -332,6 +335,30 @@ impl ClickArgs {
         }
         Ok(ToolInvocation {
             tool: "click",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct MoveArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    locator: MoveLocatorArgs,
+}
+
+impl MoveArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let locator = self
+            .locator
+            .into_locator()?
+            .ok_or_else(|| "move requires a locator or coordinates".to_string())?;
+        insert_serialized(&mut input, "locator", locator)?;
+        Ok(ToolInvocation {
+            tool: "move",
             input: Value::Object(input),
             json_output: self.common.json_output,
         })
@@ -636,6 +663,39 @@ struct ClickLocatorArgs {
 }
 
 impl ClickLocatorArgs {
+    fn into_locator(self) -> Result<Option<Locator>, String> {
+        RawLocatorArgs {
+            snapshot: self.snapshot,
+            element: self.element,
+            text: self.text,
+            role: self.role,
+            index: self.index,
+            x: self.x,
+            y: self.y,
+        }
+        .into_locator()
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct MoveLocatorArgs {
+    #[arg(long)]
+    snapshot: Option<String>,
+    #[arg(long)]
+    element: Option<String>,
+    #[arg(long)]
+    text: Option<String>,
+    #[arg(long)]
+    role: Option<String>,
+    #[arg(long, default_value_t = 0)]
+    index: usize,
+    #[arg(long)]
+    x: Option<f64>,
+    #[arg(long)]
+    y: Option<f64>,
+}
+
+impl MoveLocatorArgs {
     fn into_locator(self) -> Result<Option<Locator>, String> {
         RawLocatorArgs {
             snapshot: self.snapshot,

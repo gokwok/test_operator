@@ -404,6 +404,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 6,
+        detail: Some("moved".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 16,
         detail: Some("dragged".into()),
     }));
@@ -474,6 +479,22 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                 },
                 "delta_x": 0.0,
                 "delta_y": -120.0
+            }),
+        )
+        .await
+        .unwrap();
+    let moved = runtime
+        .tools()
+        .invoke(
+            "move",
+            json!({
+                "target": "local:macos",
+                "locator": {
+                    "Coords": {
+                        "x": 320.0,
+                        "y": 240.0
+                    }
+                }
             }),
         )
         .await
@@ -549,6 +570,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(click["outcome"]["detail"], json!("clicked"));
     assert_eq!(typed["outcome"]["detail"], json!("typed"));
     assert_eq!(scrolled["outcome"]["detail"], json!("scrolled"));
+    assert_eq!(moved["outcome"]["detail"], json!("moved"));
     assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
     assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
     assert_eq!(pressed["outcome"]["detail"], json!("pressed down 3 times"));
@@ -592,6 +614,17 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         delta_y: -120.0,
                     },
                     locator: Some(Locator::Text("Results".into())),
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Move,
+                    locator: Some(Locator::Coords(operator_core::Point { x: 320.0, y: 240.0 })),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -692,6 +725,7 @@ async fn action_tools_export_stable_specs() {
             "launch-app",
             "list-apps",
             "list-windows",
+            "move",
             "observe",
             "permissions-status",
             "press",
@@ -730,6 +764,11 @@ async fn action_tools_export_stable_specs() {
     assert!(scroll.has_side_effects);
     assert_eq!(scroll.capabilities_required, &[Capability::PointerInput]);
     assert!(scroll.input_schema["properties"]["locator"].is_object());
+
+    let move_spec = specs.iter().find(|spec| spec.name == "move").unwrap();
+    assert!(move_spec.has_side_effects);
+    assert_eq!(move_spec.capabilities_required, &[Capability::PointerInput]);
+    assert!(move_spec.input_schema["properties"]["locator"].is_object());
 
     let focus_window = specs
         .iter()

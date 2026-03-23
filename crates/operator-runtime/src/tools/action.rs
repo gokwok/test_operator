@@ -14,6 +14,7 @@ use crate::{
 };
 
 const CLICK_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
+const MOVE_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const DRAG_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const SCROLL_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
@@ -25,6 +26,7 @@ const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement]
 pub(crate) fn registrations() -> Vec<ToolRegistration> {
     vec![
         click_registration(),
+        move_registration(),
         drag_registration(),
         scroll_registration(),
         type_registration(),
@@ -63,6 +65,22 @@ fn type_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { r#type(input, core, ctx).await })
+        }),
+    }
+}
+
+fn move_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "move",
+            description: "Move the cursor to a locator-resolved target without clicking.",
+            input_schema: json_schema_for::<MoveToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: MOVE_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { move_cursor(input, core, ctx).await })
         }),
     }
 }
@@ -192,6 +210,25 @@ async fn r#type(
             ActionRequest {
                 action: Action::Type { text: input.text },
                 locator: input.locator,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn move_cursor(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<MoveToolInput>("move", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::Move,
+                locator: Some(input.locator),
             },
             ctx,
         )
@@ -365,6 +402,15 @@ struct TypeToolInput {
     exec: ToolExecInput,
     text: String,
     locator: Option<Locator>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct MoveToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    locator: Locator,
 }
 
 #[allow(dead_code)]

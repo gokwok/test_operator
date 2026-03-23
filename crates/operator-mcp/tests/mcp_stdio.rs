@@ -6,14 +6,14 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
-    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
-    PlatformDriver, QueryRequest, QueryResult,
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
+    Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
+    PlatformDriver, Point, QueryRequest, QueryResult,
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
 use operator_runtime::{FileArtifactStore, RuntimeBuilder, RuntimeConfig};
-use operator_testkit::{test_snapshot, InMemorySnapshotStore};
+use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
 
@@ -170,6 +170,7 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         .any(|tool| tool["name"] == json!("artifact-get")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("observe")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("click")));
+    assert!(tools.iter().any(|tool| tool["name"] == json!("move")));
 
     let artifact_get = tools
         .iter()
@@ -197,6 +198,14 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         .find(|tool| tool["name"] == json!("scroll"))
         .unwrap();
     assert!(scroll["inputSchema"]["properties"]["locator"].is_object());
+
+    let move_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("move"))
+        .unwrap();
+    assert_eq!(move_tool["annotations"]["readOnlyHint"], json!(false));
+    assert_eq!(move_tool["annotations"]["destructiveHint"], json!(true));
+    assert!(move_tool["inputSchema"]["properties"]["locator"].is_object());
 
     let drag = tools
         .iter()
@@ -417,6 +426,70 @@ fn mcp_blocks_side_effect_tools_when_security_mode_is_disabled() {
         .as_str()
         .unwrap()
         .contains("side effects are disabled by runtime policy"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_move_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 4,
+        detail: Some("moved".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 19,
+            "method": "tools/call",
+            "params": {
+                "name": "move",
+                "arguments": {
+                    "target": "local:macos",
+                    "locator": {
+                        "Coords": {
+                            "x": 320.0,
+                            "y": 240.0
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("moved")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Move,
+                locator: Some(Locator::Coords(Point { x: 320.0, y: 240.0 })),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
