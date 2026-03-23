@@ -210,7 +210,7 @@ fn list_windows_command_moves_under_list_group() {
 
 #[test]
 fn grouped_top_level_command_placeholders_exist() {
-    for command in ["app", "window", "mcp"] {
+    for command in ["window", "mcp"] {
         let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
         let error = cli.into_invocation().unwrap_err();
         assert!(
@@ -287,6 +287,17 @@ fn input_type_help_shows_positional_text_and_after_key() {
     assert!(help.contains("Usage: operator input type [OPTIONS] <TEXT>"));
     assert!(help.contains("--after-key <AFTER_KEYS>"));
     assert!(help.contains("--focus <FOCUS>"));
+}
+
+#[test]
+fn app_help_lists_lifecycle_subcommands() {
+    assert_eq!(
+        command_help(["operator", "app", "--help"]),
+        "Application lifecycle actions\n\n\
+Usage: operator app [OPTIONS] <COMMAND>\n\n\
+Commands:\n  launch    Launch an application by bundle identifier or name\n  switch    Bring an application to the foreground\n  quit      Quit an application\n  relaunch  Relaunch an application\n  hide      Hide an application\n  unhide    Unhide an application\n  help      Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
+    );
 }
 
 #[test]
@@ -581,6 +592,161 @@ fn launch_app_command_rejects_verification_flags() {
     .unwrap_err();
 
     assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[test]
+fn app_launch_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "launch",
+        "Calculator",
+        "--verify",
+        "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[tokio::test]
+async fn app_launch_command_maps_positional_bundle_id_or_name_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "launch",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "Calculator",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "launch-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "bundle_id_or_name": "Calculator"
+        })
+    );
+}
+
+#[tokio::test]
+async fn app_switch_command_maps_app_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "switch",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--app",
+        "TextEdit",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "switch-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "target_selector": {
+                "App": "TextEdit"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn app_quit_command_maps_pid_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "quit",
+        "--target",
+        "local:macos",
+        "--pid",
+        "101",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "quit-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "Pid": 101
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn app_relaunch_command_maps_window_title_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "relaunch",
+        "--window-title",
+        "Draft",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "relaunch-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowTitle": "Draft"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn app_hide_command_maps_window_index_target_selector_to_tool_input() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "app", "hide", "--window-index", "1"])
+            .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "hide-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowIndex": 1
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn app_unhide_command_maps_window_id_target_selector_to_tool_input() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "app", "unhide", "--window-id", "42"])
+            .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "unhide-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "WindowId": 42
+            }
+        })
+    );
 }
 
 #[test]

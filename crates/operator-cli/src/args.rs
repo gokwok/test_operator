@@ -120,6 +120,27 @@ Options:
   -h, --help                   Print help
 ";
 
+const APP_HELP: &str = "Application lifecycle actions
+
+Usage: operator app [OPTIONS] <COMMAND>
+
+Commands:
+  launch    Launch an application by bundle identifier or name
+  switch    Bring an application to the foreground
+  quit      Quit an application
+  relaunch  Relaunch an application
+  hide      Hide an application
+  unhide    Unhide an application
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
 #[derive(Debug, Parser)]
 #[command(name = "operator", about = "Operator automation CLI")]
 pub(crate) struct Cli {
@@ -179,7 +200,7 @@ enum Command {
     List(ListArgs),
     Focus(CommonArgs),
     Input(InputArgs),
-    App,
+    App(AppArgs),
     Window,
     Mcp,
     #[command(hide = true, name = "artifact-get")]
@@ -249,7 +270,8 @@ impl Command {
             Self::List(args) => args.common(),
             Self::Focus(args) => Some(args),
             Self::Input(args) => args.common(),
-            Self::App | Self::Window | Self::Mcp => None,
+            Self::App(args) => Some(&args.common),
+            Self::Window | Self::Mcp => None,
             Self::ArtifactGet(args) => Some(&args.common),
             Self::SnapshotGet(args) => Some(&args.common),
             Self::GetFocus(args) => Some(args),
@@ -297,7 +319,7 @@ impl Command {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
             Self::Input(args) => args.into_invocation(root_common),
-            Self::App => Err("app commands are not implemented yet".to_string()),
+            Self::App(args) => args.into_invocation(root_common),
             Self::Window => Err("window commands are not implemented yet".to_string()),
             Self::Mcp => Err("mcp commands are not implemented yet".to_string()),
             Self::ArtifactGet(args) => args.into_invocation(root_common),
@@ -969,6 +991,55 @@ impl InputSwipeArgs {
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(
+    about = "Application lifecycle actions",
+    override_help = APP_HELP,
+    arg_required_else_help = true
+)]
+struct AppArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: AppCommand,
+}
+
+impl AppArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command
+            .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum AppCommand {
+    #[command(about = "Launch an application by bundle identifier or name")]
+    Launch(AppLaunchArgs),
+    #[command(about = "Bring an application to the foreground")]
+    Switch(AppLifecycleArgs),
+    #[command(about = "Quit an application")]
+    Quit(AppLifecycleArgs),
+    #[command(about = "Relaunch an application")]
+    Relaunch(AppLifecycleArgs),
+    #[command(about = "Hide an application")]
+    Hide(AppLifecycleArgs),
+    #[command(about = "Unhide an application")]
+    Unhide(AppLifecycleArgs),
+}
+
+impl AppCommand {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Launch(args) => args.into_invocation(common),
+            Self::Switch(args) => args.into_invocation("switch-app", common),
+            Self::Quit(args) => args.into_invocation("quit-app", common),
+            Self::Relaunch(args) => args.into_invocation("relaunch-app", common),
+            Self::Hide(args) => args.into_invocation("hide-app", common),
+            Self::Unhide(args) => args.into_invocation("unhide-app", common),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
 struct ArtifactGetArgs {
     artifact_id: String,
 }
@@ -1358,17 +1429,21 @@ struct LaunchAppArgs {
 
 impl LaunchAppArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        let common = merge_common(root_common, self.common);
-        let mut input = common_input(&common);
-        input.insert(
-            "bundle_id_or_name".into(),
-            Value::String(self.bundle_id_or_name),
-        );
-        Ok(ToolInvocation {
-            tool: "launch-app",
-            input: Value::Object(input),
-            json_output: common.json_output,
-        })
+        launch_app_invocation(
+            merge_common(root_common, self.common),
+            self.bundle_id_or_name,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct AppLaunchArgs {
+    bundle_id_or_name: String,
+}
+
+impl AppLaunchArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        launch_app_invocation(common, self.bundle_id_or_name)
     }
 }
 
@@ -1562,15 +1637,30 @@ impl LifecycleActionArgs {
         tool: &'static str,
         root_common: CommonArgs,
     ) -> Result<ToolInvocation, String> {
-        let common = merge_common(root_common, self.common);
-        let mut input = common_input(&common);
-        insert_serialized(&mut input, "target_selector", self.target.into_selector()?)?;
-        insert_verifications(&mut input, self.verification.into_verifications())?;
-        Ok(ToolInvocation {
+        lifecycle_action_invocation(
             tool,
-            input: Value::Object(input),
-            json_output: common.json_output,
-        })
+            merge_common(root_common, self.common),
+            self.target,
+            self.verification,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct AppLifecycleArgs {
+    #[command(flatten)]
+    target: LifecycleTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+}
+
+impl AppLifecycleArgs {
+    fn into_invocation(
+        self,
+        tool: &'static str,
+        common: CommonArgs,
+    ) -> Result<ToolInvocation, String> {
+        lifecycle_action_invocation(tool, common, self.target, self.verification)
     }
 }
 
@@ -2167,6 +2257,35 @@ fn invoke_without_specific_input(
     Ok(ToolInvocation {
         tool,
         input: Value::Object(common_input(&common)),
+        json_output: common.json_output,
+    })
+}
+
+fn launch_app_invocation(
+    common: CommonArgs,
+    bundle_id_or_name: String,
+) -> Result<ToolInvocation, String> {
+    let mut input = common_input(&common);
+    input.insert("bundle_id_or_name".into(), Value::String(bundle_id_or_name));
+    Ok(ToolInvocation {
+        tool: "launch-app",
+        input: Value::Object(input),
+        json_output: common.json_output,
+    })
+}
+
+fn lifecycle_action_invocation(
+    tool: &'static str,
+    common: CommonArgs,
+    target: LifecycleTargetArgs,
+    verification: ActionVerificationArgs,
+) -> Result<ToolInvocation, String> {
+    let mut input = common_input(&common);
+    insert_serialized(&mut input, "target_selector", target.into_selector()?)?;
+    insert_verifications(&mut input, verification.into_verifications())?;
+    Ok(ToolInvocation {
+        tool,
+        input: Value::Object(input),
         json_output: common.json_output,
     })
 }
