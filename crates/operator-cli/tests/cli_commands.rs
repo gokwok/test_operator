@@ -365,6 +365,35 @@ async fn hotkey_command_maps_repeated_key_flags_to_tool_input() {
 }
 
 #[tokio::test]
+async fn press_command_maps_key_and_count_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "press",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--key",
+        "down",
+        "--count",
+        "3",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "press");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "key": "down",
+            "count": 3
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -403,6 +432,32 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
             "bundle_id_or_name": "Calculator"
         })
     );
+}
+
+#[tokio::test]
+async fn cli_run_renders_press_detail_for_non_json_output() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "press", "--key", "down", "--count", "3"])
+            .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 7,
+                "detail": "pressed down 3 times"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "pressed down 3 times");
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "press");
+    assert_eq!(recorded[0].1, json!({ "key": "down", "count": 3 }));
 }
 
 #[tokio::test]

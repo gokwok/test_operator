@@ -239,7 +239,9 @@ impl RuntimeCore {
             Action::Click { .. } | Action::Scroll { .. } | Action::Drag { .. } => {
                 Capability::PointerInput
             }
-            Action::Type { .. } | Action::Hotkey { .. } => Capability::KeyboardInput,
+            Action::Type { .. } | Action::Hotkey { .. } | Action::Press { .. } => {
+                Capability::KeyboardInput
+            }
             Action::LaunchApp { .. } => Capability::AppLifecycle,
             Action::FocusWindow { .. } => Capability::WindowManagement,
         };

@@ -758,6 +758,48 @@ async fn hotkey_action_returns_successful_outcome() {
 }
 
 #[tokio::test]
+async fn press_action_returns_successful_outcome() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Press {
+                    key: "down".into(),
+                    count: 3.try_into().unwrap(),
+                },
+                locator: None,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("pressed down 3 times"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Press {
+            key: "down".into(),
+            count: 3,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn health_check_requires_accessibility_for_ready_status() {
     let driver = MacosDriver::new(
         StubAppService::default(),
@@ -951,6 +993,10 @@ enum RecordedInput {
         motion: DragMotion,
     },
     Hotkey(Vec<String>),
+    Press {
+        key: String,
+        count: u32,
+    },
     Scroll {
         point: Option<Point>,
         delta_x: f64,
@@ -993,6 +1039,14 @@ impl InputSynthesizer for StubInputSynthesizer {
             .lock()
             .unwrap()
             .push(RecordedInput::Hotkey(keys.to_vec()));
+        Ok(())
+    }
+
+    fn press(&self, key: &str, count: u32) -> Result<(), OperatorError> {
+        self.calls.lock().unwrap().push(RecordedInput::Press {
+            key: key.to_string(),
+            count,
+        });
         Ok(())
     }
 

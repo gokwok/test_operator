@@ -414,6 +414,11 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 7,
+        detail: Some("pressed down 3 times".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 9,
         detail: Some("launched".into()),
     }));
@@ -506,6 +511,18 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let pressed = runtime
+        .tools()
+        .invoke(
+            "press",
+            json!({
+                "target": "local:macos",
+                "key": "down",
+                "count": 3
+            }),
+        )
+        .await
+        .unwrap();
     let launched = runtime
         .tools()
         .invoke(
@@ -534,6 +551,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(scrolled["outcome"]["detail"], json!("scrolled"));
     assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
     assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
+    assert_eq!(pressed["outcome"]["detail"], json!("pressed down 3 times"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
     assert_eq!(focused["outcome"]["detail"], json!("focused"));
 
@@ -611,6 +629,20 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             ),
             (
                 ActionRequest {
+                    action: Action::Press {
+                        key: "down".into(),
+                        count: 3.try_into().unwrap(),
+                    },
+                    locator: None,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
                     action: Action::LaunchApp {
                         bundle_id_or_name: "Calculator".into(),
                     },
@@ -662,6 +694,7 @@ async fn action_tools_export_stable_specs() {
             "list-windows",
             "observe",
             "permissions-status",
+            "press",
             "scroll",
             "snapshot-get",
             "type",
@@ -711,6 +744,12 @@ async fn action_tools_export_stable_specs() {
     let hotkey = specs.iter().find(|spec| spec.name == "hotkey").unwrap();
     assert!(hotkey.has_side_effects);
     assert_eq!(hotkey.capabilities_required, &[Capability::KeyboardInput]);
+
+    let press = specs.iter().find(|spec| spec.name == "press").unwrap();
+    assert!(press.has_side_effects);
+    assert_eq!(press.capabilities_required, &[Capability::KeyboardInput]);
+    assert!(press.input_schema["properties"]["key"].is_object());
+    assert!(press.input_schema["properties"]["count"].is_object());
 
     let type_spec = specs.iter().find(|spec| spec.name == "type").unwrap();
     assert!(type_spec.has_side_effects);

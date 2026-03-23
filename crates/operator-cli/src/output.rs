@@ -14,7 +14,7 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
         "list-windows" => render_windows(output),
         "permissions-status" => render_permissions(output),
         "capabilities" => render_capabilities(output),
-        "click" | "type" | "launch-app" => render_action(output),
+        "click" | "type" | "press" | "launch-app" => render_action(output),
         _ => serde_json::to_string_pretty(output).expect("tool output should be valid JSON"),
     }
 }

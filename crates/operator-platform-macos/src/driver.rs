@@ -272,6 +272,10 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.hotkey(&keys, &permissions)
             }
+            Action::Press { key, count } => {
+                let permissions = self.permission_reader.current_permissions()?;
+                self.press(&key, count.get(), &permissions)
+            }
             Action::FocusWindow { id } => {
                 self.app_service.focus_window(id)?;
                 Ok(ActionOutcome {
@@ -388,6 +392,21 @@ where
             detail: Some("sent hotkey".into()),
         })
     }
+
+    fn press(
+        &self,
+        key: &str,
+        count: u32,
+        permissions: &operator_core::PermissionsReport,
+    ) -> Result<ActionOutcome, OperatorError> {
+        require_accessibility_permission(permissions)?;
+        self.input_synthesizer.press(key, count)?;
+        Ok(ActionOutcome {
+            success: true,
+            duration_ms: 0,
+            detail: Some(press_detail(key, count)),
+        })
+    }
 }
 
 fn require_observe_permissions(
@@ -434,6 +453,14 @@ fn click_detail(mode: ClickMode) -> &'static str {
         ClickMode::Right => "right-clicked",
         ClickMode::Middle => "middle-clicked",
         ClickMode::Double => "double-clicked",
+    }
+}
+
+fn press_detail(key: &str, count: u32) -> String {
+    if count == 1 {
+        format!("pressed {key}")
+    } else {
+        format!("pressed {key} {count} times")
     }
 }
 

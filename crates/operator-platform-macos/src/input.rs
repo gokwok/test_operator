@@ -4,6 +4,7 @@ pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError>;
     fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
+    fn press(&self, key: &str, count: u32) -> Result<(), OperatorError>;
     fn scroll(&self, point: Option<Point>, delta_x: f64, delta_y: f64)
         -> Result<(), OperatorError>;
     fn type_text(&self, text: &str) -> Result<(), OperatorError>;
@@ -23,6 +24,10 @@ impl InputSynthesizer for SystemInputSynthesizer {
 
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError> {
         platform::hotkey(keys)
+    }
+
+    fn press(&self, key: &str, count: u32) -> Result<(), OperatorError> {
+        platform::press(key, count)
     }
 
     fn scroll(
@@ -257,6 +262,25 @@ fn hotkey_modifier(token: &str) -> Option<HotkeyModifier> {
         "function" | "fn" => Some(HotkeyModifier::Function),
         _ => None,
     }
+}
+
+fn parse_press_key(key: &str) -> Result<u16, OperatorError> {
+    let token = key.trim();
+    if token.is_empty() {
+        return Err(OperatorError::Platform(
+            "macOS press does not allow an empty key".into(),
+        ));
+    }
+
+    let normalized = token.to_ascii_lowercase();
+    if hotkey_modifier(&normalized).is_some() {
+        return Err(OperatorError::Platform(format!(
+            "unsupported macOS press key: {token}"
+        )));
+    }
+
+    hotkey_key_code(&normalized)
+        .ok_or_else(|| OperatorError::Platform(format!("unsupported macOS press key: {token}")))
 }
 
 fn hotkey_key_code(token: &str) -> Option<u16> {
@@ -671,6 +695,22 @@ mod platform {
         Ok(())
     }
 
+    pub fn press(key: &str, count: u32) -> Result<(), OperatorError> {
+        let key_code = super::parse_press_key(key)?;
+        let source = EventSource::new()?;
+
+        for press_index in 0..count {
+            Event::keyboard_keycode(&source, key_code, true)?.post();
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+            Event::keyboard_keycode(&source, key_code, false)?.post();
+            if press_index + 1 < count {
+                thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn type_text(text: &str) -> Result<(), OperatorError> {
         let source = EventSource::new()?;
         for character in text.chars() {
@@ -784,6 +824,12 @@ mod platform {
         ))
     }
 
+    pub fn press(_key: &str, _count: u32) -> Result<(), OperatorError> {
+        Err(OperatorError::Platform(
+            "macOS input synthesis is unavailable on non-macOS hosts".into(),
+        ))
+    }
+
     pub fn type_text(_text: &str) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
@@ -797,7 +843,8 @@ mod tests {
 
     use super::{
         drag_interpolated_point, drag_step_delay_ms, parse_drag_motion, parse_hotkey,
-        HotkeyModifier, ParsedDragMotion, ParsedHotkey, KEY_CODE_P, KEY_CODE_RETURN,
+        parse_press_key, HotkeyModifier, ParsedDragMotion, ParsedHotkey, KEY_CODE_DOWN_ARROW,
+        KEY_CODE_P, KEY_CODE_RETURN,
     };
 
     #[test]
@@ -837,6 +884,20 @@ mod tests {
                 modifiers: vec![HotkeyModifier::Control],
                 key_code: KEY_CODE_RETURN,
             }
+        );
+    }
+
+    #[test]
+    fn parse_press_accepts_named_navigation_keys() {
+        assert_eq!(parse_press_key("down").unwrap(), KEY_CODE_DOWN_ARROW);
+    }
+
+    #[test]
+    fn parse_press_rejects_modifier_only_keys() {
+        let error = parse_press_key("shift").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "platform error: unsupported macOS press key: shift"
         );
     }
 

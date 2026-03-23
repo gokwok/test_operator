@@ -205,6 +205,15 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(drag["inputSchema"]["properties"]["duration_ms"].is_object());
     assert!(drag["inputSchema"]["properties"]["steps"].is_object());
     assert!(drag["inputSchema"]["properties"]["modifiers"].is_object());
+
+    let press = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("press"))
+        .unwrap();
+    assert_eq!(press["annotations"]["readOnlyHint"], json!(false));
+    assert_eq!(press["annotations"]["destructiveHint"], json!(true));
+    assert!(press["inputSchema"]["properties"]["key"].is_object());
+    assert!(press["inputSchema"]["properties"]["count"].is_object());
 }
 
 #[test]

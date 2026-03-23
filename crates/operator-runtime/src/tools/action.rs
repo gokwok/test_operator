@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroU32, sync::Arc};
 
 use operator_core::{
     Action, ActionOutcome, ActionRequest, Capability, ClickMode, DragMotion, Locator,
@@ -18,6 +18,7 @@ const DRAG_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const SCROLL_CAPABILITIES: &[Capability] = &[Capability::PointerInput];
 const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const HOTKEY_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
+const PRESS_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const FOCUS_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 
@@ -28,6 +29,7 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
         scroll_registration(),
         type_registration(),
         hotkey_registration(),
+        press_registration(),
         launch_app_registration(),
         focus_window_registration(),
     ]
@@ -124,6 +126,22 @@ fn hotkey_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { hotkey(input, core, ctx).await })
+        }),
+    }
+}
+
+fn press_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "press",
+            description: "Press a single special key one or more times.",
+            input_schema: json_schema_for::<PressToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: PRESS_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { press(input, core, ctx).await })
         }),
     }
 }
@@ -246,6 +264,28 @@ async fn hotkey(
     serialize_output(outcome)
 }
 
+async fn press(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<PressToolInput>("press", input)?;
+    let outcome = core
+        .act(
+            ActionRequest {
+                action: Action::Press {
+                    key: input.key,
+                    count: input.count,
+                },
+                locator: None,
+            },
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 async fn launch_app(
     input: Value,
     core: Arc<RuntimeCore>,
@@ -338,6 +378,17 @@ struct HotkeyToolInput {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct PressToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    key: String,
+    #[serde(default = "default_press_count")]
+    count: NonZeroU32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 struct DragToolInput {
     #[serde(flatten)]
     #[schemars(flatten)]
@@ -381,4 +432,8 @@ struct FocusWindowToolInput {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 struct ActionToolOutput {
     outcome: ActionOutcome,
+}
+
+fn default_press_count() -> NonZeroU32 {
+    NonZeroU32::MIN
 }

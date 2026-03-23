@@ -19,6 +19,11 @@ pub enum Action {
     Type {
         text: String,
     },
+    Press {
+        key: String,
+        #[serde(default = "default_press_count")]
+        count: NonZeroU32,
+    },
     Scroll {
         delta_x: f64,
         delta_y: f64,
@@ -70,6 +75,10 @@ pub enum MouseButton {
     Left,
     Right,
     Middle,
+}
+
+fn default_press_count() -> NonZeroU32 {
+    NonZeroU32::MIN
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
