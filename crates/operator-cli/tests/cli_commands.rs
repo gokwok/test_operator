@@ -7,7 +7,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use clap::Parser;
 use serde_json::{json, Value};
 
 #[test]
@@ -34,6 +33,109 @@ fn observe_command_supports_json_flag() {
             "include_screenshot": false,
             "include_elements": false
         })
+    );
+}
+
+#[test]
+fn permissions_command_uses_root_global_runtime_flags() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "--json",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "permissions",
+    ])
+    .unwrap();
+
+    assert!(cli.prefers_json());
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "permissions-status");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250
+        })
+    );
+}
+
+#[test]
+fn focus_command_maps_common_flags_to_internal_tool() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "focus",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "get-focus");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250
+        })
+    );
+}
+
+#[test]
+fn list_apps_command_moves_under_list_group() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "list", "apps"]).unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-apps");
+    assert_eq!(invocation.input, json!({}));
+}
+
+#[test]
+fn list_windows_command_moves_under_list_group() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "list", "windows", "--app", "TextEdit"])
+            .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-windows");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "app": "TextEdit"
+        })
+    );
+}
+
+#[test]
+fn grouped_top_level_command_placeholders_exist() {
+    for command in ["snapshot", "artifact", "input", "app", "window", "mcp"] {
+        let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
+        let error = cli.into_invocation().unwrap_err();
+        assert!(
+            error.contains("not implemented"),
+            "unexpected error for {command}: {error}"
+        );
+    }
+}
+
+#[test]
+fn root_help_groups_commands_by_domain() {
+    let help = cli_main::args::Cli::command().render_help().to_string();
+    assert_eq!(
+        help,
+        "Operator automation CLI\n\n\
+Usage: operator [OPTIONS] [COMMAND]\n\n\
+Core:\n  permissions   Inspect platform permission state\n  capabilities  List runtime capabilities\n\n\
+Observe:\n  observe       Capture UI state\n  snapshot      Work with persisted snapshots\n  artifact      Work with persisted artifacts\n\n\
+Query:\n  list          Enumerate apps and windows\n  focus         Inspect current focus\n\n\
+Action:\n  input         Pointer and keyboard actions\n  app           Application lifecycle actions\n  window        Window management actions\n\n\
+MCP:\n  mcp           MCP server commands\n\n\
+A2A:\n  reserved      Reserved for future A2A commands\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
     );
 }
 

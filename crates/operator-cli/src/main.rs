@@ -17,9 +17,6 @@ use serde_json::Value;
 
 use self::args::Cli;
 
-#[cfg(not(test))]
-use clap::Parser;
-
 type InvokeFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>>;
 
 pub(crate) trait ToolInvoker {

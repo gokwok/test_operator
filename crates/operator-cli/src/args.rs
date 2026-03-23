@@ -1,8 +1,8 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use std::num::NonZeroU32;
+use std::{ffi::OsString, num::NonZeroU32};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use operator_core::{
     ActionFocusPolicy, ActionTargetSelector, ActionVerification, ArtifactId, ClickMode, Locator,
     Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey, WindowId,
@@ -10,23 +10,81 @@ use operator_core::{
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+const ROOT_HELP: &str = "Operator automation CLI
+
+Usage: operator [OPTIONS] [COMMAND]
+
+Core:
+  permissions   Inspect platform permission state
+  capabilities  List runtime capabilities
+
+Observe:
+  observe       Capture UI state
+  snapshot      Work with persisted snapshots
+  artifact      Work with persisted artifacts
+
+Query:
+  list          Enumerate apps and windows
+  focus         Inspect current focus
+
+Action:
+  input         Pointer and keyboard actions
+  app           Application lifecycle actions
+  window        Window management actions
+
+MCP:
+  mcp           MCP server commands
+
+A2A:
+  reserved      Reserved for future A2A commands
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
 #[derive(Debug, Parser)]
-#[command(
-    name = "operator",
-    about = "Thin CLI wrapper around the Operator tool registry."
-)]
+#[command(name = "operator", about = "Operator automation CLI")]
 pub(crate) struct Cli {
+    #[command(flatten)]
+    common: CommonArgs,
     #[command(subcommand)]
     command: Command,
 }
 
 impl Cli {
+    pub(crate) fn command() -> clap::Command {
+        <Self as CommandFactory>::command().override_help(ROOT_HELP)
+    }
+
+    pub(crate) fn try_parse_from<I, T>(itr: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let mut command = Self::command();
+        let mut matches = command.try_get_matches_from_mut(itr)?;
+        <Self as FromArgMatches>::from_arg_matches_mut(&mut matches)
+    }
+
+    pub(crate) fn parse() -> Self {
+        Self::try_parse_from(std::env::args_os()).unwrap_or_else(|error| error.exit())
+    }
+
     pub(crate) fn prefers_json(&self) -> bool {
-        self.command.common().json_output
+        self.common.json_output
+            || self
+                .command
+                .common()
+                .map(|common| common.json_output)
+                .unwrap_or(false)
     }
 
     pub(crate) fn into_invocation(self) -> Result<ToolInvocation, String> {
-        self.command.into_invocation()
+        self.command.into_invocation(self.common)
     }
 }
 
@@ -39,117 +97,220 @@ pub(crate) struct ToolInvocation {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Observe(ObserveArgs),
-    ArtifactGet(ArtifactGetArgs),
-    SnapshotGet(SnapshotGetArgs),
-    GetFocus(CommonArgs),
-    ListApps(CommonArgs),
-    ListWindows(ListWindowsArgs),
-    PermissionsStatus(CommonArgs),
+    Permissions(CommonArgs),
     Capabilities(CommonArgs),
+    Observe(ObserveArgs),
+    Snapshot,
+    Artifact,
+    List(ListArgs),
+    Focus(CommonArgs),
+    Input,
+    App,
+    Window,
+    Mcp,
+    #[command(hide = true, name = "artifact-get")]
+    ArtifactGet(ArtifactGetArgs),
+    #[command(hide = true, name = "snapshot-get")]
+    SnapshotGet(SnapshotGetArgs),
+    #[command(hide = true, name = "get-focus")]
+    GetFocus(CommonArgs),
+    #[command(hide = true, name = "list-apps")]
+    ListApps(CommonArgs),
+    #[command(hide = true, name = "list-windows")]
+    ListWindows(ListWindowsArgs),
+    #[command(hide = true, name = "permissions-status")]
+    PermissionsStatus(CommonArgs),
+    #[command(hide = true)]
     Click(ClickArgs),
+    #[command(hide = true)]
     Move(MoveArgs),
+    #[command(hide = true)]
     Drag(DragArgs),
+    #[command(hide = true)]
     Swipe(SwipeArgs),
+    #[command(hide = true)]
     Scroll(ScrollArgs),
+    #[command(hide = true)]
     Hotkey(HotkeyArgs),
+    #[command(hide = true)]
     Press(PressArgs),
+    #[command(hide = true)]
     Type(TypeArgs),
+    #[command(hide = true)]
     LaunchApp(LaunchAppArgs),
+    #[command(hide = true)]
     CloseWindow(CloseWindowArgs),
+    #[command(hide = true)]
     MinimizeWindow(MinimizeWindowArgs),
+    #[command(hide = true)]
     MaximizeWindow(MaximizeWindowArgs),
+    #[command(hide = true)]
     MoveWindow(MoveWindowArgs),
+    #[command(hide = true)]
     ResizeWindow(ResizeWindowArgs),
+    #[command(hide = true)]
     SetWindowBounds(SetWindowBoundsArgs),
+    #[command(hide = true)]
     SwitchApp(LifecycleActionArgs),
+    #[command(hide = true)]
     QuitApp(LifecycleActionArgs),
+    #[command(hide = true)]
     RelaunchApp(LifecycleActionArgs),
+    #[command(hide = true)]
     HideApp(LifecycleActionArgs),
+    #[command(hide = true)]
     UnhideApp(LifecycleActionArgs),
+    #[command(hide = true)]
     FocusWindow(FocusWindowArgs),
 }
 
 impl Command {
-    fn common(&self) -> &CommonArgs {
+    fn common(&self) -> Option<&CommonArgs> {
         match self {
-            Self::Observe(args) => &args.common,
-            Self::ArtifactGet(args) => &args.common,
-            Self::SnapshotGet(args) => &args.common,
-            Self::GetFocus(args) => args,
-            Self::ListApps(args) => args,
-            Self::ListWindows(args) => &args.common,
-            Self::PermissionsStatus(args) => args,
-            Self::Capabilities(args) => args,
-            Self::Click(args) => &args.common,
-            Self::Move(args) => &args.common,
-            Self::Drag(args) => &args.common,
-            Self::Swipe(args) => &args.common,
-            Self::Scroll(args) => &args.common,
-            Self::Hotkey(args) => &args.common,
-            Self::Press(args) => &args.common,
-            Self::Type(args) => &args.common,
-            Self::LaunchApp(args) => &args.common,
-            Self::CloseWindow(args) => &args.common,
-            Self::MinimizeWindow(args) => &args.common,
-            Self::MaximizeWindow(args) => &args.common,
-            Self::MoveWindow(args) => &args.common,
-            Self::ResizeWindow(args) => &args.common,
-            Self::SetWindowBounds(args) => &args.common,
-            Self::SwitchApp(args) => &args.common,
-            Self::QuitApp(args) => &args.common,
-            Self::RelaunchApp(args) => &args.common,
-            Self::HideApp(args) => &args.common,
-            Self::UnhideApp(args) => &args.common,
-            Self::FocusWindow(args) => &args.common,
+            Self::Permissions(args) => Some(args),
+            Self::Capabilities(args) => Some(args),
+            Self::Observe(args) => Some(&args.common),
+            Self::Snapshot => None,
+            Self::Artifact => None,
+            Self::List(args) => args.common(),
+            Self::Focus(args) => Some(args),
+            Self::Input | Self::App | Self::Window | Self::Mcp => None,
+            Self::ArtifactGet(args) => Some(&args.common),
+            Self::SnapshotGet(args) => Some(&args.common),
+            Self::GetFocus(args) => Some(args),
+            Self::ListApps(args) => Some(args),
+            Self::ListWindows(args) => Some(&args.common),
+            Self::PermissionsStatus(args) => Some(args),
+            Self::Click(args) => Some(&args.common),
+            Self::Move(args) => Some(&args.common),
+            Self::Drag(args) => Some(&args.common),
+            Self::Swipe(args) => Some(&args.common),
+            Self::Scroll(args) => Some(&args.common),
+            Self::Hotkey(args) => Some(&args.common),
+            Self::Press(args) => Some(&args.common),
+            Self::Type(args) => Some(&args.common),
+            Self::LaunchApp(args) => Some(&args.common),
+            Self::CloseWindow(args) => Some(&args.common),
+            Self::MinimizeWindow(args) => Some(&args.common),
+            Self::MaximizeWindow(args) => Some(&args.common),
+            Self::MoveWindow(args) => Some(&args.common),
+            Self::ResizeWindow(args) => Some(&args.common),
+            Self::SetWindowBounds(args) => Some(&args.common),
+            Self::SwitchApp(args) => Some(&args.common),
+            Self::QuitApp(args) => Some(&args.common),
+            Self::RelaunchApp(args) => Some(&args.common),
+            Self::HideApp(args) => Some(&args.common),
+            Self::UnhideApp(args) => Some(&args.common),
+            Self::FocusWindow(args) => Some(&args.common),
         }
     }
 
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
         match self {
-            Self::Observe(args) => args.into_invocation(),
-            Self::ArtifactGet(args) => args.into_invocation(),
-            Self::SnapshotGet(args) => args.into_invocation(),
-            Self::GetFocus(common) => invoke_without_specific_input("get-focus", common),
-            Self::ListApps(common) => invoke_without_specific_input("list-apps", common),
-            Self::ListWindows(args) => args.into_invocation(),
-            Self::PermissionsStatus(common) => {
-                invoke_without_specific_input("permissions-status", common)
+            Self::Permissions(common) => invoke_without_specific_input(
+                "permissions-status",
+                merge_common(root_common, common),
+            ),
+            Self::Capabilities(common) => {
+                invoke_without_specific_input("capabilities", merge_common(root_common, common))
             }
-            Self::Capabilities(common) => invoke_without_specific_input("capabilities", common),
-            Self::Click(args) => args.into_invocation(),
-            Self::Move(args) => args.into_invocation(),
-            Self::Drag(args) => args.into_invocation(),
-            Self::Swipe(args) => args.into_invocation(),
-            Self::Scroll(args) => args.into_invocation(),
-            Self::Hotkey(args) => args.into_invocation(),
-            Self::Press(args) => args.into_invocation(),
-            Self::Type(args) => args.into_invocation(),
-            Self::LaunchApp(args) => args.into_invocation(),
-            Self::CloseWindow(args) => args.into_invocation(),
-            Self::MinimizeWindow(args) => args.into_invocation(),
-            Self::MaximizeWindow(args) => args.into_invocation(),
-            Self::MoveWindow(args) => args.into_invocation(),
-            Self::ResizeWindow(args) => args.into_invocation(),
-            Self::SetWindowBounds(args) => args.into_invocation(),
-            Self::SwitchApp(args) => args.into_invocation("switch-app"),
-            Self::QuitApp(args) => args.into_invocation("quit-app"),
-            Self::RelaunchApp(args) => args.into_invocation("relaunch-app"),
-            Self::HideApp(args) => args.into_invocation("hide-app"),
-            Self::UnhideApp(args) => args.into_invocation("unhide-app"),
-            Self::FocusWindow(args) => args.into_invocation(),
+            Self::Observe(args) => args.into_invocation(root_common),
+            Self::Snapshot => Err("snapshot commands are not implemented yet".to_string()),
+            Self::Artifact => Err("artifact commands are not implemented yet".to_string()),
+            Self::List(args) => args.into_invocation(root_common),
+            Self::Focus(common) => {
+                invoke_without_specific_input("get-focus", merge_common(root_common, common))
+            }
+            Self::Input => Err("input commands are not implemented yet".to_string()),
+            Self::App => Err("app commands are not implemented yet".to_string()),
+            Self::Window => Err("window commands are not implemented yet".to_string()),
+            Self::Mcp => Err("mcp commands are not implemented yet".to_string()),
+            Self::ArtifactGet(args) => args.into_invocation(root_common),
+            Self::SnapshotGet(args) => args.into_invocation(root_common),
+            Self::GetFocus(common) => {
+                invoke_without_specific_input("get-focus", merge_common(root_common, common))
+            }
+            Self::ListApps(common) => {
+                invoke_without_specific_input("list-apps", merge_common(root_common, common))
+            }
+            Self::ListWindows(args) => args.into_invocation(root_common),
+            Self::PermissionsStatus(common) => invoke_without_specific_input(
+                "permissions-status",
+                merge_common(root_common, common),
+            ),
+            Self::Click(args) => args.into_invocation(root_common),
+            Self::Move(args) => args.into_invocation(root_common),
+            Self::Drag(args) => args.into_invocation(root_common),
+            Self::Swipe(args) => args.into_invocation(root_common),
+            Self::Scroll(args) => args.into_invocation(root_common),
+            Self::Hotkey(args) => args.into_invocation(root_common),
+            Self::Press(args) => args.into_invocation(root_common),
+            Self::Type(args) => args.into_invocation(root_common),
+            Self::LaunchApp(args) => args.into_invocation(root_common),
+            Self::CloseWindow(args) => args.into_invocation(root_common),
+            Self::MinimizeWindow(args) => args.into_invocation(root_common),
+            Self::MaximizeWindow(args) => args.into_invocation(root_common),
+            Self::MoveWindow(args) => args.into_invocation(root_common),
+            Self::ResizeWindow(args) => args.into_invocation(root_common),
+            Self::SetWindowBounds(args) => args.into_invocation(root_common),
+            Self::SwitchApp(args) => args.into_invocation("switch-app", root_common),
+            Self::QuitApp(args) => args.into_invocation("quit-app", root_common),
+            Self::RelaunchApp(args) => args.into_invocation("relaunch-app", root_common),
+            Self::HideApp(args) => args.into_invocation("hide-app", root_common),
+            Self::UnhideApp(args) => args.into_invocation("unhide-app", root_common),
+            Self::FocusWindow(args) => args.into_invocation(root_common),
         }
     }
 }
 
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Default, Args)]
 struct CommonArgs {
-    #[arg(long)]
+    #[arg(long, global = true, help = "Select a runtime target")]
     target: Option<String>,
-    #[arg(long = "json")]
+    #[arg(long = "json", global = true, help = "Render structured JSON output")]
     json_output: bool,
-    #[arg(long)]
+    #[arg(long, global = true, help = "Override runtime timeout in milliseconds")]
     timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ListArgs {
+    #[command(subcommand)]
+    command: ListCommand,
+}
+
+impl ListArgs {
+    fn common(&self) -> Option<&CommonArgs> {
+        self.command.common()
+    }
+
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command.into_invocation(root_common)
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum ListCommand {
+    Apps(CommonArgs),
+    Windows(ListWindowsArgs),
+}
+
+impl ListCommand {
+    fn common(&self) -> Option<&CommonArgs> {
+        match self {
+            Self::Apps(args) => Some(args),
+            Self::Windows(args) => Some(&args.common),
+        }
+    }
+
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Apps(common) => {
+                invoke_without_specific_input("list-apps", merge_common(root_common, common))
+            }
+            Self::Windows(args) => args.into_invocation(root_common),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -177,9 +338,11 @@ struct ObserveArgs {
 }
 
 impl ObserveArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
-        insert_serialized(&mut input, "surface", self.surface()?)?;
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let surface = self.surface()?;
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
+        insert_serialized(&mut input, "surface", surface)?;
         input.insert(
             "include_screenshot".into(),
             Value::Bool(self.include_screenshot),
@@ -191,7 +354,7 @@ impl ObserveArgs {
         Ok(ToolInvocation {
             tool: "observe",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 
@@ -292,8 +455,9 @@ struct ArtifactGetArgs {
 }
 
 impl ArtifactGetArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         insert_serialized(
             &mut input,
             "artifact_id",
@@ -302,7 +466,7 @@ impl ArtifactGetArgs {
         Ok(ToolInvocation {
             tool: "artifact-get",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -316,8 +480,9 @@ struct SnapshotGetArgs {
 }
 
 impl SnapshotGetArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         insert_serialized(
             &mut input,
             "snapshot_id",
@@ -326,7 +491,7 @@ impl SnapshotGetArgs {
         Ok(ToolInvocation {
             tool: "snapshot-get",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -340,15 +505,16 @@ struct ListWindowsArgs {
 }
 
 impl ListWindowsArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         if let Some(app) = self.app {
             input.insert("app".into(), Value::String(app));
         }
         Ok(ToolInvocation {
             tool: "list-windows",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -368,8 +534,9 @@ struct ClickArgs {
 }
 
 impl ClickArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         insert_serialized(&mut input, "mode", self.mode.click_mode())?;
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
@@ -380,7 +547,7 @@ impl ClickArgs {
         Ok(ToolInvocation {
             tool: "click",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -398,8 +565,9 @@ struct MoveArgs {
 }
 
 impl MoveArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let locator = self.locator.into_locator()?;
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         if locator.is_none() && target_selector.is_none() {
@@ -413,7 +581,7 @@ impl MoveArgs {
         Ok(ToolInvocation {
             tool: "move",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -439,8 +607,9 @@ struct DragArgs {
 }
 
 impl DragArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
@@ -458,7 +627,7 @@ impl DragArgs {
         Ok(ToolInvocation {
             tool: "drag",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -482,8 +651,9 @@ struct SwipeArgs {
 }
 
 impl SwipeArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
@@ -498,7 +668,7 @@ impl SwipeArgs {
         Ok(ToolInvocation {
             tool: "swipe",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -520,8 +690,9 @@ struct ScrollArgs {
 }
 
 impl ScrollArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         input.insert("delta_x".into(), Value::from(self.delta_x));
         input.insert("delta_y".into(), Value::from(self.delta_y));
@@ -533,7 +704,7 @@ impl ScrollArgs {
         Ok(ToolInvocation {
             tool: "scroll",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -551,8 +722,9 @@ struct HotkeyArgs {
 }
 
 impl HotkeyArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "keys", self.keys)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
@@ -560,7 +732,7 @@ impl HotkeyArgs {
         Ok(ToolInvocation {
             tool: "hotkey",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -580,8 +752,9 @@ struct PressArgs {
 }
 
 impl PressArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         input.insert("key".into(), Value::String(self.key));
         insert_serialized(&mut input, "count", self.count)?;
@@ -590,7 +763,7 @@ impl PressArgs {
         Ok(ToolInvocation {
             tool: "press",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -616,8 +789,9 @@ struct TypeArgs {
 }
 
 impl TypeArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         input.insert("text".into(), Value::String(self.text));
         input.insert("clear_before".into(), Value::Bool(self.clear_before));
@@ -640,7 +814,7 @@ impl TypeArgs {
         Ok(ToolInvocation {
             tool: "type",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -654,8 +828,9 @@ struct LaunchAppArgs {
 }
 
 impl LaunchAppArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         input.insert(
             "bundle_id_or_name".into(),
             Value::String(self.bundle_id_or_name),
@@ -663,7 +838,7 @@ impl LaunchAppArgs {
         Ok(ToolInvocation {
             tool: "launch-app",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -677,15 +852,16 @@ struct CloseWindowArgs {
 }
 
 impl CloseWindowArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
         Ok(ToolInvocation {
             tool: "close-window",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -701,8 +877,9 @@ struct MinimizeWindowArgs {
 }
 
 impl MinimizeWindowArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
@@ -710,7 +887,7 @@ impl MinimizeWindowArgs {
         Ok(ToolInvocation {
             tool: "minimize-window",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -724,15 +901,16 @@ struct MaximizeWindowArgs {
 }
 
 impl MaximizeWindowArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
         Ok(ToolInvocation {
             tool: "maximize-window",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -752,8 +930,9 @@ struct MoveWindowArgs {
 }
 
 impl MoveWindowArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
@@ -763,7 +942,7 @@ impl MoveWindowArgs {
         Ok(ToolInvocation {
             tool: "move-window",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -783,8 +962,9 @@ struct ResizeWindowArgs {
 }
 
 impl ResizeWindowArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
@@ -794,7 +974,7 @@ impl ResizeWindowArgs {
         Ok(ToolInvocation {
             tool: "resize-window",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -818,8 +998,9 @@ struct SetWindowBoundsArgs {
 }
 
 impl SetWindowBoundsArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
@@ -831,7 +1012,7 @@ impl SetWindowBoundsArgs {
         Ok(ToolInvocation {
             tool: "set-window-bounds",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -847,14 +1028,19 @@ struct LifecycleActionArgs {
 }
 
 impl LifecycleActionArgs {
-    fn into_invocation(self, tool: &'static str) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(
+        self,
+        tool: &'static str,
+        root_common: CommonArgs,
+    ) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         insert_serialized(&mut input, "target_selector", self.target.into_selector()?)?;
         insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool,
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -870,14 +1056,15 @@ struct FocusWindowArgs {
 }
 
 impl FocusWindowArgs {
-    fn into_invocation(self) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&self.common);
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        let mut input = common_input(&common);
         insert_serialized(&mut input, "window_id", WindowId::from(self.window_id))?;
         insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "focus-window",
             input: Value::Object(input),
-            json_output: self.common.json_output,
+            json_output: common.json_output,
         })
     }
 }
@@ -1392,6 +1579,14 @@ fn invoke_without_specific_input(
         input: Value::Object(common_input(&common)),
         json_output: common.json_output,
     })
+}
+
+fn merge_common(root: CommonArgs, local: CommonArgs) -> CommonArgs {
+    CommonArgs {
+        target: local.target.or(root.target),
+        json_output: local.json_output || root.json_output,
+        timeout_ms: local.timeout_ms.or(root.timeout_ms),
+    }
 }
 
 fn common_input(common: &CommonArgs) -> Map<String, Value> {
