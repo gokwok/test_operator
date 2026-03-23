@@ -5,9 +5,9 @@ use std::{
 };
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, ExecContext, Locator, ObserveRequest,
-    ObserveResult, OperatorError, PlatformDriver, Point, QueryRequest, QueryResult,
-    TargetDescriptor, TargetId,
+    Action, ActionOutcome, ActionRequest, ActionVerification, Capability, ExecContext, Locator,
+    ObserveRequest, ObserveResult, OperatorError, PlatformDriver, Point, QueryRequest, QueryResult,
+    TargetDescriptor, TargetId, WindowInfo,
 };
 use tokio::time;
 
@@ -155,6 +155,8 @@ impl RuntimeCore {
         self.validate_action_request(&req)?;
         self.ensure_action_capability(driver.as_ref(), &req, &ctx)
             .await?;
+        self.ensure_action_verification_capabilities(driver.as_ref(), &req, &ctx)
+            .await?;
         self.emit_invoked("act", &req, &ctx).await?;
 
         let started = Instant::now();
@@ -168,14 +170,24 @@ impl RuntimeCore {
         };
         let result = time::timeout(
             Duration::from_millis(timeout_ms),
-            driver.act(normalized, &ctx),
+            driver.act(normalized.clone(), &ctx),
         )
         .await;
 
         match result {
             Ok(Ok(result)) => {
+                let verified = match self
+                    .verify_action_outcome(driver.as_ref(), &normalized, result, &ctx, timeout_ms)
+                    .await
+                {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        self.emit_completed("act", started, false, &ctx).await?;
+                        return Err(error);
+                    }
+                };
                 self.emit_completed("act", started, true, &ctx).await?;
-                Ok(result)
+                Ok(verified)
             }
             Ok(Err(error)) => {
                 self.emit_completed("act", started, false, &ctx).await?;
@@ -263,6 +275,38 @@ impl RuntimeCore {
             .await
     }
 
+    async fn ensure_action_verification_capabilities(
+        &self,
+        driver: &dyn PlatformDriver,
+        req: &ActionRequest,
+        ctx: &ExecContext,
+    ) -> Result<(), OperatorError> {
+        let mut required = Vec::new();
+        for verification in &req.verifications {
+            match verification {
+                ActionVerification::Focus => {
+                    for capability in [Capability::WindowManagement, Capability::InspectTree] {
+                        if !required.contains(&capability) {
+                            required.push(capability);
+                        }
+                    }
+                }
+                ActionVerification::WindowState | ActionVerification::Geometry => {
+                    if !required.contains(&Capability::WindowManagement) {
+                        required.push(Capability::WindowManagement);
+                    }
+                }
+            }
+        }
+
+        for capability in required {
+            self.require_capability(driver, capability, "act", ctx)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     async fn require_capability(
         &self,
         driver: &dyn PlatformDriver,
@@ -287,6 +331,15 @@ impl RuntimeCore {
     }
 
     fn validate_action_request(&self, req: &ActionRequest) -> Result<(), OperatorError> {
+        if !req.verifications.is_empty()
+            && req.target_selector.is_none()
+            && !matches!(req.action, Action::FocusWindow { .. })
+        {
+            return Err(OperatorError::Platform(
+                "post-action verification requires a target selector or focus-window action".into(),
+            ));
+        }
+
         match &req.action {
             Action::Move if req.locator.is_none() && req.target_selector.is_none() => {
                 return Err(OperatorError::Platform(
@@ -335,6 +388,207 @@ impl RuntimeCore {
         }
 
         Ok(())
+    }
+
+    async fn verify_action_outcome(
+        &self,
+        driver: &dyn PlatformDriver,
+        req: &ActionRequest,
+        mut outcome: ActionOutcome,
+        ctx: &ExecContext,
+        timeout_ms: u64,
+    ) -> Result<ActionOutcome, OperatorError> {
+        if req.verifications.is_empty() {
+            return Ok(outcome);
+        }
+
+        let mut cached_windows: Option<Vec<WindowInfo>> = None;
+        let mut cached_focus: Option<Option<String>> = None;
+
+        for verification in &req.verifications {
+            match verification {
+                ActionVerification::Focus => {
+                    if let Some(expected) = outcome.target_window.as_ref() {
+                        let windows = self
+                            .verification_windows(
+                                driver,
+                                ctx,
+                                timeout_ms,
+                                &mut cached_windows,
+                                outcome
+                                    .target_window
+                                    .as_ref()
+                                    .and_then(|window| window.app_name.clone())
+                                    .or_else(|| {
+                                        outcome.target_app.as_ref().map(|app| app.name.clone())
+                                    }),
+                            )
+                            .await?;
+                        let actual = find_window(&windows, expected.id).ok_or_else(|| {
+                            OperatorError::Platform(format!(
+                                "post-action focus verification failed: window {} was not found",
+                                expected.id
+                            ))
+                        })?;
+                        if !actual.is_focused {
+                            return Err(OperatorError::Platform(format!(
+                                "post-action focus verification failed: window {} is not focused",
+                                expected.id
+                            )));
+                        }
+                        outcome.target_window = Some(actual.clone());
+                    } else {
+                        let expected_app = outcome.target_app.as_ref().ok_or_else(|| {
+                            OperatorError::Platform(
+                                "post-action focus verification requires target app or window metadata"
+                                    .into(),
+                            )
+                        })?;
+                        let focused_app = self
+                            .verification_focus_app(driver, ctx, timeout_ms, &mut cached_focus)
+                            .await?;
+                        if focused_app.as_deref() != Some(expected_app.name.as_str()) {
+                            return Err(OperatorError::Platform(format!(
+                                "post-action focus verification failed: expected focused app {}",
+                                expected_app.name
+                            )));
+                        }
+                    }
+                }
+                ActionVerification::WindowState => {
+                    let expected = outcome.target_window.as_ref().ok_or_else(|| {
+                        OperatorError::Platform(
+                            "post-action window-state verification requires target window metadata"
+                                .into(),
+                        )
+                    })?;
+                    let windows = self
+                        .verification_windows(
+                            driver,
+                            ctx,
+                            timeout_ms,
+                            &mut cached_windows,
+                            expected.app_name.clone(),
+                        )
+                        .await?;
+                    let actual = find_window(&windows, expected.id).ok_or_else(|| {
+                        OperatorError::Platform(format!(
+                            "post-action window-state verification failed: window {} was not found",
+                            expected.id
+                        ))
+                    })?;
+                    if actual.is_minimized != expected.is_minimized {
+                        return Err(OperatorError::Platform(format!(
+                            "post-action window-state verification failed: window {} minimized={} expected {}",
+                            expected.id, actual.is_minimized, expected.is_minimized
+                        )));
+                    }
+                    outcome.target_window = Some(actual.clone());
+                }
+                ActionVerification::Geometry => {
+                    let expected = outcome.target_window.as_ref().ok_or_else(|| {
+                        OperatorError::Platform(
+                            "post-action geometry verification requires target window metadata"
+                                .into(),
+                        )
+                    })?;
+                    let expected_bounds = expected.bounds.ok_or_else(|| {
+                        OperatorError::Platform(
+                            "post-action geometry verification requires target window bounds in action outcome"
+                                .into(),
+                        )
+                    })?;
+                    let windows = self
+                        .verification_windows(
+                            driver,
+                            ctx,
+                            timeout_ms,
+                            &mut cached_windows,
+                            expected.app_name.clone(),
+                        )
+                        .await?;
+                    let actual = find_window(&windows, expected.id).ok_or_else(|| {
+                        OperatorError::Platform(format!(
+                            "post-action geometry verification failed: window {} was not found",
+                            expected.id
+                        ))
+                    })?;
+                    if actual.bounds != Some(expected_bounds) {
+                        return Err(OperatorError::Platform(format!(
+                            "post-action geometry verification failed: window {} bounds did not match",
+                            expected.id
+                        )));
+                    }
+                    outcome.target_window = Some(actual.clone());
+                }
+            }
+        }
+
+        Ok(outcome)
+    }
+
+    async fn verification_windows(
+        &self,
+        driver: &dyn PlatformDriver,
+        ctx: &ExecContext,
+        timeout_ms: u64,
+        cached_windows: &mut Option<Vec<WindowInfo>>,
+        app: Option<String>,
+    ) -> Result<Vec<WindowInfo>, OperatorError> {
+        if cached_windows.is_none() {
+            let result = self
+                .query_with_timeout(driver, QueryRequest::ListWindows { app }, ctx, timeout_ms)
+                .await?;
+            let windows = match result {
+                QueryResult::Windows(windows) => windows,
+                _ => {
+                    return Err(OperatorError::Platform(
+                        "post-action verification expected windows query result".into(),
+                    ))
+                }
+            };
+            *cached_windows = Some(windows);
+        }
+
+        Ok(cached_windows.as_ref().unwrap().clone())
+    }
+
+    async fn verification_focus_app(
+        &self,
+        driver: &dyn PlatformDriver,
+        ctx: &ExecContext,
+        timeout_ms: u64,
+        cached_focus: &mut Option<Option<String>>,
+    ) -> Result<Option<String>, OperatorError> {
+        if cached_focus.is_none() {
+            let result = self
+                .query_with_timeout(driver, QueryRequest::GetFocus, ctx, timeout_ms)
+                .await?;
+            let focused = match result {
+                QueryResult::Focus(focus) => focus.and_then(|focus| focus.app_name),
+                _ => {
+                    return Err(OperatorError::Platform(
+                        "post-action verification expected focus query result".into(),
+                    ))
+                }
+            };
+            *cached_focus = Some(focused);
+        }
+
+        Ok(cached_focus.as_ref().unwrap().clone())
+    }
+
+    async fn query_with_timeout(
+        &self,
+        driver: &dyn PlatformDriver,
+        req: QueryRequest,
+        ctx: &ExecContext,
+        timeout_ms: u64,
+    ) -> Result<QueryResult, OperatorError> {
+        match time::timeout(Duration::from_millis(timeout_ms), driver.query(req, ctx)).await {
+            Ok(result) => result,
+            Err(_) => Err(OperatorError::Timeout { timeout_ms }),
+        }
     }
 
     async fn normalize_action_request(
@@ -451,6 +705,10 @@ impl RuntimeCore {
     fn timeout_ms(&self, ctx: &ExecContext) -> u64 {
         ctx.timeout_ms.unwrap_or(self.config.default_timeout_ms)
     }
+}
+
+fn find_window(windows: &[WindowInfo], id: operator_core::WindowId) -> Option<&WindowInfo> {
+    windows.iter().find(|window| window.id == id)
 }
 
 #[derive(Clone)]

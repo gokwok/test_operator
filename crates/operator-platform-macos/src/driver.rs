@@ -249,6 +249,7 @@ where
             locator,
             target_selector,
             focus_policy,
+            verifications: _,
         } = req;
         let target = ActionTargetConfig::new(target_selector.as_ref(), focus_policy);
 

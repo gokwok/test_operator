@@ -185,6 +185,8 @@ async fn focus_window_command_maps_window_id_to_tool_input() {
         "250",
         "--window-id",
         "42",
+        "--verify",
+        "focus",
     ])
     .unwrap();
 
@@ -195,7 +197,8 @@ async fn focus_window_command_maps_window_id_to_tool_input() {
         json!({
             "target": "local:macos",
             "timeout_ms": 250,
-            "window_id": 42
+            "window_id": 42,
+            "verifications": ["Focus"]
         })
     );
 }
@@ -288,6 +291,8 @@ async fn move_window_command_maps_coordinates_and_target_selector_to_tool_input(
         "240",
         "--focus-policy",
         "never",
+        "--verify",
+        "geometry",
     ])
     .unwrap();
 
@@ -301,6 +306,7 @@ async fn move_window_command_maps_coordinates_and_target_selector_to_tool_input(
                 "WindowId": 42
             },
             "focus_policy": "Never",
+            "verifications": ["Geometry"],
             "x": 120.0,
             "y": 240.0
         })
@@ -594,6 +600,8 @@ async fn move_command_maps_coordinate_target_to_tool_input() {
         "640",
         "--y",
         "480",
+        "--verify",
+        "focus",
     ])
     .unwrap();
 
@@ -609,7 +617,8 @@ async fn move_command_maps_coordinate_target_to_tool_input() {
                     "x": 640.0,
                     "y": 480.0
                 }
-            }
+            },
+            "verifications": ["Focus"]
         })
     );
 }

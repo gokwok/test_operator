@@ -13,6 +13,8 @@ pub struct ActionRequest {
     pub target_selector: Option<ActionTargetSelector>,
     #[serde(default)]
     pub focus_policy: ActionFocusPolicy,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verifications: Vec<ActionVerification>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -29,6 +31,13 @@ pub enum ActionFocusPolicy {
     #[default]
     Auto,
     Never,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ActionVerification {
+    Focus,
+    WindowState,
+    Geometry,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

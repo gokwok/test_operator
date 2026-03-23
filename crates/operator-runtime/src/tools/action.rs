@@ -1,8 +1,9 @@
 use std::{num::NonZeroU32, sync::Arc};
 
 use operator_core::{
-    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector, Capability,
-    ClickMode, DragMotion, Locator, OperatorError, Rect, TypeTrailingKey, WindowId,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionTargetSelector,
+    ActionVerification, Capability, ClickMode, DragMotion, Locator, OperatorError, Rect,
+    TypeTrailingKey, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -410,6 +411,7 @@ async fn click(
                 Action::Click { mode: input.mode },
                 input.locator,
                 input.target,
+                input.verification,
             ),
             ctx,
         )
@@ -435,6 +437,7 @@ async fn r#type(
                 },
                 input.locator,
                 input.target,
+                input.verification,
             ),
             ctx,
         )
@@ -451,7 +454,12 @@ async fn move_cursor(
     let input = parse_input::<MoveToolInput>("move", input)?;
     let outcome = core
         .act(
-            build_action_request(Action::Move, input.locator, input.target),
+            build_action_request(
+                Action::Move,
+                input.locator,
+                input.target,
+                input.verification,
+            ),
             ctx,
         )
         .await?;
@@ -474,6 +482,7 @@ async fn scroll(
                 },
                 input.locator,
                 input.target,
+                input.verification,
             ),
             ctx,
         )
@@ -498,6 +507,7 @@ async fn drag(
                 },
                 None,
                 input.target,
+                input.verification,
             ),
             ctx,
         )
@@ -523,6 +533,7 @@ async fn swipe(
                 },
                 None,
                 input.target,
+                input.verification,
             ),
             ctx,
         )
@@ -539,7 +550,12 @@ async fn hotkey(
     let input = parse_input::<HotkeyToolInput>("hotkey", input)?;
     let outcome = core
         .act(
-            build_action_request(Action::Hotkey { keys: input.keys }, None, input.target),
+            build_action_request(
+                Action::Hotkey { keys: input.keys },
+                None,
+                input.target,
+                input.verification,
+            ),
             ctx,
         )
         .await?;
@@ -562,6 +578,7 @@ async fn press(
                 },
                 None,
                 input.target,
+                input.verification,
             ),
             ctx,
         )
@@ -585,6 +602,7 @@ async fn launch_app(
                 locator: None,
                 target_selector: None,
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: input.verification.verifications,
             },
             ctx,
         )
@@ -608,6 +626,7 @@ async fn focus_window(
                 locator: None,
                 target_selector: None,
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: input.verification.verifications,
             },
             ctx,
         )
@@ -679,6 +698,7 @@ async fn move_window(
                 },
                 input.target_selector,
                 input.focus_policy,
+                input.verification.verifications,
             ),
             ctx,
         )
@@ -702,6 +722,7 @@ async fn resize_window(
                 },
                 input.target_selector,
                 input.focus_policy,
+                input.verification.verifications,
             ),
             ctx,
         )
@@ -729,6 +750,7 @@ async fn set_window_bounds(
                 },
                 input.target_selector,
                 input.focus_policy,
+                input.verification.verifications,
             ),
             ctx,
         )
@@ -745,7 +767,11 @@ async fn switch_app(
     let input = parse_input::<LifecycleToolInput>("switch-app", input)?;
     let outcome = core
         .act(
-            build_lifecycle_action_request(Action::SwitchApp, input.target_selector),
+            build_lifecycle_action_request(
+                Action::SwitchApp,
+                input.target_selector,
+                input.verification.verifications,
+            ),
             ctx,
         )
         .await?;
@@ -761,7 +787,11 @@ async fn quit_app(
     let input = parse_input::<LifecycleToolInput>("quit-app", input)?;
     let outcome = core
         .act(
-            build_lifecycle_action_request(Action::QuitApp, input.target_selector),
+            build_lifecycle_action_request(
+                Action::QuitApp,
+                input.target_selector,
+                input.verification.verifications,
+            ),
             ctx,
         )
         .await?;
@@ -777,7 +807,11 @@ async fn relaunch_app(
     let input = parse_input::<LifecycleToolInput>("relaunch-app", input)?;
     let outcome = core
         .act(
-            build_lifecycle_action_request(Action::RelaunchApp, input.target_selector),
+            build_lifecycle_action_request(
+                Action::RelaunchApp,
+                input.target_selector,
+                input.verification.verifications,
+            ),
             ctx,
         )
         .await?;
@@ -793,7 +827,11 @@ async fn hide_app(
     let input = parse_input::<LifecycleToolInput>("hide-app", input)?;
     let outcome = core
         .act(
-            build_lifecycle_action_request(Action::HideApp, input.target_selector),
+            build_lifecycle_action_request(
+                Action::HideApp,
+                input.target_selector,
+                input.verification.verifications,
+            ),
             ctx,
         )
         .await?;
@@ -809,7 +847,11 @@ async fn unhide_app(
     let input = parse_input::<LifecycleToolInput>("unhide-app", input)?;
     let outcome = core
         .act(
-            build_lifecycle_action_request(Action::UnhideApp, input.target_selector),
+            build_lifecycle_action_request(
+                Action::UnhideApp,
+                input.target_selector,
+                input.verification.verifications,
+            ),
             ctx,
         )
         .await?;
@@ -828,24 +870,28 @@ fn build_action_request(
     action: Action,
     locator: Option<Locator>,
     target: ActionTargetToolInput,
+    verification: ActionVerificationToolInput,
 ) -> ActionRequest {
     ActionRequest {
         action,
         locator,
         target_selector: target.target_selector,
         focus_policy: target.focus_policy,
+        verifications: verification.verifications,
     }
 }
 
 fn build_lifecycle_action_request(
     action: Action,
     target_selector: ActionTargetSelector,
+    verifications: Vec<ActionVerification>,
 ) -> ActionRequest {
     ActionRequest {
         action,
         locator: None,
         target_selector: Some(target_selector),
         focus_policy: ActionFocusPolicy::Auto,
+        verifications,
     }
 }
 
@@ -853,19 +899,26 @@ fn build_window_chrome_action_request(
     action: Action,
     input: WindowChromeToolInput,
 ) -> ActionRequest {
-    build_window_geometry_action_request(action, input.target_selector, input.focus_policy)
+    build_window_geometry_action_request(
+        action,
+        input.target_selector,
+        input.focus_policy,
+        input.verification.verifications,
+    )
 }
 
 fn build_window_geometry_action_request(
     action: Action,
     target_selector: ActionTargetSelector,
     focus_policy: ActionFocusPolicy,
+    verifications: Vec<ActionVerification>,
 ) -> ActionRequest {
     ActionRequest {
         action,
         locator: None,
         target_selector: Some(target_selector),
         focus_policy,
+        verifications,
     }
 }
 
@@ -892,6 +945,9 @@ struct ClickToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -910,6 +966,9 @@ struct TypeToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -922,6 +981,9 @@ struct MoveToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -934,6 +996,9 @@ struct HotkeyToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -948,6 +1013,9 @@ struct PressToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -964,6 +1032,9 @@ struct DragToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -979,6 +1050,9 @@ struct SwipeToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -993,6 +1067,9 @@ struct ScrollToolInput {
     #[serde(flatten, default)]
     #[schemars(flatten)]
     target: ActionTargetToolInput,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1002,6 +1079,9 @@ struct LaunchAppToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     bundle_id_or_name: String,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1011,6 +1091,9 @@ struct FocusWindowToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     window_id: WindowId,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1022,6 +1105,9 @@ struct WindowChromeToolInput {
     target_selector: ActionTargetSelector,
     #[serde(default)]
     focus_policy: ActionFocusPolicy,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1035,6 +1121,9 @@ struct MoveWindowToolInput {
     focus_policy: ActionFocusPolicy,
     x: f64,
     y: f64,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1048,6 +1137,9 @@ struct ResizeWindowToolInput {
     focus_policy: ActionFocusPolicy,
     width: f64,
     height: f64,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1063,6 +1155,9 @@ struct SetWindowBoundsToolInput {
     y: f64,
     width: f64,
     height: f64,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[allow(dead_code)]
@@ -1072,6 +1167,9 @@ struct LifecycleToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     target_selector: ActionTargetSelector,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    verification: ActionVerificationToolInput,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema, Default)]
@@ -1079,6 +1177,12 @@ struct ActionTargetToolInput {
     target_selector: Option<ActionTargetSelector>,
     #[serde(default)]
     focus_policy: ActionFocusPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, Default)]
+struct ActionVerificationToolInput {
+    #[serde(default)]
+    verifications: Vec<ActionVerification>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

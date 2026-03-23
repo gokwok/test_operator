@@ -4,8 +4,8 @@ use std::num::NonZeroU32;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use operator_core::{
-    ActionFocusPolicy, ActionTargetSelector, ArtifactId, ClickMode, Locator, Point, SnapshotId,
-    Surface, SurfaceKind, TypeTrailingKey, WindowId,
+    ActionFocusPolicy, ActionTargetSelector, ActionVerification, ArtifactId, ClickMode, Locator,
+    Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey, WindowId,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -362,6 +362,8 @@ struct ClickArgs {
     #[command(flatten)]
     action_target: ActionTargetArgs,
     #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
     locator: ClickLocatorArgs,
 }
 
@@ -371,6 +373,7 @@ impl ClickArgs {
         insert_serialized(&mut input, "mode", self.mode.click_mode())?;
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -389,6 +392,8 @@ struct MoveArgs {
     #[command(flatten)]
     action_target: ActionTargetArgs,
     #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
     locator: MoveLocatorArgs,
 }
 
@@ -404,6 +409,7 @@ impl MoveArgs {
             insert_serialized(&mut input, "locator", locator)?;
         }
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "move",
             input: Value::Object(input),
@@ -418,6 +424,8 @@ struct DragArgs {
     common: CommonArgs,
     #[command(flatten)]
     action_target: ActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
     #[command(flatten)]
     from: DragFromLocatorArgs,
     #[command(flatten)]
@@ -437,6 +445,7 @@ impl DragArgs {
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(duration_ms) = self.duration_ms {
             input.insert("duration_ms".into(), Value::from(duration_ms));
         }
@@ -461,6 +470,8 @@ struct SwipeArgs {
     #[command(flatten)]
     action_target: ActionTargetArgs,
     #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
     from: DragFromLocatorArgs,
     #[command(flatten)]
     to: DragToLocatorArgs,
@@ -477,6 +488,7 @@ impl SwipeArgs {
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(duration_ms) = self.duration_ms {
             input.insert("duration_ms".into(), Value::from(duration_ms));
         }
@@ -502,6 +514,8 @@ struct ScrollArgs {
     #[command(flatten)]
     action_target: ActionTargetArgs,
     #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
     locator: ScrollLocatorArgs,
 }
 
@@ -512,6 +526,7 @@ impl ScrollArgs {
         input.insert("delta_x".into(), Value::from(self.delta_x));
         input.insert("delta_y".into(), Value::from(self.delta_y));
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -531,6 +546,8 @@ struct HotkeyArgs {
     keys: Vec<String>,
     #[command(flatten)]
     action_target: ActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
 }
 
 impl HotkeyArgs {
@@ -539,6 +556,7 @@ impl HotkeyArgs {
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
         insert_serialized(&mut input, "keys", self.keys)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "hotkey",
             input: Value::Object(input),
@@ -557,6 +575,8 @@ struct PressArgs {
     count: NonZeroU32,
     #[command(flatten)]
     action_target: ActionTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
 }
 
 impl PressArgs {
@@ -566,6 +586,7 @@ impl PressArgs {
         input.insert("key".into(), Value::String(self.key));
         insert_serialized(&mut input, "count", self.count)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "press",
             input: Value::Object(input),
@@ -589,6 +610,8 @@ struct TypeArgs {
     #[command(flatten)]
     action_target: ActionTargetArgs,
     #[command(flatten)]
+    verification: ActionVerificationArgs,
+    #[command(flatten)]
     locator: TypeLocatorArgs,
 }
 
@@ -610,6 +633,7 @@ impl TypeArgs {
             insert_serialized(&mut input, "trailing_keys", trailing_keys)?;
         }
         insert_action_target(&mut input, target_selector, focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -627,6 +651,8 @@ struct LaunchAppArgs {
     common: CommonArgs,
     #[arg(long)]
     bundle_id_or_name: String,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
 }
 
 impl LaunchAppArgs {
@@ -636,6 +662,7 @@ impl LaunchAppArgs {
             "bundle_id_or_name".into(),
             Value::String(self.bundle_id_or_name),
         );
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "launch-app",
             input: Value::Object(input),
@@ -650,6 +677,8 @@ struct WindowChromeActionArgs {
     common: CommonArgs,
     #[command(flatten)]
     target: WindowChromeTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
 }
 
 impl WindowChromeActionArgs {
@@ -658,6 +687,7 @@ impl WindowChromeActionArgs {
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool,
             input: Value::Object(input),
@@ -672,6 +702,8 @@ struct MoveWindowArgs {
     common: CommonArgs,
     #[command(flatten)]
     target: WindowChromeTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
     #[arg(long, allow_hyphen_values = true)]
     x: f64,
     #[arg(long, allow_hyphen_values = true)]
@@ -684,6 +716,7 @@ impl MoveWindowArgs {
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         input.insert("x".into(), Value::from(self.x));
         input.insert("y".into(), Value::from(self.y));
         Ok(ToolInvocation {
@@ -700,6 +733,8 @@ struct ResizeWindowArgs {
     common: CommonArgs,
     #[command(flatten)]
     target: WindowChromeTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
     #[arg(long)]
     width: f64,
     #[arg(long)]
@@ -712,6 +747,7 @@ impl ResizeWindowArgs {
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         input.insert("width".into(), Value::from(self.width));
         input.insert("height".into(), Value::from(self.height));
         Ok(ToolInvocation {
@@ -728,6 +764,8 @@ struct SetWindowBoundsArgs {
     common: CommonArgs,
     #[command(flatten)]
     target: WindowChromeTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
     #[arg(long, allow_hyphen_values = true)]
     x: f64,
     #[arg(long, allow_hyphen_values = true)]
@@ -744,6 +782,7 @@ impl SetWindowBoundsArgs {
         let (target_selector, focus_policy) = self.target.into_parts()?;
         insert_serialized(&mut input, "target_selector", target_selector)?;
         insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         input.insert("x".into(), Value::from(self.x));
         input.insert("y".into(), Value::from(self.y));
         input.insert("width".into(), Value::from(self.width));
@@ -762,12 +801,15 @@ struct LifecycleActionArgs {
     common: CommonArgs,
     #[command(flatten)]
     target: LifecycleTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
 }
 
 impl LifecycleActionArgs {
     fn into_invocation(self, tool: &'static str) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
         insert_serialized(&mut input, "target_selector", self.target.into_selector()?)?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool,
             input: Value::Object(input),
@@ -782,12 +824,15 @@ struct FocusWindowArgs {
     common: CommonArgs,
     #[arg(long)]
     window_id: u64,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
 }
 
 impl FocusWindowArgs {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         let mut input = common_input(&self.common);
         insert_serialized(&mut input, "window_id", WindowId::from(self.window_id))?;
+        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "focus-window",
             input: Value::Object(input),
@@ -855,6 +900,23 @@ impl TypeTrailingKeyArg {
 enum FocusPolicyArg {
     Auto,
     Never,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ValueEnum)]
+enum VerificationArg {
+    Focus,
+    WindowState,
+    Geometry,
+}
+
+impl VerificationArg {
+    fn verification(self) -> ActionVerification {
+        match self {
+            Self::Focus => ActionVerification::Focus,
+            Self::WindowState => ActionVerification::WindowState,
+            Self::Geometry => ActionVerification::Geometry,
+        }
+    }
 }
 
 impl FocusPolicyArg {
@@ -967,6 +1029,21 @@ impl WindowChromeTargetArgs {
             self.selector.into_required_selector()?,
             self.focus_policy.focus_policy(),
         ))
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct ActionVerificationArgs {
+    #[arg(long = "verify", value_enum)]
+    verifications: Vec<VerificationArg>,
+}
+
+impl ActionVerificationArgs {
+    fn into_verifications(self) -> Vec<ActionVerification> {
+        self.verifications
+            .into_iter()
+            .map(VerificationArg::verification)
+            .collect()
     }
 }
 
@@ -1280,6 +1357,17 @@ fn insert_action_target(
         insert_serialized(map, "focus_policy", focus_policy)?;
     } else if !matches!(focus_policy, ActionFocusPolicy::Auto) {
         insert_serialized(map, "focus_policy", focus_policy)?;
+    }
+
+    Ok(())
+}
+
+fn insert_verifications(
+    map: &mut Map<String, Value>,
+    verifications: Vec<ActionVerification>,
+) -> Result<(), String> {
+    if !verifications.is_empty() {
+        insert_serialized(map, "verifications", verifications)?;
     }
 
     Ok(())

@@ -7,8 +7,8 @@ use std::{
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, Capability, CapabilitySet, ExecContext, HealthStatus, Locator,
-    ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
+    ActionTargetSelector, ActionVerification, Capability, CapabilitySet, ExecContext, HealthStatus,
+    Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, PermissionsReport,
     PlatformDriver, Point, QueryRequest, QueryResult, Rect, TypeTrailingKey, WindowInfo,
 };
 use operator_mcp::{run_stdio_session, McpServer};
@@ -24,6 +24,7 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+        verifications: Vec::new(),
     }
 }
 
@@ -242,6 +243,7 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(click["inputSchema"]["properties"]["button"].is_null());
     assert!(click["inputSchema"]["properties"]["target_selector"].is_object());
     assert!(click["inputSchema"]["properties"]["focus_policy"].is_object());
+    assert!(click["inputSchema"]["properties"]["verifications"].is_object());
 
     let scroll = tools
         .iter()
@@ -258,6 +260,7 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(move_tool["inputSchema"]["properties"]["locator"].is_object());
     assert!(move_tool["inputSchema"]["properties"]["target_selector"].is_object());
     assert!(move_tool["inputSchema"]["properties"]["focus_policy"].is_object());
+    assert!(move_tool["inputSchema"]["properties"]["verifications"].is_object());
 
     let drag = tools
         .iter()
@@ -568,9 +571,51 @@ fn mcp_blocks_side_effect_tools_when_security_mode_is_disabled() {
 async fn tools_call_executes_move_and_returns_structured_content() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
-        CapabilitySet::new([Capability::PointerInput]),
+        CapabilitySet::new([
+            Capability::PointerInput,
+            Capability::WindowManagement,
+            Capability::InspectTree,
+        ]),
     ));
-    driver.push_action_result(Ok(successful_action_outcome("moved", 4)));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 4,
+        detail: Some("moved".into()),
+        coordinates: Some(ActionCoordinates {
+            point: Some(Point { x: 320.0, y: 240.0 }),
+            from: None,
+            to: None,
+        }),
+        target_app: None,
+        target_window: Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 80.0,
+                width: 400.0,
+                height: 300.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        }),
+        side_effects: vec![ActionSideEffect::MoveCursor],
+        warnings: Vec::new(),
+    }));
+    driver.push_query_result(Ok(QueryResult::Windows(vec![WindowInfo {
+        id: 42.into(),
+        title: Some("Draft".into()),
+        app_name: Some("TextEdit".into()),
+        bounds: Some(Rect {
+            x: 120.0,
+            y: 80.0,
+            width: 400.0,
+            height: 300.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    }])));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -595,6 +640,7 @@ async fn tools_call_executes_move_and_returns_structured_content() {
                         "WindowIndex": 1
                     },
                     "focus_policy": "Auto",
+                    "verifications": ["Focus"],
                     "locator": {
                         "Coords": {
                             "x": 320.0,
@@ -620,6 +666,20 @@ async fn tools_call_executes_move_and_returns_structured_content() {
                 locator: Some(Locator::Coords(Point { x: 320.0, y: 240.0 })),
                 target_selector: Some(ActionTargetSelector::WindowIndex(1)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::Focus],
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+    assert_eq!(
+        driver.query_calls().await,
+        vec![(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -793,6 +853,7 @@ async fn tools_call_executes_type_and_returns_structured_content() {
                 locator: Some(Locator::Text("Search".into())),
                 target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -987,6 +1048,7 @@ async fn tools_call_executes_close_window_and_returns_structured_content() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
                 focus_policy: ActionFocusPolicy::Never,
+                verifications: Vec::new(),
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -1061,6 +1123,7 @@ async fn tools_call_executes_set_window_bounds_and_returns_structured_content() 
                 locator: None,
                 target_selector: Some(ActionTargetSelector::Pid(101)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -1120,6 +1183,7 @@ async fn tools_call_executes_switch_app_and_returns_structured_content() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             ExecContext {
                 target: "local:macos".into(),

@@ -13,6 +13,7 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+        verifications: Vec::new(),
     }
 }
 
@@ -585,6 +586,7 @@ async fn close_window_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -696,6 +698,7 @@ async fn minimize_window_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -817,6 +820,7 @@ async fn maximize_window_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -936,6 +940,7 @@ async fn move_window_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -1071,6 +1076,7 @@ async fn resize_window_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -1210,6 +1216,7 @@ async fn set_window_bounds_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -1456,6 +1463,7 @@ async fn move_with_window_target_selector_with_system_driver() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )

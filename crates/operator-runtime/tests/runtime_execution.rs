@@ -21,6 +21,7 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+        verifications: Vec::new(),
     }
 }
 

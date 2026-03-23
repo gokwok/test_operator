@@ -362,6 +362,7 @@ async fn close_window_action_uses_app_target_anchor_window_without_auto_focus() 
                 locator: None,
                 target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                 focus_policy: ActionFocusPolicy::Never,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -401,6 +402,7 @@ async fn minimize_window_action_uses_window_title_selector_and_auto_focuses_wind
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -449,6 +451,7 @@ async fn maximize_window_action_uses_pid_target_anchor_window() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::Pid(101)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -502,6 +505,7 @@ async fn move_window_action_returns_post_action_geometry() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowId(42.into())),
                 focus_policy: ActionFocusPolicy::Never,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -591,6 +595,7 @@ async fn resize_window_action_uses_app_target_anchor_window_and_auto_focuses() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -660,6 +665,7 @@ async fn set_window_bounds_action_uses_pid_target_and_returns_post_action_geomet
                 locator: None,
                 target_selector: Some(ActionTargetSelector::Pid(101)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -1102,6 +1108,7 @@ async fn click_action_focuses_window_selector_before_resolving_locator() {
                 locator: Some(Locator::Text("submit".into())),
                 target_selector: Some(ActionTargetSelector::WindowTitle("Submit Sheet".into())),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -1468,6 +1475,7 @@ async fn move_action_uses_window_index_selector_when_locator_is_absent() {
                 locator: None,
                 target_selector: Some(ActionTargetSelector::WindowIndex(1)),
                 focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
             },
             &exec_context(),
         )
@@ -1892,6 +1900,7 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+        verifications: Vec::new(),
     }
 }
 

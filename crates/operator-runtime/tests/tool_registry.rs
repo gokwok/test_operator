@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, AppInfo, ArtifactId, Capability, CapabilitySet, ClickMode, DragModifier,
-    DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest, ObserveResult, OperatorError,
-    PermissionStatus, PermissionsReport, Point, QueryRequest, QueryResult, Rect, Surface,
-    SurfaceKind, TypeTrailingKey, WindowInfo,
+    ActionTargetSelector, ActionVerification, AppInfo, ArtifactId, Capability, CapabilitySet,
+    ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest,
+    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, Point, QueryRequest,
+    QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
@@ -22,6 +22,7 @@ fn default_action_request() -> ActionRequest {
         locator: None,
         target_selector: None,
         focus_policy: ActionFocusPolicy::Auto,
+        verifications: Vec::new(),
     }
 }
 
@@ -810,6 +811,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: Some(Locator::Text("Submit".into())),
                     target_selector: Some(ActionTargetSelector::WindowTitle("Submit Sheet".into())),
                     focus_policy: ActionFocusPolicy::Never,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -828,6 +830,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: Some(Locator::Text("Search".into())),
                     target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -844,6 +847,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: Some(Locator::Text("Results".into())),
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -857,6 +861,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: Some(Locator::Coords(operator_core::Point { x: 320.0, y: 240.0 })),
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -874,6 +879,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -892,6 +898,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -907,6 +914,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -923,6 +931,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -938,6 +947,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -951,6 +961,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
                     focus_policy: ActionFocusPolicy::Never,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -964,6 +975,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -977,6 +989,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::Pid(101)),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -990,6 +1003,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::WindowId(42.into())),
                     focus_policy: ActionFocusPolicy::Never,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1006,6 +1020,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1026,6 +1041,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::Pid(101)),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1039,6 +1055,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1052,6 +1069,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::Pid(101)),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1065,6 +1083,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1078,6 +1097,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::WindowIndex(2)),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1091,6 +1111,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: Some(ActionTargetSelector::WindowId(77.into())),
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1104,6 +1125,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     locator: None,
                     target_selector: None,
                     focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -1225,6 +1247,223 @@ async fn action_tools_serialize_richer_action_outcomes() {
 }
 
 #[tokio::test]
+async fn action_tools_run_post_action_geometry_verification() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::WindowManagement]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("moved window 42 to x=120 y=240 width=640 height=480".into()),
+        coordinates: None,
+        target_app: None,
+        target_window: Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 240.0,
+                width: 640.0,
+                height: 480.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        }),
+        side_effects: vec![ActionSideEffect::MoveWindow {
+            bounds: Rect {
+                x: 120.0,
+                y: 240.0,
+                width: 640.0,
+                height: 480.0,
+            },
+        }],
+        warnings: Vec::new(),
+    }));
+    driver.push_query_result(Ok(QueryResult::Windows(vec![WindowInfo {
+        id: 42.into(),
+        title: Some("Draft".into()),
+        app_name: Some("TextEdit".into()),
+        bounds: Some(Rect {
+            x: 120.0,
+            y: 240.0,
+            width: 640.0,
+            height: 480.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    }])));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let output = runtime
+        .tools()
+        .invoke(
+            "move-window",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "WindowId": 42
+                },
+                "x": 120.0,
+                "y": 240.0,
+                "verifications": ["Geometry"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        output["outcome"]["target_window"]["bounds"],
+        json!({
+            "x": 120.0,
+            "y": 240.0,
+            "width": 640.0,
+            "height": 480.0
+        })
+    );
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::MoveWindow { x: 120.0, y: 240.0 },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(42.into())),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::Geometry],
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+    assert_eq!(
+        driver.query_calls().await,
+        vec![(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
+async fn action_tools_fail_when_post_action_focus_verification_misses_target_window() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::WindowManagement, Capability::InspectTree]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 5,
+        detail: Some("focused window 42".into()),
+        coordinates: None,
+        target_app: None,
+        target_window: Some(WindowInfo {
+            id: 42.into(),
+            title: Some("Draft".into()),
+            app_name: Some("TextEdit".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 80.0,
+                width: 640.0,
+                height: 480.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        }),
+        side_effects: vec![ActionSideEffect::FocusWindow],
+        warnings: Vec::new(),
+    }));
+    driver.push_query_result(Ok(QueryResult::Windows(vec![WindowInfo {
+        id: 42.into(),
+        title: Some("Draft".into()),
+        app_name: Some("TextEdit".into()),
+        bounds: Some(Rect {
+            x: 120.0,
+            y: 80.0,
+            width: 640.0,
+            height: 480.0,
+        }),
+        is_focused: false,
+        is_minimized: false,
+    }])));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .tools()
+        .invoke(
+            "focus-window",
+            json!({
+                "target": "local:macos",
+                "window_id": 42,
+                "verifications": ["Focus"]
+            }),
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::Platform(message) => {
+            assert_eq!(
+                message,
+                "post-action focus verification failed: window 42 is not focused"
+            );
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::FocusWindow { id: 42.into() },
+                locator: None,
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![ActionVerification::Focus],
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+    assert_eq!(
+        driver.query_calls().await,
+        vec![(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
 async fn action_tools_export_stable_specs() {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -1281,6 +1520,7 @@ async fn action_tools_export_stable_specs() {
     assert!(click.input_schema["properties"]["button"].is_null());
     assert!(click.input_schema["properties"]["target_selector"].is_object());
     assert!(click.input_schema["properties"]["focus_policy"].is_object());
+    assert!(click.input_schema["properties"]["verifications"].is_object());
 
     let drag = specs.iter().find(|spec| spec.name == "drag").unwrap();
     assert!(drag.has_side_effects);
@@ -1302,6 +1542,7 @@ async fn action_tools_export_stable_specs() {
         assert_eq!(spec.capabilities_required, &[Capability::WindowManagement]);
         assert!(spec.input_schema["properties"]["target_selector"].is_object());
         assert!(spec.input_schema["properties"]["focus_policy"].is_object());
+        assert!(spec.input_schema["properties"]["verifications"].is_object());
     }
 
     for tool_name in ["move-window", "resize-window", "set-window-bounds"] {
@@ -1310,6 +1551,7 @@ async fn action_tools_export_stable_specs() {
         assert_eq!(spec.capabilities_required, &[Capability::WindowManagement]);
         assert!(spec.input_schema["properties"]["target_selector"].is_object());
         assert!(spec.input_schema["properties"]["focus_policy"].is_object());
+        assert!(spec.input_schema["properties"]["verifications"].is_object());
     }
 
     let move_window = specs
@@ -1360,6 +1602,7 @@ async fn action_tools_export_stable_specs() {
     assert!(move_spec.input_schema["properties"]["locator"].is_object());
     assert!(move_spec.input_schema["properties"]["target_selector"].is_object());
     assert!(move_spec.input_schema["properties"]["focus_policy"].is_object());
+    assert!(move_spec.input_schema["properties"]["verifications"].is_object());
 
     let focus_window = specs
         .iter()
@@ -1382,6 +1625,7 @@ async fn action_tools_export_stable_specs() {
     assert!(press.input_schema["properties"]["count"].is_object());
     assert!(press.input_schema["properties"]["target_selector"].is_object());
     assert!(press.input_schema["properties"]["focus_policy"].is_object());
+    assert!(press.input_schema["properties"]["verifications"].is_object());
 
     let swipe = specs.iter().find(|spec| spec.name == "swipe").unwrap();
     assert!(swipe.has_side_effects);
@@ -1401,6 +1645,7 @@ async fn action_tools_export_stable_specs() {
     assert!(type_spec.input_schema["properties"]["trailing_keys"].is_object());
     assert!(type_spec.input_schema["properties"]["target_selector"].is_object());
     assert!(type_spec.input_schema["properties"]["focus_policy"].is_object());
+    assert!(type_spec.input_schema["properties"]["verifications"].is_object());
 
     let observe = specs.iter().find(|spec| spec.name == "observe").unwrap();
     assert!(!observe.has_side_effects);
