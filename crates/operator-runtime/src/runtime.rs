@@ -283,6 +283,7 @@ impl RuntimeCore {
                     snapshot: to_snapshot,
                     ..
                 },
+            ..
         } = &req.action
         {
             if from_snapshot != to_snapshot {
@@ -303,10 +304,11 @@ impl RuntimeCore {
             req.locator = Some(self.normalize_locator(locator).await?);
         }
 
-        if let Action::Drag { from, to } = req.action {
+        if let Action::Drag { from, to, motion } = req.action {
             req.action = Action::Drag {
                 from: self.normalize_locator(from).await?,
                 to: self.normalize_locator(to).await?,
+                motion,
             };
         }
 

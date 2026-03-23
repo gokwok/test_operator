@@ -5,8 +5,8 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, ElementId,
-    ElementSource, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, DragMotion,
+    ElementId, ElementSource, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
     OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
     QueryResult, Rect, Surface, SurfaceKind, UiElement,
 };
@@ -182,6 +182,7 @@ async fn runtime_rejects_drag_between_different_snapshots() {
                         snapshot: "snap-2".into(),
                         element: "el-2".into(),
                     },
+                    motion: DragMotion::default(),
                 },
                 locator: None,
             },
@@ -266,6 +267,11 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
                         snapshot: snapshot.id.clone(),
                         element: "el-2".into(),
                     },
+                    motion: DragMotion {
+                        duration_ms: Some(300),
+                        steps: Some(6.try_into().unwrap()),
+                        modifiers: vec![],
+                    },
                 },
                 locator: None,
             },
@@ -288,6 +294,11 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
             action: Action::Drag {
                 from: Locator::Coords(Point { x: 70.0, y: 35.0 }),
                 to: Locator::Coords(Point { x: 190.0, y: 100.0 }),
+                motion: DragMotion {
+                    duration_ms: Some(300),
+                    steps: Some(6.try_into().unwrap()),
+                    modifiers: vec![],
+                },
             },
             locator: None,
         }

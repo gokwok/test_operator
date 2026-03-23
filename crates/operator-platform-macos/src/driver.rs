@@ -6,9 +6,9 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, ExecContext,
-    HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
-    QueryRequest, QueryResult, Snapshot, SnapshotMetadata,
+    Action, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode, DragMotion,
+    ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError,
+    PermissionStatus, QueryRequest, QueryResult, Snapshot, SnapshotMetadata,
 };
 
 use crate::{
@@ -264,9 +264,9 @@ where
                 let permissions = self.permission_reader.current_permissions()?;
                 self.scroll(req.locator, delta_x, delta_y, &permissions)
             }
-            Action::Drag { from, to } => {
+            Action::Drag { from, to, motion } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.drag(from, to, &permissions)
+                self.drag(from, to, motion, &permissions)
             }
             Action::Hotkey { keys } => {
                 let permissions = self.permission_reader.current_permissions()?;
@@ -361,12 +361,13 @@ where
         &self,
         from: Locator,
         to: Locator,
+        motion: DragMotion,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
-        self.input_synthesizer.drag(from.point, to.point)?;
+        self.input_synthesizer.drag(from.point, to.point, &motion)?;
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,

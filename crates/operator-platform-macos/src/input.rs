@@ -1,8 +1,8 @@
-use operator_core::{ClickMode, OperatorError, Point};
+use operator_core::{ClickMode, DragModifier, DragMotion, OperatorError, Point};
 
 pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError>;
-    fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError>;
+    fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
     fn scroll(&self, point: Option<Point>, delta_x: f64, delta_y: f64)
         -> Result<(), OperatorError>;
@@ -17,8 +17,8 @@ impl InputSynthesizer for SystemInputSynthesizer {
         platform::click(point, mode)
     }
 
-    fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError> {
-        platform::drag(from, to)
+    fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError> {
+        platform::drag(from, to, motion)
     }
 
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError> {
@@ -125,6 +125,7 @@ const KEY_CODE_LEFT_ARROW: u16 = 0x7B;
 const KEY_CODE_RIGHT_ARROW: u16 = 0x7C;
 const KEY_CODE_DOWN_ARROW: u16 = 0x7D;
 const KEY_CODE_UP_ARROW: u16 = 0x7E;
+const INPUT_EVENT_DELAY_MS: u64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HotkeyModifier {
@@ -151,6 +152,54 @@ impl HotkeyModifier {
 struct ParsedHotkey {
     modifiers: Vec<HotkeyModifier>,
     key_code: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedDragMotion {
+    duration_ms: Option<u64>,
+    steps: u32,
+    modifiers: Vec<DragModifier>,
+}
+
+fn parse_drag_motion(motion: &DragMotion) -> ParsedDragMotion {
+    let mut modifiers = Vec::new();
+    for modifier in &motion.modifiers {
+        if !modifiers.contains(modifier) {
+            modifiers.push(*modifier);
+        }
+    }
+
+    ParsedDragMotion {
+        duration_ms: motion.duration_ms,
+        steps: motion.steps.map(std::num::NonZeroU32::get).unwrap_or(1),
+        modifiers,
+    }
+}
+
+fn drag_step_delay_ms(duration_ms: Option<u64>, steps: u32) -> u64 {
+    match duration_ms {
+        Some(0) => 0,
+        Some(duration_ms) => (duration_ms / u64::from(steps)).max(1),
+        None => INPUT_EVENT_DELAY_MS,
+    }
+}
+
+fn drag_interpolated_point(from: Point, to: Point, step: u32, steps: u32) -> Point {
+    let progress = f64::from(step) / f64::from(steps);
+    Point {
+        x: from.x + ((to.x - from.x) * progress),
+        y: from.y + ((to.y - from.y) * progress),
+    }
+}
+
+fn drag_modifier_key_code(modifier: DragModifier) -> u16 {
+    match modifier {
+        DragModifier::Command => KEY_CODE_COMMAND,
+        DragModifier::Control => KEY_CODE_CONTROL,
+        DragModifier::Option => KEY_CODE_OPTION,
+        DragModifier::Shift => KEY_CODE_SHIFT,
+        DragModifier::Function => KEY_CODE_FUNCTION,
+    }
 }
 
 fn parse_hotkey(keys: &[String]) -> Result<ParsedHotkey, OperatorError> {
@@ -301,9 +350,12 @@ fn hotkey_key_code(token: &str) -> Option<u16> {
 mod platform {
     use std::{ffi::c_void, thread, time::Duration};
 
-    use operator_core::{ClickMode, MouseButton, OperatorError, Point};
+    use operator_core::{ClickMode, DragModifier, DragMotion, MouseButton, OperatorError, Point};
 
-    use super::{parse_hotkey, HotkeyModifier};
+    use super::{
+        drag_interpolated_point, drag_modifier_key_code, drag_step_delay_ms, parse_drag_motion,
+        parse_hotkey, HotkeyModifier, INPUT_EVENT_DELAY_MS,
+    };
 
     const KCG_HID_EVENT_TAP: u32 = 0;
     const KCG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: u32 = 0;
@@ -517,7 +569,7 @@ mod platform {
 
         if should_move {
             Event::mouse(point, button, KCG_EVENT_MOUSE_MOVED)?.post();
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
         }
 
         for click_state in 1..=click_count {
@@ -530,21 +582,53 @@ mod platform {
             up.post();
 
             if click_state < click_count {
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
             }
         }
 
         Ok(())
     }
 
-    pub fn drag(from: Point, to: Point) -> Result<(), OperatorError> {
-        Event::mouse(from, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
-        thread::sleep(Duration::from_millis(10));
-        Event::mouse(from, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_DOWN)?.post();
-        thread::sleep(Duration::from_millis(10));
-        Event::mouse(to, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_DRAGGED)?.post();
-        thread::sleep(Duration::from_millis(10));
-        Event::mouse(to, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_UP)?.post();
+    pub fn drag(from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError> {
+        let motion = parse_drag_motion(motion);
+        let source = EventSource::new()?;
+        let flags = motion.modifiers.iter().fold(0u64, |combined, modifier| {
+            combined | drag_modifier_flag(*modifier)
+        });
+
+        for modifier in &motion.modifiers {
+            Event::keyboard_keycode(&source, drag_modifier_key_code(*modifier), true)?.post();
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+        }
+
+        let moved = Event::mouse(from, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?;
+        moved.set_flags(flags);
+        moved.post();
+        thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+
+        let down = Event::mouse(from, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_DOWN)?;
+        down.set_flags(flags);
+        down.post();
+
+        let step_delay_ms = drag_step_delay_ms(motion.duration_ms, motion.steps);
+        for step in 1..=motion.steps {
+            thread::sleep(Duration::from_millis(step_delay_ms));
+            let point = drag_interpolated_point(from, to, step, motion.steps);
+            let dragged = Event::mouse(point, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_DRAGGED)?;
+            dragged.set_flags(flags);
+            dragged.post();
+        }
+
+        thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+        let up = Event::mouse(to, MouseButton::Left, KCG_EVENT_LEFT_MOUSE_UP)?;
+        up.set_flags(flags);
+        up.post();
+
+        for modifier in motion.modifiers.iter().rev() {
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
+            Event::keyboard_keycode(&source, drag_modifier_key_code(*modifier), false)?.post();
+        }
+
         Ok(())
     }
 
@@ -552,7 +636,7 @@ mod platform {
         let source = EventSource::new()?;
         if let Some(point) = point {
             Event::mouse(point, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
         }
         Event::scroll(&source, delta_x, delta_y)?.post();
         Ok(())
@@ -567,20 +651,20 @@ mod platform {
 
         for modifier in &parsed.modifiers {
             Event::keyboard_keycode(&source, modifier.key_code(), true)?.post();
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
         }
 
         let key_down = Event::keyboard_keycode(&source, parsed.key_code, true)?;
         key_down.set_flags(flags);
         key_down.post();
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
 
         let key_up = Event::keyboard_keycode(&source, parsed.key_code, false)?;
         key_up.set_flags(flags);
         key_up.post();
 
         for modifier in parsed.modifiers.iter().rev() {
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(INPUT_EVENT_DELAY_MS));
             Event::keyboard_keycode(&source, modifier.key_code(), false)?.post();
         }
 
@@ -638,6 +722,16 @@ mod platform {
             .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
     }
 
+    fn drag_modifier_flag(modifier: DragModifier) -> u64 {
+        match modifier {
+            DragModifier::Command => KCG_EVENT_FLAG_MASK_COMMAND,
+            DragModifier::Control => KCG_EVENT_FLAG_MASK_CONTROL,
+            DragModifier::Option => KCG_EVENT_FLAG_MASK_OPTION,
+            DragModifier::Shift => KCG_EVENT_FLAG_MASK_SHIFT,
+            DragModifier::Function => KCG_EVENT_FLAG_MASK_FUNCTION,
+        }
+    }
+
     fn current_pointer_position() -> Result<Point, OperatorError> {
         Ok(Event::current()?.point())
     }
@@ -660,7 +754,7 @@ mod platform {
 
 #[cfg(not(target_os = "macos"))]
 mod platform {
-    use operator_core::{ClickMode, OperatorError, Point};
+    use operator_core::{ClickMode, DragMotion, OperatorError, Point};
 
     pub fn click(_point: Option<Point>, _mode: ClickMode) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
@@ -668,7 +762,7 @@ mod platform {
         ))
     }
 
-    pub fn drag(_from: Point, _to: Point) -> Result<(), OperatorError> {
+    pub fn drag(_from: Point, _to: Point, _motion: &DragMotion) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))
@@ -699,7 +793,12 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_hotkey, HotkeyModifier, ParsedHotkey, KEY_CODE_P, KEY_CODE_RETURN};
+    use operator_core::{DragModifier, DragMotion, Point};
+
+    use super::{
+        drag_interpolated_point, drag_step_delay_ms, parse_drag_motion, parse_hotkey,
+        HotkeyModifier, ParsedDragMotion, ParsedHotkey, KEY_CODE_P, KEY_CODE_RETURN,
+    };
 
     #[test]
     fn parse_hotkey_accepts_modifier_synonyms_and_deduplicates() {
@@ -739,5 +838,45 @@ mod tests {
                 key_code: KEY_CODE_RETURN,
             }
         );
+    }
+
+    #[test]
+    fn parse_drag_motion_defaults_and_deduplicates_modifiers() {
+        let parsed = parse_drag_motion(&DragMotion {
+            duration_ms: Some(300),
+            steps: Some(6.try_into().unwrap()),
+            modifiers: vec![
+                DragModifier::Command,
+                DragModifier::Shift,
+                DragModifier::Command,
+            ],
+        });
+
+        assert_eq!(
+            parsed,
+            ParsedDragMotion {
+                duration_ms: Some(300),
+                steps: 6,
+                modifiers: vec![DragModifier::Command, DragModifier::Shift],
+            }
+        );
+    }
+
+    #[test]
+    fn drag_step_delay_distributes_duration_across_steps() {
+        assert_eq!(drag_step_delay_ms(Some(300), 6), 50);
+        assert_eq!(drag_step_delay_ms(None, 4), super::INPUT_EVENT_DELAY_MS);
+    }
+
+    #[test]
+    fn drag_interpolation_reaches_target_on_last_step() {
+        let from = Point { x: 10.0, y: 20.0 };
+        let to = Point { x: 30.0, y: 60.0 };
+
+        assert_eq!(
+            drag_interpolated_point(from, to, 3, 6),
+            Point { x: 20.0, y: 40.0 }
+        );
+        assert_eq!(drag_interpolated_point(from, to, 6, 6), to);
     }
 }

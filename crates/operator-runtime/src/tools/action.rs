@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, Capability, ClickMode, Locator, OperatorError, WindowId,
+    Action, ActionOutcome, ActionRequest, Capability, ClickMode, DragMotion, Locator,
+    OperatorError, WindowId,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -215,6 +216,7 @@ async fn drag(
                 action: Action::Drag {
                     from: input.from,
                     to: input.to,
+                    motion: input.motion,
                 },
                 locator: None,
             },
@@ -342,6 +344,9 @@ struct DragToolInput {
     exec: ToolExecInput,
     from: Locator,
     to: Locator,
+    #[serde(flatten, default)]
+    #[schemars(flatten)]
+    motion: DragMotion,
 }
 
 #[allow(dead_code)]

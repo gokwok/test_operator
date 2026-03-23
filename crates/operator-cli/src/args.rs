@@ -341,6 +341,12 @@ struct DragArgs {
     from: DragFromLocatorArgs,
     #[command(flatten)]
     to: DragToLocatorArgs,
+    #[arg(long)]
+    duration_ms: Option<u64>,
+    #[arg(long)]
+    steps: Option<u32>,
+    #[arg(long = "modifier", value_enum)]
+    modifiers: Vec<DragModifierArg>,
 }
 
 impl DragArgs {
@@ -348,6 +354,15 @@ impl DragArgs {
         let mut input = common_input(&self.common);
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
+        if let Some(duration_ms) = self.duration_ms {
+            input.insert("duration_ms".into(), Value::from(duration_ms));
+        }
+        if let Some(steps) = self.steps {
+            input.insert("steps".into(), Value::from(steps));
+        }
+        if !self.modifiers.is_empty() {
+            insert_serialized(&mut input, "modifiers", self.modifiers)?;
+        }
         Ok(ToolInvocation {
             tool: "drag",
             input: Value::Object(input),
@@ -497,6 +512,15 @@ impl ClickModeArg {
             Self::Double => ClickMode::Double,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ValueEnum)]
+enum DragModifierArg {
+    Command,
+    Control,
+    Option,
+    Shift,
+    Function,
 }
 
 #[derive(Debug, Clone, Args, Default)]

@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use operator_core::{
-    Action, ActionRequest, AppInfo, ArtifactId, Capability, ClickMode, ElementId, ElementSource,
-    ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError, PermissionStatus,
-    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
-    SurfaceKind, UiElement, WindowId, WindowInfo,
+    Action, ActionRequest, AppInfo, ArtifactId, Capability, ClickMode, DragModifier, DragMotion,
+    ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError,
+    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
+    Surface, SurfaceKind, UiElement, WindowId, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -686,6 +686,11 @@ async fn drag_action_resolves_between_locators_and_returns_successful_outcome() 
                         role: "AXButton".into(),
                         index: 0,
                     },
+                    motion: DragMotion {
+                        duration_ms: Some(300),
+                        steps: Some(6.try_into().unwrap()),
+                        modifiers: vec![DragModifier::Command, DragModifier::Shift],
+                    },
                 },
                 locator: None,
             },
@@ -701,6 +706,11 @@ async fn drag_action_resolves_between_locators_and_returns_successful_outcome() 
         vec![RecordedInput::Drag {
             from: Point { x: 30.0, y: 30.0 },
             to: Point { x: 140.0, y: 135.0 },
+            motion: DragMotion {
+                duration_ms: Some(300),
+                steps: Some(6.try_into().unwrap()),
+                modifiers: vec![DragModifier::Command, DragModifier::Shift],
+            },
         }]
     );
 }
@@ -938,6 +948,7 @@ enum RecordedInput {
     Drag {
         from: Point,
         to: Point,
+        motion: DragMotion,
     },
     Hotkey(Vec<String>),
     Scroll {
@@ -968,11 +979,12 @@ impl InputSynthesizer for StubInputSynthesizer {
         Ok(())
     }
 
-    fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(RecordedInput::Drag { from, to });
+    fn drag(&self, from: Point, to: Point, motion: &DragMotion) -> Result<(), OperatorError> {
+        self.calls.lock().unwrap().push(RecordedInput::Drag {
+            from,
+            to,
+            motion: motion.clone(),
+        });
         Ok(())
     }
 

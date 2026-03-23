@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionOutcome, ActionRequest, AppInfo, ArtifactId, Capability, CapabilitySet,
-    ClickMode, ExecContext, FocusInfo, Locator, ObserveRequest, ObserveResult, OperatorError,
-    PermissionStatus, PermissionsReport, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
-    WindowInfo,
+    ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest,
+    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, QueryRequest, QueryResult,
+    Rect, Surface, SurfaceKind, WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
@@ -586,6 +586,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     action: Action::Drag {
                         from: Locator::Coords(operator_core::Point { x: 10.0, y: 20.0 }),
                         to: Locator::Coords(operator_core::Point { x: 30.0, y: 60.0 }),
+                        motion: DragMotion::default(),
                     },
                     locator: None,
                 },
@@ -681,6 +682,9 @@ async fn action_tools_export_stable_specs() {
     let drag = specs.iter().find(|spec| spec.name == "drag").unwrap();
     assert!(drag.has_side_effects);
     assert_eq!(drag.capabilities_required, &[Capability::PointerInput]);
+    assert!(drag.input_schema["properties"]["duration_ms"].is_object());
+    assert!(drag.input_schema["properties"]["steps"].is_object());
+    assert!(drag.input_schema["properties"]["modifiers"].is_object());
 
     let launch_app = specs.iter().find(|spec| spec.name == "launch-app").unwrap();
     assert!(launch_app.has_side_effects);
@@ -738,6 +742,76 @@ async fn action_tools_export_stable_specs() {
     assert!(!artifact_get.has_side_effects);
     assert!(artifact_get.input_schema["properties"]["artifact_id"].is_object());
     assert_eq!(artifact_get.capabilities_required.len(), 0);
+}
+
+#[tokio::test]
+async fn drag_tool_forwards_motion_options_to_runtime_act() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 16,
+        detail: Some("dragged".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let dragged = runtime
+        .tools()
+        .invoke(
+            "drag",
+            json!({
+                "target": "local:macos",
+                "from": {
+                    "Coords": {
+                        "x": 10.0,
+                        "y": 20.0
+                    }
+                },
+                "to": {
+                    "Coords": {
+                        "x": 30.0,
+                        "y": 60.0
+                    }
+                },
+                "duration_ms": 300,
+                "steps": 6,
+                "modifiers": ["Command", "Shift"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Drag {
+                    from: Locator::Coords(operator_core::Point { x: 10.0, y: 20.0 }),
+                    to: Locator::Coords(operator_core::Point { x: 30.0, y: 60.0 }),
+                    motion: DragMotion {
+                        duration_ms: Some(300),
+                        steps: Some(6.try_into().unwrap()),
+                        modifiers: vec![DragModifier::Command, DragModifier::Shift],
+                    },
+                },
+                locator: None,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
 }
 
 #[derive(Default)]

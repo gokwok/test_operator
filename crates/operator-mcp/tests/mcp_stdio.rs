@@ -197,6 +197,14 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         .find(|tool| tool["name"] == json!("scroll"))
         .unwrap();
     assert!(scroll["inputSchema"]["properties"]["locator"].is_object());
+
+    let drag = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("drag"))
+        .unwrap();
+    assert!(drag["inputSchema"]["properties"]["duration_ms"].is_object());
+    assert!(drag["inputSchema"]["properties"]["steps"].is_object());
+    assert!(drag["inputSchema"]["properties"]["modifiers"].is_object());
 }
 
 #[test]

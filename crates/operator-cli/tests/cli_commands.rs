@@ -281,6 +281,60 @@ async fn drag_command_maps_from_and_to_locators_to_tool_input() {
 }
 
 #[tokio::test]
+async fn drag_command_maps_motion_options_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "drag",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--from-x",
+        "12",
+        "--from-y",
+        "24",
+        "--to-x",
+        "640",
+        "--to-y",
+        "480",
+        "--duration-ms",
+        "300",
+        "--steps",
+        "6",
+        "--modifier",
+        "command",
+        "--modifier",
+        "shift",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "drag");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "from": {
+                "Coords": {
+                    "x": 12.0,
+                    "y": 24.0
+                }
+            },
+            "to": {
+                "Coords": {
+                    "x": 640.0,
+                    "y": 480.0
+                }
+            },
+            "duration_ms": 300,
+            "steps": 6,
+            "modifiers": ["Command", "Shift"]
+        })
+    );
+}
+
+#[tokio::test]
 async fn hotkey_command_maps_repeated_key_flags_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
