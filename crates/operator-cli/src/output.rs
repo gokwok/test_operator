@@ -9,6 +9,7 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
 
     match tool {
         "observe" | "snapshot-get" => render_snapshot(output),
+        "artifact-get" => render_artifact(output),
         "list-apps" => render_apps(output),
         "list-windows" => render_windows(output),
         "permissions-status" => render_permissions(output),
@@ -36,6 +37,13 @@ fn render_snapshot(output: &Value) -> String {
     let id = snapshot["id"].as_str().unwrap_or("<unknown>");
     let target = snapshot["target"].as_str().unwrap_or("<unknown>");
     format!("snapshot {id} ({target})")
+}
+
+fn render_artifact(output: &Value) -> String {
+    let artifact = &output["artifact"];
+    let id = artifact["id"].as_str().unwrap_or("<unknown>");
+    let path = artifact["path"].as_str().unwrap_or("<unknown>");
+    format!("artifact {id} ({path})")
 }
 
 fn render_apps(output: &Value) -> String {

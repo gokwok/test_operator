@@ -1,4 +1,8 @@
-use std::{io::Cursor, sync::Arc};
+use std::{
+    io::Cursor,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use async_trait::async_trait;
 use operator_core::{
@@ -161,8 +165,17 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     );
 
     let tools = responses[1]["result"]["tools"].as_array().unwrap();
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("artifact-get")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("observe")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("click")));
+
+    let artifact_get = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("artifact-get"))
+        .unwrap();
+    assert_eq!(artifact_get["annotations"]["readOnlyHint"], json!(true));
 
     let observe = tools
         .iter()
@@ -232,6 +245,39 @@ fn tools_call_executes_runtime_tools_and_returns_structured_content() {
         .unwrap()
         .contains("\"snap-1\""));
     assert!(response["result"].get("isError").is_none());
+}
+
+#[test]
+fn tools_call_executes_artifact_get_and_returns_structured_content() {
+    let artifact_id = unique_artifact_id("artifact-mcp");
+    let (server, artifact_path) = initialized_server_with_artifacts(&artifact_id);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 17,
+            "method": "tools/call",
+            "params": {
+                "name": "artifact-get",
+                "arguments": {
+                    "artifact_id": artifact_id
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["artifact"]["id"],
+        json!(artifact_id)
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["artifact"]["path"],
+        json!(artifact_path.to_string_lossy().to_string())
+    );
+    assert!(response["result"].get("isError").is_none());
+
+    std::fs::remove_file(artifact_path).unwrap();
 }
 
 #[test]
@@ -427,6 +473,28 @@ fn build_server(store: Arc<InMemorySnapshotStore>) -> McpServer {
     McpServer::new(runtime.tools().clone())
 }
 
+fn initialized_server_with_artifacts(artifact_id: &str) -> (McpServer, std::path::PathBuf) {
+    let root = std::env::temp_dir().join(unique_artifact_id("operator-mcp-artifacts"));
+    let store = Arc::new(InMemorySnapshotStore::with_artifacts_root(&root));
+    std::fs::create_dir_all(&root).unwrap();
+    let artifact_path = root.join(artifact_id);
+    std::fs::write(&artifact_path, b"png-bytes").unwrap();
+
+    let runtime = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(async {
+            RuntimeBuilder::new(RuntimeConfig::default())
+                .snapshot_store(store)
+                .build()
+                .await
+        })
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+    (server, artifact_path)
+}
+
 fn initialize_server(server: &McpServer) {
     let init_response = server
         .handle_message(json!({
@@ -456,6 +524,14 @@ fn initialize_server(server: &McpServer) {
         }))
         .unwrap();
     assert!(notification.is_none());
+}
+
+fn unique_artifact_id(prefix: &str) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("{prefix}-{nanos}.png")
 }
 
 #[derive(Default)]

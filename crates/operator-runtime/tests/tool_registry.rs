@@ -2,16 +2,18 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet, ExecContext,
-    FocusInfo, Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError,
+    Action, ActionOutcome, ActionRequest, AppInfo, ArtifactId, Capability, CapabilitySet,
+    ExecContext, FocusInfo, Locator, MouseButton, ObserveRequest, ObserveResult, OperatorError,
     PermissionStatus, PermissionsReport, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
     WindowInfo,
 };
 use operator_runtime::{
-    AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
+    AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
+    SnapshotStore,
 };
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::json;
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn snapshot_get_reads_from_store_without_driver() {
@@ -33,6 +35,60 @@ async fn snapshot_get_reads_from_store_without_driver() {
 
     assert_eq!(output["snapshot"]["id"], json!("snap-1"));
     assert_eq!(output["snapshot"]["metadata"]["platform"], json!("macos"));
+}
+
+#[tokio::test]
+async fn artifact_get_reads_from_artifact_store_without_driver() {
+    let dir = tempdir().unwrap();
+    let store = Arc::new(FileArtifactStore::new(dir.path()));
+    let artifact_id = ArtifactId("capture-1.png".into());
+    let artifact_path = store.artifacts_dir().join(&artifact_id.0);
+    std::fs::create_dir_all(store.artifacts_dir()).unwrap();
+    std::fs::write(&artifact_path, b"png-bytes").unwrap();
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .artifact_store(store)
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .build()
+        .await
+        .unwrap();
+
+    let output = runtime
+        .tools()
+        .invoke("artifact-get", json!({ "artifact_id": "capture-1.png" }))
+        .await
+        .unwrap();
+
+    assert_eq!(output["artifact"]["id"], json!("capture-1.png"));
+    assert_eq!(
+        output["artifact"]["path"],
+        json!(artifact_path.to_string_lossy().to_string())
+    );
+}
+
+#[tokio::test]
+async fn artifact_get_returns_not_found_when_artifact_is_missing() {
+    let dir = tempdir().unwrap();
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .artifact_store(Arc::new(FileArtifactStore::new(dir.path())))
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .tools()
+        .invoke("artifact-get", json!({ "artifact_id": "missing.png" }))
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::Tool { tool, message } => {
+            assert_eq!(tool, "artifact-get");
+            assert_eq!(message, "artifact not found: missing.png");
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -563,6 +619,7 @@ async fn action_tools_export_stable_specs() {
     assert_eq!(
         names,
         vec![
+            "artifact-get",
             "capabilities",
             "click",
             "drag",
@@ -640,6 +697,14 @@ async fn action_tools_export_stable_specs() {
     assert!(!snapshot_get.has_side_effects);
     assert!(snapshot_get.input_schema["properties"]["snapshot_id"].is_object());
     assert_eq!(snapshot_get.capabilities_required.len(), 0);
+
+    let artifact_get = specs
+        .iter()
+        .find(|spec| spec.name == "artifact-get")
+        .unwrap();
+    assert!(!artifact_get.has_side_effects);
+    assert!(artifact_get.input_schema["properties"]["artifact_id"].is_object());
+    assert_eq!(artifact_get.capabilities_required.len(), 0);
 }
 
 #[derive(Default)]

@@ -1,4 +1,5 @@
 mod action;
+mod artifact_get;
 mod observe;
 mod query;
 mod snapshot_get;
@@ -13,6 +14,7 @@ use crate::ToolRegistration;
 pub(crate) fn registrations() -> Vec<ToolRegistration> {
     let mut registrations = vec![
         observe::registration(),
+        artifact_get::registration(),
         snapshot_get::registration(),
         query::get_focus_registration(),
         query::list_apps_registration(),

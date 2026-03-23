@@ -1,7 +1,9 @@
 #![cfg_attr(test, allow(dead_code))]
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use operator_core::{Locator, MouseButton, Point, SnapshotId, Surface, SurfaceKind, WindowId};
+use operator_core::{
+    ArtifactId, Locator, MouseButton, Point, SnapshotId, Surface, SurfaceKind, WindowId,
+};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -35,6 +37,7 @@ pub(crate) struct ToolInvocation {
 #[derive(Debug, Subcommand)]
 enum Command {
     Observe(ObserveArgs),
+    ArtifactGet(ArtifactGetArgs),
     SnapshotGet(SnapshotGetArgs),
     GetFocus(CommonArgs),
     ListApps(CommonArgs),
@@ -54,6 +57,7 @@ impl Command {
     fn common(&self) -> &CommonArgs {
         match self {
             Self::Observe(args) => &args.common,
+            Self::ArtifactGet(args) => &args.common,
             Self::SnapshotGet(args) => &args.common,
             Self::GetFocus(args) => args,
             Self::ListApps(args) => args,
@@ -73,6 +77,7 @@ impl Command {
     fn into_invocation(self) -> Result<ToolInvocation, String> {
         match self {
             Self::Observe(args) => args.into_invocation(),
+            Self::ArtifactGet(args) => args.into_invocation(),
             Self::SnapshotGet(args) => args.into_invocation(),
             Self::GetFocus(common) => invoke_without_specific_input("get-focus", common),
             Self::ListApps(common) => invoke_without_specific_input("list-apps", common),
@@ -230,6 +235,30 @@ impl ObserveArgs {
                 })
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct ArtifactGetArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long)]
+    artifact_id: String,
+}
+
+impl ArtifactGetArgs {
+    fn into_invocation(self) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        insert_serialized(
+            &mut input,
+            "artifact_id",
+            ArtifactId::from(self.artifact_id),
+        )?;
+        Ok(ToolInvocation {
+            tool: "artifact-get",
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
     }
 }
 

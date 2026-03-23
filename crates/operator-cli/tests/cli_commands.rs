@@ -38,6 +38,32 @@ fn observe_command_supports_json_flag() {
 }
 
 #[test]
+fn artifact_get_command_maps_artifact_id_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "artifact-get",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--artifact-id",
+        "capture-1.png",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "artifact-get");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "artifact_id": "capture-1.png"
+        })
+    );
+}
+
+#[test]
 fn click_command_maps_snapshot_flags_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -261,6 +287,38 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
             "bundle_id_or_name": "Calculator"
         })
     );
+}
+
+#[tokio::test]
+async fn cli_run_renders_artifact_path_for_non_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "artifact-get",
+        "--artifact-id",
+        "capture-1.png",
+    ])
+    .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "artifact": {
+                "id": "capture-1.png",
+                "path": "/tmp/operator/artifacts/capture-1.png"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(
+        rendered,
+        "artifact capture-1.png (/tmp/operator/artifacts/capture-1.png)"
+    );
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "artifact-get");
+    assert_eq!(recorded[0].1, json!({ "artifact_id": "capture-1.png" }));
 }
 
 struct RecordingInvoker {
