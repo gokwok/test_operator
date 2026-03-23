@@ -7,9 +7,10 @@
 每次新 agent session 开始时，必须按顺序完成以下步骤，再进行任何代码操作：
 
 1. 读取 `DESIGN.md`，了解架构边界、核心抽象和依赖方向。
-2. 读取 `docs/superpowers/plans/` 下最新日期的实施计划，确认任务列表和当前阶段。
-3. 查询 Linear 项目 `Operator Implementation`，确认当前 `In Progress` issue、最后一个 `Done` issue、以及下一个待处理 issue。
-4. 以 Linear 状态为准，确定本次 session 的工作范围，再开始实现。
+2. 如果当前 issue 触及 CLI 或 MCP 的 shell surface，读取 [`docs/COMMAND.md`](./docs/COMMAND.md)。对于 `OPE-54` 到 `OPE-61`，这是强制步骤。
+3. 读取 `docs/superpowers/plans/` 下最新日期的实施计划，确认任务列表和当前阶段。
+4. 查询 Linear 项目 `Operator Implementation`，确认当前 `In Progress` issue、最后一个 `Done` issue、以及下一个待处理 issue。
+5. 以 Linear 状态为准，确定本次 session 的工作范围，再开始实现。
 
 > 跳过上述步骤直接写代码，会导致实现偏离计划或重复已完成工作。
 
@@ -19,13 +20,16 @@
 
 1. 本文件 `AGENTS.md`
 2. 设计文档 [`DESIGN.md`](./DESIGN.md)
-3. 实施计划：`docs/superpowers/plans/` 目录下最新日期的计划文件
-4. 当前正在处理的 Linear issue
-5. 仓库内已提交代码的实际结构
+3. CLI 命令面规范 [`docs/COMMAND.md`](./docs/COMMAND.md)
+   仅在当前 issue 触及 CLI 或 MCP shell surface 时适用；对于 `OPE-54` 到 `OPE-61`，此项优先于实施计划。
+4. 实施计划：`docs/superpowers/plans/` 目录下最新日期的计划文件
+5. 当前正在处理的 Linear issue
+6. 仓库内已提交代码的实际结构
 
 执行规则：
 
 - `DESIGN.md` 是架构边界、核心抽象、crate 分层、执行模型的权威来源。
+- `docs/COMMAND.md` 是 CLI / MCP 用户面、help 分组、参数契约、命令迁移的权威来源。
 - 实施顺序、任务粒度、验证命令，以实施计划和对应 Linear issue 为准。
 - 如果 `DESIGN.md`、实施计划、Linear issue、当前代码实现之间存在冲突，先停止扩写功能，先澄清并更新 Linear，再继续实现。
 
@@ -110,6 +114,8 @@ operator/
 - 如果发现 issue 描述与仓库现实不一致，先更新 issue，再继续写代码。
 - 完成实现后，必须先完成验证，再将 issue 更新为 `Done`。
 - 对于通过 Symphony 或其他隔离 workspace 产生的改动，只有当结果已真实回流到源仓库后，才允许视为完成。
+- 如果使用 Symphony，隔离 issue workspace 只用于 orchestration metadata、会话状态和日志，不是代码开发仓库。
+- 如果使用 Symphony，所有代码读取、修改、测试和提交都必须在真实源仓库 checkout 中完成。
 
 进度判断规则：
 
@@ -142,6 +148,7 @@ operator/
 - 按实施计划中的 issue 顺序推进。
 - 无明确理由时，不跳过前置 issue。
 - 若需要并行推进，必须确认两个 issue 在代码和职责上没有重叠冲突。
+- 如果用户明确指定为串行链路，则同一时间只能有一个 issue 处于 `In Progress`。`OPE-54` 到 `OPE-61` 默认按串行链路执行。
 
 ## 6. 编码规范
 
@@ -226,7 +233,11 @@ git commit -s -m "feat(core): add typed automation domain models" \
 
 ## 9. 分支与变更管理
 
-- 默认在当前任务相关分支上工作；若需要新分支，使用 Linear 自动生成的分支名（格式通常为 `username/ope-7-issue-title`），或手动使用 `ope-<id>-<short-description>` 格式，全小写，单词用连字符分隔。
+- 默认不要直接在 `main` 上进行长期实现链开发，除非用户明确要求。
+- 如果用户指定某一组 issue 为串行开发链，则默认使用一条共享 dev 分支和一个真实源仓库 checkout；不要为该链上的每个 issue 再创建独立分支。
+- `OPE-54` 到 `OPE-61` 默认使用共享分支 `codex/cli-redesign`。
+- 如果使用 Symphony，issue workspace 不得作为开发 clone，也不得承载最终 commit。
+- 只有当用户明确要求时，才为单个 issue 新建独立任务分支；此时才使用 Linear 自动生成的分支名或 `ope-<id>-<short-description>` 格式。
 - 不要重写或回滚不属于当前任务的用户改动。
 - 不要使用破坏性 git 命令，例如：
   - `git reset --hard`
@@ -295,6 +306,7 @@ git commit -s -m "feat(core): add typed automation domain models" \
 4. 代码已格式化并通过 `clippy`
 5. 已形成单独、清晰、可回溯的 commit
    该 commit 必须已经回流到真实源仓库；只存在于隔离 workspace、临时 clone 或导出 patch 不算完成
+   若当前任务属于串行链路，则该 commit 必须存在于指定共享 dev 分支的真实源仓库 checkout 中
 6. commit 已包含 Linear issue 标识
 7. commit 已使用 `-s`，包含你的 `Signed-off-by` 签名
 8. commit 已包含 `Co-authored-by: Codex <codex@openai.com>`

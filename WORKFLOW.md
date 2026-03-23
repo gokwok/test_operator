@@ -22,18 +22,21 @@ workspace:
 hooks:
   after_create: |
     SOURCE_REPO="${OPERATOR_SOURCE_REPO:-/Users/gokwok/code/work/Operator}"
-    git clone --depth 1 "$SOURCE_REPO" .
-    git fetch --all --prune
+    DEV_BRANCH="${OPERATOR_DEV_BRANCH:-codex/cli-redesign}"
+    git -C "$SOURCE_REPO" rev-parse --is-inside-work-tree >/dev/null
     printf '%s\n' "$SOURCE_REPO" > .symphony-source-repo-path
-    if [ -d "$SOURCE_REPO/docs/superpowers" ]; then
-      mkdir -p docs
-      rm -rf docs/superpowers
-      cp -R "$SOURCE_REPO/docs/superpowers" docs/
-    fi
+    printf '%s\n' "$DEV_BRANCH" > .symphony-dev-branch
+    ln -sfn "$SOURCE_REPO" source-repo
   before_run: |
-    git status --short
+    SOURCE_REPO="$(cat .symphony-source-repo-path)"
+    DEV_BRANCH="$(cat .symphony-dev-branch)"
+    printf 'source-repo: %s\n' "$SOURCE_REPO"
+    printf 'expected-dev-branch: %s\n' "$DEV_BRANCH"
+    printf 'current-branch: %s\n' "$(git -C "$SOURCE_REPO" branch --show-current)"
+    git -C "$SOURCE_REPO" status --short
   after_run: |
-    git status --short || true
+    SOURCE_REPO="$(cat .symphony-source-repo-path)"
+    git -C "$SOURCE_REPO" status --short || true
   timeout_ms: 60000
 
 agent:
@@ -71,9 +74,11 @@ Always follow this order:
 
 1. `AGENTS.md`
 2. `DESIGN.md`
-3. The latest plan file under `docs/superpowers/plans/`
-4. The current Linear issue
-5. The current workspace state
+3. `docs/COMMAND.md` when the current issue touches the CLI or MCP shell surface. This is mandatory for `OPE-54` through `OPE-61`.
+4. The latest plan file under `docs/superpowers/plans/`
+5. The current Linear issue
+6. The real source repository checkout named by `.symphony-source-repo-path`
+7. The current workspace state
 
 If these sources conflict, stop scope expansion and take the most conservative path.
 
@@ -83,9 +88,11 @@ Before any code change:
 
 1. Read `AGENTS.md`
 2. Read `DESIGN.md`
-3. Read the latest plan file under `docs/superpowers/plans/`
-4. Read `.symphony-source-repo-path` to identify the real source repository checkout for final delivery
-5. Re-check the current Linear issue state and description
+3. If the issue touches the CLI or MCP shell surface, read `docs/COMMAND.md`. For `OPE-54` through `OPE-61`, this step is mandatory.
+4. Read the latest plan file under `docs/superpowers/plans/`
+5. Read `.symphony-source-repo-path` to identify the real source repository checkout for final delivery
+6. Read `.symphony-dev-branch` to identify the shared serial-development branch expected for the current chain
+7. Re-check the current Linear issue state and description
 
 State rules:
 
@@ -101,12 +108,17 @@ If no Linear tool is available in the session, treat that as a real blocker and 
 - Work only on the current issue scope.
 - Prefer the smallest useful change.
 - Respect the layering and boundaries in `DESIGN.md`.
+- If `docs/COMMAND.md` applies to the current issue, treat it as the user-facing shell contract authority.
 - Do not push platform-specific concepts into `operator-core`.
 - If the issue acceptance commands or file paths are stale, update the issue first, then continue implementation.
 - If you discover meaningful out-of-scope work, record it as a follow-up instead of expanding scope.
+- The issue workspace is for orchestration metadata and transcripts only. It is not a development clone and must not hold the final commit.
+- All code reads, edits, tests, and commits must happen in the real source repository checkout from `.symphony-source-repo-path`.
+- For a serial issue chain that uses `.symphony-dev-branch`, do not create per-issue branches, per-issue clones, or per-issue worktrees. Reuse the shared branch in the real source repository checkout.
+- If `git -C "$(cat .symphony-source-repo-path)" branch --show-current` does not match `.symphony-dev-branch`, keep the issue `In Progress`, record the blocker, and stop.
 - Do not treat an isolated issue workspace, temporary `/tmp` clone, exported patch, or other packaging-only artifact as the final delivery location.
-- If current-workspace validation passes but the same change has not been delivered back into the real source repository checkout from `.symphony-source-repo-path`, the issue is not done.
-- If current workspace or source repository `.git` metadata cannot be updated safely enough to create the required commit, keep the issue `In Progress`, record the blocker, and stop.
+- If source-repository validation passes nowhere, or the same change has not been delivered back into the real source repository checkout from `.symphony-source-repo-path`, the issue is not done.
+- If source repository `.git` metadata cannot be updated safely enough to create the required commit, keep the issue `In Progress`, record the blocker, and stop.
 
 ## Validation Rules
 
