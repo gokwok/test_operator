@@ -52,7 +52,7 @@ impl<A, P> MacosDriver<A, P, SystemCaptureProvider, SystemTreeInspector, SystemI
         Self::with_observe(
             app_service,
             permission_reader,
-            SystemCaptureProvider,
+            SystemCaptureProvider::default(),
             SystemTreeInspector,
         )
     }

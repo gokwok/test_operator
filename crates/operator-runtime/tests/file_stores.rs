@@ -1,9 +1,11 @@
 use std::time::SystemTime;
 
-use operator_core::{ElementSource, Snapshot, SnapshotMetadata, Surface, SurfaceKind, UiElement};
+use operator_core::{
+    ArtifactId, ElementSource, Snapshot, SnapshotMetadata, Surface, SurfaceKind, UiElement,
+};
 use operator_runtime::{
-    FileSessionStore, FileSnapshotStore, NullSessionStore, RuntimeConfig, Session, SessionEvent,
-    SessionStatus, SessionStore, SnapshotStore,
+    ArtifactStore, FileArtifactStore, FileSessionStore, FileSnapshotStore, NullSessionStore,
+    RuntimeConfig, Session, SessionEvent, SessionStatus, SessionStore, SnapshotStore,
 };
 use tempfile::tempdir;
 
@@ -20,6 +22,17 @@ async fn snapshot_store_round_trips_snapshot_json() {
 
     assert_eq!(loaded.id, snapshot.id);
     assert_eq!(listed, vec![snapshot.id.clone()]);
+}
+
+#[tokio::test]
+async fn file_artifact_store_resolves_runtime_artifact_paths() {
+    let dir = tempdir().unwrap();
+    let store = FileArtifactStore::new(dir.path());
+    let artifact_id = ArtifactId("capture-1.png".into());
+
+    let resolved = store.resolve_artifact(&artifact_id).await.unwrap();
+
+    assert_eq!(resolved, dir.path().join("artifacts").join("capture-1.png"));
 }
 
 #[tokio::test]

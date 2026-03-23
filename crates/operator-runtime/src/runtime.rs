@@ -12,13 +12,14 @@ use operator_core::{
 use tokio::time;
 
 use crate::{
-    AuditEvent, AuditEventKind, EventSink, RuntimeConfig, SessionStore, SnapshotStore,
-    TargetResolver, ToolRegistry,
+    ArtifactStore, AuditEvent, AuditEventKind, EventSink, RuntimeConfig, SessionStore,
+    SnapshotStore, TargetResolver, ToolRegistry,
 };
 
 pub struct RuntimeCore {
     pub(crate) resolver: TargetResolver,
     pub(crate) drivers: HashMap<String, Arc<dyn PlatformDriver>>,
+    pub(crate) artifacts: Arc<dyn ArtifactStore>,
     pub(crate) snapshots: Arc<dyn SnapshotStore>,
     pub(crate) sessions: Arc<dyn SessionStore>,
     pub(crate) event_sink: Arc<dyn EventSink>,
@@ -32,6 +33,10 @@ impl RuntimeCore {
 
     pub fn snapshots(&self) -> Arc<dyn SnapshotStore> {
         Arc::clone(&self.snapshots)
+    }
+
+    pub fn artifacts(&self) -> Arc<dyn ArtifactStore> {
+        Arc::clone(&self.artifacts)
     }
 
     pub fn sessions(&self) -> Arc<dyn SessionStore> {

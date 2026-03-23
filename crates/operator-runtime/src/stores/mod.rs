@@ -1,3 +1,4 @@
+mod file_artifact_store;
 mod file_session_store;
 mod file_snapshot_store;
 mod null_session_store;
@@ -9,9 +10,15 @@ use operator_core::{ArtifactId, OperatorError, SessionId, Snapshot, SnapshotId, 
 
 use crate::{Session, SessionEvent};
 
+pub use file_artifact_store::FileArtifactStore;
 pub use file_session_store::FileSessionStore;
 pub use file_snapshot_store::FileSnapshotStore;
 pub use null_session_store::NullSessionStore;
+
+#[async_trait]
+pub trait ArtifactStore: Send + Sync {
+    async fn resolve_artifact(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError>;
+}
 
 #[async_trait]
 pub trait SnapshotStore: Send + Sync {

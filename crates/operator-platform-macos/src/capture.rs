@@ -20,29 +20,54 @@ pub struct CaptureResult {
     pub display_scale: Option<f32>,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct SystemCaptureProvider;
+#[derive(Debug, Clone)]
+pub struct SystemCaptureProvider {
+    artifacts_dir: PathBuf,
+}
+
+impl SystemCaptureProvider {
+    pub fn new(artifacts_dir: impl AsRef<Path>) -> Self {
+        Self {
+            artifacts_dir: artifacts_dir.as_ref().to_path_buf(),
+        }
+    }
+
+    fn artifact_path(&self, id: &ArtifactId) -> PathBuf {
+        self.artifacts_dir.join(&id.0)
+    }
+}
+
+impl Default for SystemCaptureProvider {
+    fn default() -> Self {
+        Self::new(default_artifacts_dir())
+    }
+}
 
 impl CaptureProvider for SystemCaptureProvider {
     fn capture(&self, surface: &Surface) -> Result<CaptureResult, OperatorError> {
-        // SnapshotStore can resolve artifact ids but does not yet expose an artifact writer.
-        // Keep raw captures in a temp cache and return the logical filename for now.
         let artifact_id = next_artifact_id();
-        let cache_dir = capture_cache_dir();
-        fs::create_dir_all(&cache_dir)?;
+        fs::create_dir_all(&self.artifacts_dir)?;
 
-        let path = cache_dir.join(&artifact_id.0);
+        let path = self.artifact_path(&artifact_id);
         capture_to_path(surface, &path)?;
 
         Ok(CaptureResult {
             artifact_id,
-            display_scale: None,
+            display_scale: display_scale_from_path(&path),
         })
     }
 }
 
-fn capture_cache_dir() -> PathBuf {
-    std::env::temp_dir().join("operator-macos-captures")
+fn default_artifacts_dir() -> PathBuf {
+    if let Some(path) = std::env::var_os("OPERATOR_HOME") {
+        return PathBuf::from(path).join("artifacts");
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join(".operator").join("artifacts");
+    }
+
+    PathBuf::from(".operator").join("artifacts")
 }
 
 fn next_artifact_id() -> ArtifactId {
@@ -181,4 +206,72 @@ fn capture_to_path(_surface: &Surface, _path: &Path) -> Result<(), OperatorError
     Err(OperatorError::Platform(
         "macOS capture is unavailable on non-macOS hosts".into(),
     ))
+}
+
+#[cfg(target_os = "macos")]
+fn display_scale_from_path(path: &Path) -> Option<f32> {
+    let output = Command::new("sips")
+        .arg("-g")
+        .arg("dpiWidth")
+        .arg("-g")
+        .arg("dpiHeight")
+        .arg(path)
+        .output()
+        .ok()?;
+    let stdout = command_output("sips", output).ok()?;
+
+    display_scale_from_sips_output(&stdout)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn display_scale_from_path(_path: &Path) -> Option<f32> {
+    None
+}
+
+fn display_scale_from_sips_output(output: &str) -> Option<f32> {
+    let width = parse_sips_value(output, "dpiWidth");
+    let height = parse_sips_value(output, "dpiHeight");
+    let dpi = match (width, height) {
+        (Some(width), Some(height)) if width > 0.0 && height > 0.0 => (width + height) / 2.0,
+        (Some(width), _) if width > 0.0 => width,
+        (_, Some(height)) if height > 0.0 => height,
+        _ => return None,
+    };
+
+    Some((dpi / 72.0) as f32)
+}
+
+fn parse_sips_value(output: &str, key: &str) -> Option<f64> {
+    output.lines().find_map(|line| {
+        let (label, value) = line.split_once(':')?;
+        if label.trim() != key {
+            return None;
+        }
+
+        value.trim().parse::<f64>().ok()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_retina_display_scale_from_sips_output() {
+        let output = "  dpiWidth: 144.000\n  dpiHeight: 144.000\n";
+
+        assert_eq!(display_scale_from_sips_output(output), Some(2.0));
+    }
+
+    #[test]
+    fn system_capture_provider_uses_configured_artifact_directory() {
+        let dir = std::env::temp_dir().join("operator-macos-capture-tests");
+        let provider = SystemCaptureProvider::new(&dir);
+        let artifact_id = ArtifactId("capture-1.png".into());
+
+        assert_eq!(
+            provider.artifact_path(&artifact_id),
+            dir.join("capture-1.png")
+        );
+    }
 }
