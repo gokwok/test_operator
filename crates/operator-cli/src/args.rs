@@ -56,6 +56,9 @@ enum Command {
     Press(PressArgs),
     Type(TypeArgs),
     LaunchApp(LaunchAppArgs),
+    CloseWindow(WindowChromeActionArgs),
+    MinimizeWindow(WindowChromeActionArgs),
+    MaximizeWindow(WindowChromeActionArgs),
     SwitchApp(LifecycleActionArgs),
     QuitApp(LifecycleActionArgs),
     RelaunchApp(LifecycleActionArgs),
@@ -84,6 +87,9 @@ impl Command {
             Self::Press(args) => &args.common,
             Self::Type(args) => &args.common,
             Self::LaunchApp(args) => &args.common,
+            Self::CloseWindow(args) => &args.common,
+            Self::MinimizeWindow(args) => &args.common,
+            Self::MaximizeWindow(args) => &args.common,
             Self::SwitchApp(args) => &args.common,
             Self::QuitApp(args) => &args.common,
             Self::RelaunchApp(args) => &args.common,
@@ -114,6 +120,9 @@ impl Command {
             Self::Press(args) => args.into_invocation(),
             Self::Type(args) => args.into_invocation(),
             Self::LaunchApp(args) => args.into_invocation(),
+            Self::CloseWindow(args) => args.into_invocation("close-window"),
+            Self::MinimizeWindow(args) => args.into_invocation("minimize-window"),
+            Self::MaximizeWindow(args) => args.into_invocation("maximize-window"),
             Self::SwitchApp(args) => args.into_invocation("switch-app"),
             Self::QuitApp(args) => args.into_invocation("quit-app"),
             Self::RelaunchApp(args) => args.into_invocation("relaunch-app"),
@@ -627,6 +636,28 @@ impl LaunchAppArgs {
 }
 
 #[derive(Debug, Clone, Args)]
+struct WindowChromeActionArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(flatten)]
+    target: WindowChromeTargetArgs,
+}
+
+impl WindowChromeActionArgs {
+    fn into_invocation(self, tool: &'static str) -> Result<ToolInvocation, String> {
+        let mut input = common_input(&self.common);
+        let (target_selector, focus_policy) = self.target.into_parts()?;
+        insert_serialized(&mut input, "target_selector", target_selector)?;
+        insert_serialized(&mut input, "focus_policy", focus_policy)?;
+        Ok(ToolInvocation {
+            tool,
+            input: Value::Object(input),
+            json_output: self.common.json_output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Args)]
 struct LifecycleActionArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -820,6 +851,23 @@ struct LifecycleTargetArgs {
 impl LifecycleTargetArgs {
     fn into_selector(self) -> Result<ActionTargetSelector, String> {
         self.selector.into_required_selector()
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct WindowChromeTargetArgs {
+    #[command(flatten)]
+    selector: TargetSelectorArgs,
+    #[arg(long, value_enum, default_value_t = FocusPolicyArg::Auto)]
+    focus_policy: FocusPolicyArg,
+}
+
+impl WindowChromeTargetArgs {
+    fn into_parts(self) -> Result<(ActionTargetSelector, ActionFocusPolicy), String> {
+        Ok((
+            self.selector.into_required_selector()?,
+            self.focus_policy.focus_policy(),
+        ))
     }
 }
 

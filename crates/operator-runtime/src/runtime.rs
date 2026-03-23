@@ -250,7 +250,10 @@ impl RuntimeCore {
             | Action::RelaunchApp
             | Action::HideApp
             | Action::UnhideApp => Capability::AppLifecycle,
-            Action::FocusWindow { .. } => Capability::WindowManagement,
+            Action::CloseWindow
+            | Action::MinimizeWindow
+            | Action::MaximizeWindow
+            | Action::FocusWindow { .. } => Capability::WindowManagement,
         };
 
         self.require_capability(driver, capability, "act", ctx)

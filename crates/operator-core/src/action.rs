@@ -72,6 +72,9 @@ pub enum Action {
     LaunchApp {
         bundle_id_or_name: String,
     },
+    CloseWindow,
+    MinimizeWindow,
+    MaximizeWindow,
     SwitchApp,
     QuitApp,
     RelaunchApp,

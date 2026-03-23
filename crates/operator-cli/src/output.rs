@@ -14,8 +14,9 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
         "list-windows" => render_windows(output),
         "permissions-status" => render_permissions(output),
         "capabilities" => render_capabilities(output),
-        "click" | "move" | "type" | "press" | "swipe" | "launch-app" | "switch-app"
-        | "quit-app" | "relaunch-app" | "hide-app" | "unhide-app" => render_action(output),
+        "click" | "move" | "type" | "press" | "swipe" | "launch-app" | "close-window"
+        | "minimize-window" | "maximize-window" | "switch-app" | "quit-app" | "relaunch-app"
+        | "hide-app" | "unhide-app" => render_action(output),
         _ => serde_json::to_string_pretty(output).expect("tool output should be valid JSON"),
     }
 }

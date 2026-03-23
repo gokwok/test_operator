@@ -444,6 +444,21 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     }));
     driver.push_action_result(Ok(ActionOutcome {
         success: true,
+        duration_ms: 9,
+        detail: Some("closed window 41".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("minimized window 42".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("maximized window 43".into()),
+    }));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
         duration_ms: 10,
         detail: Some("switched app".into()),
     }));
@@ -630,6 +645,48 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         )
         .await
         .unwrap();
+    let closed = runtime
+        .tools()
+        .invoke(
+            "close-window",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "WindowTitle": "Draft"
+                },
+                "focus_policy": "Never"
+            }),
+        )
+        .await
+        .unwrap();
+    let minimized = runtime
+        .tools()
+        .invoke(
+            "minimize-window",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "App": "TextEdit"
+                },
+                "focus_policy": "Auto"
+            }),
+        )
+        .await
+        .unwrap();
+    let maximized = runtime
+        .tools()
+        .invoke(
+            "maximize-window",
+            json!({
+                "target": "local:macos",
+                "target_selector": {
+                    "Pid": 101
+                },
+                "focus_policy": "Auto"
+            }),
+        )
+        .await
+        .unwrap();
     let switched = runtime
         .tools()
         .invoke(
@@ -716,6 +773,9 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
     assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
     assert_eq!(pressed["outcome"]["detail"], json!("pressed down 3 times"));
     assert_eq!(launched["outcome"]["detail"], json!("launched"));
+    assert_eq!(closed["outcome"]["detail"], json!("closed window 41"));
+    assert_eq!(minimized["outcome"]["detail"], json!("minimized window 42"));
+    assert_eq!(maximized["outcome"]["detail"], json!("maximized window 43"));
     assert_eq!(switched["outcome"]["detail"], json!("switched app"));
     assert_eq!(quit["outcome"]["detail"], json!("quit app"));
     assert_eq!(relaunched["outcome"]["detail"], json!("relaunched app"));
@@ -872,6 +932,45 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             ),
             (
                 ActionRequest {
+                    action: Action::CloseWindow,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                    focus_policy: ActionFocusPolicy::Never,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::MinimizeWindow,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::MaximizeWindow,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::Pid(101)),
+                    focus_policy: ActionFocusPolicy::Auto,
+                },
+                ExecContext {
+                    target: "local:macos".into(),
+                    session: None,
+                    timeout_ms: Some(10_000),
+                },
+            ),
+            (
+                ActionRequest {
                     action: Action::SwitchApp,
                     locator: None,
                     target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
@@ -968,6 +1067,7 @@ async fn action_tools_export_stable_specs() {
             "artifact-get",
             "capabilities",
             "click",
+            "close-window",
             "drag",
             "focus-window",
             "get-focus",
@@ -976,6 +1076,8 @@ async fn action_tools_export_stable_specs() {
             "launch-app",
             "list-apps",
             "list-windows",
+            "maximize-window",
+            "minimize-window",
             "move",
             "observe",
             "permissions-status",
@@ -1017,6 +1119,14 @@ async fn action_tools_export_stable_specs() {
         launch_app.capabilities_required,
         &[Capability::AppLifecycle]
     );
+
+    for tool_name in ["close-window", "maximize-window", "minimize-window"] {
+        let spec = specs.iter().find(|spec| spec.name == tool_name).unwrap();
+        assert!(spec.has_side_effects);
+        assert_eq!(spec.capabilities_required, &[Capability::WindowManagement]);
+        assert!(spec.input_schema["properties"]["target_selector"].is_object());
+        assert!(spec.input_schema["properties"]["focus_policy"].is_object());
+    }
 
     for tool_name in [
         "switch-app",

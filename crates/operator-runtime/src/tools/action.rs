@@ -22,6 +22,9 @@ const TYPE_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const HOTKEY_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const PRESS_CAPABILITIES: &[Capability] = &[Capability::KeyboardInput];
 const LAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
+const CLOSE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const MINIMIZE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const MAXIMIZE_WINDOW_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
 const SWITCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const QUIT_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
 const RELAUNCH_APP_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
@@ -40,6 +43,9 @@ pub(crate) fn registrations() -> Vec<ToolRegistration> {
         hotkey_registration(),
         press_registration(),
         launch_app_registration(),
+        close_window_registration(),
+        minimize_window_registration(),
+        maximize_window_registration(),
         switch_app_registration(),
         quit_app_registration(),
         relaunch_app_registration(),
@@ -157,6 +163,54 @@ fn launch_app_registration() -> ToolRegistration {
         },
         handler: Arc::new(|input, core, ctx| {
             Box::pin(async move { launch_app(input, core, ctx).await })
+        }),
+    }
+}
+
+fn close_window_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "close-window",
+            description: "Close a target window using a shared selector and focus policy.",
+            input_schema: json_schema_for::<WindowChromeToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: CLOSE_WINDOW_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { close_window(input, core, ctx).await })
+        }),
+    }
+}
+
+fn minimize_window_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "minimize-window",
+            description: "Minimize a target window using a shared selector and focus policy.",
+            input_schema: json_schema_for::<WindowChromeToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: MINIMIZE_WINDOW_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { minimize_window(input, core, ctx).await })
+        }),
+    }
+}
+
+fn maximize_window_registration() -> ToolRegistration {
+    ToolRegistration {
+        spec: ToolSpec {
+            name: "maximize-window",
+            description: "Maximize a target window using a shared selector and focus policy.",
+            input_schema: json_schema_for::<WindowChromeToolInput>(),
+            output_schema: json_schema_for::<ActionToolOutput>(),
+            capabilities_required: MAXIMIZE_WINDOW_CAPABILITIES,
+            has_side_effects: true,
+        },
+        handler: Arc::new(|input, core, ctx| {
+            Box::pin(async move { maximize_window(input, core, ctx).await })
         }),
     }
 }
@@ -507,6 +561,54 @@ async fn focus_window(
     serialize_output(outcome)
 }
 
+async fn close_window(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<WindowChromeToolInput>("close-window", input)?;
+    let outcome = core
+        .act(
+            build_window_chrome_action_request(Action::CloseWindow, input),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn minimize_window(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<WindowChromeToolInput>("minimize-window", input)?;
+    let outcome = core
+        .act(
+            build_window_chrome_action_request(Action::MinimizeWindow, input),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
+async fn maximize_window(
+    input: Value,
+    core: Arc<RuntimeCore>,
+    ctx: operator_core::ExecContext,
+) -> Result<Value, OperatorError> {
+    let input = parse_input::<WindowChromeToolInput>("maximize-window", input)?;
+    let outcome = core
+        .act(
+            build_window_chrome_action_request(Action::MaximizeWindow, input),
+            ctx,
+        )
+        .await?;
+
+    serialize_output(outcome)
+}
+
 async fn switch_app(
     input: Value,
     core: Arc<RuntimeCore>,
@@ -616,6 +718,18 @@ fn build_lifecycle_action_request(
         locator: None,
         target_selector: Some(target_selector),
         focus_policy: ActionFocusPolicy::Auto,
+    }
+}
+
+fn build_window_chrome_action_request(
+    action: Action,
+    input: WindowChromeToolInput,
+) -> ActionRequest {
+    ActionRequest {
+        action,
+        locator: None,
+        target_selector: Some(input.target_selector),
+        focus_policy: input.focus_policy,
     }
 }
 
@@ -761,6 +875,17 @@ struct FocusWindowToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     window_id: WindowId,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+struct WindowChromeToolInput {
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    exec: ToolExecInput,
+    target_selector: ActionTargetSelector,
+    #[serde(default)]
+    focus_policy: ActionFocusPolicy,
 }
 
 #[allow(dead_code)]

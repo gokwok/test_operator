@@ -513,6 +513,365 @@ async fn focus_window_with_system_driver() {
 
 #[tokio::test]
 #[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn close_window_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS close-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare first TextEdit smoke target: {error}");
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS close-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare second TextEdit smoke target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS close-window smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let windows = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS close-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query failed: {error}"),
+    };
+
+    let QueryResult::Windows(windows) = windows else {
+        panic!("expected windows query result");
+    };
+    assert!(
+        windows.len() >= 2,
+        "expected at least two TextEdit windows for close-window smoke test: {windows:?}"
+    );
+    let initial_count = windows.len();
+    let target_window = windows
+        .iter()
+        .find(|window| !window.is_focused)
+        .unwrap_or(&windows[0]);
+
+    match driver
+        .act(
+            ActionRequest {
+                action: Action::CloseWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS close-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("close-window action failed: {error}"),
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let refreshed = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!(
+                "Skipping macOS close-window smoke verification in sandboxed session: {error}"
+            );
+            return;
+        }
+        Err(error) => panic!("window query after close-window failed: {error}"),
+    };
+
+    let QueryResult::Windows(refreshed) = refreshed else {
+        panic!("expected windows query result");
+    };
+    assert_eq!(
+        refreshed.len() + 1,
+        initial_count,
+        "expected one TextEdit window to close: {refreshed:?}"
+    );
+    assert!(
+        refreshed.iter().all(|window| window.id != target_window.id),
+        "expected target window to disappear after close-window: {refreshed:?}"
+    );
+
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn minimize_window_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS minimize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare TextEdit minimize target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS minimize-window smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let windows = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS minimize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query failed: {error}"),
+    };
+
+    let QueryResult::Windows(windows) = windows else {
+        panic!("expected windows query result");
+    };
+    let target_window = windows
+        .iter()
+        .find(|window| !window.is_minimized)
+        .unwrap_or_else(|| panic!("expected a non-minimized TextEdit window: {windows:?}"));
+
+    match driver
+        .act(
+            ActionRequest {
+                action: Action::MinimizeWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS minimize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("minimize-window action failed: {error}"),
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let refreshed = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!(
+                "Skipping macOS minimize-window smoke verification in sandboxed session: {error}"
+            );
+            return;
+        }
+        Err(error) => panic!("window query after minimize-window failed: {error}"),
+    };
+
+    let QueryResult::Windows(refreshed) = refreshed else {
+        panic!("expected windows query result");
+    };
+    let minimized = refreshed
+        .iter()
+        .find(|window| window.id == target_window.id && window.is_minimized);
+    assert!(
+        minimized.is_some(),
+        "expected target window to become minimized after minimize-window: {refreshed:?}"
+    );
+
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn maximize_window_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS maximize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare TextEdit maximize target: {error}");
+    }
+
+    if let Err(error) = set_textedit_front_window_bounds(80, 80, 420, 280) {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS maximize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to resize TextEdit front window before maximize: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS maximize-window smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let windows = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS maximize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("window query failed: {error}"),
+    };
+
+    let QueryResult::Windows(windows) = windows else {
+        panic!("expected windows query result");
+    };
+    let target_window = windows
+        .iter()
+        .find(|window| window.is_focused)
+        .or_else(|| windows.first())
+        .unwrap();
+    let original_bounds = target_window
+        .bounds
+        .unwrap_or_else(|| panic!("expected TextEdit window bounds before maximize: {windows:?}"));
+
+    match driver
+        .act(
+            ActionRequest {
+                action: Action::MaximizeWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowId(target_window.id)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS maximize-window smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("maximize-window action failed: {error}"),
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let refreshed = match driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("TextEdit".into()),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(windows) => windows,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!(
+                "Skipping macOS maximize-window smoke verification in sandboxed session: {error}"
+            );
+            return;
+        }
+        Err(error) => panic!("window query after maximize-window failed: {error}"),
+    };
+
+    let QueryResult::Windows(refreshed) = refreshed else {
+        panic!("expected windows query result");
+    };
+    let target = refreshed
+        .iter()
+        .find(|window| window.id == target_window.id)
+        .unwrap_or_else(|| panic!("expected target window after maximize-window: {refreshed:?}"));
+    let refreshed_bounds = target.bounds.unwrap_or_else(|| {
+        panic!("expected TextEdit window bounds after maximize-window: {refreshed:?}")
+    });
+    assert!(
+        refreshed_bounds.width > original_bounds.width
+            || refreshed_bounds.height > original_bounds.height,
+        "expected maximize-window to expand the target bounds from {original_bounds:?} to {refreshed_bounds:?}"
+    );
+
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
 async fn switch_app_with_system_driver() {
     if !cfg!(target_os = "macos") {
         eprintln!("Skipping macOS smoke test on non-macOS host.");
@@ -814,6 +1173,23 @@ tell application id "com.apple.calculator"
 end tell
 "#,
     )?;
+    Ok(())
+}
+
+fn set_textedit_front_window_bounds(
+    x: i32,
+    y: i32,
+    right: i32,
+    bottom: i32,
+) -> Result<(), OperatorError> {
+    run_osascript(&format!(
+        r#"
+tell application "TextEdit"
+  activate
+  set bounds of front window to {{{x}, {y}, {right}, {bottom}}}
+end tell
+"#,
+    ))?;
     Ok(())
 }
 

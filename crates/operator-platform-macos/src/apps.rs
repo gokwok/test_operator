@@ -8,6 +8,9 @@ pub trait AppService: Send + Sync {
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError>;
     fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError>;
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError>;
+    fn close_window(&self, id: WindowId) -> Result<(), OperatorError>;
+    fn minimize_window(&self, id: WindowId) -> Result<(), OperatorError>;
+    fn maximize_window(&self, id: WindowId) -> Result<(), OperatorError>;
     fn focus_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         self.launch_app(bundle_id_or_name)
     }
@@ -161,6 +164,18 @@ if (processes.length === 0) {
 
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError> {
         launch_with_open(bundle_id_or_name)
+    }
+
+    fn close_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        close_window_with_osascript(id)
+    }
+
+    fn minimize_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        minimize_window_with_osascript(id)
+    }
+
+    fn maximize_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        maximize_window_with_osascript(id)
     }
 
     fn quit_app(&self, app_name: &str) -> Result<(), OperatorError> {
@@ -329,6 +344,59 @@ fn focus_window_with_osascript(_id: WindowId) -> Result<(), OperatorError> {
 }
 
 #[cfg(target_os = "macos")]
+fn close_window_with_osascript(id: WindowId) -> Result<(), OperatorError> {
+    press_window_button_with_osascript(id, "AXCloseButton")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn close_window_with_osascript(_id: WindowId) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS window chrome actions are unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn minimize_window_with_osascript(id: WindowId) -> Result<(), OperatorError> {
+    let script = format!(
+        r#"
+tell application "System Events"
+  repeat with proc in application processes
+    repeat with win in windows of proc
+      if id of win is {window_id} then
+        set value of attribute "AXMinimized" of win to true
+        return "{window_id}"
+      end if
+    end repeat
+  end repeat
+end tell
+error "window {window_id} not found"
+"#,
+        window_id = id.0
+    );
+
+    run_osascript(&script).map(|_| ())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn minimize_window_with_osascript(_id: WindowId) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS window chrome actions are unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn maximize_window_with_osascript(id: WindowId) -> Result<(), OperatorError> {
+    press_window_button_with_osascript(id, "AXZoomButton")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn maximize_window_with_osascript(_id: WindowId) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS window chrome actions are unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
 fn run_osascript(script: &str) -> Result<String, OperatorError> {
     let output = Command::new("osascript")
         .args(["-e", script])
@@ -379,6 +447,31 @@ fn set_application_visible(_app_name: &str, _visible: bool) -> Result<(), Operat
     Err(OperatorError::Platform(
         "macOS app lifecycle actions are unavailable on non-macOS hosts".into(),
     ))
+}
+
+#[cfg(target_os = "macos")]
+fn press_window_button_with_osascript(
+    id: WindowId,
+    button_subrole: &str,
+) -> Result<(), OperatorError> {
+    let script = format!(
+        r#"
+tell application "System Events"
+  repeat with proc in application processes
+    repeat with win in windows of proc
+      if id of win is {window_id} then
+        perform action "AXPress" of (first button of win whose subrole is "{button_subrole}")
+        return "{window_id}"
+      end if
+    end repeat
+  end repeat
+end tell
+error "window {window_id} not found"
+"#,
+        window_id = id.0
+    );
+
+    run_osascript(&script).map(|_| ())
 }
 
 #[cfg(target_os = "macos")]

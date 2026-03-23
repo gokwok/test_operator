@@ -261,6 +261,33 @@ where
                     detail: Some(format!("launched {bundle_id_or_name}")),
                 })
             }
+            Action::CloseWindow => {
+                let window = self.window_action_target(target, "close-window")?;
+                self.app_service.close_window(window.id)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(format!("closed window {}", window.id)),
+                })
+            }
+            Action::MinimizeWindow => {
+                let window = self.window_action_target(target, "minimize-window")?;
+                self.app_service.minimize_window(window.id)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(format!("minimized window {}", window.id)),
+                })
+            }
+            Action::MaximizeWindow => {
+                let window = self.window_action_target(target, "maximize-window")?;
+                self.app_service.maximize_window(window.id)?;
+                Ok(ActionOutcome {
+                    success: true,
+                    duration_ms: 0,
+                    detail: Some(format!("maximized window {}", window.id)),
+                })
+            }
             Action::SwitchApp => {
                 let app_name = self.lifecycle_target_name(target.selector)?;
                 self.app_service.focus_app(&app_name)?;
@@ -721,6 +748,18 @@ where
                 .and_then(window_app_name),
         }
     }
+
+    fn window_action_target(
+        &self,
+        target: ActionTargetConfig<'_>,
+        action_name: &str,
+    ) -> Result<WindowInfo, OperatorError> {
+        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = prepared.ok_or_else(|| {
+            OperatorError::Platform(format!("{action_name} requires a target selector"))
+        })?;
+        prepared.window()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -734,6 +773,18 @@ impl PreparedActionTarget {
         match self {
             Self::App(target) => app_service.focus_app(&app_focus_identity(&target.app)),
             Self::Window(window) => app_service.focus_window(window.id),
+        }
+    }
+
+    fn window(&self) -> Result<WindowInfo, OperatorError> {
+        match self {
+            Self::App(target) => target.anchor_window.clone().ok_or_else(|| {
+                OperatorError::Platform(format!(
+                    "macOS action target app has no windows: {}",
+                    target.app.name
+                ))
+            }),
+            Self::Window(window) => Ok(window.clone()),
         }
     }
 }

@@ -180,6 +180,15 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
         .any(|tool| tool["name"] == json!("artifact-get")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("observe")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("click")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("close-window")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("maximize-window")));
+    assert!(tools
+        .iter()
+        .any(|tool| tool["name"] == json!("minimize-window")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("move")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("switch-app")));
     assert!(tools.iter().any(|tool| tool["name"] == json!("quit-app")));
@@ -235,6 +244,17 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert!(drag["inputSchema"]["properties"]["duration_ms"].is_object());
     assert!(drag["inputSchema"]["properties"]["steps"].is_object());
     assert!(drag["inputSchema"]["properties"]["modifiers"].is_object());
+
+    for tool_name in ["close-window", "maximize-window", "minimize-window"] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"] == json!(tool_name))
+            .unwrap();
+        assert_eq!(tool["annotations"]["readOnlyHint"], json!(false));
+        assert_eq!(tool["annotations"]["destructiveHint"], json!(true));
+        assert!(tool["inputSchema"]["properties"]["target_selector"].is_object());
+        assert!(tool["inputSchema"]["properties"]["focus_policy"].is_object());
+    }
 
     let press = tools
         .iter()
@@ -777,6 +797,70 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tools_call_executes_close_window_and_returns_structured_content() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::WindowManagement]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 10,
+        detail: Some("closed window 42".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone());
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 23,
+            "method": "tools/call",
+            "params": {
+                "name": "close-window",
+                "arguments": {
+                    "target": "local:macos",
+                    "target_selector": {
+                        "WindowTitle": "Draft"
+                    },
+                    "focus_policy": "Never"
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("closed window 42")
+    );
+    assert!(response["result"].get("isError").is_none());
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::CloseWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                focus_policy: ActionFocusPolicy::Never,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tools_call_executes_switch_app_and_returns_structured_content() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
@@ -801,7 +885,7 @@ async fn tools_call_executes_switch_app_and_returns_structured_content() {
     let response = server
         .handle_message(json!({
             "jsonrpc": "2.0",
-            "id": 23,
+            "id": 24,
             "method": "tools/call",
             "params": {
                 "name": "switch-app",

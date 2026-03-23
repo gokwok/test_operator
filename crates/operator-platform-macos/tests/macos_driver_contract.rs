@@ -150,6 +150,9 @@ async fn list_apps_and_windows_queries_forward_to_services() {
             focus: None,
             launched: Mutex::new(Vec::new()),
             focused_apps: Mutex::new(Vec::new()),
+            closed_windows: Mutex::new(Vec::new()),
+            minimized_windows: Mutex::new(Vec::new()),
+            maximized_windows: Mutex::new(Vec::new()),
             quit: Mutex::new(Vec::new()),
             relaunched: Mutex::new(Vec::new()),
             hidden: Mutex::new(Vec::new()),
@@ -275,6 +278,151 @@ async fn focus_window_action_returns_successful_outcome() {
     assert_eq!(
         driver.app_service().focused_windows(),
         vec![WindowId::from(42)]
+    );
+}
+
+#[tokio::test]
+async fn close_window_action_uses_app_target_anchor_window_without_auto_focus() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            windows: vec![
+                WindowInfo {
+                    id: 41.into(),
+                    title: Some("Draft".into()),
+                    app_name: Some("TextEdit".into()),
+                    bounds: None,
+                    is_focused: true,
+                    is_minimized: false,
+                },
+                WindowInfo {
+                    id: 42.into(),
+                    title: Some("Notes".into()),
+                    app_name: Some("TextEdit".into()),
+                    bounds: None,
+                    is_focused: false,
+                    is_minimized: false,
+                },
+            ],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::CloseWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("TextEdit".into())),
+                focus_policy: ActionFocusPolicy::Never,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("closed window 41"));
+    assert_eq!(
+        driver.app_service().closed_windows(),
+        vec![WindowId::from(41)]
+    );
+    assert!(driver.app_service().focused_apps().is_empty());
+}
+
+#[tokio::test]
+async fn minimize_window_action_uses_window_title_selector_and_auto_focuses_window() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            windows: vec![WindowInfo {
+                id: 42.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: None,
+                is_focused: false,
+                is_minimized: false,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::MinimizeWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("minimized window 42"));
+    assert_eq!(
+        driver.app_service().minimized_windows(),
+        vec![WindowId::from(42)]
+    );
+    assert_eq!(
+        driver.app_service().focused_windows(),
+        vec![WindowId::from(42)]
+    );
+}
+
+#[tokio::test]
+async fn maximize_window_action_uses_pid_target_anchor_window() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            windows: vec![WindowInfo {
+                id: 43.into(),
+                title: Some("Draft".into()),
+                app_name: Some("TextEdit".into()),
+                bounds: None,
+                is_focused: false,
+                is_minimized: false,
+            }],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::MaximizeWindow,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::Pid(101)),
+                focus_policy: ActionFocusPolicy::Auto,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("maximized window 43"));
+    assert_eq!(
+        driver.app_service().maximized_windows(),
+        vec![WindowId::from(43)]
+    );
+    assert_eq!(
+        driver.app_service().focused_apps(),
+        vec!["com.apple.TextEdit".to_string()]
     );
 }
 
@@ -1471,6 +1619,9 @@ struct StubAppService {
     focus: Option<FocusInfo>,
     launched: Mutex<Vec<String>>,
     focused_apps: Mutex<Vec<String>>,
+    closed_windows: Mutex<Vec<WindowId>>,
+    minimized_windows: Mutex<Vec<WindowId>>,
+    maximized_windows: Mutex<Vec<WindowId>>,
     quit: Mutex<Vec<String>>,
     relaunched: Mutex<Vec<String>>,
     hidden: Mutex<Vec<String>>,
@@ -1490,6 +1641,18 @@ impl StubAppService {
 
     fn focused_apps(&self) -> Vec<String> {
         self.focused_apps.lock().unwrap().clone()
+    }
+
+    fn closed_windows(&self) -> Vec<WindowId> {
+        self.closed_windows.lock().unwrap().clone()
+    }
+
+    fn minimized_windows(&self) -> Vec<WindowId> {
+        self.minimized_windows.lock().unwrap().clone()
+    }
+
+    fn maximized_windows(&self) -> Vec<WindowId> {
+        self.maximized_windows.lock().unwrap().clone()
     }
 
     fn quit_apps(&self) -> Vec<String> {
@@ -1540,6 +1703,21 @@ impl AppService for StubAppService {
             .lock()
             .unwrap()
             .push(bundle_id_or_name.to_string());
+        Ok(())
+    }
+
+    fn close_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        self.closed_windows.lock().unwrap().push(id);
+        Ok(())
+    }
+
+    fn minimize_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        self.minimized_windows.lock().unwrap().push(id);
+        Ok(())
+    }
+
+    fn maximize_window(&self, id: WindowId) -> Result<(), OperatorError> {
+        self.maximized_windows.lock().unwrap().push(id);
         Ok(())
     }
 

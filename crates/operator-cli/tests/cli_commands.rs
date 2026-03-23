@@ -201,6 +201,79 @@ async fn focus_window_command_maps_window_id_to_tool_input() {
 }
 
 #[tokio::test]
+async fn close_window_command_maps_window_target_selector_and_focus_policy() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "close-window",
+        "--target",
+        "local:macos",
+        "--window-title",
+        "Draft",
+        "--focus-policy",
+        "never",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "close-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "WindowTitle": "Draft"
+            },
+            "focus_policy": "Never"
+        })
+    );
+}
+
+#[tokio::test]
+async fn minimize_window_command_maps_app_target_selector_to_tool_input() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "minimize-window", "--app", "TextEdit"])
+            .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "minimize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "App": "TextEdit"
+            },
+            "focus_policy": "Auto"
+        })
+    );
+}
+
+#[tokio::test]
+async fn maximize_window_command_maps_pid_target_selector_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "maximize-window",
+        "--target",
+        "local:macos",
+        "--pid",
+        "101",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "maximize-window");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "target_selector": {
+                "Pid": 101
+            },
+            "focus_policy": "Auto"
+        })
+    );
+}
+
+#[tokio::test]
 async fn type_command_maps_app_target_selector_with_default_focus_policy() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -800,6 +873,40 @@ async fn cli_run_renders_switch_app_detail_for_non_json_output() {
             "target_selector": {
                 "App": "TextEdit"
             }
+        })
+    );
+}
+
+#[tokio::test]
+async fn cli_run_renders_close_window_detail_for_non_json_output() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "close-window", "--window-id", "42"])
+            .unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "outcome": {
+                "success": true,
+                "duration_ms": 10,
+                "detail": "closed window 42"
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "closed window 42");
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "close-window");
+    assert_eq!(
+        recorded[0].1,
+        json!({
+            "target_selector": {
+                "WindowId": 42
+            },
+            "focus_policy": "Auto"
         })
     );
 }
