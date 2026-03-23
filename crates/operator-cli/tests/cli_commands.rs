@@ -10,15 +10,9 @@ use std::{
 use serde_json::{json, Value};
 
 #[test]
-fn observe_command_supports_json_flag() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "observe",
-        "--surface",
-        "frontmost",
-        "--json",
-    ])
-    .unwrap();
+fn observe_frontmost_command_defaults_capture_to_all() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "observe", "frontmost", "--json"])
+        .unwrap();
 
     assert!(cli.prefers_json());
 
@@ -29,6 +23,110 @@ fn observe_command_supports_json_flag() {
         json!({
             "surface": {
                 "kind": "Frontmost"
+            },
+            "include_screenshot": true,
+            "include_elements": true
+        })
+    );
+}
+
+#[test]
+fn observe_window_command_maps_surface_and_capture_profile() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "observe",
+        "window",
+        "--window-id",
+        "42",
+        "--capture",
+        "elements",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Window": {
+                        "id": 42
+                    }
+                }
+            },
+            "include_screenshot": false,
+            "include_elements": true
+        })
+    );
+}
+
+#[test]
+fn observe_fullscreen_command_maps_display_id_and_capture_profile() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "observe",
+        "fullscreen",
+        "--display-id",
+        "2",
+        "--capture",
+        "screenshot",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Fullscreen": {
+                        "display_id": 2
+                    }
+                }
+            },
+            "include_screenshot": true,
+            "include_elements": false
+        })
+    );
+}
+
+#[test]
+fn observe_region_command_maps_rect_and_capture_profile() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "observe",
+        "region",
+        "--x",
+        "10",
+        "--y",
+        "20",
+        "--width",
+        "300",
+        "--height",
+        "200",
+        "--capture",
+        "none",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Region": {
+                        "rect": {
+                            "x": 10.0,
+                            "y": 20.0,
+                            "width": 300.0,
+                            "height": 200.0
+                        }
+                    }
+                }
             },
             "include_screenshot": false,
             "include_elements": false
@@ -112,7 +210,7 @@ fn list_windows_command_moves_under_list_group() {
 
 #[test]
 fn grouped_top_level_command_placeholders_exist() {
-    for command in ["snapshot", "artifact", "input", "app", "window", "mcp"] {
+    for command in ["input", "app", "window", "mcp"] {
         let cli = cli_main::args::Cli::try_parse_from(["operator", command]).unwrap();
         let error = cli.into_invocation().unwrap_err();
         assert!(
@@ -140,15 +238,74 @@ Options:\n      --json                   Render structured JSON output\n      --
 }
 
 #[test]
-fn artifact_get_command_maps_artifact_id_to_tool_input() {
+fn observe_help_lists_surface_subcommands() {
+    assert_eq!(
+        command_help(["operator", "observe", "--help"]),
+        "Capture UI state\n\n\
+Usage: operator observe [OPTIONS] <COMMAND>\n\n\
+Commands:\n  frontmost   Capture the frontmost surface\n  window      Capture a specific window\n  region      Capture a specific screen region\n  fullscreen  Capture the full display or the active display\n  help        Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
+    );
+}
+
+#[test]
+fn snapshot_help_lists_get_subcommand() {
+    assert_eq!(
+        command_help(["operator", "snapshot", "--help"]),
+        "Work with persisted snapshots\n\n\
+Usage: operator snapshot [OPTIONS] <COMMAND>\n\n\
+Commands:\n  get   Load a persisted snapshot\n  help  Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
+    );
+}
+
+#[test]
+fn artifact_help_lists_get_subcommand() {
+    assert_eq!(
+        command_help(["operator", "artifact", "--help"]),
+        "Work with persisted artifacts\n\n\
+Usage: operator artifact [OPTIONS] <COMMAND>\n\n\
+Commands:\n  get   Resolve a persisted artifact\n  help  Print this message or the help of the given subcommand(s)\n\n\
+Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
+    );
+}
+
+#[test]
+fn snapshot_get_command_maps_positional_snapshot_id_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "artifact-get",
+        "snapshot",
+        "get",
         "--target",
         "local:macos",
         "--timeout-ms",
         "250",
-        "--artifact-id",
+        "s_123",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "snapshot-get");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "snapshot_id": "s_123"
+        })
+    );
+}
+
+#[test]
+fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "artifact",
+        "get",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
         "capture-1.png",
     ])
     .unwrap();
@@ -1377,13 +1534,8 @@ async fn cli_run_renders_press_detail_for_non_json_output() {
 
 #[tokio::test]
 async fn cli_run_renders_artifact_path_for_non_json_output() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "artifact-get",
-        "--artifact-id",
-        "capture-1.png",
-    ])
-    .unwrap();
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "artifact", "get", "capture-1.png"])
+        .unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let invoker = RecordingInvoker {
@@ -1452,4 +1604,10 @@ impl cli_main::ToolInvoker for RecordingInvoker {
         let response = self.response.clone();
         Box::pin(async move { Ok(response) })
     }
+}
+
+fn command_help<const N: usize>(args: [&str; N]) -> String {
+    cli_main::args::Cli::try_parse_from(args)
+        .unwrap_err()
+        .to_string()
 }

@@ -46,6 +46,57 @@ Options:
   -h, --help                   Print help
 ";
 
+const OBSERVE_HELP: &str = "Capture UI state
+
+Usage: operator observe [OPTIONS] <COMMAND>
+
+Commands:
+  frontmost   Capture the frontmost surface
+  window      Capture a specific window
+  region      Capture a specific screen region
+  fullscreen  Capture the full display or the active display
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
+const SNAPSHOT_HELP: &str = "Work with persisted snapshots
+
+Usage: operator snapshot [OPTIONS] <COMMAND>
+
+Commands:
+  get   Load a persisted snapshot
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
+const ARTIFACT_HELP: &str = "Work with persisted artifacts
+
+Usage: operator artifact [OPTIONS] <COMMAND>
+
+Commands:
+  get   Resolve a persisted artifact
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+";
+
 #[derive(Debug, Parser)]
 #[command(name = "operator", about = "Operator automation CLI")]
 pub(crate) struct Cli {
@@ -100,8 +151,8 @@ enum Command {
     Permissions(CommonArgs),
     Capabilities(CommonArgs),
     Observe(ObserveArgs),
-    Snapshot,
-    Artifact,
+    Snapshot(SnapshotArgs),
+    Artifact(ArtifactArgs),
     List(ListArgs),
     Focus(CommonArgs),
     Input,
@@ -109,9 +160,9 @@ enum Command {
     Window,
     Mcp,
     #[command(hide = true, name = "artifact-get")]
-    ArtifactGet(ArtifactGetArgs),
+    ArtifactGet(LegacyArtifactGetArgs),
     #[command(hide = true, name = "snapshot-get")]
-    SnapshotGet(SnapshotGetArgs),
+    SnapshotGet(LegacySnapshotGetArgs),
     #[command(hide = true, name = "get-focus")]
     GetFocus(CommonArgs),
     #[command(hide = true, name = "list-apps")]
@@ -170,8 +221,8 @@ impl Command {
             Self::Permissions(args) => Some(args),
             Self::Capabilities(args) => Some(args),
             Self::Observe(args) => Some(&args.common),
-            Self::Snapshot => None,
-            Self::Artifact => None,
+            Self::Snapshot(args) => Some(&args.common),
+            Self::Artifact(args) => Some(&args.common),
             Self::List(args) => args.common(),
             Self::Focus(args) => Some(args),
             Self::Input | Self::App | Self::Window | Self::Mcp => None,
@@ -215,8 +266,8 @@ impl Command {
                 invoke_without_specific_input("capabilities", merge_common(root_common, common))
             }
             Self::Observe(args) => args.into_invocation(root_common),
-            Self::Snapshot => Err("snapshot commands are not implemented yet".to_string()),
-            Self::Artifact => Err("artifact commands are not implemented yet".to_string()),
+            Self::Snapshot(args) => args.into_invocation(root_common),
+            Self::Artifact(args) => args.into_invocation(root_common),
             Self::List(args) => args.into_invocation(root_common),
             Self::Focus(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
@@ -314,149 +365,224 @@ impl ListCommand {
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(about = "Capture UI state", override_help = OBSERVE_HELP, arg_required_else_help = true)]
 struct ObserveArgs {
     #[command(flatten)]
     common: CommonArgs,
-    #[arg(long, value_enum, default_value_t = ObserveSurface::Frontmost)]
-    surface: ObserveSurface,
-    #[arg(long)]
-    display_id: Option<u32>,
-    #[arg(long)]
-    window_id: Option<u64>,
-    #[arg(long)]
-    x: Option<f64>,
-    #[arg(long)]
-    y: Option<f64>,
-    #[arg(long)]
-    width: Option<f64>,
-    #[arg(long)]
-    height: Option<f64>,
-    #[arg(long)]
-    include_screenshot: bool,
-    #[arg(long)]
-    include_elements: bool,
+    #[command(subcommand)]
+    command: ObserveCommand,
 }
 
 impl ObserveArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        let surface = self.surface()?;
-        let common = merge_common(root_common, self.common);
+        self.command
+            .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum ObserveCommand {
+    #[command(about = "Capture the frontmost surface")]
+    Frontmost(ObserveFrontmostArgs),
+    #[command(about = "Capture a specific window")]
+    Window(ObserveWindowArgs),
+    #[command(about = "Capture a specific screen region")]
+    Region(ObserveRegionArgs),
+    #[command(about = "Capture the full display or the active display")]
+    Fullscreen(ObserveFullscreenArgs),
+}
+
+impl ObserveCommand {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Frontmost(args) => {
+                observe_invocation(common, SurfaceKind::Frontmost, args.capture.capture)
+            }
+            Self::Window(args) => observe_invocation(
+                common,
+                SurfaceKind::Window {
+                    id: WindowId::from(args.window_id),
+                },
+                args.capture.capture,
+            ),
+            Self::Region(args) => observe_invocation(
+                common,
+                SurfaceKind::Region {
+                    rect: operator_core::Rect {
+                        x: args.x,
+                        y: args.y,
+                        width: args.width,
+                        height: args.height,
+                    },
+                },
+                args.capture.capture,
+            ),
+            Self::Fullscreen(args) => observe_invocation(
+                common,
+                SurfaceKind::Fullscreen {
+                    display_id: args.display_id,
+                },
+                args.capture.capture,
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct ObserveFrontmostArgs {
+    #[command(flatten)]
+    capture: CaptureArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ObserveWindowArgs {
+    #[arg(long)]
+    window_id: u64,
+    #[command(flatten)]
+    capture: CaptureArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ObserveRegionArgs {
+    #[arg(long)]
+    x: f64,
+    #[arg(long)]
+    y: f64,
+    #[arg(long)]
+    width: f64,
+    #[arg(long)]
+    height: f64,
+    #[command(flatten)]
+    capture: CaptureArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ObserveFullscreenArgs {
+    #[arg(long)]
+    display_id: Option<u32>,
+    #[command(flatten)]
+    capture: CaptureArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+struct CaptureArgs {
+    #[arg(long, value_enum, default_value_t = CaptureProfileArg::All)]
+    capture: CaptureProfileArg,
+}
+
+fn observe_invocation(
+    common: CommonArgs,
+    surface_kind: SurfaceKind,
+    capture: CaptureProfileArg,
+) -> Result<ToolInvocation, String> {
+    let mut input = common_input(&common);
+    insert_serialized(&mut input, "surface", Surface { kind: surface_kind })?;
+    let (include_screenshot, include_elements) = capture.flags();
+    input.insert("include_screenshot".into(), Value::Bool(include_screenshot));
+    input.insert("include_elements".into(), Value::Bool(include_elements));
+    Ok(ToolInvocation {
+        tool: "observe",
+        input: Value::Object(input),
+        json_output: common.json_output,
+    })
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(
+    about = "Work with persisted snapshots",
+    override_help = SNAPSHOT_HELP,
+    arg_required_else_help = true
+)]
+struct SnapshotArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: SnapshotCommand,
+}
+
+impl SnapshotArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command
+            .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum SnapshotCommand {
+    #[command(about = "Load a persisted snapshot")]
+    Get(SnapshotGetArgs),
+}
+
+impl SnapshotCommand {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Get(args) => args.into_invocation(common),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct SnapshotGetArgs {
+    snapshot_id: String,
+}
+
+impl SnapshotGetArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         let mut input = common_input(&common);
-        insert_serialized(&mut input, "surface", surface)?;
-        input.insert(
-            "include_screenshot".into(),
-            Value::Bool(self.include_screenshot),
-        );
-        input.insert(
-            "include_elements".into(),
-            Value::Bool(self.include_elements),
-        );
+        insert_serialized(
+            &mut input,
+            "snapshot_id",
+            SnapshotId::from(self.snapshot_id),
+        )?;
         Ok(ToolInvocation {
-            tool: "observe",
+            tool: "snapshot-get",
             input: Value::Object(input),
             json_output: common.json_output,
         })
     }
+}
 
-    fn surface(&self) -> Result<Surface, String> {
-        match self.surface {
-            ObserveSurface::Frontmost => {
-                reject_if_some(
-                    self.display_id,
-                    "--display-id is only valid with --surface fullscreen",
-                )?;
-                reject_if_some(
-                    self.window_id,
-                    "--window-id is only valid with --surface window",
-                )?;
-                reject_if_some(self.x, "--x is only valid with --surface region")?;
-                reject_if_some(self.y, "--y is only valid with --surface region")?;
-                reject_if_some(self.width, "--width is only valid with --surface region")?;
-                reject_if_some(self.height, "--height is only valid with --surface region")?;
-                Ok(Surface {
-                    kind: SurfaceKind::Frontmost,
-                })
-            }
-            ObserveSurface::Fullscreen => {
-                reject_if_some(
-                    self.window_id,
-                    "--window-id is only valid with --surface window",
-                )?;
-                reject_if_some(self.x, "--x is only valid with --surface region")?;
-                reject_if_some(self.y, "--y is only valid with --surface region")?;
-                reject_if_some(self.width, "--width is only valid with --surface region")?;
-                reject_if_some(self.height, "--height is only valid with --surface region")?;
-                Ok(Surface {
-                    kind: SurfaceKind::Fullscreen {
-                        display_id: self.display_id,
-                    },
-                })
-            }
-            ObserveSurface::Window => {
-                reject_if_some(
-                    self.display_id,
-                    "--display-id is only valid with --surface fullscreen",
-                )?;
-                reject_if_some(self.x, "--x is only valid with --surface region")?;
-                reject_if_some(self.y, "--y is only valid with --surface region")?;
-                reject_if_some(self.width, "--width is only valid with --surface region")?;
-                reject_if_some(self.height, "--height is only valid with --surface region")?;
-                let window_id = self
-                    .window_id
-                    .ok_or_else(|| "--window-id is required when --surface window".to_string())?;
-                Ok(Surface {
-                    kind: SurfaceKind::Window {
-                        id: WindowId::from(window_id),
-                    },
-                })
-            }
-            ObserveSurface::Region => {
-                reject_if_some(
-                    self.display_id,
-                    "--display-id is only valid with --surface fullscreen",
-                )?;
-                reject_if_some(
-                    self.window_id,
-                    "--window-id is only valid with --surface window",
-                )?;
-                let x = self
-                    .x
-                    .ok_or_else(|| "--x is required when --surface region".to_string())?;
-                let y = self
-                    .y
-                    .ok_or_else(|| "--y is required when --surface region".to_string())?;
-                let width = self
-                    .width
-                    .ok_or_else(|| "--width is required when --surface region".to_string())?;
-                let height = self
-                    .height
-                    .ok_or_else(|| "--height is required when --surface region".to_string())?;
-                Ok(Surface {
-                    kind: SurfaceKind::Region {
-                        rect: operator_core::Rect {
-                            x,
-                            y,
-                            width,
-                            height,
-                        },
-                    },
-                })
-            }
+#[derive(Debug, Clone, Args)]
+#[command(
+    about = "Work with persisted artifacts",
+    override_help = ARTIFACT_HELP,
+    arg_required_else_help = true
+)]
+struct ArtifactArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: ArtifactCommand,
+}
+
+impl ArtifactArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command
+            .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum ArtifactCommand {
+    #[command(about = "Resolve a persisted artifact")]
+    Get(ArtifactGetArgs),
+}
+
+impl ArtifactCommand {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Get(args) => args.into_invocation(common),
         }
     }
 }
 
 #[derive(Debug, Clone, Args)]
 struct ArtifactGetArgs {
-    #[command(flatten)]
-    common: CommonArgs,
-    #[arg(long)]
     artifact_id: String,
 }
 
 impl ArtifactGetArgs {
-    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        let common = merge_common(root_common, self.common);
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         let mut input = common_input(&common);
         insert_serialized(
             &mut input,
@@ -472,27 +598,38 @@ impl ArtifactGetArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-struct SnapshotGetArgs {
+struct LegacyArtifactGetArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long)]
+    artifact_id: String,
+}
+
+impl LegacyArtifactGetArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        let common = merge_common(root_common, self.common);
+        ArtifactGetArgs {
+            artifact_id: self.artifact_id,
+        }
+        .into_invocation(common)
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct LegacySnapshotGetArgs {
     #[command(flatten)]
     common: CommonArgs,
     #[arg(long)]
     snapshot_id: String,
 }
 
-impl SnapshotGetArgs {
+impl LegacySnapshotGetArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
         let common = merge_common(root_common, self.common);
-        let mut input = common_input(&common);
-        insert_serialized(
-            &mut input,
-            "snapshot_id",
-            SnapshotId::from(self.snapshot_id),
-        )?;
-        Ok(ToolInvocation {
-            tool: "snapshot-get",
-            input: Value::Object(input),
-            json_output: common.json_output,
-        })
+        SnapshotGetArgs {
+            snapshot_id: self.snapshot_id,
+        }
+        .into_invocation(common)
     }
 }
 
@@ -1070,11 +1207,22 @@ impl FocusWindowArgs {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum ObserveSurface {
-    Frontmost,
-    Fullscreen,
-    Window,
-    Region,
+enum CaptureProfileArg {
+    All,
+    Elements,
+    Screenshot,
+    None,
+}
+
+impl CaptureProfileArg {
+    fn flags(self) -> (bool, bool) {
+        match self {
+            Self::All => (true, true),
+            Self::Elements => (false, true),
+            Self::Screenshot => (true, false),
+            Self::None => (false, false),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1634,12 +1782,5 @@ fn insert_verifications(
         insert_serialized(map, "verifications", verifications)?;
     }
 
-    Ok(())
-}
-
-fn reject_if_some<T>(value: Option<T>, message: &str) -> Result<(), String> {
-    if value.is_some() {
-        return Err(message.to_string());
-    }
     Ok(())
 }
