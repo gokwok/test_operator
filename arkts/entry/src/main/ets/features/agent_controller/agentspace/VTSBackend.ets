@@ -635,6 +635,7 @@ export class VTSBackend implements VTSBackendPort {
 
   async clickPx(x: number, y: number): Promise<void> {
     const rt = this.requireRuntime();
+    console.info(`${LOG_TAG} clickPx down x=${x} y=${y} displayId=${rt.screenId} screenId=${rt.screenId} runtimeDisplayId=${rt.displayId ?? -1}`);
     const event: AppController.PointEvent = {
       id: -1,
       pressed: 0,
@@ -644,9 +645,17 @@ export class VTSBackend implements VTSBackendPort {
       displayY: y,
       displayId: rt.screenId,
     };
-    AppController.processPointEvent(event);
-    event.action = POINTER_ACTION_UP;
-    AppController.processPointEvent(event);
+    try {
+      AppController.processPointEvent(event);
+      event.action = POINTER_ACTION_UP;
+      AppController.processPointEvent(event);
+      console.info(`${LOG_TAG} clickPx up x=${x} y=${y} displayId=${rt.screenId} screenId=${rt.screenId} runtimeDisplayId=${rt.displayId ?? -1}`);
+    } catch (e) {
+      console.error(
+        `${LOG_TAG} clickPx failed x=${x} y=${y} displayId=${rt.screenId} screenId=${rt.screenId} runtimeDisplayId=${rt.displayId ?? -1} error=${String(e)}`
+      );
+      throw e;
+    }
   }
 
   async longClickPx(x: number, y: number, durationMs: number): Promise<void> {

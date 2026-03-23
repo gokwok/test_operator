@@ -29,6 +29,7 @@ interface ToolCallArgs {
 const DEFAULT_LONG_CLICK_MS: number = 1500;
 const DEFAULT_SWIPE_MS: number = 300;
 const DEFAULT_WAIT_SECONDS: number = 3;
+const LOG_TAG: string = '[ToolCallDispatcher]';
 
 export class ToolCallDispatcher {
   private toolKit: ToolKit;
@@ -41,6 +42,7 @@ export class ToolCallDispatcher {
 
   async execute(name: string, argsJson: string): Promise<ToolCallResult> {
     const toolName = name.trim().toLowerCase();
+    console.info(`${LOG_TAG} execute start name=${toolName} rawArgs=${argsJson}`);
     if (toolName.length === 0) {
       return { status: 'FAILED', error: 'empty_tool_name', screenshot_b64: '', uiTargetText: '', uiTargetIndex: 0, action: null };
     }
@@ -89,12 +91,16 @@ export class ToolCallDispatcher {
       if (!action) {
         status = 'FAILED';
         error = 'invalid_arguments';
+        console.warn(`${LOG_TAG} execute invalid action name=${toolName} parsedArgs=${JSON.stringify(args)}`);
       } else {
+        console.info(`${LOG_TAG} execute action name=${toolName} action=${JSON.stringify(action)}`);
         const hit = await this.resolveUiTargetBestEffort(toolName, action);
         uiTargetText = hit.text;
         uiTargetIndex = hit.index;
+        console.info(`${LOG_TAG} execute target name=${toolName} uiTargetText=${uiTargetText} uiTargetIndex=${uiTargetIndex}`);
         actionExecuted = true;
         const result = await this.toolKit.executeAction(action);
+        console.info(`${LOG_TAG} execute result name=${toolName} status=${result.status} error=${result.error ?? ''}`);
         if (result.status !== 'SUCCESS') {
           status = 'FAILED';
           error = this.formatActionError(result);
@@ -103,6 +109,7 @@ export class ToolCallDispatcher {
     } catch (e) {
       status = 'FAILED';
       error = String(e);
+      console.error(`${LOG_TAG} execute exception name=${toolName} error=${error}`);
     }
 
     if (actionExecuted && this.shouldWaitAfterAction(toolName)) {
@@ -114,6 +121,9 @@ export class ToolCallDispatcher {
       status = 'FAILED';
       error = error.length > 0 ? error : 'screenshot_failed';
     }
+    console.info(
+      `${LOG_TAG} execute done name=${toolName} status=${status} error=${error} screenshotLen=${snapshot.length} actionExecuted=${actionExecuted}`
+    );
     return { status, error, screenshot_b64: snapshot, uiTargetText, uiTargetIndex, action };
   }
 

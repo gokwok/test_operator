@@ -7,6 +7,7 @@ import type { AppTarget, StartAbilityInvoker, VTSBackendPort } from './VTSBacken
 import { VisiblePageContentA11yTree } from '../state_collector/a11y_tree/VisiblePageContentA11yTree';
 
 const EFFECT_LOG_TAG: string = '[AS_EFFECT]';
+const ACTION_LOG_TAG: string = '[AgentSpace]';
 
 export enum AgentSpaceState {
   IDLE = 'IDLE',
@@ -374,6 +375,9 @@ export class AgentSpace {
     const rt = await this.ensureVts();
     const x = this.normToPx(rt.widthPx, pt[0]);
     const y = this.normToPx(rt.heightPx, pt[1]);
+    console.info(
+      `${ACTION_LOG_TAG} handleClick norm=(${pt[0]},${pt[1]}) px=(${x},${y}) screen=${rt.widthPx}x${rt.heightPx} screenId=${rt.screenId} displayId=${rt.displayId ?? -1}`
+    );
     await this.backend.clickPx(x, y);
     this.emitViewerTapNorm(pt[0], pt[1]);
     return { status: 'SUCCESS' };

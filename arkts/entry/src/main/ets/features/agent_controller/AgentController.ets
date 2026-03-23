@@ -1078,6 +1078,14 @@ export class AgentController {
 
   async debugSimulateToolCall(name: string, argsJson: string): Promise<string> {
     const waitMs = await this.resolveToolWaitMs();
+    hilog.info(
+      HILOG_DOMAIN,
+      HILOG_TAG,
+      'debugSimulateToolCall start name=%{public}s waitMs=%{public}d args=%{public}s',
+      name.trim(),
+      waitMs,
+      argsJson
+    );
     const dispatcher = new ToolCallDispatcher(this.requireToolKit(), waitMs);
     const result = await dispatcher.execute(name, argsJson);
     const summary: DebugToolCallSummary = {
@@ -1086,6 +1094,15 @@ export class AgentController {
       error: result.error,
       screenshot_len: result.screenshot_b64.length,
     };
+    hilog.info(
+      HILOG_DOMAIN,
+      HILOG_TAG,
+      'debugSimulateToolCall done name=%{public}s status=%{public}s error=%{public}s screenshot_len=%{public}d',
+      summary.name,
+      summary.status,
+      summary.error,
+      summary.screenshot_len
+    );
     return JSON.stringify(summary);
   }
 
