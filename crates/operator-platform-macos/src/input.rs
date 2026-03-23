@@ -4,7 +4,8 @@ pub trait InputSynthesizer: Send + Sync {
     fn click(&self, point: Option<Point>, mode: ClickMode) -> Result<(), OperatorError>;
     fn drag(&self, from: Point, to: Point) -> Result<(), OperatorError>;
     fn hotkey(&self, keys: &[String]) -> Result<(), OperatorError>;
-    fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError>;
+    fn scroll(&self, point: Option<Point>, delta_x: f64, delta_y: f64)
+        -> Result<(), OperatorError>;
     fn type_text(&self, text: &str) -> Result<(), OperatorError>;
 }
 
@@ -24,8 +25,13 @@ impl InputSynthesizer for SystemInputSynthesizer {
         platform::hotkey(keys)
     }
 
-    fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
-        platform::scroll(delta_x, delta_y)
+    fn scroll(
+        &self,
+        point: Option<Point>,
+        delta_x: f64,
+        delta_y: f64,
+    ) -> Result<(), OperatorError> {
+        platform::scroll(point, delta_x, delta_y)
     }
 
     fn type_text(&self, text: &str) -> Result<(), OperatorError> {
@@ -542,8 +548,12 @@ mod platform {
         Ok(())
     }
 
-    pub fn scroll(delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
+    pub fn scroll(point: Option<Point>, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
         let source = EventSource::new()?;
+        if let Some(point) = point {
+            Event::mouse(point, MouseButton::Left, KCG_EVENT_MOUSE_MOVED)?.post();
+            thread::sleep(Duration::from_millis(10));
+        }
         Event::scroll(&source, delta_x, delta_y)?.post();
         Ok(())
     }
@@ -664,7 +674,11 @@ mod platform {
         ))
     }
 
-    pub fn scroll(_delta_x: f64, _delta_y: f64) -> Result<(), OperatorError> {
+    pub fn scroll(
+        _point: Option<Point>,
+        _delta_x: f64,
+        _delta_y: f64,
+    ) -> Result<(), OperatorError> {
         Err(OperatorError::Platform(
             "macOS input synthesis is unavailable on non-macOS hosts".into(),
         ))

@@ -199,6 +199,45 @@ async fn scroll_command_maps_deltas_to_tool_input() {
 }
 
 #[tokio::test]
+async fn scroll_command_accepts_snapshot_locator() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "scroll",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--delta-x",
+        "0",
+        "--delta-y",
+        "-120",
+        "--snapshot",
+        "s_123",
+        "--element",
+        "e_45",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "scroll");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target": "local:macos",
+            "timeout_ms": 250,
+            "delta_x": 0.0,
+            "delta_y": -120.0,
+            "locator": {
+                "SnapshotElement": {
+                    "snapshot": "s_123",
+                    "element": "e_45"
+                }
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn drag_command_maps_from_and_to_locators_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",

@@ -364,6 +364,8 @@ struct ScrollArgs {
     delta_x: f64,
     #[arg(long, allow_hyphen_values = true)]
     delta_y: f64,
+    #[command(flatten)]
+    locator: ScrollLocatorArgs,
 }
 
 impl ScrollArgs {
@@ -371,6 +373,9 @@ impl ScrollArgs {
         let mut input = common_input(&self.common);
         input.insert("delta_x".into(), Value::from(self.delta_x));
         input.insert("delta_y".into(), Value::from(self.delta_y));
+        if let Some(locator) = self.locator.into_locator()? {
+            insert_serialized(&mut input, "locator", locator)?;
+        }
         Ok(ToolInvocation {
             tool: "scroll",
             input: Value::Object(input),
@@ -579,6 +584,39 @@ struct ClickLocatorArgs {
 }
 
 impl ClickLocatorArgs {
+    fn into_locator(self) -> Result<Option<Locator>, String> {
+        RawLocatorArgs {
+            snapshot: self.snapshot,
+            element: self.element,
+            text: self.text,
+            role: self.role,
+            index: self.index,
+            x: self.x,
+            y: self.y,
+        }
+        .into_locator()
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct ScrollLocatorArgs {
+    #[arg(long)]
+    snapshot: Option<String>,
+    #[arg(long)]
+    element: Option<String>,
+    #[arg(long)]
+    text: Option<String>,
+    #[arg(long)]
+    role: Option<String>,
+    #[arg(long, default_value_t = 0)]
+    index: usize,
+    #[arg(long)]
+    x: Option<f64>,
+    #[arg(long)]
+    y: Option<f64>,
+}
+
+impl ScrollLocatorArgs {
     fn into_locator(self) -> Result<Option<Locator>, String> {
         RawLocatorArgs {
             snapshot: self.snapshot,

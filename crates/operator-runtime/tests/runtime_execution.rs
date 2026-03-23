@@ -359,6 +359,73 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
     );
 }
 
+#[tokio::test]
+async fn runtime_resolves_scroll_snapshot_element_locator_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-scroll");
+    snapshot.elements.get_mut(&"el-1".into()).unwrap().bounds = Some(Rect {
+        x: 20.0,
+        y: 40.0,
+        width: 80.0,
+        height: 20.0,
+    });
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 9,
+        detail: Some("scrolled".into()),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Scroll {
+                    delta_x: 0.0,
+                    delta_y: -120.0,
+                },
+                locator: Some(Locator::SnapshotElement {
+                    snapshot: snapshot.id.clone(),
+                    element: "el-1".into(),
+                }),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Scroll {
+                delta_x: 0.0,
+                delta_y: -120.0,
+            },
+            locator: Some(Locator::Coords(Point { x: 60.0, y: 50.0 })),
+        }
+    );
+}
+
 #[derive(Default)]
 struct RecordingEventSink {
     events: Mutex<Vec<AuditEvent>>,

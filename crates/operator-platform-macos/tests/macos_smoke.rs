@@ -136,6 +136,64 @@ async fn click_and_type_with_system_driver() {
 
 #[tokio::test]
 #[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
+async fn scroll_with_locator_with_system_driver() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("Skipping macOS smoke test on non-macOS host.");
+        return;
+    }
+
+    if let Err(error) = prepare_textedit_document() {
+        if is_sandboxed_macos_failure(&error) {
+            eprintln!("Skipping macOS scroll smoke test in sandboxed session: {error}");
+            return;
+        }
+        panic!("failed to prepare TextEdit scroll target: {error}");
+    }
+
+    let cleanup = CleanupTextEditDocument;
+    let driver = MacosDriver::system();
+    let health = driver.health_check().await.unwrap();
+    if health.permissions.accessibility != PermissionStatus::Granted {
+        eprintln!(
+            "Skipping macOS scroll smoke test without accessibility permission: {:?}",
+            health.permissions
+        );
+        return;
+    }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let outcome = match driver
+        .act(
+            ActionRequest {
+                action: Action::Scroll {
+                    delta_x: 0.0,
+                    delta_y: -6.0,
+                },
+                locator: Some(Locator::Role {
+                    role: "AXTextArea".into(),
+                    index: 0,
+                }),
+            },
+            &exec_context(),
+        )
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) if is_sandboxed_macos_failure(&error) => {
+            eprintln!("Skipping macOS scroll smoke test in sandboxed session: {error}");
+            return;
+        }
+        Err(error) => panic!("scroll action failed: {error}"),
+    };
+
+    assert!(outcome.success);
+
+    drop(cleanup);
+}
+
+#[tokio::test]
+#[ignore = "requires a macOS GUI session with accessibility and Apple Events permissions"]
 async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
     if !cfg!(target_os = "macos") {
         eprintln!("Skipping macOS smoke test on non-macOS host.");

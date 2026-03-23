@@ -553,6 +553,68 @@ async fn scroll_action_returns_successful_outcome() {
     assert_eq!(
         input.calls(),
         vec![RecordedInput::Scroll {
+            point: None,
+            delta_x: 0.0,
+            delta_y: -12.0,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn scroll_action_resolves_text_locator_before_scrolling() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService::default(),
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::from([(
+                ElementId("ax-scroll-target".into()),
+                UiElement {
+                    id: ElementId("ax-scroll-target".into()),
+                    role: "AXScrollArea".into(),
+                    label: Some("Results".into()),
+                    value: None,
+                    bounds: Some(Rect {
+                        x: 120.0,
+                        y: 160.0,
+                        width: 80.0,
+                        height: 40.0,
+                    }),
+                    enabled: Some(true),
+                    children: vec![],
+                    confidence: Some(1.0),
+                    source: ElementSource::Native,
+                },
+            )]),
+            root_ids: vec![ElementId("ax-scroll-target".into())],
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Scroll {
+                    delta_x: 0.0,
+                    delta_y: -12.0,
+                },
+                locator: Some(Locator::Text("Results".into())),
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("scrolled"));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Scroll {
+            point: Some(Point { x: 160.0, y: 180.0 }),
             delta_x: 0.0,
             delta_y: -12.0,
         }]
@@ -879,6 +941,7 @@ enum RecordedInput {
     },
     Hotkey(Vec<String>),
     Scroll {
+        point: Option<Point>,
         delta_x: f64,
         delta_y: f64,
     },
@@ -921,11 +984,17 @@ impl InputSynthesizer for StubInputSynthesizer {
         Ok(())
     }
 
-    fn scroll(&self, delta_x: f64, delta_y: f64) -> Result<(), OperatorError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(RecordedInput::Scroll { delta_x, delta_y });
+    fn scroll(
+        &self,
+        point: Option<Point>,
+        delta_x: f64,
+        delta_y: f64,
+    ) -> Result<(), OperatorError> {
+        self.calls.lock().unwrap().push(RecordedInput::Scroll {
+            point,
+            delta_x,
+            delta_y,
+        });
         Ok(())
     }
 

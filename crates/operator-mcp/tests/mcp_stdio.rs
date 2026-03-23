@@ -191,6 +191,12 @@ fn stdio_transport_round_trips_initialize_and_tools_list() {
     assert_eq!(click["annotations"]["destructiveHint"], json!(true));
     assert!(click["inputSchema"]["properties"]["mode"].is_object());
     assert!(click["inputSchema"]["properties"]["button"].is_null());
+
+    let scroll = tools
+        .iter()
+        .find(|tool| tool["name"] == json!("scroll"))
+        .unwrap();
+    assert!(scroll["inputSchema"]["properties"]["locator"].is_object());
 }
 
 #[test]

@@ -464,6 +464,9 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
             "scroll",
             json!({
                 "target": "local:macos",
+                "locator": {
+                    "Text": "Results"
+                },
                 "delta_x": 0.0,
                 "delta_y": -120.0
             }),
@@ -570,7 +573,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                         delta_x: 0.0,
                         delta_y: -120.0,
                     },
-                    locator: None,
+                    locator: Some(Locator::Text("Results".into())),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -689,6 +692,7 @@ async fn action_tools_export_stable_specs() {
     let scroll = specs.iter().find(|spec| spec.name == "scroll").unwrap();
     assert!(scroll.has_side_effects);
     assert_eq!(scroll.capabilities_required, &[Capability::PointerInput]);
+    assert!(scroll.input_schema["properties"]["locator"].is_object());
 
     let focus_window = specs
         .iter()

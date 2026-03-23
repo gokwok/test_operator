@@ -82,7 +82,8 @@ fn scroll_registration() -> ToolRegistration {
     ToolRegistration {
         spec: ToolSpec {
             name: "scroll",
-            description: "Scroll by horizontal and vertical wheel deltas.",
+            description:
+                "Scroll by horizontal and vertical wheel deltas, optionally scoped by a locator.",
             input_schema: json_schema_for::<ScrollToolInput>(),
             output_schema: json_schema_for::<ActionToolOutput>(),
             capabilities_required: SCROLL_CAPABILITIES,
@@ -193,7 +194,7 @@ async fn scroll(
                     delta_x: input.delta_x,
                     delta_y: input.delta_y,
                 },
-                locator: None,
+                locator: input.locator,
             },
             ctx,
         )
@@ -351,6 +352,7 @@ struct ScrollToolInput {
     exec: ToolExecInput,
     delta_x: f64,
     delta_y: f64,
+    locator: Option<Locator>,
 }
 
 #[allow(dead_code)]

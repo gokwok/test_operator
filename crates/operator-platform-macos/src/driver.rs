@@ -262,7 +262,7 @@ where
             }
             Action::Scroll { delta_x, delta_y } => {
                 let permissions = self.permission_reader.current_permissions()?;
-                self.scroll(delta_x, delta_y, &permissions)
+                self.scroll(req.locator, delta_x, delta_y, &permissions)
             }
             Action::Drag { from, to } => {
                 let permissions = self.permission_reader.current_permissions()?;
@@ -337,16 +337,23 @@ where
 
     fn scroll(
         &self,
+        locator: Option<Locator>,
         delta_x: f64,
         delta_y: f64,
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        self.input_synthesizer.scroll(delta_x, delta_y)?;
+        let (point, warning) = if let Some(locator) = locator {
+            let resolved = resolve_locator(&locator, &self.tree_inspector)?;
+            (Some(resolved.point), resolved.warning)
+        } else {
+            (None, None)
+        };
+        self.input_synthesizer.scroll(point, delta_x, delta_y)?;
         Ok(ActionOutcome {
             success: true,
             duration_ms: 0,
-            detail: Some("scrolled".into()),
+            detail: Some(action_detail("scrolled", warning.as_deref())),
         })
     }
 
