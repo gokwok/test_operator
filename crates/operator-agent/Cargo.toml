@@ -1,0 +1,14 @@
+[package]
+name = "operator-agent"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+autobins = false
+
+[dependencies]
+operator-core = { path = "../operator-core" }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
