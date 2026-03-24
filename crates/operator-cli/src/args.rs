@@ -13,8 +13,9 @@ use operator_core::{
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-const HEADER_STYLE: &str = "\x1b[1;38;5;45m";
-const COMMAND_STYLE: &str = "\x1b[1;38;5;214m";
+const HEADER_STYLE: &str = "\x1b[1;38;5;214m";
+const COMMAND_STYLE: &str = "\x1b[1;38;5;255m";
+const BODY_STYLE: &str = "\x1b[38;5;255m";
 const MUTED_STYLE: &str = "\x1b[38;5;245m";
 const RESET_STYLE: &str = "\x1b[0m";
 
@@ -29,9 +30,9 @@ Commands:
   fullscreen  Create a snapshot from the full display or the active display
   help        Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -51,9 +52,9 @@ Commands:
   get   Read a stored snapshot by ID
   help  Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -72,9 +73,9 @@ Commands:
   get   Resolve a stored capture artifact by ID
   help  Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -94,9 +95,9 @@ Commands:
   windows  List windows, optionally filtered by app
   help     Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -123,9 +124,9 @@ Commands:
   swipe   Swipe between two locators
   help    Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -150,9 +151,9 @@ Commands:
   unhide    Unhide an application
   help      Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -178,9 +179,9 @@ Commands:
   set-bounds  Set the full bounds of a specific window
   help        Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -200,9 +201,9 @@ Commands:
   serve  Run the MCP stdio server
   help   Print this message or the help of the given subcommand(s)
 
-Global Runtime Flags:
+Global Runtime Flags
       --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target (default: local:macos)
+      --target <TARGET>        Select the runtime target
       --timeout-ms <TIMEOUT_MS>
                                Override the runtime timeout for this command
   -h, --help                   Print help
@@ -223,7 +224,7 @@ const CAPABILITIES_AFTER_HELP: &str = "Examples:
 
 const FOCUS_AFTER_HELP: &str = "Examples:
   operator focus
-  operator --target local:macos focus";
+  operator --json focus";
 
 const OBSERVE_WINDOW_AFTER_HELP: &str = "Examples:
   operator observe window --window-id 42 --capture elements
@@ -270,15 +271,15 @@ const MCP_SERVE_AFTER_HELP: &str = "Examples:
 
 fn styled_global_runtime_flags() -> String {
     format!(
-        "{header}Global Runtime Flags:{reset}\n\
-      {command}--json{reset}                   {muted}Emit machine-readable JSON output{reset}\n\
-      {command}--target <TARGET>{reset}        {muted}Select the runtime target (default: local:macos){reset}\n\
+        "{header}Global Runtime Flags{reset}\n\
+      {command}--json{reset}                   {body}Emit machine-readable JSON output{reset}\n\
+      {command}--target <TARGET>{reset}        {body}Select the runtime target{reset}\n\
       {command}--timeout-ms <TIMEOUT_MS>{reset}\n\
-                               {muted}Override the runtime timeout for this command{reset}\n\
-  {command}-h, --help{reset}                   {muted}Print help{reset}\n",
+                               {body}Override the runtime timeout for this command{reset}\n\
+  {command}-h, --help{reset}                   {body}Print help{reset}\n",
         header = HEADER_STYLE,
         command = COMMAND_STYLE,
-        muted = MUTED_STYLE,
+        body = BODY_STYLE,
         reset = RESET_STYLE,
     )
 }
@@ -302,7 +303,7 @@ fn styled_group_help(
     help.push('\n');
     writeln!(
         &mut help,
-        "{header}Usage:{reset} {command}{usage}{reset}",
+        "{header}Usage{reset} {command}{usage}{reset}",
         header = HEADER_STYLE,
         command = COMMAND_STYLE,
         reset = RESET_STYLE,
@@ -311,7 +312,7 @@ fn styled_group_help(
     help.push('\n');
     writeln!(
         &mut help,
-        "{header}Commands:{reset}",
+        "{header}Commands{reset}",
         header = HEADER_STYLE,
         reset = RESET_STYLE,
     )
@@ -319,10 +320,10 @@ fn styled_group_help(
     for (command, details) in commands {
         writeln!(
             &mut help,
-            "  {command_style}{command:<width$}{reset} {muted}{details}{reset}",
+            "  {command_style}{command:<width$}{reset} {body}{details}{reset}",
             command_style = COMMAND_STYLE,
+            body = BODY_STYLE,
             reset = RESET_STYLE,
-            muted = MUTED_STYLE,
             width = width,
         )
         .expect("write command row");
@@ -332,7 +333,7 @@ fn styled_group_help(
     help.push('\n');
     writeln!(
         &mut help,
-        "{header}Examples:{reset}",
+        "{header}Examples{reset}",
         header = HEADER_STYLE,
         reset = RESET_STYLE,
     )
@@ -360,21 +361,21 @@ fn styled_group_help(
 
 fn root_help() -> String {
     format!(
-        "{command}Operator{reset} desktop automation CLI\n\
-{muted}Observe UI state, query runtime context, perform actions, or serve MCP workflows.{reset}\n\n\
-{header}Usage:{reset} {command}operator{reset} [OPTIONS] [COMMAND]\n\n\
-{muted}Tip:{reset}\n  {muted}Start with {command}operator observe --help{reset}{muted}, {command}operator input --help{reset}{muted}, or {command}operator <group> <command> --help{reset}{muted}.{reset}\n\n\
-{header}Core:{reset}\n  {command}permissions{reset}   {muted}Check macOS automation permissions and runtime readiness{reset}\n  {command}capabilities{reset}  {muted}Show supported surfaces, queries, and actions for the active target{reset}\n\n\
-{header}Observe:{reset}\n  {command}observe{reset}       {muted}Create snapshots from frontmost, window, region, or fullscreen surfaces{reset}\n  {command}snapshot{reset}      {muted}Read stored snapshots by ID{reset}\n  {command}artifact{reset}      {muted}Resolve stored capture artifacts by ID{reset}\n\n\
-{header}Query:{reset}\n  {command}list{reset}          {muted}List running apps or windows{reset}\n  {command}focus{reset}         {muted}Show the currently focused app, window, and element{reset}\n\n\
-{header}Action:{reset}\n  {command}input{reset}         {muted}Pointer and keyboard actions against locators or target windows/apps{reset}\n  {command}app{reset}           {muted}Launch, switch, hide, quit, and relaunch applications{reset}\n  {command}window{reset}        {muted}Focus, close, resize, or move application windows{reset}\n\n\
-{header}MCP:{reset}\n  {command}mcp{reset}           {muted}Run MCP stdio server commands{reset}\n\n\
-{header}A2A:{reset}\n  {muted}Not yet implemented. Reserved for future agent interface commands.{reset}\n\n\
-{header}Global Runtime Flags:{reset}\n      {command}--json{reset}                   {muted}Emit machine-readable JSON output{reset}\n      {command}--target <TARGET>{reset}        {muted}Select the runtime target (default: local:macos){reset}\n      {command}--timeout-ms <TIMEOUT_MS>{reset}\n                               {muted}Override the runtime timeout for this command{reset}\n  {command}-h, --help{reset}                   {muted}Print help{reset}\n\n\
-{header}Examples:{reset}\n  {command}operator observe frontmost{reset}\n  {command}operator list windows{reset}\n  {command}operator input click --text Save{reset}\n  {command}operator mcp serve{reset}\n\n\
+        "{header}Operator{reset} {body}desktop automation CLI{reset}\n\n\
+{header}Usage{reset} {command}operator{reset} [OPTIONS] [COMMAND]\n\n\
+{body}Operator is a cross-platform desktop automation runtime with a stable shell surface for observe, query, action, MCP, and future A2A workflows.{reset}\n\n\
+{header}Core{reset}\n  {command}permissions{reset}   {body}Check automation permissions and runtime readiness{reset}\n  {command}capabilities{reset}  {body}Show supported surfaces, queries, and actions for the active target{reset}\n\n\
+{header}Observe{reset}\n  {command}observe{reset}       {body}Create snapshots from frontmost, window, region, or fullscreen surfaces{reset}\n  {command}snapshot{reset}      {body}Read stored snapshots by ID{reset}\n  {command}artifact{reset}      {body}Resolve stored capture artifacts by ID{reset}\n\n\
+{header}Query{reset}\n  {command}list{reset}          {body}List running apps or windows{reset}\n  {command}focus{reset}         {body}Show the currently focused app, window, and element{reset}\n\n\
+{header}Action{reset}\n  {command}input{reset}         {body}Pointer and keyboard actions against locators or target windows/apps{reset}\n  {command}app{reset}           {body}Launch, switch, hide, quit, and relaunch applications{reset}\n  {command}window{reset}        {body}Focus, close, resize, or move application windows{reset}\n\n\
+{header}MCP{reset}\n  {command}mcp{reset}           {body}Run MCP stdio server commands{reset}\n\n\
+{header}A2A{reset}\n  {body}Not yet implemented. Reserved for future agent interface commands.{reset}\n\n\
+{header}Global Runtime Flags{reset}\n      {command}--json{reset}                   {body}Emit machine-readable JSON output{reset}\n      {command}--target <TARGET>{reset}        {body}Select the runtime target{reset}\n      {command}--timeout-ms <TIMEOUT_MS>{reset}\n                               {body}Override the runtime timeout for this command{reset}\n  {command}-h, --help{reset}                   {body}Print help{reset}\n\n\
+{header}Examples{reset}\n  {command}operator observe frontmost{reset}\n  {command}operator list windows{reset}\n  {command}operator input click --text Save{reset}\n  {command}operator mcp serve{reset}\n\n\
 {muted}Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage.{reset}\n",
         header = HEADER_STYLE,
         command = COMMAND_STYLE,
+        body = BODY_STYLE,
         muted = MUTED_STYLE,
         reset = RESET_STYLE,
     )
@@ -523,11 +524,11 @@ fn mcp_help() -> String {
 
 fn help_styles() -> Styles {
     Styles::styled()
-        .header(Ansi256Color(45).on_default().bold())
-        .usage(Ansi256Color(45).on_default().bold())
-        .literal(Ansi256Color(214).on_default().bold())
-        .placeholder(Ansi256Color(213).on_default())
-        .context(Ansi256Color(245).on_default())
+        .header(Ansi256Color(214).on_default().bold())
+        .usage(Ansi256Color(214).on_default().bold())
+        .literal(Ansi256Color(255).on_default().bold())
+        .placeholder(Ansi256Color(255).on_default())
+        .context(Ansi256Color(255).on_default())
 }
 
 fn legacy_command_replacement(command: &str) -> Option<&'static str> {
@@ -594,7 +595,7 @@ fn root_command_token(args: &[OsString]) -> Option<&str> {
 #[command(
     name = "operator",
     about = "Operator desktop automation CLI",
-    long_about = "Observe UI state, query runtime context, perform actions, or serve MCP workflows."
+    long_about = "Operator is a cross-platform desktop automation runtime with a stable shell surface for observe, query, action, MCP, and future A2A workflows."
 )]
 pub(crate) struct Cli {
     #[command(flatten)]
@@ -728,7 +729,7 @@ pub(crate) enum CliExecution {
 #[derive(Debug, Subcommand)]
 enum Command {
     #[command(
-        about = "Check macOS automation permissions and runtime readiness",
+        about = "Check automation permissions and runtime readiness",
         after_help = PERMISSIONS_AFTER_HELP
     )]
     Permissions(CommonArgs),
@@ -802,11 +803,7 @@ impl Command {
 
 #[derive(Debug, Clone, Default, Args)]
 struct CommonArgs {
-    #[arg(
-        long,
-        global = true,
-        help = "Select the runtime target (default: local:macos)"
-    )]
+    #[arg(long, global = true, help = "Select the runtime target")]
     target: Option<String>,
     #[arg(
         long = "json",
