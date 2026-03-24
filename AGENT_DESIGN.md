@@ -47,9 +47,9 @@
 - 让 runtime 内核依赖模型/provider SDK
 - 为每个模型单独设计 planner 协议
 
-## 总体结论
+## 总体架构
 
-采用 **独立 `operator-agent` crate + 内建工具直调** 的方案。
+`operator-agent` 采用 **独立 crate + 内建工具直调** 的结构。
 
 推荐结构：
 
@@ -57,11 +57,12 @@
 operator-agent
   ├── AgentRunner
   ├── AgentSessionState
-  ├── ModelRegistry / ModelClient
+  ├── ModelRegistry / ModelProvider
   ├── Planner
   ├── DecisionParser / DecisionValidator
+  ├── TaskReflector
   ├── ToolExecutor
-  ├── PromptAssembler
+  ├── ContextAssembler
   └── AgentConfig
 ```
 
@@ -71,49 +72,6 @@ operator-agent
 - Tool execution 统一走 `ToolRegistry`
 - 模型只负责“生成下一步决策”，不直接接触平台或 CLI
 - 平台差异通过已有 `CapabilitySet + ToolCatalog` 下沉
-
-## 方案比较
-
-### 方案 1：独立 `operator-agent` crate，直接调用 `ToolRegistry`
-
-优点：
-
-- 与当前 `operator-core` / `operator-runtime` 分层最一致
-- 不走 CLI，不走 MCP，执行链最短
-- 工具 schema、side-effect gate、capability check、verification 全部沿用 runtime 现有能力
-- 后续 A2A 只需在外层加协议适配，不需要重写 agent core
-
-缺点：
-
-- 需要自己定义 planner output contract
-- 需要自己实现 provider adapter 和 session state
-
-### 方案 2：复刻 `agent_v3` 的 LangGraph 风格状态机
-
-优点：
-
-- planner / validator / executor 边界显式
-- 容易映射已有参考实现
-
-缺点：
-
-- 会把 Thinkflow / LangGraph 形态一并带入 Rust 代码库
-- 前期复杂度偏高
-- 不符合当前 Operator “少量清晰 crate”的约束
-
-### 方案 3：完全依赖 provider-native tool calling
-
-优点：
-
-- 最少的 agent orchestration 代码
-
-缺点：
-
-- `gpt-5.4` 和 `doubao-seed` 的行为不一定一致
-- 很难维持跨模型稳定 contract
-- debug、回放、回归测试都更难
-
-结论：**采用方案 1**。
 
 ## 与 `operation_agent/agent_v3` 的关系
 
@@ -221,57 +179,135 @@ pub struct AgentSessionState {
     pub status: AgentSessionStatus,
     pub turn_index: u32,
     pub step_index: u32,
+    pub parse_attempts: u32,             // 当前 step 的 parse retry 计数
     pub messages: Vec<AgentMessage>,
     pub tool_trace: Vec<ToolTraceEntry>,
-    pub notes: Vec<String>,
+    pub notes: Vec<String>,              // 由 TaskReflector 写入，任务开始时清空
     pub latest_snapshot: Option<SnapshotId>,
+    pub previous_snapshot_visual: Option<ArtifactId>, // 上一轮截图，供前后对比
     pub latest_artifacts: Vec<ArtifactId>,
     pub ui_state_stale: bool,
+    pub consecutive_error_count: u32,    // 连续相同错误计数
+    pub last_error_fingerprint: Option<String>, // 最近错误的指纹（tool_name + error_kind）
 }
 ```
 
 说明：
 
-- `messages` 是 planner 可消费的对话/决策历史
-- `tool_trace` 是结构化工具执行历史
-- `latest_snapshot` / `latest_artifacts` 保存最近观察结果的引用
-- `ui_state_stale` 用于标记界面是否因动作而失真
+- `messages`：planner 可消费的对话/决策历史
+- `tool_trace`：结构化工具执行历史
+- `latest_snapshot` / `latest_artifacts`：保存最近观察结果的引用
+- `previous_snapshot_visual`：上一轮截图引用，由 ContextAssembler 注入 `PlannerContext.previous_visual_input`，每次成功 observe 后更新
+- `ui_state_stale`：标记界面是否因动作而失真
+- `consecutive_error_count` / `last_error_fingerprint`：用于检测连续相同错误并触发终止
 
-### 3. `ModelRegistry` 与 `ModelClient`
+### 3. 模型抽象与封装
+
+模型层直接参考 `/Users/gokwok/code/work/kernel_agent/crates/base` 的分层方式，但在 `operator-agent` 内按当前需求做裁剪。
+
+推荐沿用它的三层结构：
+
+- `model::types`
+- `model::provider`
+- `model::event`
+
+其中最值得直接参考的边界是：
+
+- `types`
+  - `ModelId`
+  - `ProviderKind`
+  - `ModelConfig`
+  - `Context`
+  - `Message`
+  - `ContentBlock`
+  - `ToolSpec`
+  - `Usage`
+  - `CallOptions`
+- `provider`
+  - `ModelRequest`
+  - `ModelError`
+  - `ModelProvider`
+- `event`
+  - `ModelEvent`
+  - `ModelStream`
 
 第一期支持两个模型名：
 
 - `gpt-5.4`
 - `doubao-seed`
 
-模型层不直接暴露 provider 概念给 planner。统一接口：
+在 Operator 中，planner 不直接依赖具体 provider，而是只依赖统一的 `Context` / `Message` / `ContentBlock`。
+
+建议模型模块内部结构如下：
+
+```text
+operator-agent::model
+  ├── types.rs
+  ├── provider.rs
+  ├── event.rs
+  ├── registry.rs
+  ├── openai.rs
+  └── doubao.rs
+```
+
+其中：
+
+- `gpt-5.4` 对应 `ProviderKind::OpenAi`
+- `doubao-seed` 优先按 OpenAI-compatible 方式适配，放在 `doubao.rs`
+
+建议保留统一 provider 接口：
 
 ```rust
-pub trait ModelClient: Send + Sync {
-    fn profile(&self) -> &ModelProfile;
-
-    async fn generate(
-        &self,
-        request: ModelRequest,
-    ) -> Result<ModelResponse, AgentError>;
+pub trait ModelProvider: Send + Sync + 'static {
+    fn stream(&self, req: ModelRequest) -> ModelStream;
 }
 ```
 
-建议 profile：
+`ModelRegistry` 负责把逻辑模型名解析成 `ModelConfig + Provider`：
 
 ```rust
-pub struct ModelProfile {
-    pub name: String,
-    pub supports_vision: bool,
-    pub supports_json_mode: bool,
-    pub max_output_tokens: u32,
+pub struct ModelRegistry {
+    configs: HashMap<Arc<str>, ModelConfig>,
+    providers: HashMap<ProviderKind, Arc<dyn ModelProvider>>,
 }
 ```
 
-第一期实现：
+`ModelRequest` 和 `Context` 也建议直接参考 `kernel_agent/base` 的结构：
 
-- `OpenAIModelClient` for `gpt-5.4`
-- `DoubaoModelClient` for `doubao-seed`
+```rust
+pub struct ModelRequest {
+    pub config: ModelConfig,
+    pub context: Context,
+    pub options: CallOptions,
+    pub stream: bool,
+    pub timeout: Option<Duration>,
+    pub request_id: Option<Arc<str>>,
+    pub max_retry_delay_ms: Option<u64>,
+}
+```
+
+```rust
+pub struct Context {
+    pub system: Option<String>,
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolSpec>,
+}
+```
+
+这样做的意义是：
+
+- 保持模型层与业务层解耦
+- 未来若需要 streaming、thinking、tool call delta，不必推翻抽象
+- `gpt-5.4` 和 `doubao-seed` 可共享同一套 message/tool context 结构
+
+第一期真正启用的能力可收敛为：
+
+- 文本输出
+- 可选视觉输入
+- 可选 JSON mode
+- 非 streaming 主流程
+
+即使主流程先不消费 `ModelStream`，也建议保留 `event` 分层，为后续 A2A/streaming 做前向兼容。
 
 ### 4. `Planner`
 
@@ -297,6 +333,7 @@ pub enum AgentDecision {
     CallTool {
         name: String,
         arguments: serde_json::Value,
+        thought: Option<String>,
         summary: String,
     },
     Finish {
@@ -308,20 +345,70 @@ pub enum AgentDecision {
 }
 ```
 
+说明：
+
+- `thought` 是模型的推理痕迹，不执行但保留在 session transcript 中，便于 debug
+
 设计要求：
 
 - 默认要求模型输出 JSON object
 - 若 provider 支持 schema/json mode，则走约束输出
-- 若 provider 输出格式漂移，parser 允许做一次恢复解析
-- validator 负责检查：
-  - 工具名是否存在
-  - 参数是否符合 schema
-  - 是否调用了当前 target 不支持的工具
-  - 是否违反 side-effect 策略
+- 若 provider 输出格式漂移，先做一次就地恢复解析；恢复失败则走 **parse retry 回路**
 
-这部分借鉴 `agent_v3` 的 parser/validator 思路，但不绑定其文本格式。
+**Parse retry 回路：**
 
-### 6. `ToolExecutor`
+parse 失败或 validator 校验不通过后，不直接终止，而是将失败原因注入上下文，退回 planner 重新生成决策，最多重试 `MAX_PARSE_ATTEMPTS`（建议 3）次。超过上限仍失败则标记 `Fail`。
+
+```text
+planner -> parser/validator
+  若失败 && attempts < MAX_PARSE_ATTEMPTS:
+    构造错误反馈 message -> 重新进入 planner
+  若失败 && attempts >= MAX_PARSE_ATTEMPTS:
+    -> Fail
+```
+
+validator 负责检查：
+
+- 工具名是否存在
+- 参数是否符合 schema
+- 是否调用了当前 target 不支持的工具
+- 是否违反 side-effect 策略
+
+这部分借鉴 `agent_v3` 的 parser/validator/retry 思路，但不绑定其文本格式。
+
+### 6. `TaskReflector`
+
+**这是防止模型"假完成"的关键机制。**
+
+当 planner 输出 `Finish` 决策时，不直接退出 loop，而是先经过 `TaskReflector` 做闭环验证：
+
+- 将完整 session transcript、原始 task 和 finish 摘要传给模型
+- 模型返回 `OK` 或 `NOT_OK`，以及原因
+
+若验证结果为 `NOT_OK`：
+
+- 回滚本次 `Finish` 决策（不计入最终结果）
+- 将失败原因追加到 `AgentSessionState.notes`
+- 重新进入 planner，利用 notes 引导下一步
+
+若验证结果为 `OK`：
+
+- 正式退出 loop，输出最终结果
+
+```text
+planner -> Finish
+  -> TaskReflector
+    -> OK  -> 退出 loop，输出结果
+    -> NOT_OK -> 追加 note -> 重新进入 planner
+```
+
+`notes` 字段生命周期规则：
+
+- **写入时机**：仅在 `TaskReflector` 判定 `NOT_OK` 时写入失败原因
+- **清空时机**：任务开始时（新任务 bootstrap 阶段）清空；同一任务内 notes 持续累积
+- **用途**：注入 planner context，作为"上次失败的教训"引导后续决策
+
+### 7. `ToolExecutor`
 
 这是第一期最关键的组件。
 
@@ -439,11 +526,10 @@ Agent 使用统一 planner contract，不做模型分叉工作流。
 
 策略如下：
 
-- 公共层：
-  - `ModelRequest`
-  - `ModelResponse`
-  - `ModelProfile`
-- provider 差异只放在 adapter
+- 公共层直接采用 `Context` / `Message` / `ContentBlock` / `ToolSpec`
+- provider 差异只放在 `ModelProvider` 实现层
+- `ModelRegistry` 负责逻辑模型名到 provider config 的解析
+- planner 只消费统一的 `Context`，不依赖具体 SDK
 - parser/validator 兜底跨模型输出一致性
 
 具体要求：
@@ -478,23 +564,43 @@ pub struct PlannerContext {
     pub recent_tool_results: Vec<ToolResultSummary>,
     pub latest_snapshot: Option<SnapshotSummary>,
     pub latest_visual_input: Option<ModelImageInput>,
+    pub previous_visual_input: Option<ModelImageInput>,  // 上一轮截图，用于前后对比
+    pub notes: Vec<String>,
 }
 ```
 
+说明：
+
+- `previous_visual_input`：上一步动作执行前的截图（或上一轮 observe 的截图）。模型同时持有前后两张截图，可感知"操作是否生效"，避免重复操作或误判。来源是 `AgentSessionState.previous_snapshot_visual`。
+- `recent_tool_results` 的窗口建议保留最近 **5 轮**。
+
+**Long context KV store：**
+
+工具返回结果可能包含大量文本（如 AX tree dump、长列表），若直接注入 prompt 会迅速超出上下文窗口。引入进程内 KV store 管理长内容：
+
+- 工具结果长度超过阈值（建议 400 字符）时，将内容存入 KV store，生成 handle token（格式：`[KV:session:key]`）
+- `ToolResultSummary` 中只保留 handle token + 简短摘要，不保留原始内容
+- planner prompt 中引用 handle token
+- 执行工具时，executor 在组装参数前先展开 token（若参数中含有 handle 引用）
+- KV store 按 session 隔离，任务结束时释放
+
 ## `ui_state_stale` 规则
 
-动作工具执行后，UI 可能已改变。
+动作工具执行后，UI 可能已改变。为避免 planner 对过时 snapshot 继续推理，引入 stale 机制。
 
-为避免 planner 对过时 snapshot 继续推理：
+**当前设计（soft mechanism）：**
 
 - 任何有副作用的 action 执行成功后，`ui_state_stale = true`
-- 当 planner 看到：
-  - `ui_state_stale = true`
-  - 且接下来需要基于界面定位
-  - 应优先调用 `observe`
-- `observe` 成功后，`ui_state_stale = false`
+- ContextAssembler 将 stale 状态注入 prompt，提示 planner 应优先调用 `observe`
+- `observe` 成功后，`ui_state_stale = false`，同时更新 `previous_snapshot_visual`
 
-这条规则能把 `Operator` 的 snapshot-first 哲学真正落到 agent loop。
+**已知局限：** 这是 prompt 约定，模型可能忽略 stale 提示而直接采取 action，导致基于过时界面推理。
+
+**备选强制策略（后续迭代可考虑）：**
+
+action 执行成功后，AgentRunner **强制插入一次 observe**，再进入下一轮 planner，不依赖模型自觉。代价是增加每轮工具调用开销，适合高精度要求场景。
+
+第一期采用 soft 策略，同时在 planner prompt 中明确要求："每次 action 执行后必须先 observe 再做下一步决策"，以 prompt 约束替代强制路由。
 
 ## 第一期开机流程
 
@@ -508,16 +614,20 @@ pub struct PlannerContext {
    - 可选 `get-focus`
 4. 进入 step loop
 5. 每轮：
-   - 组装 planner context
+   - 组装 planner context（含前后截图、notes、tool results 摘要）
    - 调模型
    - parse + validate
+     - 失败时：注入错误反馈，重新调模型（最多 `MAX_PARSE_ATTEMPTS` 次）
+     - 超过上限：标记失败并退出
    - 若 `CallTool`：
      - 记录 `ToolCall`
      - 执行工具
-     - 记录 `ToolResult`
-     - 更新 session state
+     - 记录 `ToolResult`（长结果存 KV store，注入 handle token）
+     - 更新 session state（`ui_state_stale`、`previous_snapshot_visual`、error 计数）
    - 若 `Finish`：
-     - 输出完成结果并退出
+     - 调 `TaskReflector` 做闭环验证
+     - 验证 OK：输出完成结果并退出
+     - 验证 NOT_OK：追加 note，重置 step，重新进入 planner
    - 若 `Fail`：
      - 标记失败并退出
 6. 超过 `max_steps` 或超时则失败
@@ -544,12 +654,7 @@ pub struct PlannerContext {
 
 ## 配置设计
 
-当前 `DESIGN.md` 中的旧配置项：
-
-- `model.anthropic`
-- `agent.model = "claude-opus-4-6"`
-
-都应废弃。
+当前 `DESIGN.md` 中遗留的旧模型配置需要替换为 agent 自己的模型配置分组。
 
 建议改成：
 
@@ -565,17 +670,20 @@ provider    = "openai"
 model       = "gpt-5.4"
 api_key_env = "OPENAI_API_KEY"
 base_url    = "https://api.openai.com/v1"
+reasoning_level = "medium"
 
 [agent.models.doubao_seed]
-provider    = "doubao"
+provider    = "openai_compatible"
 model       = "doubao-seed"
 api_key_env = "DOUBAO_API_KEY"
-base_url    = ""
+base_url    = "..."
+reasoning_level = "medium"
 ```
 
 说明：
 
 - 模型名是逻辑别名，不直接把 provider SDK 写进业务层
+- 配置项语义尽量对齐 `kernel_agent/base` 的 `ModelConfig + CallOptions`
 - 具体 provider 需要的额外参数放在 adapter 内部消费
 
 ## 错误处理与停止条件
@@ -591,9 +699,9 @@ base_url    = ""
 
 恢复策略：
 
-- parser 允许一次恢复提取 JSON object
+- parser 先做一次就地恢复（提取首个 JSON object）；恢复失败则进入 parse retry 回路（最多 `MAX_PARSE_ATTEMPTS = 3` 次，每次将错误描述注入 planner context）
 - 工具错误默认反馈给 planner，允许 planner 决定是否换路径
-- 连续相同错误超过阈值则失败退出
+- **连续相同错误阈值**：连续 3 次触发相同错误指纹（`tool_name + error_kind`）则强制失败退出，避免无效循环。错误指纹由 executor 在写入 `ToolResult` 时计算，与 `consecutive_error_count` 配合使用；执行成功时重置计数。
 
 ## 测试策略
 
@@ -603,20 +711,33 @@ base_url    = ""
   - 正常 JSON
   - 多余文本包裹
   - 非法工具名
+  - parse retry 回路触发（3 次失败后 Fail）
 - `ModelRegistry`：
   - `gpt-5.4`
   - `doubao-seed`
 - `ContextAssembler`：
-  - screenshot / no screenshot
+  - screenshot + previous screenshot 均存在
+  - 无截图 fallback
   - stale / fresh UI state
+  - notes 注入
+- `KvStore`：
+  - 短内容直接返回，不存 KV
+  - 长内容存 KV，返回 handle token
+  - handle token 正确展开
+- `TaskReflector`：
+  - OK → 退出 loop
+  - NOT_OK → 追加 note，重新进入 planner
 
 ### 集成测试
 
 基于 `operator-testkit` 的 `MockPlatformDriver`：
 
-- 单轮 query -> finish
+- 单轮 query -> finish（TaskReflector OK）
 - observe -> click -> observe -> finish
+- finish NOT_OK -> 重新规划 -> finish OK
 - action 触发 `ui_state_stale`
+- parse 失败 3 次后任务 Fail
+- 连续相同错误 3 次后任务 Fail
 - capability 不满足时工具目录正确裁剪
 
 ### 回归测试
@@ -653,11 +774,15 @@ crates/operator-agent/
     planner/
       mod.rs
       prompts.rs
-      context.rs
+      context.rs        # ContextAssembler
       parser.rs
       validator.rs
+      reflector.rs      # TaskReflector
     model/
       mod.rs
+      types.rs
+      provider.rs
+      event.rs
       registry.rs
       openai.rs
       doubao.rs
@@ -665,6 +790,7 @@ crates/operator-agent/
       mod.rs
       executor.rs
       catalog.rs
+      kv_store.rs       # Long context KV store（handle token 管理）
 ```
 
 ## 实施建议
@@ -672,13 +798,15 @@ crates/operator-agent/
 建议把第一期拆成以下顺序：
 
 1. `operator-agent` crate skeleton
-2. `ModelClient` / `ModelRegistry`
+2. 模型抽象层（对齐 `kernel_agent/base` 的 `types/provider/event`）
 3. `ToolExecutor` 直接接 `ToolRegistry`
 4. `AgentSessionState` 与基础 loop
-5. planner contract / parser / validator
-6. `gpt-5.4` adapter
-7. `doubao-seed` adapter
-8. session event / transcript / integration tests
+5. planner contract / parser / validator（含 parse retry 回路）
+6. `ContextAssembler`（含前后截图、KV store handle 注入）
+7. `TaskReflector`（completion verification）
+8. `gpt-5.4` adapter
+9. `doubao-seed` adapter
+10. session event / transcript / integration tests
 
 ## 最终结论
 
@@ -695,6 +823,14 @@ crates/operator-agent/
 - 单 target
 - 单 loop
 - 本地执行
+
+核心可靠性机制（第一期必须落地）：
+
+- `TaskReflector`：防止模型假完成
+- Parse retry 回路：防止格式漂移导致任务失败
+- Long context KV store：防止 prompt 膨胀
+- 前后截图对比：支撑 GUI 动作感知
+- 连续错误指纹检测：防止无效死循环
 
 不做：
 
