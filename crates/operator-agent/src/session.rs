@@ -114,6 +114,7 @@ impl AgentSessionState {
     }
 
     pub fn push_tool_trace(&mut self, result: AgentToolResult, timestamp_ms: u64) {
+        self.update_ui_state_staleness(&result);
         self.tool_trace.push(ToolTraceEntry {
             turn_index: self.turn_index,
             step_index: self.step_index,
@@ -128,6 +129,18 @@ impl AgentSessionState {
 
     pub fn mark_ui_stale(&mut self) {
         self.ui_state_stale = true;
+    }
+
+    fn update_ui_state_staleness(&mut self, result: &AgentToolResult) {
+        if result.is_error {
+            return;
+        }
+
+        if result.tool_name == "observe" {
+            self.ui_state_stale = false;
+        } else if !result.read_only {
+            self.ui_state_stale = true;
+        }
     }
 
     pub fn record_observation(

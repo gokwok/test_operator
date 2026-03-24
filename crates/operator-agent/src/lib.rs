@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 pub mod model;
+pub mod planner;
 pub mod session;
 pub mod tools;
 
