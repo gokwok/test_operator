@@ -5,6 +5,7 @@ pub mod error;
 pub mod model;
 pub mod planner;
 pub mod policy;
+pub mod runner;
 pub mod session;
 pub mod tools;
 
@@ -19,6 +20,7 @@ pub use policy::{
     PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
     RepeatedErrorPolicy,
 };
+pub use runner::AgentRunner;
 pub use session::{AgentMessage, AgentSessionState, AgentSessionStatus, ToolTraceEntry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
