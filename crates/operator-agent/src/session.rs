@@ -99,6 +99,22 @@ impl AgentSessionState {
         self.parse_attempts = 0;
     }
 
+    pub fn bootstrap_task(&mut self, task: impl Into<String>) {
+        self.task = task.into();
+        self.status = AgentSessionStatus::Running;
+        self.turn_index = 0;
+        self.step_index = 0;
+        self.parse_attempts = 0;
+        self.messages.clear();
+        self.tool_trace.clear();
+        self.notes.clear();
+        self.latest_snapshot = None;
+        self.previous_snapshot_visual = None;
+        self.latest_artifacts.clear();
+        self.ui_state_stale = false;
+        self.clear_error_tracking();
+    }
+
     pub fn start_step(&mut self) {
         self.step_index += 1;
         self.parse_attempts = 0;

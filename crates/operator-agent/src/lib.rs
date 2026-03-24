@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use config::{AgentConfig, PlannerFormat};
 pub use error::AgentError;
 pub use planner::{AgentDecision, DecisionParser, DecisionValidator};
+pub use planner::{TaskReflection, TaskReflector};
 pub use policy::{
     PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
     RepeatedErrorPolicy,
