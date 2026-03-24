@@ -1,6 +1,6 @@
 # Operator Command Surface
 
-日期：2026-03-23
+日期：2026-03-24
 
 ## 目的
 
@@ -123,7 +123,7 @@ operator
     serve
 ```
 
-`A2A` 不作为真实命令出现；只在根 help 中以 `reserved` 文案保留。
+`A2A` 不作为真实命令出现；只在根 help 中以说明块保留。
 
 ## help 分组
 
@@ -146,9 +146,24 @@ operator
 - `MCP`
   - `mcp`
 - `A2A`
-  - `reserved`
+  - `Not yet implemented. Reserved for future agent interface commands.`
 
 根 help 不直接列出 `click`、`launch-app`、`snapshot-get` 这种叶子命令。
+
+## 当前 help 版式契约
+
+根 help、域 help、叶子命令 help 当前统一遵守以下展示规则：
+
+- `Usage` 始终位于最上方
+- 根 help 的 `Usage` 下方只保留一句 slogan：
+  - `Operator - Turn any desktop app into an API, from CLI to AI`
+- 根 help 使用 `Core / Observe / Query / Action / MCP / A2A` 作为导航分组标题
+- 标题不带冒号
+- 标题使用橙色高亮
+- 命令名使用白色加粗
+- 命令右侧说明文本使用普通白色
+- 只有底部导航提示使用灰色
+- 叶子命令 help 也遵守同一套无冒号标题规则，并将命令用途说明放在 `Usage` 之后
 
 ## 参数体系
 
@@ -343,6 +358,8 @@ operator mcp serve
 
 根 help 必须：
 
+- 以 `Usage` 开头
+- 在 `Usage` 下方显示 slogan
 - 只展示域命令
 - 按 `Core / Observe / Query / Action / MCP / A2A` 分组
 - 列出全局运行时参数
@@ -361,8 +378,8 @@ operator mcp serve
 
 例如 `operator input click --help`、`operator window resize --help`，必须展示：
 
-- 一行用途说明
 - `Usage`
+- 一行用途说明
 - 命令特有参数
 - 共享参数组
 - verification 约束
@@ -378,19 +395,19 @@ help 输出要进入 snapshot tests，保证：
 
 ## 二进制形态
 
-最终用户面只保留一个主二进制：
+当前最终用户面只保留一个主二进制：
 
 - `operator`
 
-`operator-mcp` 应并入：
+MCP 已并入：
 
 - `operator mcp serve`
 
-`operator-cli` 的 crate 可以继续存在，但 shell contract 最终以 `operator` 为准。
+`operator-cli` crate 继续承载壳层，`operator-mcp` crate 只保留库代码供 `operator mcp serve` 复用，独立的 `operator-mcp` 可执行入口已经退役。
 
 ## 兼容性策略
 
-最终交付不保留旧平铺命令。
+当前交付不保留旧平铺命令。
 
 会被移除的典型命令包括：
 
@@ -408,80 +425,15 @@ help 输出要进入 snapshot tests，保证：
 
 如果实现过程中需要短期 hidden alias 作为迁移手段，可以在中间提交存在；但最终 help 和最终交付不得保留双轨命令面。
 
-## 实施拆分
+当前实现会对这些旧命令给出显式迁移提示，指向对应的新分组命令。
 
-### [OPE-54](https://linear.app/aios-operator/issue/OPE-54/48-introduce-grouped-cli-information-architecture-and-root-help)
+## 当前实现状态
 
-Introduce grouped CLI information architecture and root help
+截至 2026-03-24，这份命令面已经实际落地：
 
-- 建立新顶层命令骨架
-- 建立 help 分组标题
-- 建立全局参数体系
-- 迁移 `permissions` / `capabilities` / `list` / `focus`
-
-### [OPE-55](https://linear.app/aios-operator/issue/OPE-55/49-redesign-observe-snapshot-and-artifact-command-surface)
-
-Redesign observe, snapshot, and artifact command surface
-
-- 迁移 `observe`
-- 迁移 `snapshot get`
-- 迁移 `artifact get`
-- 引入 `--capture`
-
-### [OPE-56](https://linear.app/aios-operator/issue/OPE-56/50-redesign-input-command-family)
-
-Redesign input command family
-
-- 迁移所有 pointer/keyboard 动作到 `input`
-- 收敛 locator / selector / focus / verify 参数面
-- 引入 `type <text>` / `press <key>` / `hotkey <key>...`
-
-### [OPE-57](https://linear.app/aios-operator/issue/OPE-57/51-redesign-app-command-family)
-
-Redesign app command family
-
-- 迁移 `app launch/switch/quit/relaunch/hide/unhide`
-- 收敛 app lifecycle 用户面
-
-### [OPE-58](https://linear.app/aios-operator/issue/OPE-58/52-redesign-window-command-family)
-
-Redesign window command family
-
-- 迁移 `window focus/close/minimize/maximize/move/resize/set-bounds`
-- 保持 `OPE-53` 后的 verification 约束
-
-### [OPE-59](https://linear.app/aios-operator/issue/OPE-59/53-unify-mcp-under-operator-mcp-serve)
-
-Unify MCP under `operator mcp serve`
-
-- 把 MCP 入口接到统一 CLI
-- 为后续退役 `operator-mcp` 做准备
-
-### [OPE-60](https://linear.app/aios-operator/issue/OPE-60/54-rename-primary-binary-to-operator-and-remove-legacy-flat-commands)
-
-Rename primary binary to `operator` and remove legacy flat commands
-
-- 正式切换壳层契约
-- 删除旧平铺命令
-
-### [OPE-61](https://linear.app/aios-operator/issue/OPE-61/55-polish-cli-help-output-examples-and-snapshot-coverage)
-
-Polish CLI help output, examples, and snapshot coverage
-
-- 固化根 help / 域 help / 叶子 help
-- 加 examples
-- 加 help snapshot tests
-- 在根 help 里保留 `A2A` heading 的 `reserved` 文案
-
-## blocker 链
-
-- `OPE-55` blocked by `OPE-54`
-- `OPE-56` blocked by `OPE-54`
-- `OPE-57` blocked by `OPE-54`
-- `OPE-58` blocked by `OPE-54`
-- `OPE-59` blocked by `OPE-54`
-- `OPE-60` blocked by `OPE-55`, `OPE-56`, `OPE-57`, `OPE-58`, `OPE-59`
-- `OPE-61` blocked by `OPE-60`
+- `OPE-54` 到 `OPE-61` 完成了新的分组命令树、统一的 help 分组、`observe/snapshot/artifact/list/focus/input/app/window/mcp` 命令面，以及 `operator mcp serve`
+- `OPE-64` 退役了 legacy `operator-mcp` 二进制，只保留统一的 `operator` 用户入口
+- `OPE-66` / `OPE-67` 完成了 root/group/leaf help 的配色、slogan、无冒号标题和版式统一
 
 ## 验收准则
 

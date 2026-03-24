@@ -19,11 +19,11 @@ const BODY_STYLE: &str = "\x1b[38;5;255m";
 const MUTED_STYLE: &str = "\x1b[38;5;245m";
 const RESET_STYLE: &str = "\x1b[0m";
 
-const OBSERVE_HELP: &str = "Create snapshots from frontmost, window, region, or fullscreen surfaces
+const OBSERVE_HELP: &str = "Usage operator observe [OPTIONS] <COMMAND>
 
-Usage: operator observe [OPTIONS] <COMMAND>
+Create snapshots from frontmost, window, region, or fullscreen surfaces
 
-Commands:
+Commands
   frontmost   Create a snapshot from the frontmost surface
   window      Create a snapshot from a specific window
   region      Create a snapshot from a specific screen region
@@ -37,18 +37,18 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator observe frontmost --capture all
   operator observe window --window-id 42 --capture elements
 
 Use 'operator observe <command> --help' for detailed usage.
 ";
 
-const SNAPSHOT_HELP: &str = "Read stored snapshots by ID
+const SNAPSHOT_HELP: &str = "Usage operator snapshot [OPTIONS] <COMMAND>
 
-Usage: operator snapshot [OPTIONS] <COMMAND>
+Read stored snapshots by ID
 
-Commands:
+Commands
   get   Read a stored snapshot by ID
   help  Print this message or the help of the given subcommand(s)
 
@@ -59,17 +59,17 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator snapshot get s_123
 
 Use 'operator snapshot <command> --help' for detailed usage.
 ";
 
-const ARTIFACT_HELP: &str = "Resolve stored capture artifacts by ID
+const ARTIFACT_HELP: &str = "Usage operator artifact [OPTIONS] <COMMAND>
 
-Usage: operator artifact [OPTIONS] <COMMAND>
+Resolve stored capture artifacts by ID
 
-Commands:
+Commands
   get   Resolve a stored capture artifact by ID
   help  Print this message or the help of the given subcommand(s)
 
@@ -80,17 +80,17 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator artifact get capture-1.png
 
 Use 'operator artifact <command> --help' for detailed usage.
 ";
 
-const LIST_HELP: &str = "List running apps or windows
+const LIST_HELP: &str = "Usage operator list [OPTIONS] <COMMAND>
 
-Usage: operator list [OPTIONS] <COMMAND>
+List running apps or windows
 
-Commands:
+Commands
   apps     List running applications
   windows  List windows, optionally filtered by app
   help     Print this message or the help of the given subcommand(s)
@@ -102,18 +102,18 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator list apps
   operator list windows --app TextEdit
 
 Use 'operator list <command> --help' for detailed usage.
 ";
 
-const INPUT_HELP: &str = "Pointer and keyboard actions against locators or target windows/apps
+const INPUT_HELP: &str = "Usage operator input [OPTIONS] <COMMAND>
 
-Usage: operator input [OPTIONS] <COMMAND>
+Pointer and keyboard actions against locators or target windows/apps
 
-Commands:
+Commands
   click   Click a locator, coordinate, or target
   move    Move the pointer to a locator, coordinates, or target
   type    Type text into the focused or resolved target
@@ -131,18 +131,18 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator input click --text Save --app Notes --focus auto --verify focus
   operator input type \"hello operator\" --window-title Draft --after-key return
 
 Use 'operator input <command> --help' for detailed usage.
 ";
 
-const APP_HELP: &str = "Launch, switch, hide, quit, and relaunch applications
+const APP_HELP: &str = "Usage operator app [OPTIONS] <COMMAND>
 
-Usage: operator app [OPTIONS] <COMMAND>
+Launch, switch, hide, quit, and relaunch applications
 
-Commands:
+Commands
   launch    Launch an application by bundle identifier or name
   switch    Bring an application to the foreground
   quit      Quit an application
@@ -158,18 +158,18 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator app launch Calculator
   operator app switch --app TextEdit
 
 Use 'operator app <command> --help' for detailed usage.
 ";
 
-const WINDOW_HELP: &str = "Focus, close, resize, or move application windows
+const WINDOW_HELP: &str = "Usage operator window [OPTIONS] <COMMAND>
 
-Usage: operator window [OPTIONS] <COMMAND>
+Focus, close, resize, or move application windows
 
-Commands:
+Commands
   focus       Focus a specific window
   close       Close a specific window
   minimize    Minimize a specific window
@@ -186,18 +186,18 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator window focus --window-id 42 --verify focus
   operator window resize --window-id 42 --width 900 --height 700 --verify geometry
 
 Use 'operator window <command> --help' for detailed usage.
 ";
 
-const MCP_HELP: &str = "Run MCP stdio server commands
+const MCP_HELP: &str = "Usage operator mcp [OPTIONS] <COMMAND>
 
-Usage: operator mcp [OPTIONS] <COMMAND>
+Run MCP stdio server commands
 
-Commands:
+Commands
   serve  Run the MCP stdio server
   help   Print this message or the help of the given subcommand(s)
 
@@ -208,7 +208,7 @@ Global Runtime Flags
                                Override the runtime timeout for this command
   -h, --help                   Print help
 
-Examples:
+Examples
   operator mcp serve
 
 Use 'operator mcp <command> --help' for detailed usage.
@@ -298,9 +298,6 @@ fn styled_group_help(
         .unwrap_or(0)
         + 2;
     let mut help = String::new();
-
-    writeln!(&mut help, "{description}").expect("write description");
-    help.push('\n');
     writeln!(
         &mut help,
         "{header}Usage{reset} {command}{usage}{reset}",
@@ -309,6 +306,14 @@ fn styled_group_help(
         reset = RESET_STYLE,
     )
     .expect("write usage");
+    help.push('\n');
+    writeln!(
+        &mut help,
+        "{body}{description}{reset}",
+        body = BODY_STYLE,
+        reset = RESET_STYLE,
+    )
+    .expect("write description");
     help.push('\n');
     writeln!(
         &mut help,
@@ -531,11 +536,117 @@ fn help_styles() -> Styles {
 }
 
 fn post_process_generated_help(help: &str) -> String {
-    help.replace("Usage:", "Usage")
+    let help = help
+        .replace("Usage:", "Usage")
         .replace("Options:", "Options")
         .replace("Arguments:", "Arguments")
         .replace("Commands:", "Commands")
-        .replace("Examples:", "Examples")
+        .replace("Examples:", "Examples");
+    let help = help.replace(
+        "\nExamples\n",
+        &format!("\n{HEADER_STYLE}Examples{RESET_STYLE}\n"),
+    );
+    let help = move_leading_description_below_usage(&help);
+    style_generated_examples(&help)
+}
+
+fn move_leading_description_below_usage(help: &str) -> String {
+    let lines: Vec<&str> = help.lines().collect();
+    let Some(usage_idx) = lines
+        .iter()
+        .position(|line| strip_ansi_for_help(line).starts_with("Usage "))
+    else {
+        return help.to_owned();
+    };
+    if usage_idx == 0 {
+        return help.to_owned();
+    }
+
+    let description_lines: Vec<&str> = lines[..usage_idx]
+        .iter()
+        .copied()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if description_lines.is_empty() {
+        return help.to_owned();
+    }
+
+    let description = format!(
+        "{BODY_STYLE}{}{RESET_STYLE}",
+        description_lines.join("\n"),
+    );
+    let usage = lines[usage_idx];
+    let remainder = lines[usage_idx + 1..].join("\n");
+    let remainder = remainder.trim_start_matches('\n');
+
+    if remainder.is_empty() {
+        format!("{usage}\n\n{description}\n")
+    } else {
+        format!("{usage}\n\n{description}\n\n{remainder}")
+    }
+}
+
+fn style_generated_examples(help: &str) -> String {
+    let marker = format!("{HEADER_STYLE}Examples{RESET_STYLE}\n");
+    let Some(start) = help.find(&marker) else {
+        return help.to_owned();
+    };
+    let before = &help[..start + marker.len()];
+    let after = &help[start + marker.len()..];
+
+    let mut lines = after.lines();
+    let mut styled = String::from(before);
+    let mut consumed_any = false;
+
+    while let Some(line) = lines.next() {
+        if line.trim().is_empty() {
+            styled.push('\n');
+            styled.push_str(&lines.collect::<Vec<_>>().join("\n"));
+            if after.ends_with('\n') {
+                styled.push('\n');
+            }
+            return styled;
+        }
+
+        if line.starts_with("  ") {
+            styled.push_str("  ");
+            styled.push_str(COMMAND_STYLE);
+            styled.push_str(line.trim_start());
+            styled.push_str(RESET_STYLE);
+            styled.push('\n');
+        } else {
+            styled.push_str(line);
+            styled.push('\n');
+        }
+        consumed_any = true;
+    }
+
+    if consumed_any && !styled.ends_with('\n') {
+        styled.push('\n');
+    }
+
+    styled
+}
+
+fn strip_ansi_for_help(input: &str) -> String {
+    let mut cleaned = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && matches!(chars.peek(), Some('[')) {
+            let _ = chars.next();
+            for next in chars.by_ref() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        cleaned.push(ch);
+    }
+
+    cleaned
 }
 
 fn legacy_command_replacement(command: &str) -> Option<&'static str> {
@@ -601,8 +712,7 @@ fn root_command_token(args: &[OsString]) -> Option<&str> {
 #[derive(Debug, Parser)]
 #[command(
     name = "operator",
-    about = "Operator desktop automation CLI",
-    long_about = "Operator is a cross-platform desktop automation runtime with a stable shell surface for observe, query, action, MCP, and future A2A workflows."
+    about = "Operator - Turn any desktop app into an API, from CLI to AI"
 )]
 pub(crate) struct Cli {
     #[command(flatten)]

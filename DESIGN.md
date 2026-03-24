@@ -1,36 +1,37 @@
 # Operator Design
 
-> 跨平台自动化工具，Rust 实现，支持 CLI / MCP / Agent 三种入口。
+> 跨平台自动化内核，Rust 实现；当前提供 CLI / MCP 入口，并为 Agent / A2A 保留扩展边界。
 
 ---
 
 ## 目录
 
-1. [背景](#1-背景)
-2. [设计目标](#2-设计目标)
-3. [设计原则](#3-设计原则)
-4. [总体架构](#4-总体架构)
-5. [分层设计](#5-分层设计)
-6. [Workspace 结构](#6-workspace-结构)
-7. [统一领域模型](#7-统一领域模型)
-8. [操作模型](#8-操作模型)
-9. [平台能力模型](#9-平台能力模型)
-10. [平台抽象](#10-平台抽象)
-11. [Runtime 设计](#11-runtime-设计)
-12. [Snapshot 与 Session](#12-snapshot-与-session)
-13. [Tool 设计](#13-tool-设计)
-14. [配置系统](#14-配置系统)
-15. [CLI 设计](#15-cli-设计)
-16. [MCP 设计](#16-mcp-设计)
-17. [Agent 设计](#17-agent-设计)
-18. [平台实现建议](#18-平台实现建议)
-19. [扩展机制](#19-扩展机制)
-20. [并发与超时模型](#20-并发与超时模型)
-21. [安全模型](#21-安全模型)
-22. [MVP 范围](#22-mvp-范围)
-23. [推荐实施顺序](#23-推荐实施顺序)
-24. [与 Peekaboo 风格架构的主要差异](#24-与-peekaboo-风格架构的主要差异)
-25. [风险与后续关注点](#25-风险与后续关注点)
+1. [[#1. 背景|背景]]
+2. [[#2. 设计目标|设计目标]]
+3. [[#3. 设计原则|设计原则]]
+4. [[#4. 总体架构|总体架构]]
+5. [[#5. 分层设计|分层设计]]
+6. [[#6. Workspace 结构|Workspace 结构]]
+7. [[#7. 统一领域模型|统一领域模型]]
+8. [[#8. 执行模型|执行模型]]
+9. [[#9. 平台能力模型|平台能力模型]]
+10. [[#10. 平台抽象|平台抽象]]
+11. [[#11. Runtime 设计|Runtime 设计]]
+12. [[#12. Snapshot 与 Session|Snapshot 与 Session]]
+13. [[#13. Tool 设计|Tool 设计]]
+14. [[#14. 配置系统|配置系统]]
+15. [[#15. CLI 设计|CLI 设计]]
+16. [[#16. MCP 设计|MCP 设计]]
+17. [[#17. Agent 设计|Agent 设计]]
+18. [[#18. 平台实现建议|平台实现建议]]
+19. [[#19. 扩展机制|扩展机制]]
+20. [[#20. 并发与超时模型|并发与超时模型]]
+21. [[#21. 安全模型|安全模型]]
+22. [[#22. 当前实现范围|当前实现范围]]
+23. [[#23. 当前进度与推荐后续顺序|当前进度与推荐后续顺序]]
+24. [[#24. 与 Peekaboo 风格架构的主要差异|与 Peekaboo 风格架构的主要差异]]
+25. [[#25. 风险与后续关注点|风险与后续关注点]]
+26. [[#26. 补充决策|补充决策]]
 
 ---
 
@@ -46,7 +47,9 @@
 - **不**实现 App 壳层
 - 架构尽量轻量、精简、可维护
 
-本文档描述第一版总体架构和实现路径。
+本文档描述 Operator 的总体架构、抽象边界和实现路径。
+
+> **实现状态说明（2026-03-24）：** 本文档中的核心分层、typed runtime、snapshot/capability 模型仍然有效；其中 macOS 平台、统一 `operator` CLI、`operator mcp serve` 已经实现，Agent / A2A 与 Windows / Harmony 仍处于未来阶段。
 
 ---
 
@@ -205,17 +208,18 @@ pub enum OperatorError {
 
 每个平台一个独立 crate，只实现 `PlatformDriver` trait：
 
-- `operator-platform-macos`
-- `operator-platform-windows`
-- `operator-platform-harmony`
+- 当前已实现：`operator-platform-macos`
+- 未来扩展：`operator-platform-windows`、`operator-platform-harmony`
 
 ### 5.4 Entry 层
 
 不同入口共享同一套 runtime 构造方式、tool catalog 和状态协议：
 
-- `operator-cli` — 命令行入口
-- `operator-mcp` — MCP server
-- `operator-agent` — Agent runner（独立 crate，可选依赖）
+- 当前已实现：
+  - `operator-cli` — 统一用户入口，暴露 `operator` 二进制
+  - `operator-mcp` — MCP 协议适配库，由 `operator mcp serve` 复用
+- 未来扩展：
+  - `operator-agent` — Agent runner / A2A surface（独立 crate，可选依赖）
 
 > **说明：** Agent 单独成 crate 而非内嵌于 runtime，原因是 Agent 需要 `ModelClient`（外部 LLM 依赖）。核心 runtime 不应反向依赖任何 LLM/provider 抽象，使得只需要 CLI / MCP 能力的用户无需引入该依赖。
 
@@ -223,7 +227,7 @@ pub enum OperatorError {
 
 ## 6. Workspace 结构
 
-长期控制在 8-9 个 crate 内；MVP 先用最小必要集合，避免一开始把多入口和多平台同时做满。
+长期控制在少量清晰的 crate 内；当前 workspace 已经包含 macOS、CLI、MCP 和测试支撑，其他平台与 Agent 仍保持规划态。
 
 ```
 operator/
@@ -231,39 +235,30 @@ operator/
   crates/
     operator-core/              # 自动化领域模型、typed 请求/响应、错误
     operator-runtime/           # RuntimeCore、ToolRegistry、存储 trait
-    operator-platform-macos/    # MVP 平台
-    operator-cli/               # MVP 入口
+    operator-platform-macos/    # 当前唯一平台实现
+    operator-cli/               # 当前唯一用户二进制：operator
+    operator-mcp/               # MCP 协议适配库（无独立 bin target）
     operator-testkit/           # 测试工具：MockPlatformDriver、fixture 等
-    operator-mcp/               # Phase 2
-    operator-agent/             # Phase 3：AgentRunner、ModelClient
-    operator-platform-windows/  # Phase 4
-    operator-platform-harmony/  # Phase 5
 ```
 
-### 6.1 Cargo Feature 策略
+### 6.1 当前实现与未来扩展
 
-平台 driver 通过 Cargo feature 控制编译，避免跨平台交叉依赖：
+当前 workspace members 为：
 
-```toml
-# operator-cli/Cargo.toml
-[features]
-default          = []
-platform-macos   = ["dep:operator-platform-macos"]
-platform-windows = ["dep:operator-platform-windows"]
-platform-harmony = ["dep:operator-platform-harmony"]
-```
+- `operator-cli`
+- `operator-core`
+- `operator-mcp`
+- `operator-platform-macos`
+- `operator-runtime`
+- `operator-testkit`
 
-构建时按目标平台激活对应 feature：
+未来若接入 Agent / A2A 或其他平台，可在 workspace 中新增：
 
-```bash
-# macOS CLI 构建
-cargo build --features platform-macos
+- `operator-agent`
+- `operator-platform-windows`
+- `operator-platform-harmony`
 
-# Windows 构建
-cargo build --features platform-windows
-```
-
-平台 driver crate 自身使用 `#[cfg(target_os = "...")]` 做条件编译，保证只在对应平台可用。
+当前 `operator-cli` 直接依赖 `operator-platform-macos` 和 `operator-mcp`，未使用平台 feature 矩阵；未来若 workspace 引入多个平台实现，再根据实际构建和发布需求决定是否恢复 Cargo feature 分发。
 
 ### 6.2 `operator-testkit` 职责
 
@@ -544,17 +539,46 @@ pub enum QueryRequest {
 
 pub struct ActionRequest {
     pub action: Action,
-    /// click / type 等需要目标时提供
     pub locator: Option<Locator>,
+    pub target_selector: Option<ActionTargetSelector>,
+    pub focus_policy: ActionFocusPolicy,
+    pub verifications: Vec<ActionVerification>,
 }
 
 pub enum Action {
-    Click { button: MouseButton },
-    Type { text: String },
+    Click { mode: ClickMode },
+    Move,
+    Type {
+        text: String,
+        clear_before: bool,
+        trailing_keys: Vec<TypeTrailingKey>,
+    },
+    Press { key: String, count: NonZeroU32 },
     Scroll { delta_x: f64, delta_y: f64 },
     Hotkey { keys: Vec<String> },
-    Drag { from: Locator, to: Locator },
+    Drag {
+        from: Locator,
+        to: Locator,
+        motion: DragMotion,
+    },
+    Swipe {
+        from: Locator,
+        to: Locator,
+        duration_ms: Option<u64>,
+        steps: Option<NonZeroU32>,
+    },
     LaunchApp { bundle_id_or_name: String },
+    SwitchApp,
+    QuitApp,
+    RelaunchApp,
+    HideApp,
+    UnhideApp,
+    CloseWindow,
+    MinimizeWindow,
+    MaximizeWindow,
+    MoveWindow { x: f64, y: f64 },
+    ResizeWindow { width: f64, height: f64 },
+    SetWindowBounds { bounds: Rect },
     FocusWindow { id: WindowId },
 }
 ```
@@ -576,8 +600,15 @@ pub struct ActionOutcome {
     pub success: bool,
     pub duration_ms: u64,
     pub detail: Option<String>,
+    pub coordinates: Option<ActionCoordinates>,
+    pub target_app: Option<AppInfo>,
+    pub target_window: Option<WindowInfo>,
+    pub side_effects: Vec<ActionSideEffect>,
+    pub warnings: Vec<String>,
 }
 ```
+
+> **说明：** 当前 action 模型已经超出最初 MVP，只是仍保持 `Observe / Query / Act` 三分法不变。用户面通过 CLI 分组命令暴露这些能力，内部 tool/runtime 仍使用同一套 typed 请求结构。
 
 ### 8.4 执行上下文
 
@@ -898,7 +929,9 @@ CLI / MCP / Agent
         → TargetResolver → PlatformDriver.observe/query/act()
 ```
 
-### 13.3 工具分组（MVP）
+### 13.3 工具分组（当前实现）
+
+当前 `ToolRegistry` 内部仍使用一组稳定的 flat tool names；CLI 只是把它们重新编排成分组 shell surface，不改变 runtime 内部工具边界。
 
 **观察类（无副作用）：**
 
@@ -906,13 +939,15 @@ CLI / MCP / Agent
 |---|---|
 | `observe` | 截图 + 获取 UI 元素树，生成 snapshot |
 | `snapshot-get` | 获取已有 snapshot 详情 |
+| `artifact-get` | 获取已持久化的截图 artifact 路径 |
 
 **查询类（无副作用）：**
 
 | 工具 | 说明 |
 |---|---|
-| `list-apps` | 列出已安装/运行中的应用 |
-| `list-windows` | 列出窗口列表，可按 app 过滤；对应 `QueryRequest::ListWindows` |
+| `list-apps` | 列出运行中的应用 |
+| `list-windows` | 列出窗口列表，可按 app 过滤 |
+| `get-focus` | 查询当前焦点 app / window / element |
 | `permissions-status` | 查询权限状态 |
 | `capabilities` | 查询当前 target 支持的能力集 |
 
@@ -920,9 +955,10 @@ CLI / MCP / Agent
 
 | 工具 | 说明 |
 |---|---|
-| `click` | 点击元素或坐标 |
-| `type` | 输入文本 |
-| `launch-app` | 启动应用 |
+| `click` / `move` / `scroll` / `drag` / `swipe` | 指针动作 |
+| `type` / `press` / `hotkey` | 键盘动作 |
+| `launch-app` / `switch-app` / `quit-app` / `relaunch-app` / `hide-app` / `unhide-app` | 应用生命周期动作 |
+| `focus-window` / `close-window` / `minimize-window` / `maximize-window` / `move-window` / `resize-window` / `set-window-bounds` | 窗口管理动作 |
 
 ### 13.4 工具输入原则
 
@@ -982,24 +1018,25 @@ CLI flag > 环境变量 > ~/.operator/config.toml > 内置默认值
 
 ## 15. CLI 设计
 
-CLI 偏工程化、可脚本化，是 `ToolRegistry` 的一个薄包装。
+CLI 偏工程化、可脚本化，是 `ToolRegistry` 的一个薄包装；但当前用户面已经从“平铺 tool 名”收敛成“按能力域组织的稳定 shell surface”。这层设计的权威补充说明见 [docs/COMMAND.md](docs/COMMAND.md)。
 
 ```bash
 # 观察
-operator observe --target local:macos --surface frontmost --json
-
-# 基于 snapshot 交互（推荐）
-operator click --target local:macos --snapshot s_123 --element e_45
-
-# 基于文本定位
-operator click --target local:macos --text "Submit"
-
-# 输入
-operator type --target local:macos --text "hello world"
+operator observe frontmost --capture all
+operator snapshot get s_123
 
 # 查询
-operator list-apps --target local:macos --json
-operator permissions-status --target local:macos
+operator list windows --app TextEdit
+operator focus
+
+# 输入 / 应用 / 窗口
+operator input click --text "Submit"
+operator input type "hello world" --after-key return
+operator app launch Calculator
+operator window resize --window-id 42 --width 900 --height 700 --verify geometry
+
+# MCP
+operator mcp serve
 ```
 
 **CLI 原则：**
@@ -1007,17 +1044,24 @@ operator permissions-status --target local:macos
 - 所有命令支持 `--target`（默认读取配置中的 `default_target`）
 - 所有命令支持 `--json`，输出结构与 MCP 工具结果格式兼容
 - 动作命令默认支持 `--timeout-ms` 覆盖超时
+- `Core / Observe / Query / Action / MCP / A2A` 只作为 help 分组标题，不作为真实一级命令
 - CLI 只做参数解析和格式化输出，不包含业务逻辑
 
 ---
 
 ## 16. MCP 设计
 
-MCP server 直接暴露同一份工具定义，不另起一套逻辑。该层在 **Phase 2** 接入，前提是 CLI 已经验证核心执行链稳定。
+MCP server 直接暴露同一份工具定义，不另起一套逻辑。当前实现通过统一二进制入口：
+
+```bash
+operator mcp serve
+```
+
+内部协议适配仍由 `operator-mcp` crate 承载，但用户面只保留 `operator` 一个二进制。
 
 ### 16.1 Transport
 
-Phase 2 初版只支持 **stdio** transport（兼容 Claude Desktop 等工具），后续按需扩展 HTTP Streamable transport。
+当前实现只支持 **stdio** transport（兼容 Claude Desktop 等工具），后续按需扩展 HTTP Streamable transport。
 
 ### 16.2 设计要求
 
@@ -1042,7 +1086,7 @@ MCP 是多客户端协议，多个请求可能同时到达同一个 target。MVP
 
 ## 17. Agent 设计
 
-Agent 不单独维护工具系统，完全复用 `ToolRegistry`。该层在 **Phase 3** 接入，不反向污染 core/runtime 的自动化边界。
+Agent 不单独维护工具系统，完全复用 `ToolRegistry`。这一层目前仍未实现；CLI root help 只保留 `A2A` 说明块作为未来入口占位，不反向污染 core/runtime 的自动化边界。
 
 ### 17.1 组件
 
@@ -1154,9 +1198,9 @@ HarmonyOS 与桌面系统差异大，不建议初版追求 Rust 直接打系统 
 
 1. 创建新 crate（`operator-platform-xxx`）
 2. 实现 `PlatformDriver` trait
-3. 在 `operator-cli` 和 `operator-mcp` 中添加对应 Cargo feature
-4. 在 `RuntimeBuilder` 中注册 driver
-5. 声明支持的 `CapabilitySet`（平台特有能力使用 `Capability::Extension(CapabilityId { ... })`）
+3. 在 runtime 装配层注册 driver，并决定是否在 CLI / MCP 中暴露对应 target
+4. 声明支持的 `CapabilitySet`（平台特有能力使用 `Capability::Extension(CapabilityId { ... })`）
+5. 若未来需要按平台裁剪发布包，再单独评估 Cargo feature 或分发策略
 
 ### 19.2 新增能力
 
@@ -1217,87 +1261,72 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 
 ---
 
-## 22. MVP 范围
+## 22. 当前实现范围
 
-### 22.1 MVP Crate
+### 22.1 当前 crate
 
 - `operator-core`
 - `operator-runtime`
 - `operator-platform-macos`
 - `operator-cli`
-- `operator-testkit`（仅 dev-dependencies）
+- `operator-mcp`
+- `operator-testkit`
 
-### 22.2 Phase 2 / Phase 3
+### 22.2 当前入口
 
-- `operator-mcp`（Phase 2，stdio transport）
-- `operator-agent`（Phase 3）
+- `operator` CLI
+- `operator mcp serve`
 
-### 22.3 MVP 工具
+### 22.3 当前能力面
 
-| 工具 | 类型 | 备注 |
-|---|---|---|
-| `observe` | 无副作用 | |
-| `snapshot-get` | 无副作用 | 直接读 SnapshotStore，不经 driver |
-| `list-apps` | 无副作用 | |
-| `list-windows` | 无副作用 | |
-| `permissions-status` | 无副作用 | |
-| `capabilities` | 无副作用 | |
-| `click` | 有副作用 | |
-| `type` | 有副作用 | |
-| `launch-app` | 有副作用 | |
+**Observe / Query：**
 
-### 22.4 MVP 验收目标
+- `observe`
+- `snapshot-get`
+- `artifact-get`
+- `list-apps`
+- `list-windows`
+- `get-focus`
+- `permissions-status`
+- `capabilities`
 
-- 能观察前台应用并生成 snapshot
-- 能基于 snapshot element ID 完成交互
-- 能通过 CLI 打通同一条 typed 执行链
+**Action：**
+
+- pointer / keyboard：`click`、`move`、`type`、`press`、`hotkey`、`scroll`、`drag`、`swipe`
+- app lifecycle：`launch-app`、`switch-app`、`quit-app`、`relaunch-app`、`hide-app`、`unhide-app`
+- window management：`focus-window`、`close-window`、`minimize-window`、`maximize-window`、`move-window`、`resize-window`、`set-window-bounds`
+
+### 22.4 当前交付状态
+
+- macOS 平台已能完成观察、查询、输入、应用生命周期和窗口管理
+- 统一 `operator` CLI 已完成分组命令面和稳定 help 契约
+- MCP stdio 模式已完成，并复用同一份 tool schema 和执行链
 - `operator-core` 与 `operator-runtime` 在不引入 LLM/provider 依赖时可独立编译
-- 同一 target 的并发操作不会同时执行
+- 同一 target 的并发操作仍保持串行，优先保证确定性
 
-### 22.5 后续阶段验收
+### 22.5 未来阶段
 
-- Phase 2：MCP stdio 模式可接入 Claude Desktop，且复用同一份 tool schema 和执行链
-- Phase 3：Agent 能调用同一组工具完成简单任务，不要求修改 core/runtime 公共接口
+- Agent / A2A：复用同一组工具完成更高阶自动化任务
+- Windows / Harmony：补齐更多平台 driver
 
 ---
 
-## 23. 推荐实施顺序
+## 23. 当前进度与推荐后续顺序
 
-```
-阶段 1 ── 定义内核
-          建立 workspace / 完成 operator-core 和 operator-testkit
-          定义错误类型（OperatorError）、typed Observe/Query/Action 模型
-          定义 Capability、Snapshot、Locator 等核心模型
+**已完成：**
 
-阶段 2 ── 打通 Runtime
-          实现 RuntimeCore / RuntimeBuilder / TargetResolver
-          实现文件型 SnapshotStore / SessionStore
-          实现 ToolRegistry 注册与执行链路
-          验证 Arc<RuntimeCore> 无循环引用
+1. 内核与 runtime 骨架
+2. macOS driver
+3. 统一 `operator` CLI
+4. `operator mcp serve`
+5. 分组命令面与稳定 help 契约
 
-阶段 3 ── 接入 macOS
-          实现 macOS PlatformDriver
-          先支持：observe / click / type / list-apps / permissions-status / launch-app
+**推荐后续顺序：**
 
-阶段 4 ── 打通 CLI
-          CLI 命令直接复用 ToolRegistry
-          完成 JSON 输出 / --target / --timeout-ms
-
-阶段 5 ── 打通 MCP
-          用同一份 ToolSpec 暴露 MCP stdio server
-          接入副作用控制和工具黑名单
-          先保持同 target 串行，验证稳定性
-
-阶段 6 ── 补 Agent
-          实现 ModelClient（Anthropic 优先）
-          实现 AgentRunner loop
-          打通 session 记录与恢复，不修改 core/runtime 自动化边界
-
-阶段 7 ── 扩展平台
-          调研 HarmonyOS bridge 协议选型
-          Windows driver
-          HarmonyOS bridge driver
-```
+1. Agent / A2A runner
+2. Windows driver
+3. HarmonyOS bridge driver
+4. 更高阶的能力域（如 clipboard / dialog / menu 等）
 
 ---
 
@@ -1317,9 +1346,9 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 | App 壳层 | 有 | 无 |
 | Visualizer 系统 | 有 | 无 |
 | 平台执行边界 | 多 service + orchestration | 单 `PlatformDriver`，对上暴露 typed `observe/query/act` |
-| 平台装配 | Xcode workspace + submodule | Cargo workspace + feature |
+| 平台装配 | Xcode workspace + submodule | Cargo workspace + runtime 装配 |
 | 配置管理 | Tachikoma | `~/.operator/config.toml` |
-| Agent crate | 与 runtime 合并 | 独立（Phase 3，可选依赖） |
+| Agent crate | 与 runtime 合并 | 独立（未来扩展，可选依赖） |
 
 ---
 
@@ -1452,11 +1481,11 @@ impl SessionStore for NullSessionStore {
 
 **决策：** `list-windows` 纳入 MVP 工具集（Section 22.3 已更新），对应 `QueryRequest::ListWindows { app: Option<String> }`。
 
-**原因：** `QueryRequest::ListWindows` 已在 core 模型中定义，驱动实现成本低，且对 CLI 调试和 Agent 的窗口操作前置查询有实际价值，无理由推迟到 Phase 2。
+**原因：** `QueryRequest::ListWindows` 已在 core 模型中定义，驱动实现成本低，且对 CLI 调试和未来 Agent 的窗口操作前置查询有实际价值，无理由推迟到更晚阶段。
 
 CLI 用法：
 
 ```bash
-operator list-windows --target local:macos
-operator list-windows --target local:macos --app "Safari"
+operator list windows
+operator list windows --app "Safari"
 ```

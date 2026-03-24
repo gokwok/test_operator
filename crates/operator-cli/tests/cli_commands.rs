@@ -333,6 +333,9 @@ fn artifact_help_lists_get_subcommand() {
 #[test]
 fn input_help_lists_pointer_and_keyboard_subcommands() {
     let help = command_help(["operator", "input", "--help"]);
+    assert!(help.starts_with(
+        "Usage operator input [OPTIONS] <COMMAND>\n\nPointer and keyboard actions against locators or target windows/apps"
+    ));
     assert!(help.contains(
         "Pointer and keyboard actions against locators or target windows/apps"
     ));
@@ -419,6 +422,10 @@ fn artifact_get_help_snapshot_is_stable() {
 #[test]
 fn input_click_help_snapshot_is_stable() {
     let help = command_help(["operator", "input", "click", "--help"]);
+    assert!(help.starts_with("Usage operator input click"));
+    assert!(help.contains(
+        "Usage operator input click [OPTIONS]\n\nClick a locator, coordinate, or target"
+    ));
     assert!(help.contains("Click a locator, coordinate, or target"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
