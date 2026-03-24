@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 pub mod model;
+pub mod session;
 pub mod tools;
 
 use operator_core::{SessionId, TargetId};
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub use config::{AgentConfig, PlannerFormat};
 pub use error::AgentError;
+pub use session::{AgentMessage, AgentSessionState, AgentSessionStatus, ToolTraceEntry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentRunRequest {
