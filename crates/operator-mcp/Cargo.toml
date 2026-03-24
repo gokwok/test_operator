@@ -3,6 +3,7 @@ name = "operator-mcp"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+autobins = false
 
 [dependencies]
 operator-core = { path = "../operator-core" }
