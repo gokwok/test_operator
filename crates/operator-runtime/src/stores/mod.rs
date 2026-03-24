@@ -35,5 +35,6 @@ pub trait SessionStore: Send + Sync {
     async fn create(&self, session: &Session) -> Result<(), OperatorError>;
     async fn append(&self, id: &SessionId, event: &SessionEvent) -> Result<(), OperatorError>;
     async fn get(&self, id: &SessionId) -> Result<Option<Session>, OperatorError>;
+    async fn events(&self, id: &SessionId) -> Result<Vec<SessionEvent>, OperatorError>;
     async fn list(&self, limit: Option<usize>) -> Result<Vec<SessionId>, OperatorError>;
 }

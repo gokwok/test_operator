@@ -19,6 +19,10 @@ impl SessionStore for NullSessionStore {
         Ok(None)
     }
 
+    async fn events(&self, _: &SessionId) -> Result<Vec<SessionEvent>, OperatorError> {
+        Ok(vec![])
+    }
+
     async fn list(&self, _: Option<usize>) -> Result<Vec<SessionId>, OperatorError> {
         Ok(vec![])
     }

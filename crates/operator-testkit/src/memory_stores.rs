@@ -153,6 +153,10 @@ impl SessionStore for InMemorySessionStore {
         Ok(self.sessions.read().await.get(id).cloned())
     }
 
+    async fn events(&self, id: &SessionId) -> Result<Vec<SessionEvent>, OperatorError> {
+        InMemorySessionStore::events(self, id).await
+    }
+
     async fn list(&self, limit: Option<usize>) -> Result<Vec<SessionId>, OperatorError> {
         let mut sessions = self
             .sessions

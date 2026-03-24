@@ -100,6 +100,25 @@ impl SessionStore for FileSessionStore {
         Ok(Some(session))
     }
 
+    async fn events(&self, id: &SessionId) -> Result<Vec<SessionEvent>, OperatorError> {
+        if !self.session_path(id).exists() {
+            return Err(OperatorError::Platform(format!("session not found: {id}")));
+        }
+
+        let path = self.session_log_path(id);
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+
+        let contents = fs::read_to_string(path).await?;
+        contents
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(serde_json::from_str::<SessionEvent>)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(OperatorError::from)
+    }
+
     async fn list(&self, limit: Option<usize>) -> Result<Vec<SessionId>, OperatorError> {
         let mut sessions = self.load_sessions().await?;
         sessions.sort_by(|left, right| right.created_at.cmp(&left.created_at));

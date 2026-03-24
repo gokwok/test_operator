@@ -21,7 +21,10 @@ pub use policy::{
     RepeatedErrorPolicy,
 };
 pub use runner::AgentRunner;
-pub use session::{AgentMessage, AgentSessionState, AgentSessionStatus, ToolTraceEntry};
+pub use session::{
+    load_persisted_session, AgentMessage, AgentSessionState, AgentSessionStatus,
+    PersistedSessionTranscript, ReplayableTranscriptEvent, ToolTraceEntry,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentRunRequest {

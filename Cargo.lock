@@ -282,6 +282,7 @@ dependencies = [
  "operator-testkit",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
 ]

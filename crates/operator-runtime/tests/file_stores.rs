@@ -116,23 +116,22 @@ async fn file_session_store_round_trips_session_metadata() {
     let dir = tempdir().unwrap();
     let store = FileSessionStore::new(dir.path());
     let session = test_session("sess-1");
+    let persisted_event = SessionEvent::ToolResult {
+        name: "observe".into(),
+        output: serde_json::json!({ "snapshot_id": "snap-1" }),
+    };
 
     store.create(&session).await.unwrap();
-    store
-        .append(
-            &session.id,
-            &SessionEvent::ToolResult {
-                name: "observe".into(),
-                output: serde_json::json!({ "snapshot_id": "snap-1" }),
-            },
-        )
-        .await
-        .unwrap();
+    store.append(&session.id, &persisted_event).await.unwrap();
 
     let loaded = FileSessionStore::new(dir.path())
         .get(&session.id)
         .await
         .unwrap()
+        .unwrap();
+    let events = FileSessionStore::new(dir.path())
+        .events(&session.id)
+        .await
         .unwrap();
     let listed = FileSessionStore::new(dir.path())
         .list(Some(10))
@@ -140,6 +139,7 @@ async fn file_session_store_round_trips_session_metadata() {
         .unwrap();
 
     assert_eq!(loaded.id, session.id);
+    assert_eq!(events, vec![persisted_event]);
     assert_eq!(listed, vec![session.id.clone()]);
     assert!(dir.path().join("sessions").join("sess-1.jsonl").exists());
 }
