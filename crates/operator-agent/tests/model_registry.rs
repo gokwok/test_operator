@@ -19,7 +19,7 @@ fn default_registry_exposes_phase1_models() {
     assert_eq!(gpt.default_timeout_ms, Some(30_000));
     assert_eq!(
         gpt.default_options.reasoning_level,
-        Some(ReasoningLevel::Medium)
+        Some(ReasoningLevel::Minimal)
     );
 
     let doubao = registry
@@ -61,7 +61,8 @@ async fn resolve_returns_registered_provider_for_known_model() {
             default_options: CallOptions {
                 temperature: None,
                 max_output_tokens: None,
-                reasoning_level: Some(ReasoningLevel::Medium),
+                reasoning_level: Some(ReasoningLevel::Minimal),
+                response_format: None,
             },
             default_timeout_ms: Some(30_000),
         }

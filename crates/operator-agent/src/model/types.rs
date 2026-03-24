@@ -116,9 +116,16 @@ pub enum ReasoningLevel {
     High,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseFormat {
+    JsonObject,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CallOptions {
     pub temperature: Option<f32>,
     pub max_output_tokens: Option<u32>,
     pub reasoning_level: Option<ReasoningLevel>,
+    pub response_format: Option<ResponseFormat>,
 }

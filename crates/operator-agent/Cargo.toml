@@ -8,6 +8,7 @@ autobins = false
 [dependencies]
 operator-core = { path = "../operator-core" }
 operator-runtime = { path = "../operator-runtime" }
+reqwest = { version = "0.12.15", default-features = false, features = ["json", "rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

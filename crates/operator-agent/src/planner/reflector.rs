@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::{
-    model::{ContentBlock, Context, Message, ModelRequest, ResolvedModel, UserMessage},
+    model::{
+        ContentBlock, Context, Message, ModelRequest, ResolvedModel, ResponseFormat, UserMessage,
+    },
     session::AgentSessionState,
     AgentError,
 };
@@ -40,10 +42,13 @@ impl TaskReflector {
         state: &AgentSessionState,
         finish_summary: &str,
     ) -> Result<TaskReflection, AgentError> {
+        let mut options = model.config.default_options.clone();
+        options.response_format = Some(ResponseFormat::JsonObject);
+
         let request = ModelRequest {
             config: model.config.clone(),
             context: reflection_context(state, finish_summary),
-            options: model.config.default_options.clone(),
+            options,
             stream: false,
             timeout: model.config.default_timeout_ms.map(Duration::from_millis),
             request_id: None,

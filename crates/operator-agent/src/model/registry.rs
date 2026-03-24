@@ -68,13 +68,19 @@ impl ModelRegistry {
 }
 
 fn phase1_model(provider: ProviderKind, id: &'static str) -> ModelConfig {
+    let reasoning_level = match id {
+        "gpt-5.4" => Some(ReasoningLevel::Minimal),
+        _ => Some(ReasoningLevel::Medium),
+    };
+
     ModelConfig {
         provider,
         id: Arc::from(id),
         default_options: CallOptions {
             temperature: None,
             max_output_tokens: None,
-            reasoning_level: Some(ReasoningLevel::Medium),
+            reasoning_level,
+            response_format: None,
         },
         default_timeout_ms: Some(30_000),
     }
