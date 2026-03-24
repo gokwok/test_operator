@@ -214,59 +214,59 @@ Examples:
 Use 'operator mcp <command> --help' for detailed usage.
 ";
 
-const PERMISSIONS_AFTER_HELP: &str = "Examples:
+const PERMISSIONS_AFTER_HELP: &str = "Examples
   operator permissions
   operator --json permissions";
 
-const CAPABILITIES_AFTER_HELP: &str = "Examples:
+const CAPABILITIES_AFTER_HELP: &str = "Examples
   operator capabilities
   operator capabilities --json";
 
-const FOCUS_AFTER_HELP: &str = "Examples:
+const FOCUS_AFTER_HELP: &str = "Examples
   operator focus
   operator --json focus";
 
-const OBSERVE_WINDOW_AFTER_HELP: &str = "Examples:
+const OBSERVE_WINDOW_AFTER_HELP: &str = "Examples
   operator observe window --window-id 42 --capture elements
   operator observe window --window-id 42 --capture screenshot";
 
-const SNAPSHOT_GET_AFTER_HELP: &str = "Examples:
+const SNAPSHOT_GET_AFTER_HELP: &str = "Examples
   operator snapshot get s_123
   operator --json snapshot get s_123";
 
-const ARTIFACT_GET_AFTER_HELP: &str = "Examples:
+const ARTIFACT_GET_AFTER_HELP: &str = "Examples
   operator artifact get capture-1.png
   operator --json artifact get capture-1.png";
 
-const LIST_WINDOWS_AFTER_HELP: &str = "Examples:
+const LIST_WINDOWS_AFTER_HELP: &str = "Examples
   operator list windows
   operator list windows --app TextEdit";
 
-const INPUT_CLICK_AFTER_HELP: &str = "Examples:
+const INPUT_CLICK_AFTER_HELP: &str = "Examples
   operator input click --text Save --app Notes --focus auto --verify focus
   operator input click --snapshot s_123 --element e_45 --mode double";
 
-const INPUT_TYPE_AFTER_HELP: &str = "Examples:
+const INPUT_TYPE_AFTER_HELP: &str = "Examples
   operator input type \"hello operator\" --window-title Draft --after-key return
   operator input type \"search\" --text Search --clear-before";
 
-const APP_LAUNCH_AFTER_HELP: &str = "Examples:
+const APP_LAUNCH_AFTER_HELP: &str = "Examples
   operator app launch Calculator
   operator app launch com.apple.TextEdit";
 
-const APP_SWITCH_AFTER_HELP: &str = "Examples:
+const APP_SWITCH_AFTER_HELP: &str = "Examples
   operator app switch --app TextEdit
   operator app switch --window-title Draft";
 
-const WINDOW_FOCUS_AFTER_HELP: &str = "Examples:
+const WINDOW_FOCUS_AFTER_HELP: &str = "Examples
   operator window focus --window-id 42 --verify focus
   operator window focus --window-id 7";
 
-const WINDOW_RESIZE_AFTER_HELP: &str = "Examples:
+const WINDOW_RESIZE_AFTER_HELP: &str = "Examples
   operator window resize --window-id 42 --width 900 --height 700 --verify geometry
   operator window resize --app TextEdit --width 640 --height 480";
 
-const MCP_SERVE_AFTER_HELP: &str = "Examples:
+const MCP_SERVE_AFTER_HELP: &str = "Examples
   operator mcp serve";
 
 fn styled_global_runtime_flags() -> String {
@@ -361,9 +361,8 @@ fn styled_group_help(
 
 fn root_help() -> String {
     format!(
-        "{header}Operator{reset} {body}desktop automation CLI{reset}\n\n\
-{header}Usage{reset} {command}operator{reset} [OPTIONS] [COMMAND]\n\n\
-{body}Operator is a cross-platform desktop automation runtime with a stable shell surface for observe, query, action, MCP, and future A2A workflows.{reset}\n\n\
+        "{header}Usage{reset} {command}operator{reset} [OPTIONS] [COMMAND]\n\n\
+{body}Operator - Turn any desktop app into an API, from CLI to AI{reset}\n\n\
 {header}Core{reset}\n  {command}permissions{reset}   {body}Check automation permissions and runtime readiness{reset}\n  {command}capabilities{reset}  {body}Show supported surfaces, queries, and actions for the active target{reset}\n\n\
 {header}Observe{reset}\n  {command}observe{reset}       {body}Create snapshots from frontmost, window, region, or fullscreen surfaces{reset}\n  {command}snapshot{reset}      {body}Read stored snapshots by ID{reset}\n  {command}artifact{reset}      {body}Resolve stored capture artifacts by ID{reset}\n\n\
 {header}Query{reset}\n  {command}list{reset}          {body}List running apps or windows{reset}\n  {command}focus{reset}         {body}Show the currently focused app, window, and element{reset}\n\n\
@@ -531,6 +530,14 @@ fn help_styles() -> Styles {
         .context(Ansi256Color(255).on_default())
 }
 
+fn post_process_generated_help(help: &str) -> String {
+    help.replace("Usage:", "Usage")
+        .replace("Options:", "Options")
+        .replace("Arguments:", "Arguments")
+        .replace("Commands:", "Commands")
+        .replace("Examples:", "Examples")
+}
+
 fn legacy_command_replacement(command: &str) -> Option<&'static str> {
     match command {
         "snapshot-get" => Some("operator snapshot get"),
@@ -674,7 +681,7 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["app"] => Some(app_help()),
         ["window"] => Some(window_help()),
         ["mcp"] => Some(mcp_help()),
-        _ => None,
+        _ => generated_help(args).map(|help| post_process_generated_help(&help)),
     }
 }
 
@@ -710,6 +717,21 @@ fn command_path(args: &[OsString]) -> Vec<&str> {
     }
 
     path
+}
+
+fn generated_help(args: &[OsString]) -> Option<String> {
+    let mut command = <Cli as CommandFactory>::command()
+        .color(ColorChoice::Always)
+        .styles(help_styles())
+        .override_help(root_help());
+
+    match command.try_get_matches_from_mut(args.to_owned()) {
+        Ok(_) => None,
+        Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
+            Some(error.render().ansi().to_string())
+        }
+        Err(_) => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -234,7 +234,7 @@ fn permissions_help_shows_examples() {
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Override the runtime timeout for this command"));
-    assert!(help.contains("Examples:\n  operator permissions\n  operator --json permissions"));
+    assert!(help.contains("Examples\n  operator permissions\n  operator --json permissions"));
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn capabilities_help_shows_examples() {
     let help = command_help(["operator", "capabilities", "--help"]);
     assert!(help.contains("Show supported surfaces, queries, and actions for the active target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples:\n  operator capabilities\n  operator capabilities --json"));
+    assert!(help.contains("Examples\n  operator capabilities\n  operator capabilities --json"));
 }
 
 #[test]
@@ -262,16 +262,14 @@ fn focus_help_shows_examples() {
     let help = command_help(["operator", "focus", "--help"]);
     assert!(help.contains("Show the currently focused app, window, and element"));
     assert!(help.contains("Select the runtime target"));
-    assert!(help.contains("Examples:\n  operator focus\n  operator --json focus"));
+    assert!(help.contains("Examples\n  operator focus\n  operator --json focus"));
 }
 
 #[test]
 fn root_help_groups_commands_by_domain() {
     let help = command_help(["operator", "--help"]);
-    assert!(help.contains("Operator desktop automation CLI"));
-    assert!(help.contains(
-        "Operator is a cross-platform desktop automation runtime with a stable shell surface"
-    ));
+    assert!(help.contains("Usage operator [OPTIONS] [COMMAND]"));
+    assert!(help.contains("Operator - Turn any desktop app into an API, from CLI to AI"));
     assert!(!help.contains("Tip:\n  Start with operator observe --help"));
     assert!(help.contains(
         "permissions   Check automation permissions and runtime readiness"
@@ -346,10 +344,10 @@ fn input_help_lists_pointer_and_keyboard_subcommands() {
 #[test]
 fn input_type_help_shows_positional_text_and_after_key() {
     let help = command_help(["operator", "input", "type", "--help"]);
-    assert!(help.contains("Usage: operator input type [OPTIONS] <TEXT>"));
+    assert!(help.contains("Usage operator input type [OPTIONS] <TEXT>"));
     assert!(help.contains("--after-key <AFTER_KEYS>"));
     assert!(help.contains("--focus <FOCUS>"));
-    assert!(help.contains("Examples:\n  operator input type \"hello operator\""));
+    assert!(help.contains("Examples\n  operator input type \"hello operator\""));
 }
 
 #[test]
@@ -384,11 +382,11 @@ fn root_help_uses_highlight_and_muted_tip_styles() {
 fn window_resize_help_shows_focus_and_verify_flags() {
     let help = command_help(["operator", "window", "resize", "--help"]);
     assert!(
-        help.contains("Usage: operator window resize [OPTIONS] --width <WIDTH> --height <HEIGHT>")
+        help.contains("Usage operator window resize [OPTIONS] --width <WIDTH> --height <HEIGHT>")
     );
     assert!(help.contains("--focus <FOCUS>"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
-    assert!(help.contains("Examples:\n  operator window resize --window-id 42"));
+    assert!(help.contains("Examples\n  operator window resize --window-id 42"));
 }
 
 #[test]
@@ -406,7 +404,7 @@ fn snapshot_get_help_snapshot_is_stable() {
     assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples:\n  operator snapshot get s_123"));
+    assert!(help.contains("Examples\n  operator snapshot get s_123"));
 }
 
 #[test]
@@ -415,7 +413,7 @@ fn artifact_get_help_snapshot_is_stable() {
     assert!(help.contains("Resolve a stored capture artifact by ID"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples:\n  operator artifact get capture-1.png"));
+    assert!(help.contains("Examples\n  operator artifact get capture-1.png"));
 }
 
 #[test]
@@ -433,7 +431,7 @@ fn app_launch_help_snapshot_is_stable() {
     assert!(help.contains("Launch an application by bundle identifier or name"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples:\n  operator app launch Calculator"));
+    assert!(help.contains("Examples\n  operator app launch Calculator"));
 }
 
 #[test]
@@ -470,7 +468,7 @@ fn mcp_serve_help_snapshot_is_stable() {
     assert!(help.contains("Run the MCP stdio server"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples:\n  operator mcp serve"));
+    assert!(help.contains("Examples\n  operator mcp serve"));
 }
 
 #[test]
