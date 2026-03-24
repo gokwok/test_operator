@@ -381,36 +381,112 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
 }
 
 #[test]
-fn click_command_maps_snapshot_flags_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "click",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--snapshot",
-        "s_123",
-        "--element",
-        "e_45",
-    ])
-    .unwrap();
+fn legacy_flat_commands_show_grouped_replacement_hints() {
+    let cases: [(&[&str], &str, &str); 27] = [
+        (
+            &["operator", "snapshot-get", "s_123"],
+            "snapshot-get",
+            "operator snapshot get",
+        ),
+        (
+            &["operator", "artifact-get", "capture-1.png"],
+            "artifact-get",
+            "operator artifact get",
+        ),
+        (&["operator", "get-focus"], "get-focus", "operator focus"),
+        (
+            &["operator", "list-apps"],
+            "list-apps",
+            "operator list apps",
+        ),
+        (
+            &["operator", "list-windows"],
+            "list-windows",
+            "operator list windows",
+        ),
+        (
+            &["operator", "permissions-status"],
+            "permissions-status",
+            "operator permissions",
+        ),
+        (&["operator", "click"], "click", "operator input click"),
+        (&["operator", "move"], "move", "operator input move"),
+        (&["operator", "type"], "type", "operator input type"),
+        (&["operator", "press"], "press", "operator input press"),
+        (&["operator", "hotkey"], "hotkey", "operator input hotkey"),
+        (&["operator", "scroll"], "scroll", "operator input scroll"),
+        (&["operator", "drag"], "drag", "operator input drag"),
+        (&["operator", "swipe"], "swipe", "operator input swipe"),
+        (
+            &["operator", "launch-app"],
+            "launch-app",
+            "operator app launch",
+        ),
+        (
+            &["operator", "switch-app"],
+            "switch-app",
+            "operator app switch",
+        ),
+        (&["operator", "quit-app"], "quit-app", "operator app quit"),
+        (
+            &["operator", "relaunch-app"],
+            "relaunch-app",
+            "operator app relaunch",
+        ),
+        (&["operator", "hide-app"], "hide-app", "operator app hide"),
+        (
+            &["operator", "unhide-app"],
+            "unhide-app",
+            "operator app unhide",
+        ),
+        (
+            &["operator", "focus-window"],
+            "focus-window",
+            "operator window focus",
+        ),
+        (
+            &["operator", "close-window"],
+            "close-window",
+            "operator window close",
+        ),
+        (
+            &["operator", "minimize-window"],
+            "minimize-window",
+            "operator window minimize",
+        ),
+        (
+            &["operator", "maximize-window"],
+            "maximize-window",
+            "operator window maximize",
+        ),
+        (
+            &["operator", "move-window"],
+            "move-window",
+            "operator window move",
+        ),
+        (
+            &["operator", "resize-window"],
+            "resize-window",
+            "operator window resize",
+        ),
+        (
+            &["operator", "set-window-bounds"],
+            "set-window-bounds",
+            "operator window set-bounds",
+        ),
+    ];
 
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "click");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "mode": "Left",
-            "locator": {
-                "SnapshotElement": {
-                    "snapshot": "s_123",
-                    "element": "e_45"
-                }
-            }
-        })
+    for (args, legacy, replacement) in cases {
+        assert_legacy_command_migration(args, legacy, replacement);
+    }
+}
+
+#[test]
+fn legacy_flat_command_detection_skips_root_global_flags() {
+    assert_legacy_command_migration(
+        &["operator", "--json", "--target", "local:macos", "click"],
+        "click",
+        "operator input click",
     );
 }
 
@@ -471,112 +547,6 @@ fn input_click_command_rejects_conflicting_locator_variants() {
 
     let error = cli.into_invocation().unwrap_err();
     assert_eq!(error, "locator flags are mutually exclusive");
-}
-
-#[test]
-fn click_command_accepts_explicit_mode_without_locator() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "click",
-        "--target",
-        "local:macos",
-        "--mode",
-        "double",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "click");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "mode": "Double"
-        })
-    );
-}
-
-#[test]
-fn click_command_maps_window_target_selector_and_focus_policy() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "click",
-        "--target",
-        "local:macos",
-        "--mode",
-        "double",
-        "--window-title",
-        "Project Notes",
-        "--focus-policy",
-        "never",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "click");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "mode": "Double",
-            "target_selector": {
-                "WindowTitle": "Project Notes"
-            },
-            "focus_policy": "Never"
-        })
-    );
-}
-
-#[test]
-fn get_focus_command_maps_common_flags_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "get-focus",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "get-focus");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250
-        })
-    );
-}
-
-#[tokio::test]
-async fn focus_window_command_maps_window_id_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "focus-window",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--window-id",
-        "42",
-        "--verify",
-        "focus",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "focus-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "window_id": 42,
-            "verifications": ["Focus"]
-        })
-    );
 }
 
 #[tokio::test]
@@ -838,49 +808,6 @@ async fn window_set_bounds_command_maps_rect_and_selector_to_tool_input() {
     );
 }
 
-#[tokio::test]
-async fn close_window_command_maps_window_target_selector_and_focus_policy() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "close-window",
-        "--target",
-        "local:macos",
-        "--window-title",
-        "Draft",
-        "--focus-policy",
-        "never",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "close-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "target_selector": {
-                "WindowTitle": "Draft"
-            },
-            "focus_policy": "Never"
-        })
-    );
-}
-
-#[test]
-fn launch_app_command_rejects_verification_flags() {
-    let error = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "launch-app",
-        "--bundle-id-or-name",
-        "Calculator",
-        "--verify",
-        "focus",
-    ])
-    .unwrap_err();
-
-    assert!(error.to_string().contains("unexpected argument '--verify'"));
-}
-
 #[test]
 fn app_launch_command_rejects_verification_flags() {
     let error = cli_main::args::Cli::try_parse_from([
@@ -1036,230 +963,14 @@ async fn app_unhide_command_maps_window_id_target_selector_to_tool_input() {
     );
 }
 
-#[test]
-fn close_window_command_rejects_verification_flags() {
-    let error = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "close-window",
-        "--window-id",
-        "42",
-        "--verify",
-        "window-state",
-    ])
-    .unwrap_err();
-
-    assert!(error.to_string().contains("unexpected argument '--verify'"));
-}
-
 #[tokio::test]
-async fn minimize_window_command_maps_app_target_selector_to_tool_input() {
-    let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "minimize-window", "--app", "TextEdit"])
-            .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "minimize-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target_selector": {
-                "App": "TextEdit"
-            },
-            "focus_policy": "Auto"
-        })
-    );
-}
-
-#[tokio::test]
-async fn minimize_window_command_only_accepts_window_state_verification() {
+async fn input_type_command_maps_app_target_selector_with_default_focus_policy() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "minimize-window",
-        "--window-id",
-        "42",
-        "--verify",
-        "window-state",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "minimize-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target_selector": {
-                "WindowId": 42
-            },
-            "focus_policy": "Auto",
-            "verifications": ["WindowState"]
-        })
-    );
-
-    let error = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "minimize-window",
-        "--window-id",
-        "42",
-        "--verify",
-        "focus",
-    ])
-    .unwrap_err();
-    assert!(error.to_string().contains("invalid value 'focus'"));
-}
-
-#[tokio::test]
-async fn maximize_window_command_maps_pid_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "maximize-window",
-        "--target",
-        "local:macos",
-        "--pid",
-        "101",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "maximize-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "target_selector": {
-                "Pid": 101
-            },
-            "focus_policy": "Auto"
-        })
-    );
-}
-
-#[test]
-fn maximize_window_command_rejects_verification_flags() {
-    let error = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "maximize-window",
-        "--window-id",
-        "42",
-        "--verify",
-        "window-state",
-    ])
-    .unwrap_err();
-
-    assert!(error.to_string().contains("unexpected argument '--verify'"));
-}
-
-#[tokio::test]
-async fn move_window_command_maps_coordinates_and_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "move-window",
-        "--target",
-        "local:macos",
-        "--window-id",
-        "42",
-        "--x",
-        "120",
-        "--y",
-        "240",
-        "--focus-policy",
-        "never",
-        "--verify",
-        "geometry",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "move-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "target_selector": {
-                "WindowId": 42
-            },
-            "focus_policy": "Never",
-            "verifications": ["Geometry"],
-            "x": 120.0,
-            "y": 240.0
-        })
-    );
-}
-
-#[tokio::test]
-async fn resize_window_command_maps_size_and_app_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "resize-window",
-        "--app",
-        "TextEdit",
-        "--width",
-        "640",
-        "--height",
-        "480",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "resize-window");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target_selector": {
-                "App": "TextEdit"
-            },
-            "focus_policy": "Auto",
-            "width": 640.0,
-            "height": 480.0
-        })
-    );
-}
-
-#[tokio::test]
-async fn set_window_bounds_command_maps_rect_and_pid_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "set-window-bounds",
-        "--target",
-        "local:macos",
-        "--pid",
-        "101",
-        "--x",
-        "80",
-        "--y",
-        "120",
-        "--width",
-        "900",
-        "--height",
-        "700",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "set-window-bounds");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "target_selector": {
-                "Pid": 101
-            },
-            "focus_policy": "Auto",
-            "x": 80.0,
-            "y": 120.0,
-            "width": 900.0,
-            "height": 700.0
-        })
-    );
-}
-
-#[tokio::test]
-async fn type_command_maps_app_target_selector_with_default_focus_policy() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
+        "input",
         "type",
         "--target",
         "local:macos",
-        "--text",
         "hello operator",
         "--app",
         "TextEdit",
@@ -1278,183 +989,6 @@ async fn type_command_maps_app_target_selector_with_default_focus_policy() {
                 "App": "TextEdit"
             },
             "focus_policy": "Auto"
-        })
-    );
-}
-
-#[tokio::test]
-async fn switch_app_command_maps_app_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "switch-app",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--app",
-        "TextEdit",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "switch-app");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "target_selector": {
-                "App": "TextEdit"
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn quit_app_command_maps_pid_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "quit-app",
-        "--target",
-        "local:macos",
-        "--pid",
-        "101",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "quit-app");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "target_selector": {
-                "Pid": 101
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn relaunch_app_command_maps_window_title_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "relaunch-app",
-        "--window-title",
-        "Draft",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "relaunch-app");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target_selector": {
-                "WindowTitle": "Draft"
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn hide_app_command_maps_window_index_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from(["operator", "hide-app", "--window-index", "1"])
-        .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "hide-app");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target_selector": {
-                "WindowIndex": 1
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn unhide_app_command_maps_window_id_target_selector_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from(["operator", "unhide-app", "--window-id", "42"])
-        .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "unhide-app");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target_selector": {
-                "WindowId": 42
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn scroll_command_maps_deltas_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "scroll",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--delta-x",
-        "0",
-        "--delta-y",
-        "-120",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "scroll");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "delta_x": 0.0,
-            "delta_y": -120.0
-        })
-    );
-}
-
-#[tokio::test]
-async fn scroll_command_accepts_snapshot_locator() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "scroll",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--delta-x",
-        "0",
-        "--delta-y",
-        "-120",
-        "--snapshot",
-        "s_123",
-        "--element",
-        "e_45",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "scroll");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "delta_x": 0.0,
-            "delta_y": -120.0,
-            "locator": {
-                "SnapshotElement": {
-                    "snapshot": "s_123",
-                    "element": "e_45"
-                }
-            }
         })
     );
 }
@@ -1519,42 +1053,6 @@ fn input_scroll_command_rejects_incomplete_snapshot_locator() {
 }
 
 #[tokio::test]
-async fn move_command_maps_coordinate_target_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "move",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--x",
-        "640",
-        "--y",
-        "480",
-        "--verify",
-        "focus",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "move");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "locator": {
-                "Coords": {
-                    "x": 640.0,
-                    "y": 480.0
-                }
-            },
-            "verifications": ["Focus"]
-        })
-    );
-}
-
-#[tokio::test]
 async fn input_move_command_maps_coordinate_locator_and_verification() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -1587,103 +1085,6 @@ async fn input_move_command_maps_coordinate_locator_and_verification() {
                 }
             },
             "verifications": ["Focus"]
-        })
-    );
-}
-
-#[tokio::test]
-async fn drag_command_maps_from_and_to_locators_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "drag",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--from-snapshot",
-        "s_123",
-        "--from-element",
-        "e_45",
-        "--to-x",
-        "640",
-        "--to-y",
-        "480",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "drag");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "from": {
-                "SnapshotElement": {
-                    "snapshot": "s_123",
-                    "element": "e_45"
-                }
-            },
-            "to": {
-                "Coords": {
-                    "x": 640.0,
-                    "y": 480.0
-                }
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn drag_command_maps_motion_options_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "drag",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--from-x",
-        "12",
-        "--from-y",
-        "24",
-        "--to-x",
-        "640",
-        "--to-y",
-        "480",
-        "--duration-ms",
-        "300",
-        "--steps",
-        "6",
-        "--modifier",
-        "command",
-        "--modifier",
-        "shift",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "drag");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "from": {
-                "Coords": {
-                    "x": 12.0,
-                    "y": 24.0
-                }
-            },
-            "to": {
-                "Coords": {
-                    "x": 640.0,
-                    "y": 480.0
-                }
-            },
-            "duration_ms": 300,
-            "steps": 6,
-            "modifiers": ["Command", "Shift"]
         })
     );
 }
@@ -1744,55 +1145,6 @@ async fn input_drag_command_maps_motion_options_to_tool_input() {
 }
 
 #[tokio::test]
-async fn swipe_command_maps_motion_options_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "swipe",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--from-x",
-        "12",
-        "--from-y",
-        "24",
-        "--to-x",
-        "640",
-        "--to-y",
-        "480",
-        "--duration-ms",
-        "300",
-        "--steps",
-        "6",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "swipe");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "from": {
-                "Coords": {
-                    "x": 12.0,
-                    "y": 24.0
-                }
-            },
-            "to": {
-                "Coords": {
-                    "x": 640.0,
-                    "y": 480.0
-                }
-            },
-            "duration_ms": 300,
-            "steps": 6
-        })
-    );
-}
-
-#[tokio::test]
 async fn input_swipe_command_maps_motion_options_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -1843,36 +1195,6 @@ async fn input_swipe_command_maps_motion_options_to_tool_input() {
 }
 
 #[tokio::test]
-async fn hotkey_command_maps_repeated_key_flags_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "hotkey",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--key",
-        "command",
-        "--key",
-        "shift",
-        "--key",
-        "p",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "hotkey");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "keys": ["command", "shift", "p"]
-        })
-    );
-}
-
-#[tokio::test]
 async fn input_hotkey_command_maps_positional_keys_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -1896,35 +1218,6 @@ async fn input_hotkey_command_maps_positional_keys_to_tool_input() {
             "target": "local:macos",
             "timeout_ms": 250,
             "keys": ["command", "shift", "p"]
-        })
-    );
-}
-
-#[tokio::test]
-async fn press_command_maps_key_and_count_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "press",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--key",
-        "down",
-        "--count",
-        "3",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "press");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "key": "down",
-            "count": 3
         })
     );
 }
@@ -1954,47 +1247,6 @@ async fn input_press_command_maps_positional_key_to_tool_input() {
             "timeout_ms": 250,
             "key": "down",
             "count": 3
-        })
-    );
-}
-
-#[tokio::test]
-async fn type_command_maps_clear_delay_and_trailing_keys_to_tool_input() {
-    let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "type",
-        "--target",
-        "local:macos",
-        "--timeout-ms",
-        "250",
-        "--text",
-        "hello world",
-        "--clear-before",
-        "--delay-ms",
-        "25",
-        "--trailing-key",
-        "return",
-        "--trailing-key",
-        "tab",
-        "--locator-text",
-        "Search",
-    ])
-    .unwrap();
-
-    let invocation = cli.into_invocation().unwrap();
-    assert_eq!(invocation.tool, "type");
-    assert_eq!(
-        invocation.input,
-        json!({
-            "target": "local:macos",
-            "timeout_ms": 250,
-            "text": "hello world",
-            "clear_before": true,
-            "delay_ms": 25,
-            "trailing_keys": ["Return", "Tab"],
-            "locator": {
-                "Text": "Search"
-            }
         })
     );
 }
@@ -2061,6 +1313,7 @@ async fn input_type_command_maps_positional_text_after_keys_and_locator_to_tool_
 async fn cli_run_renders_move_action_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
+        "input",
         "move",
         "--target",
         "local:macos",
@@ -2106,11 +1359,11 @@ async fn cli_run_renders_move_action_for_non_json_output() {
 async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "launch-app",
+        "app",
+        "launch",
         "--json",
         "--target",
         "local:macos",
-        "--bundle-id-or-name",
         "Calculator",
     ])
     .unwrap();
@@ -2145,8 +1398,9 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
 
 #[tokio::test]
 async fn cli_run_renders_switch_app_detail_for_non_json_output() {
-    let cli = cli_main::args::Cli::try_parse_from(["operator", "switch-app", "--app", "TextEdit"])
-        .unwrap();
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "app", "switch", "--app", "TextEdit"])
+            .unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let invoker = RecordingInvoker {
@@ -2178,7 +1432,7 @@ async fn cli_run_renders_switch_app_detail_for_non_json_output() {
 #[tokio::test]
 async fn cli_run_renders_close_window_detail_for_non_json_output() {
     let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "close-window", "--window-id", "42"])
+        cli_main::args::Cli::try_parse_from(["operator", "window", "close", "--window-id", "42"])
             .unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -2213,7 +1467,8 @@ async fn cli_run_renders_close_window_detail_for_non_json_output() {
 async fn cli_run_renders_move_window_detail_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "move-window",
+        "window",
+        "move",
         "--window-id",
         "42",
         "--x",
@@ -2260,7 +1515,8 @@ async fn cli_run_renders_move_window_detail_for_non_json_output() {
 async fn cli_run_renders_move_window_from_structured_outcome_when_detail_is_missing() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "move-window",
+        "window",
+        "move",
         "--window-id",
         "42",
         "--x",
@@ -2317,7 +1573,7 @@ async fn cli_run_renders_move_window_from_structured_outcome_when_detail_is_miss
 #[tokio::test]
 async fn cli_run_renders_focus_window_from_structured_outcome_when_detail_is_missing() {
     let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "focus-window", "--window-id", "42"])
+        cli_main::args::Cli::try_parse_from(["operator", "window", "focus", "--window-id", "42"])
             .unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -2356,7 +1612,7 @@ async fn cli_run_renders_focus_window_from_structured_outcome_when_detail_is_mis
 #[tokio::test]
 async fn cli_run_renders_press_detail_for_non_json_output() {
     let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "press", "--key", "down", "--count", "3"])
+        cli_main::args::Cli::try_parse_from(["operator", "input", "press", "down", "--count", "3"])
             .unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -2409,7 +1665,8 @@ async fn cli_run_renders_artifact_path_for_non_json_output() {
 #[tokio::test]
 async fn cli_run_renders_swipe_detail_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator", "swipe", "--from-x", "10", "--from-y", "20", "--to-x", "100", "--to-y", "20",
+        "operator", "input", "swipe", "--from-x", "10", "--from-y", "20", "--to-x", "100",
+        "--to-y", "20",
     ])
     .unwrap();
 
@@ -2457,4 +1714,18 @@ fn command_help<const N: usize>(args: [&str; N]) -> String {
     cli_main::args::Cli::try_parse_from(args)
         .unwrap_err()
         .to_string()
+}
+
+fn assert_legacy_command_migration(args: &[&str], legacy: &str, replacement: &str) {
+    let error = cli_main::args::Cli::try_parse_from(args.iter().copied()).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains(legacy),
+        "missing legacy command in `{message}`"
+    );
+    assert!(
+        message.contains(replacement),
+        "missing replacement command in `{message}`"
+    );
 }

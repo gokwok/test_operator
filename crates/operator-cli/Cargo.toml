@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "operator"
+path = "src/main.rs"
+
 [dependencies]
 clap = { workspace = true }
 operator-core = { path = "../operator-core" }
