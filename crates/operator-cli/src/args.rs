@@ -63,6 +63,10 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator observe frontmost --capture all
+  operator observe window --window-id 42 --capture elements
 ";
 
 const SNAPSHOT_HELP: &str = "Work with persisted snapshots
@@ -79,6 +83,9 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator snapshot get s_123
 ";
 
 const ARTIFACT_HELP: &str = "Work with persisted artifacts
@@ -95,6 +102,30 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator artifact get capture-1.png
+";
+
+const LIST_HELP: &str = "Enumerate apps and windows
+
+Usage: operator list [OPTIONS] <COMMAND>
+
+Commands:
+  apps     List visible applications
+  windows  List windows, optionally filtered by app
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                   Render structured JSON output
+      --target <TARGET>        Select a runtime target
+      --timeout-ms <TIMEOUT_MS>
+                               Override runtime timeout in milliseconds
+  -h, --help                   Print help
+
+Examples:
+  operator list apps
+  operator list windows --app TextEdit
 ";
 
 const INPUT_HELP: &str = "Pointer and keyboard actions
@@ -118,6 +149,10 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator input click --text Save --app Notes --focus auto --verify focus
+  operator input type \"hello operator\" --window-title Draft --after-key return
 ";
 
 const APP_HELP: &str = "Application lifecycle actions
@@ -139,6 +174,10 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator app launch Calculator
+  operator app switch --app TextEdit
 ";
 
 const WINDOW_HELP: &str = "Window management actions
@@ -161,6 +200,10 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator window focus --window-id 42 --verify focus
+  operator window resize --window-id 42 --width 900 --height 700 --verify geometry
 ";
 
 const MCP_HELP: &str = "MCP server commands
@@ -177,7 +220,65 @@ Options:
       --timeout-ms <TIMEOUT_MS>
                                Override runtime timeout in milliseconds
   -h, --help                   Print help
+
+Examples:
+  operator mcp serve
 ";
+
+const PERMISSIONS_AFTER_HELP: &str = "Examples:
+  operator permissions
+  operator --json permissions";
+
+const CAPABILITIES_AFTER_HELP: &str = "Examples:
+  operator capabilities
+  operator capabilities --json";
+
+const FOCUS_AFTER_HELP: &str = "Examples:
+  operator focus
+  operator --target local:macos focus";
+
+const OBSERVE_WINDOW_AFTER_HELP: &str = "Examples:
+  operator observe window --window-id 42 --capture elements
+  operator observe window --window-id 42 --capture screenshot";
+
+const SNAPSHOT_GET_AFTER_HELP: &str = "Examples:
+  operator snapshot get s_123
+  operator --json snapshot get s_123";
+
+const ARTIFACT_GET_AFTER_HELP: &str = "Examples:
+  operator artifact get capture-1.png
+  operator --json artifact get capture-1.png";
+
+const LIST_WINDOWS_AFTER_HELP: &str = "Examples:
+  operator list windows
+  operator list windows --app TextEdit";
+
+const INPUT_CLICK_AFTER_HELP: &str = "Examples:
+  operator input click --text Save --app Notes --focus auto --verify focus
+  operator input click --snapshot s_123 --element e_45 --mode double";
+
+const INPUT_TYPE_AFTER_HELP: &str = "Examples:
+  operator input type \"hello operator\" --window-title Draft --after-key return
+  operator input type \"search\" --text Search --clear-before";
+
+const APP_LAUNCH_AFTER_HELP: &str = "Examples:
+  operator app launch Calculator
+  operator app launch com.apple.TextEdit";
+
+const APP_SWITCH_AFTER_HELP: &str = "Examples:
+  operator app switch --app TextEdit
+  operator app switch --window-title Draft";
+
+const WINDOW_FOCUS_AFTER_HELP: &str = "Examples:
+  operator window focus --window-id 42 --verify focus
+  operator window focus --window-id 7";
+
+const WINDOW_RESIZE_AFTER_HELP: &str = "Examples:
+  operator window resize --window-id 42 --width 900 --height 700 --verify geometry
+  operator window resize --app TextEdit --width 640 --height 480";
+
+const MCP_SERVE_AFTER_HELP: &str = "Examples:
+  operator mcp serve";
 
 fn legacy_command_replacement(command: &str) -> Option<&'static str> {
     match command {
@@ -311,12 +412,15 @@ pub(crate) enum CliExecution {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 enum Command {
+    #[command(about = "Inspect platform permission state", after_help = PERMISSIONS_AFTER_HELP)]
     Permissions(CommonArgs),
+    #[command(about = "List runtime capabilities", after_help = CAPABILITIES_AFTER_HELP)]
     Capabilities(CommonArgs),
     Observe(ObserveArgs),
     Snapshot(SnapshotArgs),
     Artifact(ArtifactArgs),
     List(ListArgs),
+    #[command(about = "Inspect current focus", after_help = FOCUS_AFTER_HELP)]
     Focus(CommonArgs),
     Input(InputArgs),
     App(AppArgs),
@@ -383,6 +487,11 @@ struct CommonArgs {
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(
+    about = "Enumerate apps and windows",
+    override_help = LIST_HELP,
+    arg_required_else_help = true
+)]
 struct ListArgs {
     #[command(subcommand)]
     command: ListCommand,
@@ -401,6 +510,7 @@ impl ListArgs {
 #[derive(Debug, Clone, Subcommand)]
 enum ListCommand {
     Apps(CommonArgs),
+    #[command(after_help = LIST_WINDOWS_AFTER_HELP)]
     Windows(ListWindowsArgs),
 }
 
@@ -442,7 +552,10 @@ impl ObserveArgs {
 enum ObserveCommand {
     #[command(about = "Capture the frontmost surface")]
     Frontmost(ObserveFrontmostArgs),
-    #[command(about = "Capture a specific window")]
+    #[command(
+        about = "Capture a specific window",
+        after_help = OBSERVE_WINDOW_AFTER_HELP
+    )]
     Window(ObserveWindowArgs),
     #[command(about = "Capture a specific screen region")]
     Region(ObserveRegionArgs),
@@ -567,7 +680,10 @@ impl SnapshotArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum SnapshotCommand {
-    #[command(about = "Load a persisted snapshot")]
+    #[command(
+        about = "Load a persisted snapshot",
+        after_help = SNAPSHOT_GET_AFTER_HELP
+    )]
     Get(SnapshotGetArgs),
 }
 
@@ -622,7 +738,10 @@ impl ArtifactArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum ArtifactCommand {
-    #[command(about = "Resolve a persisted artifact")]
+    #[command(
+        about = "Resolve a persisted artifact",
+        after_help = ARTIFACT_GET_AFTER_HELP
+    )]
     Get(ArtifactGetArgs),
 }
 
@@ -657,11 +776,14 @@ impl InputArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum InputCommand {
-    #[command(about = "Click at a locator or target")]
+    #[command(about = "Click at a locator or target", after_help = INPUT_CLICK_AFTER_HELP)]
     Click(InputClickArgs),
     #[command(about = "Move the pointer to a locator, coordinates, or target")]
     Move(InputMoveArgs),
-    #[command(about = "Type text into the focused or resolved target")]
+    #[command(
+        about = "Type text into the focused or resolved target",
+        after_help = INPUT_TYPE_AFTER_HELP
+    )]
     Type(InputTypeArgs),
     #[command(about = "Press a special key")]
     Press(InputPressArgs),
@@ -1073,7 +1195,7 @@ impl McpArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum McpCommand {
-    #[command(about = "Run the MCP stdio server")]
+    #[command(about = "Run the MCP stdio server", after_help = MCP_SERVE_AFTER_HELP)]
     Serve,
 }
 
@@ -1087,7 +1209,7 @@ impl McpCommand {
 
 #[derive(Debug, Clone, Subcommand)]
 enum WindowCommand {
-    #[command(about = "Focus a specific window")]
+    #[command(about = "Focus a specific window", after_help = WINDOW_FOCUS_AFTER_HELP)]
     Focus(WindowFocusArgs),
     #[command(about = "Close a specific window")]
     Close(WindowCloseArgs),
@@ -1097,7 +1219,10 @@ enum WindowCommand {
     Maximize(WindowMaximizeArgs),
     #[command(about = "Move a specific window")]
     Move(WindowMoveArgs),
-    #[command(about = "Resize a specific window")]
+    #[command(
+        about = "Resize a specific window",
+        after_help = WINDOW_RESIZE_AFTER_HELP
+    )]
     Resize(WindowResizeArgs),
     #[command(about = "Set the full bounds of a specific window")]
     SetBounds(WindowSetBoundsArgs),
@@ -1296,9 +1421,15 @@ impl WindowSetBoundsArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum AppCommand {
-    #[command(about = "Launch an application by bundle identifier or name")]
+    #[command(
+        about = "Launch an application by bundle identifier or name",
+        after_help = APP_LAUNCH_AFTER_HELP
+    )]
     Launch(AppLaunchArgs),
-    #[command(about = "Bring an application to the foreground")]
+    #[command(
+        about = "Bring an application to the foreground",
+        after_help = APP_SWITCH_AFTER_HELP
+    )]
     Switch(AppLifecycleArgs),
     #[command(about = "Quit an application")]
     Quit(AppLifecycleArgs),
