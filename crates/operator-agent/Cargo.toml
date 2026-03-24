@@ -8,7 +8,6 @@ autobins = false
 [dependencies]
 operator-core = { path = "../operator-core" }
 serde.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

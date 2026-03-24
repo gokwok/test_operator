@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod error;
+pub mod model;
 
 use operator_core::{SessionId, TargetId};
 use serde::{Deserialize, Serialize};
