@@ -278,6 +278,8 @@ name = "operator-agent"
 version = "0.1.0"
 dependencies = [
  "operator-core",
+ "operator-runtime",
+ "operator-testkit",
  "serde",
  "serde_json",
  "thiserror",
