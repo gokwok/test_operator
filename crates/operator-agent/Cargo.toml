@@ -15,5 +15,7 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+clap = { workspace = true }
+operator-platform-macos = { path = "../operator-platform-macos" }
 operator-testkit = { path = "../operator-testkit" }
 tempfile.workspace = true
