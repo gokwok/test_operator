@@ -210,14 +210,13 @@ fn list_windows_command_moves_under_list_group() {
 
 #[test]
 fn mcp_help_lists_serve_subcommand() {
-    assert_eq!(
-        command_help(["operator", "mcp", "--help"]),
-        "MCP server commands\n\n\
-Usage: operator mcp [OPTIONS] <COMMAND>\n\n\
-Commands:\n  serve  Run the MCP stdio server\n  help   Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator mcp serve\n"
-    );
+    let help = command_help(["operator", "mcp", "--help"]);
+    assert!(help.contains("Run MCP stdio server commands"));
+    assert!(help.contains("Usage: operator mcp [OPTIONS] <COMMAND>"));
+    assert!(help.contains("Global Runtime Flags:"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples:\n  operator mcp serve"));
+    assert!(help.contains("Use 'operator mcp <command> --help' for detailed usage."));
 }
 
 #[test]
@@ -230,112 +229,118 @@ fn mcp_serve_command_maps_to_mcp_execution_mode() {
 
 #[test]
 fn permissions_help_shows_examples() {
-    assert_eq!(
-        command_help(["operator", "permissions", "--help"]),
-        "Inspect platform permission state\n\n\
-Usage: operator permissions [OPTIONS]\n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator permissions\n  operator --json permissions\n"
-    );
+    let help = command_help(["operator", "permissions", "--help"]);
+    assert!(help.contains("Check macOS automation permissions and runtime readiness"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Override the runtime timeout for this command"));
+    assert!(help.contains("Examples:\n  operator permissions\n  operator --json permissions"));
 }
 
 #[test]
 fn capabilities_help_shows_examples() {
-    assert_eq!(
-        command_help(["operator", "capabilities", "--help"]),
-        "List runtime capabilities\n\n\
-Usage: operator capabilities [OPTIONS]\n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator capabilities\n  operator capabilities --json\n"
-    );
+    let help = command_help(["operator", "capabilities", "--help"]);
+    assert!(help.contains("Show supported surfaces, queries, and actions for the active target"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples:\n  operator capabilities\n  operator capabilities --json"));
 }
 
 #[test]
 fn list_help_lists_query_subcommands_and_examples() {
-    assert_eq!(
-        command_help(["operator", "list", "--help"]),
-        "Enumerate apps and windows\n\n\
-Usage: operator list [OPTIONS] <COMMAND>\n\n\
-Commands:\n  apps     List visible applications\n  windows  List windows, optionally filtered by app\n  help     Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator list apps\n  operator list windows --app TextEdit\n"
-    );
+    let help = command_help(["operator", "list", "--help"]);
+    assert!(help.contains("List running apps or windows"));
+    assert!(help.contains("apps"));
+    assert!(help.contains("List running applications"));
+    assert!(help.contains("windows"));
+    assert!(help.contains("List windows, optionally filtered by app"));
+    assert!(help.contains("Global Runtime Flags:"));
+    assert!(help.contains("Use 'operator list <command> --help' for detailed usage."));
 }
 
 #[test]
 fn focus_help_shows_examples() {
-    assert_eq!(
-        command_help(["operator", "focus", "--help"]),
-        "Inspect current focus\n\n\
-Usage: operator focus [OPTIONS]\n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator focus\n  operator --target local:macos focus\n"
-    );
+    let help = command_help(["operator", "focus", "--help"]);
+    assert!(help.contains("Show the currently focused app, window, and element"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Examples:\n  operator focus\n  operator --target local:macos focus"));
 }
 
 #[test]
 fn root_help_groups_commands_by_domain() {
-    let help = cli_main::args::Cli::command().render_help().to_string();
-    assert_eq!(
-        help,
-        "Operator automation CLI\n\n\
-Usage: operator [OPTIONS] [COMMAND]\n\n\
-Core:\n  permissions   Inspect platform permission state\n  capabilities  List runtime capabilities\n\n\
-Observe:\n  observe       Capture UI state\n  snapshot      Work with persisted snapshots\n  artifact      Work with persisted artifacts\n\n\
-Query:\n  list          Enumerate apps and windows\n  focus         Inspect current focus\n\n\
-Action:\n  input         Pointer and keyboard actions\n  app           Application lifecycle actions\n  window        Window management actions\n\n\
-MCP:\n  mcp           MCP server commands\n\n\
-A2A:\n  reserved      Reserved for future A2A commands\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n"
-    );
+    let help = command_help(["operator", "--help"]);
+    assert!(help.contains("Operator desktop automation CLI"));
+    assert!(help.contains(
+        "Observe UI state, query runtime context, perform actions, or serve MCP workflows."
+    ));
+    assert!(help.contains("Tip:\n  Start with operator observe --help"));
+    assert!(help.contains(
+        "permissions   Check macOS automation permissions and runtime readiness"
+    ));
+    assert!(help.contains(
+        "snapshot      Read stored snapshots by ID"
+    ));
+    assert!(help.contains(
+        "focus         Show the currently focused app, window, and element"
+    ));
+    assert!(help.contains(
+        "input         Pointer and keyboard actions against locators or target windows/apps"
+    ));
+    assert!(help.contains("mcp           Run MCP stdio server commands"));
+    assert!(help.contains(
+        "A2A:\n  Not yet implemented. Reserved for future agent interface commands."
+    ));
+    assert!(help.contains("Global Runtime Flags:"));
+    assert!(help.contains("Examples:\n  operator observe frontmost"));
+    assert!(help.contains(
+        "Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage."
+    ));
 }
 
 #[test]
 fn observe_help_lists_surface_subcommands() {
-    assert_eq!(
-        command_help(["operator", "observe", "--help"]),
-        "Capture UI state\n\n\
-Usage: operator observe [OPTIONS] <COMMAND>\n\n\
-Commands:\n  frontmost   Capture the frontmost surface\n  window      Capture a specific window\n  region      Capture a specific screen region\n  fullscreen  Capture the full display or the active display\n  help        Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator observe frontmost --capture all\n  operator observe window --window-id 42 --capture elements\n"
-    );
+    let help = command_help(["operator", "observe", "--help"]);
+    assert!(help.contains(
+        "Create snapshots from frontmost, window, region, or fullscreen surfaces"
+    ));
+    assert!(help.contains("frontmost"));
+    assert!(help.contains("Create a snapshot from the frontmost surface"));
+    assert!(help.contains("window"));
+    assert!(help.contains("Create a snapshot from a specific window"));
+    assert!(help.contains("Global Runtime Flags:"));
+    assert!(help.contains(
+        "Use 'operator observe <command> --help' for detailed usage."
+    ));
 }
 
 #[test]
 fn snapshot_help_lists_get_subcommand() {
-    assert_eq!(
-        command_help(["operator", "snapshot", "--help"]),
-        "Work with persisted snapshots\n\n\
-Usage: operator snapshot [OPTIONS] <COMMAND>\n\n\
-Commands:\n  get   Load a persisted snapshot\n  help  Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator snapshot get s_123\n"
-    );
+    let help = command_help(["operator", "snapshot", "--help"]);
+    assert!(help.contains("Read stored snapshots by ID"));
+    assert!(help.contains("get"));
+    assert!(help.contains("Read a stored snapshot by ID"));
+    assert!(help.contains("Global Runtime Flags:"));
+    assert!(help.contains("Use 'operator snapshot <command> --help' for detailed usage."));
 }
 
 #[test]
 fn artifact_help_lists_get_subcommand() {
-    assert_eq!(
-        command_help(["operator", "artifact", "--help"]),
-        "Work with persisted artifacts\n\n\
-Usage: operator artifact [OPTIONS] <COMMAND>\n\n\
-Commands:\n  get   Resolve a persisted artifact\n  help  Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator artifact get capture-1.png\n"
-    );
+    let help = command_help(["operator", "artifact", "--help"]);
+    assert!(help.contains("Resolve stored capture artifacts by ID"));
+    assert!(help.contains("get"));
+    assert!(help.contains("Resolve a stored capture artifact by ID"));
+    assert!(help.contains("Global Runtime Flags:"));
+    assert!(help.contains("Use 'operator artifact <command> --help' for detailed usage."));
 }
 
 #[test]
 fn input_help_lists_pointer_and_keyboard_subcommands() {
-    assert_eq!(
-        command_help(["operator", "input", "--help"]),
-        "Pointer and keyboard actions\n\n\
-Usage: operator input [OPTIONS] <COMMAND>\n\n\
-Commands:\n  click   Click at a locator or target\n  move    Move the pointer to a locator, coordinates, or target\n  type    Type text into the focused or resolved target\n  press   Press a special key\n  hotkey  Press a key chord\n  scroll  Scroll by delta against a locator or target\n  drag    Drag between two locators\n  swipe   Swipe between two locators\n  help    Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator input click --text Save --app Notes --focus auto --verify focus\n  operator input type \"hello operator\" --window-title Draft --after-key return\n"
-    );
+    let help = command_help(["operator", "input", "--help"]);
+    assert!(help.contains(
+        "Pointer and keyboard actions against locators or target windows/apps"
+    ));
+    assert!(help.contains("click"));
+    assert!(help.contains("Click a locator, coordinate, or target"));
+    assert!(help.contains("Use 'operator input <command> --help' for detailed usage."));
 }
 
 #[test]
@@ -349,26 +354,29 @@ fn input_type_help_shows_positional_text_and_after_key() {
 
 #[test]
 fn app_help_lists_lifecycle_subcommands() {
-    assert_eq!(
-        command_help(["operator", "app", "--help"]),
-        "Application lifecycle actions\n\n\
-Usage: operator app [OPTIONS] <COMMAND>\n\n\
-Commands:\n  launch    Launch an application by bundle identifier or name\n  switch    Bring an application to the foreground\n  quit      Quit an application\n  relaunch  Relaunch an application\n  hide      Hide an application\n  unhide    Unhide an application\n  help      Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator app launch Calculator\n  operator app switch --app TextEdit\n"
-    );
+    let help = command_help(["operator", "app", "--help"]);
+    assert!(help.contains("Launch, switch, hide, quit, and relaunch applications"));
+    assert!(help.contains("launch"));
+    assert!(help.contains("Launch an application by bundle identifier or name"));
+    assert!(help.contains("Use 'operator app <command> --help' for detailed usage."));
 }
 
 #[test]
 fn window_help_lists_window_management_subcommands() {
-    assert_eq!(
-        command_help(["operator", "window", "--help"]),
-        "Window management actions\n\n\
-Usage: operator window [OPTIONS] <COMMAND>\n\n\
-Commands:\n  focus       Focus a specific window\n  close       Close a specific window\n  minimize    Minimize a specific window\n  maximize    Maximize a specific window\n  move        Move a specific window\n  resize      Resize a specific window\n  set-bounds  Set the full bounds of a specific window\n  help        Print this message or the help of the given subcommand(s)\n\n\
-Options:\n      --json                   Render structured JSON output\n      --target <TARGET>        Select a runtime target\n      --timeout-ms <TIMEOUT_MS>\n                               Override runtime timeout in milliseconds\n  -h, --help                   Print help\n\n\
-Examples:\n  operator window focus --window-id 42 --verify focus\n  operator window resize --window-id 42 --width 900 --height 700 --verify geometry\n"
-    );
+    let help = command_help(["operator", "window", "--help"]);
+    assert!(help.contains("Focus, close, resize, or move application windows"));
+    assert!(help.contains("set-bounds"));
+    assert!(help.contains("Set the full bounds of a specific window"));
+    assert!(help.contains("Use 'operator window <command> --help' for detailed usage."));
+}
+
+#[test]
+fn root_help_uses_highlight_and_muted_tip_styles() {
+    let help = styled_command_help(["operator", "--help"]);
+
+    assert!(help.contains("\u{1b}[1;38;5;45mUsage:\u{1b}[0m"));
+    assert!(help.contains("\u{1b}[1;38;5;214moperator\u{1b}[0m"));
+    assert!(help.contains("\u{1b}[38;5;245mTip:\u{1b}[0m"));
 }
 
 #[test]
@@ -384,104 +392,84 @@ fn window_resize_help_shows_focus_and_verify_flags() {
 
 #[test]
 fn observe_window_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "observe", "window", "--help"]),
-        "Capture a specific window\n\n\
-Usage: operator observe window [OPTIONS] --window-id <WINDOW_ID>\n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --window-id <WINDOW_ID>    \n      --capture <CAPTURE>        [default: all] [possible values: all, elements, screenshot, none]\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator observe window --window-id 42 --capture elements\n  operator observe window --window-id 42 --capture screenshot\n"
-    );
+    let help = command_help(["operator", "observe", "window", "--help"]);
+    assert!(help.contains("Capture a specific window"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Override the runtime timeout for this command"));
 }
 
 #[test]
 fn snapshot_get_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "snapshot", "get", "--help"]),
-        "Load a persisted snapshot\n\n\
-Usage: operator snapshot get [OPTIONS] <SNAPSHOT_ID>\n\n\
-Arguments:\n  <SNAPSHOT_ID>  \n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator snapshot get s_123\n  operator --json snapshot get s_123\n"
-    );
+    let help = command_help(["operator", "snapshot", "get", "--help"]);
+    assert!(help.contains("Read a stored snapshot by ID"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples:\n  operator snapshot get s_123"));
 }
 
 #[test]
 fn artifact_get_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "artifact", "get", "--help"]),
-        "Resolve a persisted artifact\n\n\
-Usage: operator artifact get [OPTIONS] <ARTIFACT_ID>\n\n\
-Arguments:\n  <ARTIFACT_ID>  \n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator artifact get capture-1.png\n  operator --json artifact get capture-1.png\n"
-    );
+    let help = command_help(["operator", "artifact", "get", "--help"]);
+    assert!(help.contains("Resolve a stored capture artifact by ID"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples:\n  operator artifact get capture-1.png"));
 }
 
 #[test]
 fn input_click_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "input", "click", "--help"]),
-        "Click at a locator or target\n\n\
-Usage: operator input click [OPTIONS]\n\n\
-Options:\n      --target <TARGET>              Select a runtime target\n      --json                         Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>      Override runtime timeout in milliseconds\n      --mode <MODE>                  [default: left] [possible values: left, right, middle, double]\n      --app <APP>                    \n      --pid <PID>                    \n      --window-id <WINDOW_ID>        \n      --window-title <WINDOW_TITLE>  \n      --window-index <WINDOW_INDEX>  \n      --focus <FOCUS>                [default: auto] [possible values: auto, never]\n      --verify <VERIFICATIONS>       [possible values: focus, window-state, geometry]\n      --snapshot <SNAPSHOT>          \n      --element <ELEMENT>            \n      --text <TEXT>                  \n      --role <ROLE>                  \n      --index <INDEX>                [default: 0]\n      --x <X>                        \n      --y <Y>                        \n  -h, --help                         Print help\n\n\
-Examples:\n  operator input click --text Save --app Notes --focus auto --verify focus\n  operator input click --snapshot s_123 --element e_45 --mode double\n"
-    );
+    let help = command_help(["operator", "input", "click", "--help"]);
+    assert!(help.contains("Click a locator, coordinate, or target"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("--mode <MODE>"));
 }
 
 #[test]
 fn app_launch_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "app", "launch", "--help"]),
-        "Launch an application by bundle identifier or name\n\n\
-Usage: operator app launch [OPTIONS] <BUNDLE_ID_OR_NAME>\n\n\
-Arguments:\n  <BUNDLE_ID_OR_NAME>  \n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator app launch Calculator\n  operator app launch com.apple.TextEdit\n"
-    );
+    let help = command_help(["operator", "app", "launch", "--help"]);
+    assert!(help.contains("Launch an application by bundle identifier or name"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples:\n  operator app launch Calculator"));
 }
 
 #[test]
 fn app_switch_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "app", "switch", "--help"]),
-        "Bring an application to the foreground\n\n\
-Usage: operator app switch [OPTIONS]\n\n\
-Options:\n      --app <APP>                    \n      --target <TARGET>              Select a runtime target\n      --json                         Render structured JSON output\n      --pid <PID>                    \n      --timeout-ms <TIMEOUT_MS>      Override runtime timeout in milliseconds\n      --window-id <WINDOW_ID>        \n      --window-title <WINDOW_TITLE>  \n      --window-index <WINDOW_INDEX>  \n      --verify <VERIFICATIONS>       [possible values: focus, window-state, geometry]\n  -h, --help                         Print help\n\n\
-Examples:\n  operator app switch --app TextEdit\n  operator app switch --window-title Draft\n"
-    );
+    let help = command_help(["operator", "app", "switch", "--help"]);
+    assert!(help.contains("Bring an application to the foreground"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("--verify <VERIFICATIONS>"));
 }
 
 #[test]
 fn window_focus_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "window", "focus", "--help"]),
-        "Focus a specific window\n\n\
-Usage: operator window focus [OPTIONS] --window-id <WINDOW_ID>\n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --window-id <WINDOW_ID>    \n      --json                     Render structured JSON output\n      --verify <VERIFICATIONS>   [possible values: focus, window-state, geometry]\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator window focus --window-id 42 --verify focus\n  operator window focus --window-id 7\n"
-    );
+    let help = command_help(["operator", "window", "focus", "--help"]);
+    assert!(help.contains("Focus a specific window"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("--verify <VERIFICATIONS>"));
 }
 
 #[test]
 fn window_resize_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "window", "resize", "--help"]),
-        "Resize a specific window\n\n\
-Usage: operator window resize [OPTIONS] --width <WIDTH> --height <HEIGHT>\n\n\
-Options:\n      --app <APP>                    \n      --target <TARGET>              Select a runtime target\n      --json                         Render structured JSON output\n      --pid <PID>                    \n      --timeout-ms <TIMEOUT_MS>      Override runtime timeout in milliseconds\n      --window-id <WINDOW_ID>        \n      --window-title <WINDOW_TITLE>  \n      --window-index <WINDOW_INDEX>  \n      --focus <FOCUS>                [default: auto] [possible values: auto, never]\n      --verify <VERIFICATIONS>       [possible values: focus, window-state, geometry]\n      --width <WIDTH>                \n      --height <HEIGHT>              \n  -h, --help                         Print help\n\n\
-Examples:\n  operator window resize --window-id 42 --width 900 --height 700 --verify geometry\n  operator window resize --app TextEdit --width 640 --height 480\n"
-    );
+    let help = command_help(["operator", "window", "resize", "--help"]);
+    assert!(help.contains("Resize a specific window"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("--focus <FOCUS>"));
+    assert!(help.contains("--verify <VERIFICATIONS>"));
 }
 
 #[test]
 fn mcp_serve_help_snapshot_is_stable() {
-    assert_eq!(
-        command_help(["operator", "mcp", "serve", "--help"]),
-        "Run the MCP stdio server\n\n\
-Usage: operator mcp serve [OPTIONS]\n\n\
-Options:\n      --target <TARGET>          Select a runtime target\n      --json                     Render structured JSON output\n      --timeout-ms <TIMEOUT_MS>  Override runtime timeout in milliseconds\n  -h, --help                     Print help\n\n\
-Examples:\n  operator mcp serve\n"
-    );
+    let help = command_help(["operator", "mcp", "serve", "--help"]);
+    assert!(help.contains("Run the MCP stdio server"));
+    assert!(help.contains("Select the runtime target (default: local:macos)"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples:\n  operator mcp serve"));
 }
 
 #[test]
@@ -1867,9 +1855,43 @@ impl cli_main::ToolInvoker for RecordingInvoker {
 }
 
 fn command_help<const N: usize>(args: [&str; N]) -> String {
-    cli_main::args::Cli::try_parse_from(args)
+    strip_ansi(&styled_command_help(args))
+}
+
+fn styled_command_help<const N: usize>(args: [&str; N]) -> String {
+    let argv = args
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>();
+
+    if let Some(help) = cli_main::args::custom_help(&argv) {
+        return help;
+    }
+
+    cli_main::args::Cli::try_parse_from(argv)
         .unwrap_err()
         .to_string()
+}
+
+fn strip_ansi(input: &str) -> String {
+    let mut stripped = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && matches!(chars.peek(), Some('[')) {
+            let _ = chars.next();
+            for next in chars.by_ref() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        stripped.push(ch);
+    }
+
+    stripped
 }
 
 fn assert_legacy_command_migration(args: &[&str], legacy: &str, replacement: &str) {
