@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 pub use config::{AgentConfig, PlannerFormat};
 pub use error::AgentError;
+pub use planner::{AgentDecision, DecisionParser, DecisionValidator};
 pub use session::{AgentMessage, AgentSessionState, AgentSessionStatus, ToolTraceEntry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
