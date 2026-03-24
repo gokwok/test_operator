@@ -23,7 +23,10 @@ impl ModelRegistry {
         registry.register_config("gpt-5.4", phase1_model(ProviderKind::OpenAi, "gpt-5.4"));
         registry.register_config(
             "doubao-seed",
-            phase1_model(ProviderKind::OpenAiCompatible, "doubao-seed"),
+            phase1_model(
+                ProviderKind::OpenAiCompatible,
+                "doubao-seed-2-0-lite-260215",
+            ),
         );
         registry
     }
@@ -69,7 +72,7 @@ impl ModelRegistry {
 
 fn phase1_model(provider: ProviderKind, id: &'static str) -> ModelConfig {
     let reasoning_level = match id {
-        "gpt-5.4" => Some(ReasoningLevel::Minimal),
+        "gpt-5.4" | "doubao-seed-2-0-lite-260215" => Some(ReasoningLevel::Minimal),
         _ => Some(ReasoningLevel::Medium),
     };
 

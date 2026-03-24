@@ -26,8 +26,12 @@ fn default_registry_exposes_phase1_models() {
         .config("doubao-seed")
         .expect("doubao-seed should exist");
     assert_eq!(doubao.provider, ProviderKind::OpenAiCompatible);
-    assert_eq!(doubao.id.as_ref(), "doubao-seed");
+    assert_eq!(doubao.id.as_ref(), "doubao-seed-2-0-lite-260215");
     assert_eq!(doubao.default_timeout_ms, Some(30_000));
+    assert_eq!(
+        doubao.default_options.reasoning_level,
+        Some(ReasoningLevel::Minimal)
+    );
 }
 
 #[test]

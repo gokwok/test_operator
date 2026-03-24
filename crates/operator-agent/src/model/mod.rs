@@ -1,9 +1,11 @@
+mod doubao;
 mod event;
 mod openai;
 mod provider;
 mod registry;
 mod types;
 
+pub use doubao::{DoubaoChatCompletionsProvider, DoubaoProviderConfig};
 pub use event::{channel, DoneReason, ErrorReason, ModelEvent, ModelStream, ModelStreamWriter};
 pub use openai::{OpenAiProviderConfig, OpenAiResponsesProvider};
 pub use provider::{ModelError, ModelProvider, ModelRequest};
