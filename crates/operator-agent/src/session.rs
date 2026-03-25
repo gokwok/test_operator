@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
-use operator_core::{ArtifactId, SessionId, SnapshotId, TargetId};
+use operator_core::{ArtifactId, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId};
 use operator_runtime::{Session, SessionEvent, SessionStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{model::Message, tools::AgentToolResult, AgentError};
+use crate::{
+    model::Message,
+    tools::{AgentToolResult, ObservationCache},
+    AgentError,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "message_type", rename_all = "snake_case")]
@@ -53,7 +57,48 @@ pub struct ToolTraceEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AgentSessionState {
+pub struct VisualObservationSummary {
+    pub snapshot_id: SnapshotId,
+    pub surface: String,
+    pub screenshot_artifact: Option<ArtifactId>,
+    pub root_element_count: usize,
+    pub element_count: usize,
+}
+
+impl VisualObservationSummary {
+    pub fn from_snapshot(snapshot: &Snapshot) -> Self {
+        Self {
+            snapshot_id: snapshot.id.clone(),
+            surface: surface_name(&snapshot.surface.kind),
+            screenshot_artifact: snapshot.image_artifact.clone(),
+            root_element_count: snapshot.root_ids.len(),
+            element_count: snapshot.elements.len(),
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        let screenshot = self
+            .screenshot_artifact
+            .as_ref()
+            .map(|artifact| format!(", screenshot={artifact}"))
+            .unwrap_or_default();
+        format!(
+            "observe snapshot {} on {} (roots={}, elements={}){}",
+            self.snapshot_id, self.surface, self.root_element_count, self.element_count, screenshot
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoopHistoryItem {
+    pub turn_index: u32,
+    pub step_index: u32,
+    pub kind: String,
+    pub summary: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LoopState {
     pub session_id: SessionId,
     pub target: TargetId,
     pub task: String,
@@ -62,8 +107,11 @@ pub struct AgentSessionState {
     pub step_index: u32,
     pub parse_attempts: u32,
     pub messages: Vec<AgentMessage>,
+    pub history: Vec<LoopHistoryItem>,
     pub tool_trace: Vec<ToolTraceEntry>,
     pub notes: Vec<String>,
+    pub current_observation: Option<VisualObservationSummary>,
+    pub observation_cache: ObservationCache,
     pub latest_snapshot: Option<SnapshotId>,
     pub previous_snapshot_visual: Option<ArtifactId>,
     pub latest_artifacts: Vec<ArtifactId>,
@@ -72,7 +120,9 @@ pub struct AgentSessionState {
     pub last_error_fingerprint: Option<String>,
 }
 
-impl AgentSessionState {
+pub type AgentSessionState = LoopState;
+
+impl LoopState {
     pub fn new(session_id: SessionId, target: TargetId, task: impl Into<String>) -> Self {
         Self {
             session_id,
@@ -83,8 +133,11 @@ impl AgentSessionState {
             step_index: 0,
             parse_attempts: 0,
             messages: Vec::new(),
+            history: Vec::new(),
             tool_trace: Vec::new(),
             notes: Vec::new(),
+            current_observation: None,
+            observation_cache: ObservationCache::new(),
             latest_snapshot: None,
             previous_snapshot_visual: None,
             latest_artifacts: Vec::new(),
@@ -107,8 +160,11 @@ impl AgentSessionState {
         self.step_index = 0;
         self.parse_attempts = 0;
         self.messages.clear();
+        self.history.clear();
         self.tool_trace.clear();
         self.notes.clear();
+        self.current_observation = None;
+        self.observation_cache.clear();
         self.latest_snapshot = None;
         self.previous_snapshot_visual = None;
         self.latest_artifacts.clear();
@@ -132,6 +188,14 @@ impl AgentSessionState {
 
     pub fn push_tool_trace(&mut self, result: AgentToolResult, timestamp_ms: u64) {
         self.update_ui_state_staleness(&result);
+        if result.tool_name != "observe" || result.is_error {
+            self.history.push(LoopHistoryItem {
+                turn_index: self.turn_index,
+                step_index: self.step_index,
+                kind: "tool_result".into(),
+                summary: history_summary_from_tool_result(&result),
+            });
+        }
         self.tool_trace.push(ToolTraceEntry {
             turn_index: self.turn_index,
             step_index: self.step_index,
@@ -141,7 +205,14 @@ impl AgentSessionState {
     }
 
     pub fn add_note(&mut self, note: impl Into<String>) {
-        self.notes.push(note.into());
+        let note = note.into();
+        self.history.push(LoopHistoryItem {
+            turn_index: self.turn_index,
+            step_index: self.step_index,
+            kind: "note".into(),
+            summary: note.clone(),
+        });
+        self.notes.push(note);
     }
 
     pub fn mark_ui_stale(&mut self) {
@@ -160,15 +231,53 @@ impl AgentSessionState {
         }
     }
 
+    pub fn record_visual_observation(&mut self, summary: VisualObservationSummary) {
+        self.latest_snapshot = Some(summary.snapshot_id.clone());
+        self.observation_cache.record(summary.clone());
+        self.current_observation = Some(summary.clone());
+        self.previous_snapshot_visual = self.observation_cache.previous_visual().cloned();
+        self.latest_artifacts = summary.screenshot_artifact.clone().into_iter().collect();
+        self.history.push(LoopHistoryItem {
+            turn_index: self.turn_index,
+            step_index: self.step_index,
+            kind: "observation".into(),
+            summary: summary.describe(),
+        });
+    }
+
+    pub fn record_observation_snapshot(&mut self, snapshot: &Snapshot) {
+        self.record_visual_observation(VisualObservationSummary::from_snapshot(snapshot));
+    }
+
     pub fn record_observation(
         &mut self,
         snapshot_id: SnapshotId,
         artifacts: Vec<ArtifactId>,
         visual: Option<ArtifactId>,
     ) {
+        self.observation_cache.record(VisualObservationSummary {
+            snapshot_id: snapshot_id.clone(),
+            surface: "unknown".into(),
+            screenshot_artifact: visual.clone(),
+            root_element_count: 0,
+            element_count: 0,
+        });
+        self.current_observation = self.observation_cache.current_observation().cloned();
         self.latest_snapshot = Some(snapshot_id);
         self.latest_artifacts = artifacts;
-        self.previous_snapshot_visual = visual;
+        self.previous_snapshot_visual = self.observation_cache.previous_visual().cloned();
+    }
+
+    pub fn current_observation(&self) -> Option<&VisualObservationSummary> {
+        self.current_observation.as_ref()
+    }
+
+    pub fn current_visual(&self) -> Option<&ArtifactId> {
+        self.observation_cache.current_visual()
+    }
+
+    pub fn previous_visual(&self) -> Option<&ArtifactId> {
+        self.observation_cache.previous_visual()
     }
 
     pub fn record_error_fingerprint(&mut self, fingerprint: impl Into<String>) -> u32 {
@@ -198,6 +307,39 @@ impl AgentSessionState {
         self.status = AgentSessionStatus::Failed {
             reason: reason.into(),
         };
+    }
+}
+
+fn history_summary_from_tool_result(result: &AgentToolResult) -> String {
+    if result.is_error {
+        return result
+            .error
+            .as_ref()
+            .map(|error| format!("tool {} failed: {}", result.tool_name, error.message))
+            .unwrap_or_else(|| format!("tool {} failed", result.tool_name));
+    }
+
+    if result.tool_name == "observe" {
+        if let Some(snapshot) = result
+            .output
+            .as_ref()
+            .and_then(|output| output.get("snapshot"))
+            .cloned()
+            .and_then(|snapshot| serde_json::from_value::<Snapshot>(snapshot).ok())
+        {
+            return VisualObservationSummary::from_snapshot(&snapshot).describe();
+        }
+    }
+
+    format!("tool {} completed", result.tool_name)
+}
+
+fn surface_name(kind: &SurfaceKind) -> String {
+    match kind {
+        SurfaceKind::Fullscreen { .. } => "fullscreen".into(),
+        SurfaceKind::Frontmost => "frontmost".into(),
+        SurfaceKind::Window { .. } => "window".into(),
+        SurfaceKind::Region { .. } => "region".into(),
     }
 }
 

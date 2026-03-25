@@ -130,9 +130,16 @@ fn session_state_records_tool_trace_and_observation_updates() {
             ArtifactId("tree.json".into()),
         ]
     );
+    assert_eq!(state.previous_snapshot_visual, None);
     assert_eq!(
-        state.previous_snapshot_visual,
-        Some(ArtifactId("capture-1.png".into()))
+        state.current_visual(),
+        Some(&ArtifactId("capture-1.png".into()))
+    );
+    assert_eq!(
+        state
+            .current_observation()
+            .map(|summary| summary.snapshot_id.clone()),
+        Some(SnapshotId("snap-1".into()))
     );
     assert!(!state.ui_state_stale);
 }

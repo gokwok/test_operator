@@ -6,7 +6,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use operator_core::{ArtifactId, SessionId, Snapshot};
+use operator_core::{SessionId, Snapshot};
 use operator_runtime::{Runtime, Session, SessionEvent, SessionStatus};
 use serde_json::Value;
 
@@ -399,13 +399,7 @@ impl AgentRunner {
             return;
         };
 
-        let artifacts = snapshot
-            .image_artifact
-            .iter()
-            .cloned()
-            .collect::<Vec<ArtifactId>>();
-        let visual = snapshot.image_artifact.clone();
-        state.record_observation(snapshot.id, artifacts, visual);
+        state.record_observation_snapshot(&snapshot);
     }
 
     fn validate_config(&self) -> Result<(), AgentError> {
