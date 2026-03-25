@@ -269,6 +269,10 @@ const WINDOW_RESIZE_AFTER_HELP: &str = "Examples
 const MCP_SERVE_AFTER_HELP: &str = "Examples
   operator mcp serve";
 
+const AGENT_AFTER_HELP: &str = "Examples
+  operator agent \"Open Notes and type hello\"
+  operator agent --model doubao-seed --max-steps 8 \"Summarize the frontmost window\"";
+
 fn styled_global_runtime_flags() -> String {
     format!(
         "{header}Global Runtime Flags{reset}\n\
@@ -373,7 +377,7 @@ fn root_help() -> String {
 {header}Query{reset}\n  {command}list{reset}          {body}List running apps or windows{reset}\n  {command}focus{reset}         {body}Show the currently focused app, window, and element{reset}\n\n\
 {header}Action{reset}\n  {command}input{reset}         {body}Pointer and keyboard actions against locators or target windows/apps{reset}\n  {command}app{reset}           {body}Launch, switch, hide, quit, and relaunch applications{reset}\n  {command}window{reset}        {body}Focus, close, resize, or move application windows{reset}\n\n\
 {header}MCP{reset}\n  {command}mcp{reset}           {body}Run MCP stdio server commands{reset}\n\n\
-{header}A2A{reset}\n  {body}Not yet implemented. Reserved for future agent interface commands.{reset}\n\n\
+{header}A2A{reset}\n  {command}agent{reset}         {body}Execute a single-shot natural-language task against a target{reset}\n\n\
 {header}Global Runtime Flags{reset}\n      {command}--json{reset}                   {body}Emit machine-readable JSON output{reset}\n      {command}--target <TARGET>{reset}        {body}Select the runtime target{reset}\n      {command}--timeout-ms <TIMEOUT_MS>{reset}\n                               {body}Override the runtime timeout for this command{reset}\n  {command}-h, --help{reset}                   {body}Print help{reset}\n\n\
 {header}Examples{reset}\n  {command}operator observe frontmost{reset}\n  {command}operator list windows{reset}\n  {command}operator input click --text Save{reset}\n  {command}operator mcp serve{reset}\n\n\
 {muted}Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage.{reset}\n",
@@ -799,6 +803,9 @@ impl Cli {
             CliExecution::McpServe => {
                 Err("mcp serve does not map to a runtime tool invocation".to_string())
             }
+            CliExecution::Agent(_) => {
+                Err("agent command does not map to a runtime tool invocation".to_string())
+            }
         }
     }
 }
@@ -882,6 +889,7 @@ pub(crate) struct ToolInvocation {
 pub(crate) enum CliExecution {
     Tool(ToolInvocation),
     McpServe,
+    Agent(AgentCommand),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -910,6 +918,11 @@ enum Command {
     App(AppArgs),
     Window(WindowArgs),
     Mcp(McpArgs),
+    #[command(
+        about = "Execute a single-shot natural-language task against a target",
+        after_help = AGENT_AFTER_HELP
+    )]
+    Agent(AgentArgs),
 }
 
 impl Command {
@@ -926,6 +939,7 @@ impl Command {
             Self::App(args) => Some(&args.common),
             Self::Window(args) => Some(&args.common),
             Self::Mcp(args) => Some(&args.common),
+            Self::Agent(args) => Some(&args.common),
         }
     }
 
@@ -949,12 +963,16 @@ impl Command {
             Self::App(args) => args.into_invocation(root_common),
             Self::Window(args) => args.into_invocation(root_common),
             Self::Mcp(args) => args.into_invocation(root_common),
+            Self::Agent(_) => {
+                Err("agent command does not map to a runtime tool invocation".to_string())
+            }
         }
     }
 
     fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
         match self {
             Self::Mcp(args) => args.into_execution(root_common),
+            Self::Agent(args) => args.into_execution(root_common),
             other => other.into_invocation(root_common).map(CliExecution::Tool),
         }
     }
@@ -976,6 +994,46 @@ struct CommonArgs {
         help = "Override the runtime timeout for this command"
     )]
     timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AgentCommand {
+    pub(crate) task: String,
+    pub(crate) model: Option<String>,
+    pub(crate) max_steps: Option<NonZeroU32>,
+    pub(crate) target: Option<String>,
+    pub(crate) json_output: bool,
+    pub(crate) timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct AgentArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(help = "Natural-language task to execute")]
+    task: String,
+    #[arg(
+        long,
+        value_parser = ["gpt-5.4", "doubao-seed"],
+        help = "Registered phase-1 model name"
+    )]
+    model: Option<String>,
+    #[arg(long, help = "Override the maximum number of agent steps")]
+    max_steps: Option<NonZeroU32>,
+}
+
+impl AgentArgs {
+    fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
+        let common = merge_common(root_common, self.common);
+        Ok(CliExecution::Agent(AgentCommand {
+            task: self.task,
+            model: self.model,
+            max_steps: self.max_steps,
+            target: common.target,
+            json_output: common.json_output,
+            timeout_ms: common.timeout_ms,
+        }))
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1684,6 +1742,9 @@ impl McpArgs {
             CliExecution::Tool(invocation) => Ok(invocation),
             CliExecution::McpServe => {
                 Err("mcp serve does not map to a runtime tool invocation".to_string())
+            }
+            CliExecution::Agent(_) => {
+                Err("agent command does not map to a runtime tool invocation".to_string())
             }
         }
     }

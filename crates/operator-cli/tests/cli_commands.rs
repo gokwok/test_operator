@@ -3,6 +3,7 @@ mod cli_main;
 
 use std::{
     future::Future,
+    num::NonZeroU32,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -228,6 +229,53 @@ fn mcp_serve_command_maps_to_mcp_execution_mode() {
 }
 
 #[test]
+fn agent_help_shows_first_phase_flags_and_examples() {
+    let help = command_help(["operator", "agent", "--help"]);
+    assert!(help.contains("Execute a single-shot natural-language task against a target"));
+    assert!(help.contains("Usage operator agent [OPTIONS] <TASK>"));
+    assert!(help.contains("Arguments\n  <TASK>"));
+    assert!(help.contains("--model <MODEL>"));
+    assert!(help.contains("--max-steps <MAX_STEPS>"));
+    assert!(help.contains("--target <TARGET>"));
+    assert!(help.contains("--timeout-ms <TIMEOUT_MS>"));
+    assert!(help.contains("--json"));
+    assert!(help.contains("Examples\n  operator agent \"Open Notes and type hello\""));
+}
+
+#[test]
+fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "--json",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--model",
+        "doubao-seed",
+        "--max-steps",
+        "8",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    assert!(cli.prefers_json());
+
+    let execution = cli.into_execution().unwrap();
+    let cli_main::args::CliExecution::Agent(command) = execution else {
+        panic!("agent command should map to agent execution");
+    };
+
+    assert_eq!(command.task, "Summarize the frontmost window");
+    assert_eq!(command.model.as_deref(), Some("doubao-seed"));
+    assert_eq!(command.max_steps, Some(NonZeroU32::new(8).unwrap()));
+    assert_eq!(command.target.as_deref(), Some("local:macos"));
+    assert_eq!(command.timeout_ms, Some(250));
+    assert!(command.json_output);
+}
+
+#[test]
 fn permissions_help_shows_examples() {
     let help = command_help(["operator", "permissions", "--help"]);
     assert!(help.contains("Check automation permissions and runtime readiness"));
@@ -278,9 +326,10 @@ fn root_help_groups_commands_by_domain() {
         "input         Pointer and keyboard actions against locators or target windows/apps"
     ));
     assert!(help.contains("mcp           Run MCP stdio server commands"));
-    assert!(
-        help.contains("A2A\n  Not yet implemented. Reserved for future agent interface commands.")
-    );
+    assert!(help.contains(
+        "A2A\n  agent         Execute a single-shot natural-language task against a target"
+    ));
+    assert!(!help.contains("Not yet implemented. Reserved for future agent interface commands."));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator observe frontmost"));
     assert!(help.contains(

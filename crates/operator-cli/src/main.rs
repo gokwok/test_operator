@@ -101,6 +101,13 @@ async fn main_entry() -> i32 {
                 }
             }
         }
+        CliExecution::Agent(_command) => {
+            eprintln!(
+                "{}",
+                output::render_error(json_output, "operator agent execution is not wired yet")
+            );
+            1
+        }
         CliExecution::McpServe => match run_stdio_server().await {
             Ok(()) => 0,
             Err(error) => {
