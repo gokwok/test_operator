@@ -397,7 +397,10 @@ fn observe_help() -> String {
                 "fullscreen",
                 "Create a snapshot from the full display or the active display",
             ),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &[
             "operator observe frontmost --capture all",
@@ -413,7 +416,10 @@ fn snapshot_help() -> String {
         "operator snapshot [OPTIONS] <COMMAND>",
         &[
             ("get", "Read a stored snapshot by ID"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &["operator snapshot get s_123"],
         "Use 'operator snapshot <command> --help' for detailed usage.",
@@ -426,7 +432,10 @@ fn artifact_help() -> String {
         "operator artifact [OPTIONS] <COMMAND>",
         &[
             ("get", "Resolve a stored capture artifact by ID"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &["operator artifact get capture-1.png"],
         "Use 'operator artifact <command> --help' for detailed usage.",
@@ -440,7 +449,10 @@ fn list_help() -> String {
         &[
             ("apps", "List running applications"),
             ("windows", "List windows, optionally filtered by app"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &["operator list apps", "operator list windows --app TextEdit"],
         "Use 'operator list <command> --help' for detailed usage.",
@@ -453,14 +465,20 @@ fn input_help() -> String {
         "operator input [OPTIONS] <COMMAND>",
         &[
             ("click", "Click a locator, coordinate, or target"),
-            ("move", "Move the pointer to a locator, coordinates, or target"),
+            (
+                "move",
+                "Move the pointer to a locator, coordinates, or target",
+            ),
             ("type", "Type text into the focused or resolved target"),
             ("press", "Press a special key"),
             ("hotkey", "Press a key chord"),
             ("scroll", "Scroll by delta against a locator or target"),
             ("drag", "Drag between two locators"),
             ("swipe", "Swipe between two locators"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &[
             "operator input click --text Save --app Notes --focus auto --verify focus",
@@ -475,13 +493,19 @@ fn app_help() -> String {
         "Launch, switch, hide, quit, and relaunch applications",
         "operator app [OPTIONS] <COMMAND>",
         &[
-            ("launch", "Launch an application by bundle identifier or name"),
+            (
+                "launch",
+                "Launch an application by bundle identifier or name",
+            ),
             ("switch", "Bring an application to the foreground"),
             ("quit", "Quit an application"),
             ("relaunch", "Relaunch an application"),
             ("hide", "Hide an application"),
             ("unhide", "Unhide an application"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &[
             "operator app launch Calculator",
@@ -503,7 +527,10 @@ fn window_help() -> String {
             ("move", "Move a specific window"),
             ("resize", "Resize a specific window"),
             ("set-bounds", "Set the full bounds of a specific window"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &[
             "operator window focus --window-id 42 --verify focus",
@@ -519,7 +546,10 @@ fn mcp_help() -> String {
         "operator mcp [OPTIONS] <COMMAND>",
         &[
             ("serve", "Run the MCP stdio server"),
-            ("help", "Print this message or the help of the given subcommand(s)"),
+            (
+                "help",
+                "Print this message or the help of the given subcommand(s)",
+            ),
         ],
         &["operator mcp serve"],
         "Use 'operator mcp <command> --help' for detailed usage.",
@@ -571,10 +601,7 @@ fn move_leading_description_below_usage(help: &str) -> String {
         return help.to_owned();
     }
 
-    let description = format!(
-        "{BODY_STYLE}{}{RESET_STYLE}",
-        description_lines.join("\n"),
-    );
+    let description = format!("{BODY_STYLE}{}{RESET_STYLE}", description_lines.join("\n"),);
     let usage = lines[usage_idx];
     let remainder = lines[usage_idx + 1..].join("\n");
     let remainder = remainder.trim_start_matches('\n');

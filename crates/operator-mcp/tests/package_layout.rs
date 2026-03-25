@@ -38,18 +38,16 @@ fn operator_mcp_package_exports_library_only() {
         .expect("package targets should be an array");
 
     assert!(
-        targets
-            .iter()
-            .any(|target| target["kind"].as_array().is_some_and(|kind| {
-                kind.iter().any(|entry| entry.as_str() == Some("lib"))
-            })),
+        targets.iter().any(|target| target["kind"]
+            .as_array()
+            .is_some_and(|kind| { kind.iter().any(|entry| entry.as_str() == Some("lib")) })),
         "operator-mcp should keep exporting a library target"
     );
     assert!(
         targets.iter().all(|target| {
-            !target["kind"].as_array().is_some_and(|kind| {
-                kind.iter().any(|entry| entry.as_str() == Some("bin"))
-            })
+            !target["kind"]
+                .as_array()
+                .is_some_and(|kind| kind.iter().any(|entry| entry.as_str() == Some("bin")))
         }),
         "operator-mcp should not expose a binary target"
     );

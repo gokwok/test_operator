@@ -271,22 +271,16 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Usage operator [OPTIONS] [COMMAND]"));
     assert!(help.contains("Operator - Turn any desktop app into an API, from CLI to AI"));
     assert!(!help.contains("Tip:\n  Start with operator observe --help"));
-    assert!(help.contains(
-        "permissions   Check automation permissions and runtime readiness"
-    ));
-    assert!(help.contains(
-        "snapshot      Read stored snapshots by ID"
-    ));
-    assert!(help.contains(
-        "focus         Show the currently focused app, window, and element"
-    ));
+    assert!(help.contains("permissions   Check automation permissions and runtime readiness"));
+    assert!(help.contains("snapshot      Read stored snapshots by ID"));
+    assert!(help.contains("focus         Show the currently focused app, window, and element"));
     assert!(help.contains(
         "input         Pointer and keyboard actions against locators or target windows/apps"
     ));
     assert!(help.contains("mcp           Run MCP stdio server commands"));
-    assert!(help.contains(
-        "A2A\n  Not yet implemented. Reserved for future agent interface commands."
-    ));
+    assert!(
+        help.contains("A2A\n  Not yet implemented. Reserved for future agent interface commands.")
+    );
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator observe frontmost"));
     assert!(help.contains(
@@ -297,17 +291,15 @@ fn root_help_groups_commands_by_domain() {
 #[test]
 fn observe_help_lists_surface_subcommands() {
     let help = command_help(["operator", "observe", "--help"]);
-    assert!(help.contains(
-        "Create snapshots from frontmost, window, region, or fullscreen surfaces"
-    ));
+    assert!(
+        help.contains("Create snapshots from frontmost, window, region, or fullscreen surfaces")
+    );
     assert!(help.contains("frontmost"));
     assert!(help.contains("Create a snapshot from the frontmost surface"));
     assert!(help.contains("window"));
     assert!(help.contains("Create a snapshot from a specific window"));
     assert!(help.contains("Global Runtime Flags"));
-    assert!(help.contains(
-        "Use 'operator observe <command> --help' for detailed usage."
-    ));
+    assert!(help.contains("Use 'operator observe <command> --help' for detailed usage."));
 }
 
 #[test]
@@ -336,9 +328,7 @@ fn input_help_lists_pointer_and_keyboard_subcommands() {
     assert!(help.starts_with(
         "Usage operator input [OPTIONS] <COMMAND>\n\nPointer and keyboard actions against locators or target windows/apps"
     ));
-    assert!(help.contains(
-        "Pointer and keyboard actions against locators or target windows/apps"
-    ));
+    assert!(help.contains("Pointer and keyboard actions against locators or target windows/apps"));
     assert!(help.contains("click"));
     assert!(help.contains("Click a locator, coordinate, or target"));
     assert!(help.contains("Use 'operator input <command> --help' for detailed usage."));
