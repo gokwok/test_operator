@@ -2,13 +2,8 @@ use std::{collections::HashSet, env, path::PathBuf, process::ExitCode, sync::Arc
 
 use clap::Parser;
 use operator_agent::{
-    load_persisted_session,
-    model::{
-        DoubaoChatCompletionsProvider, DoubaoProviderConfig, ModelRegistry, OpenAiProviderConfig,
-        OpenAiResponsesProvider, ProviderKind,
-    },
-    AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner, PersistedSessionTranscript,
-    ReplayableTranscriptEvent,
+    load_persisted_session, model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult,
+    AgentRunner, PersistedSessionTranscript, ReplayableTranscriptEvent,
 };
 use operator_core::TargetId;
 use operator_platform_macos::{
@@ -163,48 +158,7 @@ async fn build_runtime(
 }
 
 fn configured_models() -> Result<ModelRegistry, String> {
-    let mut registry = ModelRegistry::new();
-    let mut configured = Vec::new();
-
-    if let Some(api_key) = non_empty_env("OPENAI_API_KEY") {
-        let mut config = OpenAiProviderConfig::new(api_key);
-        if let Some(base_url) = non_empty_env("OPENAI_BASE_URL") {
-            config.base_url = base_url;
-        }
-        let provider = OpenAiResponsesProvider::new(config).map_err(|error| error.to_string())?;
-        registry.register_provider(ProviderKind::OpenAi, Arc::new(provider));
-        configured.push("OPENAI_API_KEY");
-    }
-
-    let doubao_api_key = non_empty_env("ARK_API_KEY").or_else(|| non_empty_env("DOUBAO_API_KEY"));
-    if let Some(api_key) = doubao_api_key {
-        let mut config = DoubaoProviderConfig::new(api_key);
-        if let Some(base_url) =
-            non_empty_env("ARK_BASE_URL").or_else(|| non_empty_env("DOUBAO_BASE_URL"))
-        {
-            config.base_url = base_url;
-        }
-        let provider =
-            DoubaoChatCompletionsProvider::new(config).map_err(|error| error.to_string())?;
-        registry.register_provider(ProviderKind::OpenAiCompatible, Arc::new(provider));
-        configured.push("ARK_API_KEY/DOUBAO_API_KEY");
-    }
-
-    if configured.is_empty() {
-        return Err(
-            "no model provider credentials found; set OPENAI_API_KEY or ARK_API_KEY before running the harness"
-                .into(),
-        );
-    }
-
-    Ok(registry)
-}
-
-fn non_empty_env(name: &str) -> Option<String> {
-    env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .and_then(|value| if value.is_empty() { None } else { Some(value) })
+    ModelRegistry::from_environment().map_err(|error| error.to_string())
 }
 
 async fn session_ids(

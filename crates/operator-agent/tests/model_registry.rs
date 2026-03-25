@@ -3,8 +3,9 @@ mod support;
 use std::{sync::Arc, time::Duration};
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, Message, ModelConfig, ModelError, ModelEvent,
-    ModelRegistry, ModelRequest, ProviderKind, ReasoningLevel, ToolSpec, UserMessage,
+    CallOptions, ContentBlock, Context, DoubaoProviderConfig, EnvironmentProviderBootstrap,
+    Message, ModelConfig, ModelError, ModelEvent, ModelRegistry, ModelRegistryBootstrapError,
+    ModelRequest, OpenAiProviderConfig, ProviderKind, ReasoningLevel, ToolSpec, UserMessage,
 };
 use serde_json::json;
 use support::DeterministicTestProvider;
@@ -113,4 +114,56 @@ async fn resolve_returns_registered_provider_for_known_model() {
             text: "planned next step".into(),
         }]
     );
+}
+
+#[test]
+fn environment_provider_bootstrap_reads_supported_credentials_from_env_vars() {
+    let bootstrap = EnvironmentProviderBootstrap::from_env_vars([
+        ("OPENAI_API_KEY", " openai-key "),
+        ("OPENAI_BASE_URL", " https://openai.example/v1 "),
+        ("ARK_API_KEY", " ark-key "),
+        ("ARK_BASE_URL", " https://ark.example/api/v3 "),
+        ("DOUBAO_API_KEY", " doubao-fallback "),
+        ("DOUBAO_BASE_URL", " https://doubao.example/api/v3 "),
+    ])
+    .expect("supported provider credentials should bootstrap");
+
+    assert_eq!(
+        bootstrap.openai,
+        Some(OpenAiProviderConfig {
+            api_key: "openai-key".into(),
+            base_url: "https://openai.example/v1".into(),
+        })
+    );
+    assert_eq!(
+        bootstrap.doubao,
+        Some(DoubaoProviderConfig {
+            api_key: "ark-key".into(),
+            base_url: "https://ark.example/api/v3".into(),
+        })
+    );
+}
+
+#[test]
+fn environment_provider_bootstrap_rejects_missing_credentials() {
+    assert!(matches!(
+        EnvironmentProviderBootstrap::from_env_vars([
+            ("OPENAI_API_KEY", "   "),
+            ("ARK_API_KEY", ""),
+            ("DOUBAO_API_KEY", " "),
+        ]),
+        Err(ModelRegistryBootstrapError::NoProviderCredentials)
+    ));
+}
+
+#[test]
+fn environment_bootstrap_registers_configured_providers_into_model_registry() {
+    let registry = ModelRegistry::from_environment_vars([
+        ("OPENAI_API_KEY", "openai-key"),
+        ("DOUBAO_API_KEY", "doubao-key"),
+    ])
+    .expect("environment bootstrap should register supported providers");
+
+    assert!(registry.resolve("gpt-5.4").is_ok());
+    assert!(registry.resolve("doubao-seed").is_ok());
 }
