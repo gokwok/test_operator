@@ -19,6 +19,8 @@
 # 临时文件
 *.log
 *.tmp
+.codex/
+.factory/
 
 # Git worktrees
 .worktrees/
