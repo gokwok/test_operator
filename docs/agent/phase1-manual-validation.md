@@ -112,12 +112,13 @@ Expected:
 
 Goal:
 
-- update a temporary note in a way that requires a fresh confirmation before finishing
+- drive a task shape that pressures the model toward early completion, then verify it still obtains fresh post-action confirmation before finishing
 
 Expected:
 
 - the run either triggers reflector rejection or forces another loop before final success
-- the final UI shows the expected edited content
+- a blank-note adversarial task is acceptable if it is easier to isolate stale-UI behavior than a content-edit task
+- the final UI state must still match the task requirements
 
 ### Case 3: Doubao normal task
 
@@ -135,12 +136,13 @@ Expected:
 
 Goal:
 
-- update a temporary note in a way that requires a fresh confirmation before finishing
+- drive a task shape that pressures the model toward early completion, then verify it still obtains fresh post-action confirmation before finishing
 
 Expected:
 
 - the run either triggers reflector rejection or forces another loop before final success
-- the final UI shows the expected edited content
+- a blank-note adversarial task is acceptable if it is easier to isolate stale-UI behavior than a content-edit task
+- the final UI state must still match the task requirements
 
 ## Cleanup
 
