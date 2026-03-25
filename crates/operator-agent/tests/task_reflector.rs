@@ -43,11 +43,19 @@ fn sample_state() -> AgentSessionState {
         AgentToolResult {
             tool_name: "observe".into(),
             arguments: json!({
-                "surface": { "kind": "Frontmost" }
+                "surface": { "kind": "Frontmost" },
+                "include_elements": true
             }),
             output: Some(json!({
                 "snapshot": {
-                    "id": "snap-1"
+                    "id": "snap-1",
+                    "root_ids": ["ax-0"],
+                    "elements": {
+                        "ax-0": {
+                            "id": "ax-0",
+                            "role": "AXWindow"
+                        }
+                    }
                 }
             })),
             error: None,
@@ -129,5 +137,39 @@ async fn task_reflector_rejects_invalid_verdict_payloads() {
     assert!(
         error.to_string().contains("reflector verdict"),
         "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn task_reflector_rejects_finish_when_ui_state_is_stale() {
+    let reflector = TaskReflector::new();
+    let mut state = sample_state();
+    state.mark_ui_stale();
+
+    let provider = Arc::new(DeterministicTestProvider::new(
+        r#"{"verdict":"ok","reason":"This should never be used."}"#,
+    ));
+    let mut registry = ModelRegistry::new();
+    registry.register_provider(ProviderKind::OpenAiCompatible, provider.clone());
+    let model = registry
+        .resolve("doubao-seed")
+        .expect("doubao test model should resolve");
+
+    let verdict = reflector
+        .reflect(&model, &state, "The task is definitely complete.")
+        .await
+        .expect("stale ui should be rejected before model reflection");
+
+    assert_eq!(
+        verdict,
+        TaskReflection::NotOk {
+            reason:
+                "The task is not verified yet because there is no fresh usable observe result after the last UI change."
+                    .into(),
+        }
+    );
+    assert!(
+        provider.requests().is_empty(),
+        "deterministic stale-ui rejection should not call the reflector model"
     );
 }

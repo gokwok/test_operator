@@ -155,6 +155,15 @@ const KEY_CODE_RIGHT_ARROW: u16 = 0x7C;
 const KEY_CODE_DOWN_ARROW: u16 = 0x7D;
 const KEY_CODE_UP_ARROW: u16 = 0x7E;
 const INPUT_EVENT_DELAY_MS: u64 = 10;
+const DEFAULT_TYPE_DELAY_MS: u64 = 20;
+
+fn typing_delay_ms(delay_ms: Option<u64>) -> u64 {
+    delay_ms.unwrap_or(DEFAULT_TYPE_DELAY_MS)
+}
+
+fn should_use_exact_text_injection(text: &str) -> bool {
+    text.contains('\n')
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HotkeyModifier {
@@ -436,14 +445,20 @@ fn hotkey_key_code(token: &str) -> Option<u16> {
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use std::{ffi::c_void, thread, time::Duration};
+    use std::{ffi::c_void, process::Command, thread, time::Duration};
 
     use operator_core::{ClickMode, DragModifier, DragMotion, MouseButton, OperatorError, Point};
+    use serde::Deserialize;
 
     use super::{
         drag_interpolated_point, drag_modifier_key_code, drag_step_delay_ms, parse_drag_motion,
         parse_hotkey, HotkeyModifier, INPUT_EVENT_DELAY_MS,
     };
+
+    #[derive(Debug, Deserialize)]
+    struct ExactTextInjectionResult {
+        applied: bool,
+    }
 
     const KCG_HID_EVENT_TAP: u32 = 0;
     const KCG_EVENT_SOURCE_STATE_COMBINED_SESSION_STATE: u32 = 0;
@@ -801,8 +816,12 @@ mod platform {
     }
 
     pub fn type_text(text: &str, delay_ms: Option<u64>) -> Result<(), OperatorError> {
+        if try_set_exact_focused_text(text)? {
+            return Ok(());
+        }
+
         let source = EventSource::new()?;
-        let delay_ms = delay_ms.unwrap_or(0);
+        let delay_ms = super::typing_delay_ms(delay_ms);
         let mut characters = text.chars().peekable();
         while let Some(character) = characters.next() {
             let mut units = [0u16; 2];
@@ -814,6 +833,69 @@ mod platform {
             }
         }
         Ok(())
+    }
+
+    fn try_set_exact_focused_text(text: &str) -> Result<bool, OperatorError> {
+        if !super::should_use_exact_text_injection(text) {
+            return Ok(false);
+        }
+
+        let text_literal = serde_json::to_string(text).map_err(|error| {
+            OperatorError::Platform(format!(
+                "failed to encode exact text injection payload: {error}"
+            ))
+        })?;
+        let script = format!(
+            r#"
+const text = {text_literal};
+const systemEvents = Application("System Events");
+
+function optional(callback) {{
+  try {{
+    return callback();
+  }} catch (_) {{
+    return null;
+  }}
+}}
+
+const processes = systemEvents.applicationProcesses.whose({{frontmost: true}})();
+if (!processes.length) {{
+  JSON.stringify({{ applied: false }});
+}} else {{
+  const focused = optional(() => processes[0].attributes.byName("AXFocusedUIElement").value());
+  if (!focused) {{
+    JSON.stringify({{ applied: false }});
+  }} else {{
+    const role = optional(() => focused.role())
+      || optional(() => focused.attributes.byName("AXRole").value());
+    const valueAttr = optional(() => focused.attributes.byName("AXValue"));
+    const rawValue = optional(() => focused.value());
+    const currentValue = rawValue === null || rawValue === undefined
+      ? null
+      : String(rawValue);
+    const isEditableText = role === "AXTextArea" || role === "AXTextField";
+    const isEmpty = currentValue === null || currentValue === "";
+    let applied = false;
+    if (isEditableText && isEmpty && valueAttr) {{
+      try {{
+        valueAttr.value = text;
+        applied = true;
+      }} catch (_) {{
+        applied = false;
+      }}
+    }}
+    JSON.stringify({{ applied }});
+  }}
+}}
+"#
+        );
+        let output = run_jxa(&script)?;
+        let result: ExactTextInjectionResult = serde_json::from_str(&output).map_err(|error| {
+            OperatorError::Platform(format!(
+                "failed to decode exact text injection result: {error}"
+            ))
+        })?;
+        Ok(result.applied)
     }
 
     fn mouse_button(button: MouseButton) -> u32 {
@@ -883,6 +965,32 @@ mod platform {
             ClickMode::Double => 2,
             ClickMode::Left | ClickMode::Right | ClickMode::Middle => 1,
         }
+    }
+
+    fn run_jxa(script: &str) -> Result<String, OperatorError> {
+        let output = Command::new("osascript")
+            .args(["-l", "JavaScript", "-e", script])
+            .output()
+            .map_err(|error| {
+                OperatorError::Platform(format!("failed to invoke osascript: {error}"))
+            })?;
+
+        command_output(output)
+    }
+
+    fn command_output(output: std::process::Output) -> Result<String, OperatorError> {
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("Not authorized") || stderr.contains("not allowed") {
+            return Err(OperatorError::PermissionDenied(stderr));
+        }
+
+        Err(OperatorError::Platform(format!(
+            "osascript failed: {stderr}"
+        )))
     }
 }
 
@@ -954,8 +1062,9 @@ mod tests {
 
     use super::{
         drag_interpolated_point, drag_step_delay_ms, parse_drag_motion, parse_hotkey,
-        parse_press_key, HotkeyModifier, ParsedDragMotion, ParsedHotkey, KEY_CODE_DOWN_ARROW,
-        KEY_CODE_P, KEY_CODE_RETURN,
+        parse_press_key, should_use_exact_text_injection, typing_delay_ms, HotkeyModifier,
+        ParsedDragMotion, ParsedHotkey, DEFAULT_TYPE_DELAY_MS, KEY_CODE_DOWN_ARROW, KEY_CODE_P,
+        KEY_CODE_RETURN,
     };
 
     #[test]
@@ -1019,6 +1128,18 @@ mod tests {
             error.to_string(),
             "platform error: unsupported macOS press key: a"
         );
+    }
+
+    #[test]
+    fn typing_delay_defaults_to_notes_safe_throttle() {
+        assert_eq!(typing_delay_ms(None), DEFAULT_TYPE_DELAY_MS);
+        assert_eq!(typing_delay_ms(Some(5)), 5);
+    }
+
+    #[test]
+    fn exact_text_injection_only_applies_to_multiline_text() {
+        assert!(should_use_exact_text_injection("first line\nsecond line"));
+        assert!(!should_use_exact_text_injection("single line"));
     }
 
     #[test]

@@ -348,7 +348,10 @@ fn launch_with_open(bundle_id_or_name: &str) -> Result<(), OperatorError> {
         .output()
         .map_err(|error| OperatorError::Platform(format!("failed to invoke open: {error}")))?;
 
-    command_output("open", output).map(|_| ())
+    command_output("open", output)?;
+    activate_application(bundle_id_or_name)?;
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -581,6 +584,23 @@ error "window {window_id} not found"
 "#,
         window_id = id.0
     );
+
+    run_osascript(&script).map(|_| ())
+}
+
+#[cfg(target_os = "macos")]
+fn activate_application(bundle_id_or_name: &str) -> Result<(), OperatorError> {
+    let script = if bundle_id_or_name.contains('.') {
+        format!(
+            r#"tell application id "{}" to activate"#,
+            applescript_string_literal(bundle_id_or_name)
+        )
+    } else {
+        format!(
+            r#"tell application "{}" to activate"#,
+            applescript_string_literal(bundle_id_or_name)
+        )
+    };
 
     run_osascript(&script).map(|_| ())
 }

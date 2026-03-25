@@ -266,25 +266,36 @@ fn instructions(system: Option<&str>, tools: &[ToolSpec]) -> Option<String> {
 
 fn message_input(message: &Message) -> Value {
     match message {
-        Message::User(message) => message_with_role("user", &message.content),
-        Message::Assistant(message) => message_with_role("assistant", &message.content),
+        Message::User(message) => {
+            message_with_role("user", MessageContentRole::User, &message.content)
+        }
+        Message::Assistant(message) => {
+            message_with_role("assistant", MessageContentRole::Assistant, &message.content)
+        }
         Message::ToolResult(ToolResultMessage { content, .. }) => {
-            message_with_role("user", content)
+            message_with_role("user", MessageContentRole::User, content)
         }
     }
 }
 
-fn message_with_role(role: &str, content: &[ContentBlock]) -> Value {
+fn message_with_role(
+    role: &str,
+    content_role: MessageContentRole,
+    content: &[ContentBlock],
+) -> Value {
     json!({
         "role": role,
-        "content": content.iter().filter_map(input_content_item).collect::<Vec<_>>(),
+        "content": content
+            .iter()
+            .filter_map(|block| input_content_item(content_role, block))
+            .collect::<Vec<_>>(),
     })
 }
 
-fn input_content_item(block: &ContentBlock) -> Option<Value> {
+fn input_content_item(content_role: MessageContentRole, block: &ContentBlock) -> Option<Value> {
     match block {
         ContentBlock::Text { text } => Some(json!({
-            "type": "input_text",
+            "type": text_block_type(content_role),
             "text": text,
         })),
         ContentBlock::Image { mime, data_base64 } => Some(json!({
@@ -292,7 +303,7 @@ fn input_content_item(block: &ContentBlock) -> Option<Value> {
             "image_url": format!("data:{mime};base64,{data_base64}"),
         })),
         ContentBlock::Thinking { thinking } => Some(json!({
-            "type": "input_text",
+            "type": text_block_type(content_role),
             "text": thinking,
         })),
         ContentBlock::ToolCall {
@@ -300,7 +311,7 @@ fn input_content_item(block: &ContentBlock) -> Option<Value> {
             name,
             arguments_json,
         } => Some(json!({
-            "type": "input_text",
+            "type": text_block_type(content_role),
             "text": serde_json::to_string_pretty(&json!({
                 "tool_call_id": id,
                 "tool_name": name,
@@ -308,6 +319,19 @@ fn input_content_item(block: &ContentBlock) -> Option<Value> {
             }))
             .expect("tool call blocks should serialize to json"),
         })),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum MessageContentRole {
+    User,
+    Assistant,
+}
+
+fn text_block_type(content_role: MessageContentRole) -> &'static str {
+    match content_role {
+        MessageContentRole::User => "input_text",
+        MessageContentRole::Assistant => "output_text",
     }
 }
 

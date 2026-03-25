@@ -154,7 +154,7 @@ impl AgentSessionState {
         }
 
         if result.tool_name == "observe" {
-            self.ui_state_stale = false;
+            self.ui_state_stale = !observe_result_is_usable(result);
         } else if !result.read_only {
             self.ui_state_stale = true;
         }
@@ -169,7 +169,6 @@ impl AgentSessionState {
         self.latest_snapshot = Some(snapshot_id);
         self.latest_artifacts = artifacts;
         self.previous_snapshot_visual = visual;
-        self.ui_state_stale = false;
     }
 
     pub fn record_error_fingerprint(&mut self, fingerprint: impl Into<String>) -> u32 {
@@ -200,6 +199,41 @@ impl AgentSessionState {
             reason: reason.into(),
         };
     }
+}
+
+fn observe_result_is_usable(result: &AgentToolResult) -> bool {
+    if result.tool_name != "observe" || result.is_error {
+        return false;
+    }
+
+    let include_elements = result
+        .arguments
+        .get("include_elements")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !include_elements {
+        return false;
+    }
+
+    let Some(snapshot) = result
+        .output
+        .as_ref()
+        .and_then(|output| output.get("snapshot"))
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+
+    let root_count = snapshot
+        .get("root_ids")
+        .and_then(Value::as_array)
+        .map_or(0, |items| items.len());
+    let element_count = snapshot
+        .get("elements")
+        .and_then(Value::as_object)
+        .map_or(0, |items| items.len());
+
+    root_count > 0 && element_count > 0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

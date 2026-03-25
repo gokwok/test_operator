@@ -438,7 +438,15 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            if locator.is_some() {
+                AnchorWindowResolution::Optional
+            } else {
+                AnchorWindowResolution::Required
+            },
+        )?;
         let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             (Some(resolved.point), resolved.warning)
@@ -468,8 +476,11 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared =
-            self.prepare_action_target(input.target.selector, input.target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            input.target.selector,
+            input.target.focus_policy,
+            AnchorWindowResolution::Optional,
+        )?;
         let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             self.input_synthesizer
@@ -515,7 +526,15 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            if locator.is_some() {
+                AnchorWindowResolution::Optional
+            } else {
+                AnchorWindowResolution::Required
+            },
+        )?;
         let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             (resolved.point, resolved.warning)
@@ -548,7 +567,15 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            if locator.is_some() {
+                AnchorWindowResolution::Optional
+            } else {
+                AnchorWindowResolution::Required
+            },
+        )?;
         let (point, warning) = if let Some(locator) = locator {
             let resolved = resolve_locator(&locator, &self.tree_inspector)?;
             (Some(resolved.point), resolved.warning)
@@ -579,7 +606,11 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            AnchorWindowResolution::Optional,
+        )?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer.drag(from.point, to.point, &motion)?;
@@ -606,7 +637,11 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            AnchorWindowResolution::Optional,
+        )?;
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer
@@ -631,7 +666,11 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            AnchorWindowResolution::Optional,
+        )?;
         self.input_synthesizer.hotkey(keys)?;
         let mut outcome = successful_action_outcome("sent hotkey");
         apply_prepared_target(&mut outcome, prepared.as_ref());
@@ -650,7 +689,11 @@ where
         permissions: &operator_core::PermissionsReport,
     ) -> Result<ActionOutcome, OperatorError> {
         require_accessibility_permission(permissions)?;
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            AnchorWindowResolution::Optional,
+        )?;
         self.input_synthesizer.press(key, count, delay_ms)?;
         let mut outcome = successful_action_outcome(press_detail(key, count));
         apply_prepared_target(&mut outcome, prepared.as_ref());
@@ -665,9 +708,10 @@ where
         &self,
         selector: Option<&ActionTargetSelector>,
         focus_policy: ActionFocusPolicy,
+        anchor_window: AnchorWindowResolution,
     ) -> Result<Option<PreparedActionTarget>, OperatorError> {
         let prepared = selector
-            .map(|selector| self.resolve_action_target(selector))
+            .map(|selector| self.resolve_action_target(selector, anchor_window))
             .transpose()?;
 
         if matches!(focus_policy, ActionFocusPolicy::Auto) {
@@ -683,19 +727,20 @@ where
     fn resolve_action_target(
         &self,
         selector: &ActionTargetSelector,
+        anchor_window: AnchorWindowResolution,
     ) -> Result<PreparedActionTarget, OperatorError> {
         match selector {
             ActionTargetSelector::App(bundle_id_or_name) => {
                 let app = self.resolve_app_by_identity(bundle_id_or_name)?;
                 Ok(PreparedActionTarget::App(PreparedAppTarget {
-                    anchor_window: self.resolve_anchor_window(&app)?,
+                    anchor_window: self.resolve_app_anchor_window(&app, anchor_window)?,
                     app,
                 }))
             }
             ActionTargetSelector::Pid(pid) => {
                 let app = self.resolve_app_by_pid(*pid)?;
                 Ok(PreparedActionTarget::App(PreparedAppTarget {
-                    anchor_window: self.resolve_anchor_window(&app)?,
+                    anchor_window: self.resolve_app_anchor_window(&app, anchor_window)?,
                     app,
                 }))
             }
@@ -749,6 +794,18 @@ where
         Ok(select_anchor_window(&windows))
     }
 
+    fn resolve_app_anchor_window(
+        &self,
+        app: &AppInfo,
+        anchor_window: AnchorWindowResolution,
+    ) -> Result<Option<WindowInfo>, OperatorError> {
+        match self.resolve_anchor_window(app) {
+            Ok(window) => Ok(window),
+            Err(_) if matches!(anchor_window, AnchorWindowResolution::Optional) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     fn resolve_window_by_id(
         &self,
         id: operator_core::WindowId,
@@ -798,7 +855,7 @@ where
             OperatorError::Platform("app lifecycle actions require a target selector".into())
         })?;
 
-        self.resolve_action_target(selector)
+        self.resolve_action_target(selector, AnchorWindowResolution::Optional)
     }
 
     fn window_action_target(
@@ -806,7 +863,11 @@ where
         target: ActionTargetConfig<'_>,
         action_name: &str,
     ) -> Result<WindowInfo, OperatorError> {
-        let prepared = self.prepare_action_target(target.selector, target.focus_policy)?;
+        let prepared = self.prepare_action_target(
+            target.selector,
+            target.focus_policy,
+            AnchorWindowResolution::Required,
+        )?;
         let prepared = prepared.ok_or_else(|| {
             OperatorError::Platform(format!("{action_name} requires a target selector"))
         })?;
@@ -890,6 +951,12 @@ struct TypeActionConfig<'a> {
     delay_ms: Option<u64>,
     trailing_keys: &'a [TypeTrailingKey],
     target: ActionTargetConfig<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AnchorWindowResolution {
+    Optional,
+    Required,
 }
 
 fn successful_action_outcome(detail: impl Into<String>) -> ActionOutcome {

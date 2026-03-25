@@ -205,16 +205,28 @@ fn successful_action_results_mark_ui_stale_until_a_successful_observe() {
     );
 
     state.push_tool_trace(
-        tool_result(
-            "observe",
-            Some(json!({
+        AgentToolResult {
+            tool_name: "observe".into(),
+            arguments: json!({
+                "include_elements": true,
+                "surface": { "kind": "Frontmost" }
+            }),
+            output: Some(json!({
                 "snapshot": {
-                    "id": "snap-after"
+                    "id": "snap-after",
+                    "root_ids": ["ax-0"],
+                    "elements": {
+                        "ax-0": {
+                            "id": "ax-0",
+                            "role": "AXWindow"
+                        }
+                    }
                 }
             })),
-            false,
-            true,
-        ),
+            error: None,
+            is_error: false,
+            read_only: true,
+        },
         21,
     );
     assert!(

@@ -148,23 +148,7 @@ async fn list_apps_and_windows_queries_forward_to_services() {
                 is_minimized: false,
             }],
             focus: None,
-            launched: Mutex::new(Vec::new()),
-            focused_apps: Mutex::new(Vec::new()),
-            closed_windows: Mutex::new(Vec::new()),
-            minimized_windows: Mutex::new(Vec::new()),
-            maximized_windows: Mutex::new(Vec::new()),
-            moved_windows: Mutex::new(Vec::new()),
-            resized_windows: Mutex::new(Vec::new()),
-            set_window_bounds_calls: Mutex::new(Vec::new()),
-            quit: Mutex::new(Vec::new()),
-            relaunched: Mutex::new(Vec::new()),
-            hidden: Mutex::new(Vec::new()),
-            unhidden: Mutex::new(Vec::new()),
-            focused_windows: Mutex::new(Vec::new()),
-            last_window_filter: Mutex::new(None),
-            move_window_result: None,
-            resize_window_result: None,
-            set_window_bounds_result: None,
+            ..Default::default()
         },
         StubPermissionReader::granted(),
     );
@@ -1800,6 +1784,132 @@ async fn hotkey_action_returns_successful_outcome() {
 }
 
 #[tokio::test]
+async fn hotkey_with_app_target_tolerates_anchor_window_query_failures() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.Notes".into()),
+                name: "Notes".into(),
+                pid: Some(202),
+                is_running: true,
+            }],
+            list_windows_error: Some(
+                "osascript failed: execution error: Error: Error: 不能获取对象。 (-1728)".into(),
+            ),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Hotkey {
+                    keys: vec!["command".into(), "n".into()],
+                },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("Notes".into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("hotkey should still succeed when anchor window lookup fails");
+
+    assert!(outcome.success);
+    assert_eq!(outcome.detail.as_deref(), Some("sent hotkey"));
+    assert_eq!(
+        outcome.target_app,
+        Some(AppInfo {
+            bundle_id: Some("com.apple.Notes".into()),
+            name: "Notes".into(),
+            pid: Some(202),
+            is_running: true,
+        })
+    );
+    assert_eq!(outcome.target_window, None);
+    assert_eq!(
+        driver.app_service().focused_apps(),
+        vec!["com.apple.Notes".to_string()]
+    );
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Hotkey(vec!["command".into(), "n".into()])]
+    );
+}
+
+#[tokio::test]
+async fn type_with_app_target_tolerates_anchor_window_query_failures() {
+    let input = StubInputSynthesizer::default();
+    let driver = MacosDriver::with_components(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.Notes".into()),
+                name: "Notes".into(),
+                pid: Some(202),
+                is_running: true,
+            }],
+            list_windows_error: Some(
+                "osascript failed: execution error: Error: Error: 不能获取对象。 (-1728)".into(),
+            ),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Type {
+                    text: "operator notes live validation".into(),
+                    clear_before: false,
+                    delay_ms: None,
+                    trailing_keys: Vec::new(),
+                },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("Notes".into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("typing should still succeed when anchor window lookup fails");
+
+    assert!(outcome.success);
+    assert_eq!(outcome.target_window, None);
+    assert_eq!(
+        driver.app_service().focused_apps(),
+        vec!["com.apple.Notes".to_string()]
+    );
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::TypeText {
+            text: "operator notes live validation".into(),
+            delay_ms: None,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn press_action_returns_successful_outcome() {
     let input = StubInputSynthesizer::default();
     let driver = MacosDriver::with_components(
@@ -1908,6 +2018,7 @@ fn default_action_request() -> ActionRequest {
 struct StubAppService {
     apps: Vec<AppInfo>,
     windows: Vec<WindowInfo>,
+    list_windows_error: Option<String>,
     focus: Option<FocusInfo>,
     launched: Mutex<Vec<String>>,
     focused_apps: Mutex<Vec<String>>,
@@ -1993,6 +2104,9 @@ impl AppService for StubAppService {
 
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError> {
         *self.last_window_filter.lock().unwrap() = app.map(str::to_string);
+        if let Some(message) = &self.list_windows_error {
+            return Err(OperatorError::Platform(message.clone()));
+        }
         Ok(self.windows.clone())
     }
 

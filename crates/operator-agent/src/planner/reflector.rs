@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::{
-    model::{
-        ContentBlock, Context, Message, ModelRequest, ResolvedModel, ResponseFormat, UserMessage,
-    },
+    model::{ContentBlock, Context, Message, ModelRequest, ResolvedModel, UserMessage},
     session::AgentSessionState,
     AgentError,
 };
@@ -20,6 +18,8 @@ const REFLECTOR_SYSTEM_PROMPT: &str = concat!(
     "{\"verdict\":\"ok\",\"reason\":\"<why the task is complete>\"}\n",
     "{\"verdict\":\"not_ok\",\"reason\":\"<what is still missing or unverified>\"}",
 );
+const STALE_UI_REASON: &str =
+    "The task is not verified yet because there is no fresh usable observe result after the last UI change.";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "verdict", rename_all = "snake_case")]
@@ -42,13 +42,16 @@ impl TaskReflector {
         state: &AgentSessionState,
         finish_summary: &str,
     ) -> Result<TaskReflection, AgentError> {
-        let mut options = model.config.default_options.clone();
-        options.response_format = Some(ResponseFormat::JsonObject);
+        if state.ui_state_stale {
+            return Ok(TaskReflection::NotOk {
+                reason: STALE_UI_REASON.into(),
+            });
+        }
 
         let request = ModelRequest {
             config: model.config.clone(),
             context: reflection_context(state, finish_summary),
-            options,
+            options: model.config.default_options.clone(),
             stream: false,
             timeout: model.config.default_timeout_ms.map(Duration::from_millis),
             request_id: None,

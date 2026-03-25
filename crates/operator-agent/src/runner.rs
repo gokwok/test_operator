@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::{
     model::{
         AssistantMessage, ContentBlock, Message, ModelError, ModelRegistry, ModelRequest,
-        ResolvedModel, ResponseFormat, ToolResultMessage, UserMessage,
+        ResolvedModel, ToolResultMessage, UserMessage,
     },
     planner::{
         AgentDecision, ContextAssembler, DecisionParser, DecisionValidator, PlannerPromptBuilder,
@@ -275,13 +275,10 @@ impl AgentRunner {
         model: &ResolvedModel,
         context: crate::model::Context,
     ) -> Result<AssistantMessage, AgentError> {
-        let mut options = model.config.default_options.clone();
-        options.response_format = Some(ResponseFormat::JsonObject);
-
         let request = ModelRequest {
             config: model.config.clone(),
             context,
-            options,
+            options: model.config.default_options.clone(),
             stream: false,
             timeout: Some(Duration::from_millis(self.config.step_timeout_ms)),
             request_id: Some(Arc::<str>::from(format!("planner-{}", now_ms()))),

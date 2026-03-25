@@ -18,8 +18,22 @@ fn sample_user_message() -> Message {
 fn sample_tool_result() -> AgentToolResult {
     AgentToolResult {
         tool_name: "observe".into(),
-        arguments: json!({ "surface": { "kind": "Frontmost" } }),
-        output: Some(json!({ "snapshot": { "id": "snap-1" } })),
+        arguments: json!({
+            "surface": { "kind": "Frontmost" },
+            "include_elements": true
+        }),
+        output: Some(json!({
+            "snapshot": {
+                "id": "snap-1",
+                "root_ids": ["ax-0"],
+                "elements": {
+                    "ax-0": {
+                        "id": "ax-0",
+                        "role": "AXWindow"
+                    }
+                }
+            }
+        })),
         error: None,
         is_error: false,
         read_only: true,
@@ -121,6 +135,46 @@ fn session_state_records_tool_trace_and_observation_updates() {
         Some(ArtifactId("capture-1.png".into()))
     );
     assert!(!state.ui_state_stale);
+}
+
+#[test]
+fn screenshot_only_observe_keeps_ui_state_stale() {
+    let mut state = AgentSessionState::new(
+        SessionId("sess-2b".into()),
+        TargetId("local:macos".into()),
+        "Observe the frontmost window",
+    );
+    state.start_turn();
+    state.start_step();
+    state.mark_ui_stale();
+
+    state.push_tool_trace(
+        AgentToolResult {
+            tool_name: "observe".into(),
+            arguments: json!({
+                "surface": { "kind": "Frontmost" },
+                "include_screenshot": true
+            }),
+            output: Some(json!({
+                "snapshot": {
+                    "id": "snap-shot-only",
+                    "surface": { "kind": "Frontmost" },
+                    "root_ids": [],
+                    "elements": {},
+                    "image_artifact": "capture-shot-only.png"
+                }
+            })),
+            error: None,
+            is_error: false,
+            read_only: true,
+        },
+        100,
+    );
+
+    assert!(
+        state.ui_state_stale,
+        "screenshot-only observe results should not clear stale UI state"
+    );
 }
 
 #[test]

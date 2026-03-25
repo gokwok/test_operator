@@ -16,6 +16,8 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "Choose exactly one next decision for the current desktop automation task.\n",
     "Use only the provided tools and the transcript/context you are given.\n",
     "When `ui_state_stale` is true, call `observe` before any further side-effect tool.\n",
+    "Do not finish while `ui_state_stale` is true.\n",
+    "Use `observe` with `include_elements=true` whenever you need to verify UI content or state; screenshot-only or empty observations do not count as verification.\n",
     "Do not invent tool results, hidden UI state, or unsupported tool arguments.\n",
     "Return exactly one JSON object and no surrounding prose.\n",
     "Valid decision shapes:\n",

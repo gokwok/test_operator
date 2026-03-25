@@ -21,6 +21,23 @@ async fn runner_with(
     session_store: Arc<InMemorySessionStore>,
     config: AgentConfig,
 ) -> AgentRunner {
+    runner_with_provider_kind(
+        driver,
+        ProviderKind::OpenAi,
+        provider,
+        session_store,
+        config,
+    )
+    .await
+}
+
+async fn runner_with_provider_kind(
+    driver: Arc<MockPlatformDriver>,
+    provider_kind: ProviderKind,
+    provider: Arc<DeterministicTestProvider>,
+    session_store: Arc<InMemorySessionStore>,
+    config: AgentConfig,
+) -> AgentRunner {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
         .session_store(session_store)
@@ -30,7 +47,7 @@ async fn runner_with(
         .expect("runtime should build");
 
     let mut models = ModelRegistry::new();
-    models.register_provider(ProviderKind::OpenAi, provider);
+    models.register_provider(provider_kind, provider);
 
     AgentRunner::new(Arc::new(runtime), models, config)
 }
@@ -173,6 +190,46 @@ async fn runner_replans_when_reflector_rejects_finish() {
         Value::Array(vec![Value::String(
             "Need a concrete confirmation before finishing.".into()
         )])
+    );
+}
+
+#[tokio::test]
+async fn runner_avoids_structured_output_for_doubao_planner_and_reflector() {
+    let driver = Arc::new(MockPlatformDriver::new("macos", CapabilitySet::new([])));
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        "I will return only the JSON payload you need.\n```json\n{\"decision\":\"finish\",\"summary\":\"The task is confirmed.\"}\n```"
+            .to_string(),
+        "Reflection complete.\n{\"verdict\":\"ok\",\"reason\":\"The wrapped JSON verdict is still recoverable without structured output.\"}"
+            .to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner = runner_with_provider_kind(
+        driver,
+        ProviderKind::OpenAiCompatible,
+        provider.clone(),
+        session_store,
+        AgentConfig::default(),
+    )
+    .await;
+
+    let result = runner
+        .run(AgentRunRequest {
+            task: "Finish from wrapped JSON without structured output.".into(),
+            target: TargetId("local:macos".into()),
+            model: Some("doubao-seed".into()),
+        })
+        .await
+        .expect("runner should parse wrapped planner and reflector JSON");
+
+    assert_eq!(result.summary, "The task is confirmed.");
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 2, "planner + reflector");
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.options.response_format.is_none()),
+        "planner and reflector should not request structured output: {requests:?}"
     );
 }
 

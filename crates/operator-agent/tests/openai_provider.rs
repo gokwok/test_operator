@@ -259,6 +259,109 @@ async fn openai_provider_maps_request_timeout_to_model_timeout() {
     );
 }
 
+#[tokio::test]
+async fn openai_provider_encodes_assistant_history_as_output_text() {
+    let server = MockServer::spawn(
+        200,
+        json!({
+            "id": "resp_history",
+            "status": "completed",
+            "output": [
+                {
+                    "id": "msg_history",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "{\"decision\":\"finish\",\"summary\":\"confirmed\"}",
+                            "annotations": [],
+                            "logprobs": []
+                        }
+                    ]
+                }
+            ]
+        }),
+        Duration::from_millis(0),
+    );
+    let provider = provider(server.base_url());
+
+    let request = operator_agent::model::ModelRequest {
+        config: model_config(),
+        context: Context {
+            system: Some("You are the Operator planner.".into()),
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![ContentBlock::Text {
+                        text: "Plan in JSON.".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+                Message::Assistant(operator_agent::model::AssistantMessage {
+                    content: vec![ContentBlock::Text {
+                        text: "{\"decision\":\"call_tool\",\"name\":\"type\"}".into(),
+                    }],
+                    usage: Default::default(),
+                    stop: operator_agent::model::StopReason::Stop,
+                    error_message: None,
+                    timestamp_ms: 1,
+                }),
+                Message::ToolResult(operator_agent::model::ToolResultMessage {
+                    tool_call_id: "tool-1".into(),
+                    tool_name: "type".into(),
+                    content: vec![ContentBlock::Text {
+                        text: "{\"success\":true}".into(),
+                    }],
+                    is_error: false,
+                    timestamp_ms: 2,
+                }),
+            ],
+            tools: Vec::new(),
+        },
+        options: CallOptions::default(),
+        stream: false,
+        timeout: Some(Duration::from_secs(5)),
+        request_id: Some("req-openai-history".into()),
+        max_retry_delay_ms: None,
+    };
+
+    let mut stream = provider.stream(request);
+    while let Some(event) = stream.recv().await {
+        if matches!(event, ModelEvent::Done { .. } | ModelEvent::Error { .. }) {
+            break;
+        }
+    }
+
+    let _message = stream.result().await.expect("provider should return text");
+    let recorded = server.recorded_request();
+
+    assert_eq!(
+        recorded.body["input"][0]["role"],
+        Value::String("user".into())
+    );
+    assert_eq!(
+        recorded.body["input"][0]["content"][0]["type"],
+        Value::String("input_text".into())
+    );
+    assert_eq!(
+        recorded.body["input"][1]["role"],
+        Value::String("assistant".into())
+    );
+    assert_eq!(
+        recorded.body["input"][1]["content"][0]["type"],
+        Value::String("output_text".into())
+    );
+    assert_eq!(
+        recorded.body["input"][2]["role"],
+        Value::String("user".into())
+    );
+    assert_eq!(
+        recorded.body["input"][2]["content"][0]["type"],
+        Value::String("input_text".into())
+    );
+}
+
 #[derive(Debug)]
 struct RecordedRequest {
     method: String,
