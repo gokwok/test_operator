@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
+use operator_agent::AgentRunResult;
 use serde_json::{json, Value};
 
 pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> String {
@@ -35,6 +36,18 @@ pub(crate) fn render_error(json_output: bool, message: &str) -> String {
     }
 
     format!("error: {message}")
+}
+
+pub(crate) fn render_agent_success(result: &AgentRunResult, json_output: bool) -> String {
+    if json_output {
+        return serde_json::to_string_pretty(result)
+            .expect("agent run result should serialize to JSON");
+    }
+
+    format!(
+        "session_id: {}\ntarget: {}\nmodel: {}\nsummary: {}",
+        result.session_id, result.target, result.model, result.summary
+    )
 }
 
 fn render_snapshot(output: &Value) -> String {

@@ -8,6 +8,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use operator_agent::AgentRunResult;
+use operator_core::{SessionId, TargetId};
 use serde_json::{json, Value};
 
 #[test]
@@ -1586,6 +1588,95 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
 }
 
 #[tokio::test]
+async fn cli_run_executes_agent_command_and_renders_text_output() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "--target",
+        "local:macos",
+        "--timeout-ms",
+        "250",
+        "--model",
+        "doubao-seed",
+        "--max-steps",
+        "8",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    let tool_invoker = RecordingInvoker {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        response: json!({}),
+    };
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let executor = RecordingAgentExecutor {
+        calls: Arc::clone(&calls),
+        result: Ok(AgentRunResult {
+            session_id: SessionId("sess-1".into()),
+            target: TargetId("local:macos".into()),
+            model: "doubao-seed".into(),
+            summary: "Observed the frontmost window.".into(),
+        }),
+    };
+
+    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor)
+        .await
+        .unwrap();
+    assert_eq!(
+        rendered,
+        "session_id: sess-1\ntarget: local:macos\nmodel: doubao-seed\nsummary: Observed the frontmost window."
+    );
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].task, "Summarize the frontmost window");
+    assert_eq!(recorded[0].model.as_deref(), Some("doubao-seed"));
+    assert_eq!(recorded[0].max_steps, Some(NonZeroU32::new(8).unwrap()));
+    assert_eq!(recorded[0].target.as_deref(), Some("local:macos"));
+    assert_eq!(recorded[0].timeout_ms, Some(250));
+    assert!(!recorded[0].json_output);
+}
+
+#[tokio::test]
+async fn cli_run_executes_agent_command_and_renders_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "--json",
+        "Open Notes and type hello",
+    ])
+    .unwrap();
+
+    let tool_invoker = RecordingInvoker {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        response: json!({}),
+    };
+    let executor = RecordingAgentExecutor {
+        calls: Arc::new(Mutex::new(Vec::new())),
+        result: Ok(AgentRunResult {
+            session_id: SessionId("sess-42".into()),
+            target: TargetId("local:macos".into()),
+            model: "gpt-5.4".into(),
+            summary: "Opened Notes and typed hello.".into(),
+        }),
+    };
+
+    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor)
+        .await
+        .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).unwrap();
+    assert_eq!(
+        output,
+        json!({
+            "session_id": "sess-42",
+            "target": "local:macos",
+            "model": "gpt-5.4",
+            "summary": "Opened Notes and typed hello."
+        })
+    );
+}
+
+#[tokio::test]
 async fn cli_run_renders_switch_app_detail_for_non_json_output() {
     let cli =
         cli_main::args::Cli::try_parse_from(["operator", "app", "switch", "--app", "TextEdit"])
@@ -1896,6 +1987,22 @@ impl cli_main::ToolInvoker for RecordingInvoker {
             .push((tool.to_string(), input.clone()));
         let response = self.response.clone();
         Box::pin(async move { Ok(response) })
+    }
+}
+
+struct RecordingAgentExecutor {
+    calls: Arc<Mutex<Vec<cli_main::args::AgentCommand>>>,
+    result: Result<AgentRunResult, String>,
+}
+
+impl cli_main::AgentExecutor for RecordingAgentExecutor {
+    fn run<'a>(
+        &'a self,
+        command: &'a cli_main::args::AgentCommand,
+    ) -> Pin<Box<dyn Future<Output = Result<AgentRunResult, String>> + Send + 'a>> {
+        self.calls.lock().unwrap().push(command.clone());
+        let result = self.result.clone();
+        Box::pin(async move { result })
     }
 }
 

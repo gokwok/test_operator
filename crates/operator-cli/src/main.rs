@@ -5,6 +5,9 @@ mod output;
 
 use std::{env, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
+use operator_agent::{
+    model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
+};
 use operator_core::OperatorError;
 #[cfg(not(test))]
 use operator_mcp::run_stdio_server;
@@ -13,18 +16,22 @@ use operator_platform_macos::{
     SystemTreeInspector,
 };
 use operator_runtime::{
-    FileArtifactStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig, ToolRegistry,
+    FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
+    ToolRegistry,
 };
 use serde_json::Value;
 
-#[cfg(not(test))]
-use self::args::CliExecution;
-use self::args::{Cli, ToolInvocation};
+use self::args::{AgentCommand, Cli, CliExecution, ToolInvocation};
 
 type InvokeFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>>;
+type AgentFuture<'a> = Pin<Box<dyn Future<Output = Result<AgentRunResult, String>> + Send + 'a>>;
 
 pub(crate) trait ToolInvoker {
     fn invoke<'a>(&'a self, tool: &'a str, input: Value) -> InvokeFuture<'a>;
+}
+
+pub(crate) trait AgentExecutor {
+    fn run<'a>(&'a self, command: &'a AgentCommand) -> AgentFuture<'a>;
 }
 
 struct RuntimeToolInvoker {
@@ -33,21 +40,7 @@ struct RuntimeToolInvoker {
 
 impl RuntimeToolInvoker {
     async fn build() -> Result<Self, OperatorError> {
-        let config = RuntimeConfig::default();
-        let root = operator_home_dir();
-        let snapshots = Arc::new(FileSnapshotStore::new(&root, config.clone()));
-        let artifacts = Arc::new(FileArtifactStore::new(&root));
-        let runtime = RuntimeBuilder::new(config)
-            .artifact_store(artifacts.clone())
-            .snapshot_store(snapshots)
-            .register_driver(Arc::new(MacosDriver::with_observe(
-                SystemAppService,
-                SystemPermissionReader,
-                SystemCaptureProvider::new(artifacts.artifacts_dir()),
-                SystemTreeInspector,
-            )))
-            .build()
-            .await?;
+        let runtime = build_runtime(RuntimeConfig::default()).await?;
 
         Ok(Self {
             tools: runtime.tools().clone(),
@@ -58,6 +51,27 @@ impl RuntimeToolInvoker {
 impl ToolInvoker for RuntimeToolInvoker {
     fn invoke<'a>(&'a self, tool: &'a str, input: Value) -> InvokeFuture<'a> {
         Box::pin(async move { self.tools.invoke(tool, input).await })
+    }
+}
+
+struct RuntimeAgentExecutor;
+
+impl AgentExecutor for RuntimeAgentExecutor {
+    fn run<'a>(&'a self, command: &'a AgentCommand) -> AgentFuture<'a> {
+        Box::pin(async move {
+            let runtime_config = runtime_config_for(command);
+            let request = AgentRunRequest {
+                task: command.task.clone(),
+                target: runtime_config.default_target.clone(),
+                model: command.model.clone(),
+            };
+            let runtime = build_runtime(runtime_config)
+                .await
+                .map_err(|error| error.to_string())?;
+            let models = ModelRegistry::from_environment().map_err(|error| error.to_string())?;
+            let runner = AgentRunner::new(Arc::new(runtime), models, agent_config_for(command));
+            runner.run(request).await.map_err(|error| error.to_string())
+        })
     }
 }
 
@@ -102,11 +116,17 @@ async fn main_entry() -> i32 {
             }
         }
         CliExecution::Agent(_command) => {
-            eprintln!(
-                "{}",
-                output::render_error(json_output, "operator agent execution is not wired yet")
-            );
-            1
+            let executor = RuntimeAgentExecutor;
+            match run_agent_with_executor(_command, &executor).await {
+                Ok(rendered) => {
+                    println!("{rendered}");
+                    0
+                }
+                Err(error) => {
+                    eprintln!("{}", output::render_error(json_output, &error));
+                    1
+                }
+            }
         }
         CliExecution::McpServe => match run_stdio_server().await {
             Ok(()) => 0,
@@ -131,6 +151,57 @@ async fn run_invocation_with_invoker(
     ))
 }
 
+async fn run_agent_with_executor(
+    command: AgentCommand,
+    executor: &impl AgentExecutor,
+) -> Result<String, String> {
+    let json_output = command.json_output;
+    let result = executor.run(&command).await?;
+    Ok(output::render_agent_success(&result, json_output))
+}
+
+async fn build_runtime(config: RuntimeConfig) -> Result<operator_runtime::Runtime, OperatorError> {
+    let root = operator_home_dir();
+    let snapshots = Arc::new(FileSnapshotStore::new(&root, config.clone()));
+    let artifacts = Arc::new(FileArtifactStore::new(&root));
+    let sessions = Arc::new(FileSessionStore::new(&root));
+
+    RuntimeBuilder::new(config)
+        .artifact_store(artifacts.clone())
+        .snapshot_store(snapshots)
+        .session_store(sessions)
+        .register_driver(Arc::new(MacosDriver::with_observe(
+            SystemAppService,
+            SystemPermissionReader,
+            SystemCaptureProvider::new(artifacts.artifacts_dir()),
+            SystemTreeInspector,
+        )))
+        .build()
+        .await
+}
+
+fn runtime_config_for(command: &AgentCommand) -> RuntimeConfig {
+    let mut config = RuntimeConfig::default();
+    if let Some(target) = &command.target {
+        config.default_target = target.clone().into();
+    }
+    if let Some(timeout_ms) = command.timeout_ms {
+        config.default_timeout_ms = timeout_ms;
+    }
+    config
+}
+
+fn agent_config_for(command: &AgentCommand) -> AgentConfig {
+    let mut config = AgentConfig::default();
+    if let Some(max_steps) = command.max_steps {
+        config.max_steps = max_steps.get();
+    }
+    if let Some(timeout_ms) = command.timeout_ms {
+        config.step_timeout_ms = timeout_ms;
+    }
+    config
+}
+
 fn operator_home_dir() -> PathBuf {
     if let Some(path) = env::var_os("OPERATOR_HOME") {
         return PathBuf::from(path);
@@ -144,14 +215,41 @@ fn operator_home_dir() -> PathBuf {
 }
 
 #[cfg(test)]
+struct NoopAgentExecutor;
+
+#[cfg(test)]
+impl AgentExecutor for NoopAgentExecutor {
+    fn run<'a>(&'a self, _command: &'a AgentCommand) -> AgentFuture<'a> {
+        Box::pin(async move { Err("unexpected agent execution in tool-only test".to_string()) })
+    }
+}
+
+#[cfg(test)]
+pub(crate) async fn run_with_handlers(
+    cli: Cli,
+    invoker: &impl ToolInvoker,
+    executor: &impl AgentExecutor,
+) -> Result<String, CliError> {
+    let execution = cli.into_execution().map_err(CliError::Argument)?;
+    match execution {
+        CliExecution::Tool(invocation) => run_invocation_with_invoker(invocation, invoker)
+            .await
+            .map_err(CliError::Operator),
+        CliExecution::Agent(command) => run_agent_with_executor(command, executor)
+            .await
+            .map_err(CliError::Agent),
+        CliExecution::McpServe => Err(CliError::Argument(
+            "mcp serve is not supported by the test helper".to_string(),
+        )),
+    }
+}
+
+#[cfg(test)]
 pub(crate) async fn run_with_invoker(
     cli: Cli,
     invoker: &impl ToolInvoker,
 ) -> Result<String, CliError> {
-    let invocation = cli.into_invocation().map_err(CliError::Argument)?;
-    run_invocation_with_invoker(invocation, invoker)
-        .await
-        .map_err(CliError::Operator)
+    run_with_handlers(cli, invoker, &NoopAgentExecutor).await
 }
 
 #[cfg(test)]
@@ -159,6 +257,7 @@ pub(crate) async fn run_with_invoker(
 pub(crate) enum CliError {
     Argument(String),
     Operator(OperatorError),
+    Agent(String),
 }
 
 #[cfg(test)]
@@ -167,6 +266,7 @@ impl std::fmt::Display for CliError {
         match self {
             Self::Argument(message) => f.write_str(message),
             Self::Operator(error) => write!(f, "{error}"),
+            Self::Agent(message) => f.write_str(message),
         }
     }
 }
