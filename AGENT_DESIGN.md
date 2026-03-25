@@ -6,14 +6,14 @@
 
 本文档定义 `operator-agent` 的总体设计。
 
-第一期目标是提供一个**本地单 session、单 target、单 agent loop** 的执行器：
+第一期目标是提供一个**本地单 session、单 target、单 agent loop** 的执行器，并在统一 `operator` CLI 中提供自然语言入口：
 
 - 支持多平台运行时
 - 支持多模型接入
-- 不通过 CLI 调用操作
+- Agent 内部不通过 CLI 调用操作
 - 直接复用 `operator-runtime` 的 `ToolRegistry`
 
-本文档不实现 A2A，也不引入多会话调度。
+本文档不实现 A2A northbound protocol，也不引入多会话调度。
 
 ## 设计输入
 
@@ -33,7 +33,7 @@
 ## 设计目标
 
 - `operator-agent` 作为独立 crate，不让 runtime 反向依赖模型/provider
-- Agent 直接调用内建工具，不经过 CLI，也不经由 MCP
+- Agent 直接调用内建工具，不经由 CLI tool bridge，也不经由 MCP
 - Agent 不感知具体平台实现，只依赖 `Target`、`CapabilitySet` 和工具 schema
 - Agent 不依赖某个模型厂商的 tool-calling 能力
 - `gpt-5.4` 和 `doubao-seed` 使用统一的 planner contract
@@ -116,7 +116,7 @@ operator-agent
 
 ## 第一期开箱能力
 
-第一期 `operator-agent` 提供一个库级本地执行器：
+第一期 `operator-agent` 提供一个库级本地执行器；其 northbound shell surface 由统一 `operator` CLI 承载：
 
 - 输入：
   - `task`
@@ -135,6 +135,21 @@ operator-agent
 - 单任务运行到完成或失败
 - 不支持 pause/resume
 - 不支持 northbound `input_required`
+
+第一期 public CLI 入口：
+
+- `operator agent <task>`
+- `--model <gpt-5.4|doubao-seed>`
+- `--max-steps <n>`
+- `--json`
+- `--target <target>`
+- `--timeout-ms <ms>`
+
+说明：
+
+- 这里的 CLI 仅作为 northbound 入口来承载任务文本、模型选择和输出格式
+- Agent 内部执行工具时仍直接调用 `ToolRegistry`
+- 因此“Agent 不通过 CLI 调用操作”仍然成立；CLI 不参与工具选择和工具执行链
 
 ## 核心组件
 

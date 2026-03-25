@@ -51,6 +51,7 @@ CLI 真实暴露的顶层命令应只有：
 - `app`
 - `window`
 - `mcp`
+- `agent`
 
 ### 3. snapshot 是一等原语
 
@@ -121,9 +122,11 @@ operator
 
   mcp
     serve
+
+  agent
 ```
 
-`A2A` 不作为真实命令出现；只在根 help 中以说明块保留。
+`A2A` 不作为真实命令分组出现；它只在根 help 中作为导航标题存在。`agent` 是真实一级命令，并归属于 `A2A` 展示分组。
 
 ## help 分组
 
@@ -146,9 +149,9 @@ operator
 - `MCP`
   - `mcp`
 - `A2A`
-  - `Not yet implemented. Reserved for future agent interface commands.`
+  - `agent`
 
-根 help 不直接列出 `click`、`launch-app`、`snapshot-get` 这种叶子命令。
+根 help 不直接列出 `click`、`launch-app`、`snapshot-get` 这种叶子命令，但会直接列出 `agent`，因为它本身就是自然语言入口而不是对象域分组。
 
 ## 当前 help 版式契约
 
@@ -166,6 +169,44 @@ operator
 - 叶子命令 help 也遵守同一套无冒号标题规则，并将命令用途说明放在 `Usage` 之后
 
 ## 参数体系
+
+### Agent 参数
+
+正式入口：
+
+- `operator agent <task>`
+
+第一期能力边界：
+
+- 单 session
+- 单 target
+- 单 agent loop
+- 直接调用 `operator-agent` 的 `AgentRunner`
+- 不通过 CLI 再转一层工具调用
+
+第一期参数：
+
+- 位置参数：`<task>`
+- `--model <gpt-5.4|doubao-seed>`
+- `--max-steps <n>`
+- `--json`
+- `--target <target>`
+- `--timeout-ms <ms>`
+
+第一期明确不暴露：
+
+- `--resume`
+- `--resume-session`
+- `--list-sessions`
+- `--chat`
+- `--dry-run`
+- `--state-root`
+
+原因：
+
+- 这些模式尚未被定义成稳定 shell contract
+- 当前 `operator-agent` 已具备本地单次执行能力，但尚未承诺完整会话管理用户面
+- 先把自然语言任务入口稳定下来，再逐步扩 chat / resume / replay
 
 ### 全局运行时参数
 
