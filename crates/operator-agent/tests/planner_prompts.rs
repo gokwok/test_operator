@@ -1,6 +1,9 @@
 use operator_agent::{
     model::{AssistantMessage, ContentBlock, Message, StopReason, Usage, UserMessage},
-    planner::{PlannerContext, PlannerPromptBuilder, TargetSummary, ToolResultSummary},
+    planner::{
+        PlannerContext, PlannerPromptBuilder, PlannerVisualInput, PlannerVisualSlot, TargetSummary,
+        ToolResultSummary,
+    },
     session::{AgentMessage, ModelContextBuffer, VisualObservationSummary},
     tools::AgentToolSpec,
 };
@@ -64,6 +67,25 @@ fn planner_context() -> PlannerContext {
     }
 }
 
+fn visual_inputs() -> Vec<PlannerVisualInput> {
+    vec![
+        PlannerVisualInput {
+            slot: PlannerVisualSlot::Previous,
+            image: ContentBlock::Image {
+                mime: "image/png".into(),
+                data_base64: "cHJldmlvdXM=".into(),
+            },
+        },
+        PlannerVisualInput {
+            slot: PlannerVisualSlot::Current,
+            image: ContentBlock::Image {
+                mime: "image/png".into(),
+                data_base64: "Y3VycmVudA==".into(),
+            },
+        },
+    ]
+}
+
 #[test]
 fn planner_prompts_build_json_first_contract_snapshot() {
     let builder = PlannerPromptBuilder::new();
@@ -112,6 +134,7 @@ fn planner_prompts_build_json_first_contract_snapshot() {
         &planner_context(),
         &tools,
         &model_context,
+        &visual_inputs(),
     );
 
     insta::assert_json_snapshot!(
@@ -139,6 +162,7 @@ fn planner_prompts_limit_recent_transcript_before_appending_current_request_snap
         &planner_context(),
         &[],
         &model_context,
+        &visual_inputs(),
     );
     insta::assert_json_snapshot!(
         "planner_prompts_recent_transcript_window",

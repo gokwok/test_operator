@@ -1,9 +1,9 @@
 mod support;
 
-use std::sync::Arc;
+use std::{fs, sync::Arc};
 
 use operator_agent::{
-    model::{Context, Message, ModelRegistry, ProviderKind, UserMessage},
+    model::{ContentBlock, Context, Message, ModelRegistry, ProviderKind, UserMessage},
     AgentConfig, AgentError, AgentRunRequest, AgentRunner,
 };
 use operator_core::{ActionOutcome, ArtifactId, Capability, CapabilitySet, TargetId};
@@ -12,6 +12,7 @@ use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
 };
 use serde_json::Value;
+use tempfile::tempdir;
 
 use support::DeterministicTestProvider;
 
@@ -20,8 +21,23 @@ async fn runner_with(
     provider: Arc<DeterministicTestProvider>,
     session_store: Arc<InMemorySessionStore>,
 ) -> AgentRunner {
+    runner_with_snapshot_store(
+        driver,
+        provider,
+        session_store,
+        Arc::new(InMemorySnapshotStore::new()),
+    )
+    .await
+}
+
+async fn runner_with_snapshot_store(
+    driver: Arc<MockPlatformDriver>,
+    provider: Arc<DeterministicTestProvider>,
+    session_store: Arc<InMemorySessionStore>,
+    snapshot_store: Arc<InMemorySnapshotStore>,
+) -> AgentRunner {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
-        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .snapshot_store(snapshot_store)
         .session_store(session_store)
         .register_driver(driver)
         .build()
@@ -47,6 +63,13 @@ fn current_request_json(context: &Context) -> Value {
         .expect("planner request should contain a text block");
 
     serde_json::from_str(text).expect("planner request payload should be valid json")
+}
+
+fn planner_user_content(context: &Context) -> &[ContentBlock] {
+    let Some(Message::User(UserMessage { content, .. })) = context.messages.last() else {
+        panic!("planner request should append a final user message");
+    };
+    content
 }
 
 fn tool_call_names(events: &[SessionEvent]) -> Vec<String> {
@@ -152,10 +175,6 @@ async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() 
         first_request["current_observation"]["snapshot_id"],
         Value::String("snap-initial".into())
     );
-    assert_eq!(
-        first_request["current_visual_artifact"],
-        Value::String("capture-initial.png".into())
-    );
     assert_eq!(first_request["ui_state_stale"], Value::Bool(true));
     assert_eq!(
         first_request["recent_tool_results"][0]["tool_name"],
@@ -250,10 +269,7 @@ async fn auto_observe_refreshes_after_successful_side_effect_tools() {
         second_request["current_observation"]["snapshot_id"],
         Value::String("snap-after-click".into())
     );
-    assert_eq!(
-        second_request["current_visual_artifact"],
-        Value::String("capture-after-click.png".into())
-    );
+    assert_eq!(second_request["ui_state_stale"], Value::Bool(true));
 
     assert!(driver.query_calls().await.is_empty());
     let observe_calls = driver.observe_calls().await;
@@ -261,4 +277,96 @@ async fn auto_observe_refreshes_after_successful_side_effect_tools() {
     assert!(observe_calls
         .iter()
         .all(|(req, _)| req.include_screenshot && !req.include_elements));
+}
+
+#[tokio::test]
+async fn planner_request_loads_previous_and_current_screenshots_as_image_blocks() {
+    let dir = tempdir().unwrap();
+    let snapshot_store = Arc::new(InMemorySnapshotStore::with_artifacts_root(dir.path()));
+    fs::write(dir.path().join("capture-initial.png"), b"previous-image").unwrap();
+    fs::write(dir.path().join("capture-after-click.png"), b"current-image").unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::PointerInput]),
+    ));
+    driver.push_observe_result(Ok(screenshot_only_snapshot(
+        "snap-initial",
+        "capture-initial.png",
+    )));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 11,
+        detail: Some("clicked Save".into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }));
+    driver.push_observe_result(Ok(screenshot_only_snapshot(
+        "snap-after-click",
+        "capture-after-click.png",
+    )));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"call_tool","name":"click","arguments":{},"summary":"Click Save."}"#
+            .to_string(),
+        r#"{"decision":"fail","reason":"Stop after refreshing the screenshots."}"#.to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner =
+        runner_with_snapshot_store(driver, provider.clone(), session_store, snapshot_store).await;
+
+    let error = runner
+        .run(AgentRunRequest {
+            task: "Click Save and inspect the refreshed screenshots.".into(),
+            target: TargetId("local:macos".into()),
+            model: Some("gpt-5.4".into()),
+        })
+        .await
+        .expect_err("runner should stop after the planned fail decision");
+    match error {
+        AgentError::Planner(message) => {
+            assert_eq!(message, "Stop after refreshing the screenshots.");
+        }
+        other => panic!("unexpected error kind: {other}"),
+    }
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 2, "planner should be called twice");
+
+    let content = planner_user_content(&requests[1].context);
+    let images = content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Image { mime, data_base64 } => {
+                Some((mime.as_ref().to_string(), data_base64.clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        images,
+        vec![
+            ("image/png".to_string(), "cHJldmlvdXMtaW1hZ2U=".to_string()),
+            ("image/png".to_string(), "Y3VycmVudC1pbWFnZQ==".to_string()),
+        ]
+    );
+
+    let labels = content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .skip(1)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        labels,
+        vec![
+            "Previous screenshot (older context).",
+            "Current screenshot (latest UI state).",
+        ]
+    );
 }

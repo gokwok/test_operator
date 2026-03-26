@@ -1,4 +1,5 @@
 use std::{
+    path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -6,9 +7,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use base64::Engine as _;
 use operator_core::{Capability, SessionId, Snapshot};
 use operator_runtime::{Runtime, Session, SessionEvent, SessionStatus};
 use serde_json::{json, Value};
+use tokio::fs;
 
 use crate::{
     journal::SessionJournal,
@@ -18,7 +21,7 @@ use crate::{
     },
     planner::{
         AgentDecision, DecisionParser, DecisionValidator, FinishGate, FinishGateVerdict,
-        LoopStateContextManager, PlannerPromptBuilder,
+        LoopStateContextManager, PlannerPromptBuilder, PlannerVisualInput,
     },
     policy::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
@@ -216,11 +219,13 @@ impl AgentRunner {
         loop {
             let planner_context =
                 LoopStateContextManager::new(self.runtime.core()).assemble(state)?;
+            let visual_inputs = self.load_planner_visuals(&planner_context).await?;
             let prompt = self.prompt_builder.assemble(
                 &state.task,
                 &planner_context,
                 tools,
                 state.model_context(),
+                &visual_inputs,
             );
             let assistant = self
                 .call_model(model, prompt)
@@ -469,6 +474,38 @@ impl AgentRunner {
 
         Ok(())
     }
+
+    async fn load_planner_visuals(
+        &self,
+        planner_context: &crate::planner::PlannerContext,
+    ) -> Result<Vec<PlannerVisualInput>, AgentError> {
+        let artifact_store = self.runtime.core().artifacts();
+        let mut visuals = Vec::new();
+
+        for reference in planner_context.visual_references() {
+            let path = artifact_store
+                .resolve_artifact(&reference.artifact_id)
+                .await?;
+            let bytes = match fs::read(&path).await {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(operator_core::OperatorError::from(error).into()),
+            };
+            let Some(mime) = screenshot_mime(&path) else {
+                continue;
+            };
+
+            visuals.push(PlannerVisualInput {
+                slot: reference.slot,
+                image: ContentBlock::Image {
+                    mime: mime.into(),
+                    data_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+                },
+            });
+        }
+
+        Ok(visuals)
+    }
 }
 
 fn assistant_text(message: &AssistantMessage) -> Result<String, AgentError> {
@@ -554,5 +591,19 @@ fn auto_observe_failure_reason(trigger_tool: Option<&str>, result: &AgentToolRes
             format!("automatic screenshot observe after `{tool_name}` failed: {detail}")
         }
         None => format!("automatic screenshot observe before planning failed: {detail}"),
+    }
+}
+
+fn screenshot_mime(path: &Path) -> Option<&'static str> {
+    let extension = path.extension().and_then(|extension| extension.to_str())?;
+
+    match extension.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        "bmp" => Some("image/bmp"),
+        "tif" | "tiff" => Some("image/tiff"),
+        _ => None,
     }
 }

@@ -267,6 +267,81 @@ async fn doubao_provider_maps_request_timeout_to_model_timeout() {
     );
 }
 
+#[tokio::test]
+async fn doubao_provider_preserves_multiple_image_blocks_in_order() {
+    let server = MockServer::spawn(
+        200,
+        json!({
+            "id": "chatcmpl_images",
+            "object": "chat.completion",
+            "created": 1_742_636_537,
+            "model": "doubao-seed-2-0-lite-260215",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "{\"decision\":\"finish\",\"summary\":\"Images loaded.\"}"
+                    }
+                }
+            ]
+        }),
+        Duration::from_millis(0),
+    );
+    let provider = provider(server.base_url());
+
+    let request = operator_agent::model::ModelRequest {
+        config: model_config(),
+        context: Context {
+            system: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![
+                    ContentBlock::Text {
+                        text: "Compare both screenshots.".into(),
+                    },
+                    ContentBlock::Image {
+                        mime: "image/png".into(),
+                        data_base64: "cHJldmlvdXM=".into(),
+                    },
+                    ContentBlock::Image {
+                        mime: "image/png".into(),
+                        data_base64: "Y3VycmVudA==".into(),
+                    },
+                ],
+                timestamp_ms: 0,
+            })],
+            tools: Vec::new(),
+        },
+        options: CallOptions::default(),
+        stream: false,
+        timeout: Some(Duration::from_secs(5)),
+        request_id: None,
+        max_retry_delay_ms: None,
+    };
+
+    let _ = provider
+        .stream(request)
+        .result()
+        .await
+        .expect("provider should succeed");
+    let recorded = server.recorded_request();
+
+    let content = recorded.body["messages"][0]["content"]
+        .as_array()
+        .expect("content should be an array");
+    assert_eq!(content[1]["type"], Value::String("image_url".into()));
+    assert_eq!(
+        content[1]["image_url"]["url"],
+        Value::String("data:image/png;base64,cHJldmlvdXM=".into())
+    );
+    assert_eq!(content[2]["type"], Value::String("image_url".into()));
+    assert_eq!(
+        content[2]["image_url"]["url"],
+        Value::String("data:image/png;base64,Y3VycmVudA==".into())
+    );
+}
+
 #[derive(Debug)]
 struct RecordedRequest {
     method: String,

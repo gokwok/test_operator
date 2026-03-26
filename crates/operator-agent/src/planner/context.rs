@@ -89,6 +89,37 @@ pub struct PlannerContext {
     pub ui_state_stale: bool,
 }
 
+impl PlannerContext {
+    pub fn visual_references(&self) -> Vec<PlannerVisualReference> {
+        let mut visuals = Vec::new();
+        if let Some(artifact_id) = self.previous_visual_artifact.clone() {
+            visuals.push(PlannerVisualReference {
+                slot: PlannerVisualSlot::Previous,
+                artifact_id,
+            });
+        }
+        if let Some(artifact_id) = self.current_visual_artifact.clone() {
+            visuals.push(PlannerVisualReference {
+                slot: PlannerVisualSlot::Current,
+                artifact_id,
+            });
+        }
+        visuals
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlannerVisualSlot {
+    Previous,
+    Current,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlannerVisualReference {
+    pub slot: PlannerVisualSlot,
+    pub artifact_id: ArtifactId,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetSummary {
     pub id: TargetId,

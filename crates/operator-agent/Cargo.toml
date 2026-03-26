@@ -6,6 +6,7 @@ version.workspace = true
 autobins = false
 
 [dependencies]
+base64 = "0.22.1"
 operator-core = { path = "../operator-core" }
 operator-runtime = { path = "../operator-runtime" }
 reqwest = { version = "0.12.15", default-features = false, features = ["json", "rustls-tls"] }

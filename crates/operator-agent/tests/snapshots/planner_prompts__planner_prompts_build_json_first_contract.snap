@@ -53,7 +53,29 @@ expression: "serde_json::to_value(&context).expect(\"planner context should seri
         "content": [
           {
             "Text": {
-              "text": "{\n  \"current_observation\": {\n    \"element_count\": 2,\n    \"root_element_count\": 1,\n    \"screenshot_artifact\": \"capture-1.png\",\n    \"snapshot_id\": \"snap-1\",\n    \"surface\": \"frontmost\"\n  },\n  \"current_visual_artifact\": \"capture-1.png\",\n  \"notes\": [\n    \"Observe again before finishing.\"\n  ],\n  \"previous_visual_artifact\": \"capture-prev.png\",\n  \"recent_tool_results\": [\n    {\n      \"is_error\": false,\n      \"read_only\": true,\n      \"step_index\": 1,\n      \"summary\": \"snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)\",\n      \"tool_name\": \"observe\",\n      \"turn_index\": 1\n    }\n  ],\n  \"target\": {\n    \"capabilities\": [\n      \"app_lifecycle\",\n      \"capture\",\n      \"inspect_tree\"\n    ],\n    \"id\": \"local:macos\",\n    \"platform\": \"macos\"\n  },\n  \"task\": \"Open Finder and confirm the window appears.\",\n  \"ui_state_stale\": true\n}"
+              "text": "{\n  \"current_observation\": {\n    \"element_count\": 2,\n    \"root_element_count\": 1,\n    \"screenshot_artifact\": \"capture-1.png\",\n    \"snapshot_id\": \"snap-1\",\n    \"surface\": \"frontmost\"\n  },\n  \"notes\": [\n    \"Observe again before finishing.\"\n  ],\n  \"recent_tool_results\": [\n    {\n      \"is_error\": false,\n      \"read_only\": true,\n      \"step_index\": 1,\n      \"summary\": \"snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)\",\n      \"tool_name\": \"observe\",\n      \"turn_index\": 1\n    }\n  ],\n  \"target\": {\n    \"capabilities\": [\n      \"app_lifecycle\",\n      \"capture\",\n      \"inspect_tree\"\n    ],\n    \"id\": \"local:macos\",\n    \"platform\": \"macos\"\n  },\n  \"task\": \"Open Finder and confirm the window appears.\",\n  \"ui_state_stale\": true\n}"
+            }
+          },
+          {
+            "Text": {
+              "text": "Previous screenshot (older context)."
+            }
+          },
+          {
+            "Image": {
+              "data_base64": "cHJldmlvdXM=",
+              "mime": "image/png"
+            }
+          },
+          {
+            "Text": {
+              "text": "Current screenshot (latest UI state)."
+            }
+          },
+          {
+            "Image": {
+              "data_base64": "Y3VycmVudA==",
+              "mime": "image/png"
             }
           }
         ],
