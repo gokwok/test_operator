@@ -16,8 +16,8 @@ use crate::{
         ResolvedModel, ToolResultMessage, UserMessage,
     },
     planner::{
-        AgentDecision, ContextAssembler, DecisionParser, DecisionValidator, PlannerPromptBuilder,
-        TaskReflection, TaskReflector,
+        AgentDecision, DecisionParser, DecisionValidator, LoopStateContextManager,
+        PlannerPromptBuilder, TaskReflection, TaskReflector,
     },
     policy::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
@@ -181,9 +181,8 @@ impl AgentRunner {
         state: &mut AgentSessionState,
     ) -> Result<AgentDecision, AgentError> {
         loop {
-            let planner_context = ContextAssembler::new(self.runtime.core())
-                .assemble(state)
-                .await?;
+            let planner_context =
+                LoopStateContextManager::new(self.runtime.core()).assemble(state)?;
             let prompt =
                 self.prompt_builder
                     .assemble(&state.task, &planner_context, tools, &state.messages);

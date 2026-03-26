@@ -134,15 +134,23 @@ async fn runner_executes_tool_then_finishes_with_reflection() {
 
     let first_planner_request = current_request_json(&requests[0].context);
     assert_eq!(
-        first_planner_request["latest_snapshot"]["id"],
+        first_planner_request["current_observation"]["snapshot_id"],
         Value::String("snap-initial".into())
+    );
+    assert_eq!(
+        first_planner_request["current_visual_artifact"],
+        Value::String("capture-initial.png".into())
     );
     assert_eq!(first_planner_request["ui_state_stale"], Value::Bool(true));
 
     let second_planner_request = current_request_json(&requests[1].context);
     assert_eq!(
-        second_planner_request["latest_snapshot"]["id"],
+        second_planner_request["current_observation"]["snapshot_id"],
         Value::String("snap-runner".into())
+    );
+    assert_eq!(
+        second_planner_request["current_visual_artifact"],
+        Value::String("capture-initial.png".into())
     );
     let tool_names = second_planner_request["recent_tool_results"]
         .as_array()

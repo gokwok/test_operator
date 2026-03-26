@@ -1,9 +1,7 @@
 use operator_agent::{
     model::{AssistantMessage, ContentBlock, Message, StopReason, Usage, UserMessage},
-    planner::{
-        PlannerContext, PlannerPromptBuilder, SnapshotSummary, TargetSummary, ToolResultSummary,
-    },
-    session::AgentMessage,
+    planner::{PlannerContext, PlannerPromptBuilder, TargetSummary, ToolResultSummary},
+    session::{AgentMessage, VisualObservationSummary},
     tools::AgentToolSpec,
 };
 use operator_core::{ArtifactId, TargetId};
@@ -52,21 +50,22 @@ fn planner_context() -> PlannerContext {
             summary: "snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)"
                 .into(),
         }],
-        latest_snapshot: Some(SnapshotSummary {
-            id: "snap-1".into(),
+        current_observation: Some(VisualObservationSummary {
+            snapshot_id: "snap-1".into(),
             surface: "frontmost".into(),
             root_element_count: 1,
             element_count: 2,
             screenshot_artifact: Some(ArtifactId("capture-1.png".into())),
         }),
-        previous_snapshot_visual: Some(ArtifactId("capture-prev.png".into())),
+        current_visual_artifact: Some(ArtifactId("capture-1.png".into())),
+        previous_visual_artifact: Some(ArtifactId("capture-prev.png".into())),
         notes: vec!["Observe again before finishing.".into()],
         ui_state_stale: true,
     }
 }
 
 #[test]
-fn assemble_builds_json_first_prompt_contract_snapshot() {
+fn planner_prompts_build_json_first_contract_snapshot() {
     let builder = PlannerPromptBuilder::new();
     let tools = vec![
         AgentToolSpec {
@@ -111,140 +110,14 @@ fn assemble_builds_json_first_prompt_contract_snapshot() {
         &transcript,
     );
 
-    let expected_custom_event = serde_json::to_string_pretty(&json!({
-        "kind": "planner.feedback.v1",
-        "payload": {
-            "reason": "Need another observe."
-        }
-    }))
-    .expect("custom transcript event should serialize");
-    let expected_request = serde_json::to_string_pretty(&json!({
-        "task": "Open Finder and confirm the window appears.",
-        "target": {
-            "id": "local:macos",
-            "platform": "macos",
-            "capabilities": [
-                "app_lifecycle",
-                "capture",
-                "inspect_tree"
-            ]
-        },
-        "recent_tool_results": [
-            {
-                "turn_index": 1,
-                "step_index": 1,
-                "tool_name": "observe",
-                "is_error": false,
-                "read_only": true,
-                "summary": "snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)"
-            }
-        ],
-        "latest_snapshot": {
-            "id": "snap-1",
-            "surface": "frontmost",
-            "root_element_count": 1,
-            "element_count": 2,
-            "screenshot_artifact": "capture-1.png"
-        },
-        "previous_snapshot_visual": "capture-prev.png",
-        "notes": [
-            "Observe again before finishing."
-        ],
-        "ui_state_stale": true
-    }))
-    .expect("planner request should serialize");
-
-    assert_eq!(
-        serde_json::to_value(&context).expect("planner context should serialize"),
-        json!({
-            "system": "You are the Operator planner.\nChoose exactly one next decision for the current desktop automation task.\nUse only the provided tools and the transcript/context you are given.\nThe runner may already provide automatic screenshot-only observe results on the hot path.\nDo not finish while `ui_state_stale` is true.\nUse `observe` as a cold-path tool when you need to verify UI content or state; request `include_elements=true` because screenshot-only or empty observations do not count as verification.\nDo not invent tool results, hidden UI state, or unsupported tool arguments.\nReturn exactly one JSON object and no surrounding prose.\nValid decision shapes:\n{\"decision\":\"call_tool\",\"name\":\"<tool-name>\",\"arguments\":{},\"summary\":\"<brief next-step summary>\",\"thought\":\"<optional reasoning>\"}\n{\"decision\":\"finish\",\"summary\":\"<why the task is complete>\"}\n{\"decision\":\"fail\",\"reason\":\"<why the task cannot continue>\"}",
-            "messages": [
-                {
-                    "User": {
-                        "content": [
-                            {
-                                "Text": {
-                                    "text": "Open Finder."
-                                }
-                            }
-                        ],
-                        "timestamp_ms": 1
-                    }
-                },
-                {
-                    "Assistant": {
-                        "content": [
-                            {
-                                "Text": {
-                                    "text": "I will inspect the desktop first."
-                                }
-                            }
-                        ],
-                        "usage": {
-                            "input_tokens": 0,
-                            "output_tokens": 0,
-                            "total_tokens": 0,
-                            "cost": null
-                        },
-                        "stop": "Stop",
-                        "error_message": null,
-                        "timestamp_ms": 2
-                    }
-                },
-                {
-                    "User": {
-                        "content": [
-                            {
-                                "Text": {
-                                    "text": expected_custom_event
-                                }
-                            }
-                        ],
-                        "timestamp_ms": 0
-                    }
-                },
-                {
-                    "User": {
-                        "content": [
-                            {
-                                "Text": {
-                                    "text": expected_request
-                                }
-                            }
-                        ],
-                        "timestamp_ms": 0
-                    }
-                }
-            ],
-            "tools": [
-                {
-                    "name": "observe",
-                    "description": "Capture a surface and persist the resulting snapshot.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "surface": { "type": "string" }
-                        }
-                    }
-                },
-                {
-                    "name": "click",
-                    "description": "Click a locator, coordinate, or target.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "x": { "type": "number" },
-                            "y": { "type": "number" }
-                        }
-                    }
-                }
-            ]
-        })
+    insta::assert_json_snapshot!(
+        "planner_prompts_build_json_first_contract",
+        serde_json::to_value(&context).expect("planner context should serialize")
     );
 }
 
 #[test]
-fn assemble_limits_recent_transcript_before_appending_current_request() {
+fn planner_prompts_limit_recent_transcript_before_appending_current_request_snapshot() {
     let builder = PlannerPromptBuilder::new().with_recent_message_limit(2);
     let transcript = vec![
         AgentMessage::from(user_message("earliest", 1)),
@@ -259,96 +132,8 @@ fn assemble_limits_recent_transcript_before_appending_current_request() {
         &[],
         &transcript,
     );
-    let messages = serde_json::to_value(&context.messages).expect("messages should serialize");
-    let expected_custom_event = serde_json::to_string_pretty(&json!({
-        "kind": "parser.feedback.v1",
-        "payload": {
-            "error": "invalid json"
-        }
-    }))
-    .expect("custom transcript event should serialize");
-
-    assert_eq!(
-        messages,
-        json!([
-            {
-                "Assistant": {
-                    "content": [
-                        {
-                            "Text": {
-                                "text": "latest assistant"
-                            }
-                        }
-                    ],
-                    "usage": {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "total_tokens": 0,
-                        "cost": null
-                    },
-                    "stop": "Stop",
-                    "error_message": null,
-                    "timestamp_ms": 3
-                }
-            },
-            {
-                "User": {
-                    "content": [
-                        {
-                            "Text": {
-                                "text": expected_custom_event
-                            }
-                        }
-                    ],
-                    "timestamp_ms": 0
-                }
-            },
-            {
-                "User": {
-                    "content": [
-                        {
-                            "Text": {
-                                "text": serde_json::to_string_pretty(&json!({
-                                    "task": "Retry with valid JSON.",
-                                    "target": {
-                                        "id": "local:macos",
-                                        "platform": "macos",
-                                        "capabilities": [
-                                            "app_lifecycle",
-                                            "capture",
-                                            "inspect_tree"
-                                        ]
-                                    },
-                                    "recent_tool_results": [
-                                        {
-                                            "turn_index": 1,
-                                            "step_index": 1,
-                                            "tool_name": "observe",
-                                            "is_error": false,
-                                            "read_only": true,
-                                            "summary": "snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)"
-                                        }
-                                    ],
-                                    "latest_snapshot": {
-                                        "id": "snap-1",
-                                        "surface": "frontmost",
-                                        "root_element_count": 1,
-                                        "element_count": 2,
-                                        "screenshot_artifact": "capture-1.png"
-                                    },
-                                    "previous_snapshot_visual": "capture-prev.png",
-                                    "notes": [
-                                        "Observe again before finishing."
-                                    ],
-                                    "ui_state_stale": true
-                                }))
-                                .expect("planner request should serialize")
-                            }
-                        }
-                    ],
-                    "timestamp_ms": 0
-                }
-            }
-        ])
+    insta::assert_json_snapshot!(
+        "planner_prompts_recent_transcript_window",
+        serde_json::to_value(&context.messages).expect("messages should serialize")
     );
 }

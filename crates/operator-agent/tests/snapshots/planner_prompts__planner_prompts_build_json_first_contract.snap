@@ -1,0 +1,94 @@
+---
+source: crates/operator-agent/tests/planner_prompts.rs
+expression: "serde_json::to_value(&context).expect(\"planner context should serialize\")"
+---
+{
+  "messages": [
+    {
+      "User": {
+        "content": [
+          {
+            "Text": {
+              "text": "Open Finder."
+            }
+          }
+        ],
+        "timestamp_ms": 1
+      }
+    },
+    {
+      "Assistant": {
+        "content": [
+          {
+            "Text": {
+              "text": "I will inspect the desktop first."
+            }
+          }
+        ],
+        "error_message": null,
+        "stop": "Stop",
+        "timestamp_ms": 2,
+        "usage": {
+          "cost": null,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "User": {
+        "content": [
+          {
+            "Text": {
+              "text": "{\n  \"kind\": \"planner.feedback.v1\",\n  \"payload\": {\n    \"reason\": \"Need another observe.\"\n  }\n}"
+            }
+          }
+        ],
+        "timestamp_ms": 0
+      }
+    },
+    {
+      "User": {
+        "content": [
+          {
+            "Text": {
+              "text": "{\n  \"current_observation\": {\n    \"element_count\": 2,\n    \"root_element_count\": 1,\n    \"screenshot_artifact\": \"capture-1.png\",\n    \"snapshot_id\": \"snap-1\",\n    \"surface\": \"frontmost\"\n  },\n  \"current_visual_artifact\": \"capture-1.png\",\n  \"notes\": [\n    \"Observe again before finishing.\"\n  ],\n  \"previous_visual_artifact\": \"capture-prev.png\",\n  \"recent_tool_results\": [\n    {\n      \"is_error\": false,\n      \"read_only\": true,\n      \"step_index\": 1,\n      \"summary\": \"snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)\",\n      \"tool_name\": \"observe\",\n      \"turn_index\": 1\n    }\n  ],\n  \"target\": {\n    \"capabilities\": [\n      \"app_lifecycle\",\n      \"capture\",\n      \"inspect_tree\"\n    ],\n    \"id\": \"local:macos\",\n    \"platform\": \"macos\"\n  },\n  \"task\": \"Open Finder and confirm the window appears.\",\n  \"ui_state_stale\": true\n}"
+            }
+          }
+        ],
+        "timestamp_ms": 0
+      }
+    }
+  ],
+  "system": "You are the Operator planner.\nChoose exactly one next decision for the current desktop automation task.\nUse only the provided tools and the transcript/context you are given.\nThe runner may already provide automatic screenshot-only observe results on the hot path.\nThe planner context carries current/previous visual artifact references from the in-memory loop state, not full snapshot bodies.\nDo not finish while `ui_state_stale` is true.\nUse `observe` as a cold-path tool when you need to verify UI content or state; request `include_elements=true` because screenshot-only or empty observations do not count as verification.\nDo not invent tool results, hidden UI state, or unsupported tool arguments.\nReturn exactly one JSON object and no surrounding prose.\nValid decision shapes:\n{\"decision\":\"call_tool\",\"name\":\"<tool-name>\",\"arguments\":{},\"summary\":\"<brief next-step summary>\",\"thought\":\"<optional reasoning>\"}\n{\"decision\":\"finish\",\"summary\":\"<why the task is complete>\"}\n{\"decision\":\"fail\",\"reason\":\"<why the task cannot continue>\"}",
+  "tools": [
+    {
+      "description": "Capture a surface and persist the resulting snapshot.",
+      "input_schema": {
+        "properties": {
+          "surface": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "observe"
+    },
+    {
+      "description": "Click a locator, coordinate, or target.",
+      "input_schema": {
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "click"
+    }
+  ]
+}

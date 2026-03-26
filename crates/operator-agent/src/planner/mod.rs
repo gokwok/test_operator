@@ -4,9 +4,7 @@ pub mod prompts;
 pub mod reflector;
 pub mod validator;
 
-pub use context::{
-    ContextAssembler, PlannerContext, SnapshotSummary, TargetSummary, ToolResultSummary,
-};
+pub use context::{LoopStateContextManager, PlannerContext, TargetSummary, ToolResultSummary};
 pub use parser::{AgentDecision, DecisionParser};
 pub use prompts::PlannerPromptBuilder;
 pub use reflector::{TaskReflection, TaskReflector};

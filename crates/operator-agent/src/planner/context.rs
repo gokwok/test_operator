@@ -1,24 +1,25 @@
 use std::sync::Arc;
 
-use operator_core::{
-    ArtifactId, Capability, OperatorError, Snapshot, SnapshotId, SurfaceKind, TargetId,
-};
+use operator_core::{ArtifactId, Capability, Snapshot, TargetId};
 use operator_runtime::RuntimeCore;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::{session::AgentSessionState, AgentError};
+use crate::{
+    session::{AgentSessionState, VisualObservationSummary},
+    AgentError,
+};
 
 const DEFAULT_RECENT_TOOL_RESULTS: usize = 5;
 const MAX_TEXT_SUMMARY_CHARS: usize = 120;
 
 #[derive(Clone)]
-pub struct ContextAssembler {
+pub struct LoopStateContextManager {
     core: Arc<RuntimeCore>,
     recent_tool_limit: usize,
 }
 
-impl ContextAssembler {
+impl LoopStateContextManager {
     pub fn new(core: Arc<RuntimeCore>) -> Self {
         Self {
             core,
@@ -31,12 +32,13 @@ impl ContextAssembler {
         self
     }
 
-    pub async fn assemble(&self, state: &AgentSessionState) -> Result<PlannerContext, AgentError> {
+    pub fn assemble(&self, state: &AgentSessionState) -> Result<PlannerContext, AgentError> {
         Ok(PlannerContext {
             target: self.summarize_target(&state.target)?,
             recent_tool_results: self.summarize_tool_results(state),
-            latest_snapshot: self.load_latest_snapshot(state).await?,
-            previous_snapshot_visual: state.previous_snapshot_visual.clone(),
+            current_observation: state.current_observation().cloned(),
+            current_visual_artifact: state.current_visual().cloned(),
+            previous_visual_artifact: state.previous_visual().cloned(),
             notes: state.notes.clone(),
             ui_state_stale: state.ui_state_stale,
         })
@@ -58,25 +60,6 @@ impl ContextAssembler {
         })
     }
 
-    async fn load_latest_snapshot(
-        &self,
-        state: &AgentSessionState,
-    ) -> Result<Option<SnapshotSummary>, AgentError> {
-        let Some(snapshot_id) = &state.latest_snapshot else {
-            return Ok(None);
-        };
-
-        let snapshot = self
-            .core
-            .snapshots()
-            .get(snapshot_id)
-            .await?
-            .ok_or_else(|| {
-                AgentError::Runtime(OperatorError::SnapshotNotFound(snapshot_id.clone()))
-            })?;
-        Ok(Some(SnapshotSummary::from_snapshot(&snapshot)))
-    }
-
     fn summarize_tool_results(&self, state: &AgentSessionState) -> Vec<ToolResultSummary> {
         let trace = &state.tool_trace;
         let start = trace.len().saturating_sub(self.recent_tool_limit);
@@ -95,12 +78,13 @@ impl ContextAssembler {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlannerContext {
     pub target: TargetSummary,
     pub recent_tool_results: Vec<ToolResultSummary>,
-    pub latest_snapshot: Option<SnapshotSummary>,
-    pub previous_snapshot_visual: Option<ArtifactId>,
+    pub current_observation: Option<VisualObservationSummary>,
+    pub current_visual_artifact: Option<ArtifactId>,
+    pub previous_visual_artifact: Option<ArtifactId>,
     pub notes: Vec<String>,
     pub ui_state_stale: bool,
 }
@@ -110,39 +94,6 @@ pub struct TargetSummary {
     pub id: TargetId,
     pub platform: String,
     pub capabilities: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SnapshotSummary {
-    pub id: SnapshotId,
-    pub surface: String,
-    pub root_element_count: usize,
-    pub element_count: usize,
-    pub screenshot_artifact: Option<ArtifactId>,
-}
-
-impl SnapshotSummary {
-    fn from_snapshot(snapshot: &Snapshot) -> Self {
-        Self {
-            id: snapshot.id.clone(),
-            surface: surface_name(&snapshot.surface.kind),
-            root_element_count: snapshot.root_ids.len(),
-            element_count: snapshot.elements.len(),
-            screenshot_artifact: snapshot.image_artifact.clone(),
-        }
-    }
-
-    fn describe(&self) -> String {
-        let screenshot = self
-            .screenshot_artifact
-            .as_ref()
-            .map(|artifact| format!(", screenshot={artifact}"))
-            .unwrap_or_default();
-        format!(
-            "snapshot {} on {} (roots={}, elements={}){}",
-            self.id, self.surface, self.root_element_count, self.element_count, screenshot
-        )
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,7 +120,7 @@ fn summarize_tool_output(result: &crate::tools::AgentToolResult) -> String {
     };
 
     if let Some(snapshot) = snapshot_from_output(output) {
-        return SnapshotSummary::from_snapshot(&snapshot).describe();
+        return VisualObservationSummary::from_snapshot(&snapshot).describe();
     }
 
     if let Some(artifact_id) = artifact_id_from_output(output) {
@@ -292,24 +243,5 @@ fn capability_name(capability: &Capability) -> String {
         Capability::Permissions => "permissions".into(),
         Capability::DeviceInfo => "device_info".into(),
         Capability::Extension(id) => format!("{}:{}", id.namespace, id.name),
-    }
-}
-
-fn surface_name(surface: &SurfaceKind) -> String {
-    match surface {
-        SurfaceKind::Fullscreen {
-            display_id: Some(display_id),
-        } => {
-            format!("fullscreen(display={display_id})")
-        }
-        SurfaceKind::Fullscreen { display_id: None } => "fullscreen".into(),
-        SurfaceKind::Frontmost => "frontmost".into(),
-        SurfaceKind::Window { id } => format!("window({id})"),
-        SurfaceKind::Region { rect } => {
-            format!(
-                "region({}, {}, {}, {})",
-                rect.x, rect.y, rect.width, rect.height
-            )
-        }
     }
 }

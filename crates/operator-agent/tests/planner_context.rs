@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use operator_agent::{
-    planner::ContextAssembler, session::AgentSessionState, tools::AgentToolResult,
+    planner::LoopStateContextManager,
+    session::{AgentSessionState, VisualObservationSummary},
+    tools::AgentToolResult,
 };
-use operator_core::{ArtifactId, Capability, CapabilitySet, SessionId, TargetId};
-use operator_runtime::{RuntimeBuilder, RuntimeConfig, SnapshotStore};
+use operator_core::{ArtifactId, Capability, CapabilitySet, SessionId, SnapshotId, TargetId};
+use operator_runtime::{RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_element, test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::json;
 
@@ -24,8 +26,23 @@ fn tool_result(
     }
 }
 
+fn observation(
+    snapshot_id: &str,
+    artifact_id: &str,
+    root_element_count: usize,
+    element_count: usize,
+) -> VisualObservationSummary {
+    VisualObservationSummary {
+        snapshot_id: SnapshotId(snapshot_id.into()),
+        surface: "frontmost".into(),
+        screenshot_artifact: Some(ArtifactId(artifact_id.into())),
+        root_element_count,
+        element_count,
+    }
+}
+
 #[tokio::test]
-async fn assemble_compacts_target_snapshot_and_recent_tool_state() {
+async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_results() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
         CapabilitySet::new([
@@ -34,27 +51,22 @@ async fn assemble_compacts_target_snapshot_and_recent_tool_state() {
             Capability::AppLifecycle,
         ]),
     ));
-    let store = Arc::new(InMemorySnapshotStore::new());
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
-        .snapshot_store(store.clone())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
         .register_driver(driver)
         .build()
         .await
         .expect("runtime should build");
 
-    let mut snapshot = test_snapshot("snap-latest");
+    let mut snapshot = test_snapshot("snap-observe");
     let extra = test_element("el-2");
-    snapshot.image_artifact = Some(ArtifactId("capture-latest.png".into()));
+    snapshot.image_artifact = Some(ArtifactId("capture-observe.png".into()));
     snapshot
         .elements
         .get_mut(&"el-1".into())
         .expect("fixture root element should exist")
         .label = Some("Secret AX Tree Node".into());
     snapshot.elements.insert(extra.id.clone(), extra);
-    store
-        .save(&snapshot)
-        .await
-        .expect("snapshot should be saved");
 
     let mut state = AgentSessionState::new(
         SessionId("sess-ctx".into()),
@@ -63,6 +75,10 @@ async fn assemble_compacts_target_snapshot_and_recent_tool_state() {
     );
     state.start_turn();
     state.start_step();
+    state.record_visual_observation(observation("snap-before", "capture-before.png", 0, 0));
+    state.record_visual_observation(observation("snap-latest", "capture-latest.png", 1, 2));
+    state.latest_snapshot = Some("missing-snapshot".into());
+    state.previous_snapshot_visual = Some(ArtifactId("stale-field.png".into()));
     state.push_tool_trace(
         tool_result("list-apps", Some(json!({ "apps": [] })), false, true),
         10,
@@ -125,13 +141,10 @@ async fn assemble_compacts_target_snapshot_and_recent_tool_state() {
         ),
         15,
     );
-    state.latest_snapshot = Some("snap-latest".into());
-    state.previous_snapshot_visual = Some(ArtifactId("capture-before.png".into()));
     state.add_note("Observe again before deciding the task is finished.");
 
-    let context = ContextAssembler::new(runtime.core())
+    let context = LoopStateContextManager::new(runtime.core())
         .assemble(&state)
-        .await
         .expect("context should assemble");
 
     assert_eq!(context.target.id, TargetId("local:macos".into()));
@@ -149,7 +162,7 @@ async fn assemble_compacts_target_snapshot_and_recent_tool_state() {
     assert!(
         context.recent_tool_results[0]
             .summary
-            .contains("snap-latest"),
+            .contains("snap-observe"),
         "observe summary should retain the snapshot id"
     );
     assert!(
@@ -159,23 +172,19 @@ async fn assemble_compacts_target_snapshot_and_recent_tool_state() {
         "observe summary should not inline raw accessibility tree labels"
     );
     assert_eq!(
-        context.previous_snapshot_visual,
+        context.current_observation,
+        Some(observation("snap-latest", "capture-latest.png", 1, 2))
+    );
+    assert_eq!(
+        context.current_visual_artifact,
+        Some(ArtifactId("capture-latest.png".into()))
+    );
+    assert_eq!(
+        context.previous_visual_artifact,
         Some(ArtifactId("capture-before.png".into()))
     );
     assert_eq!(context.notes.len(), 1);
     assert!(context.ui_state_stale);
-
-    let latest_snapshot = context
-        .latest_snapshot
-        .expect("latest snapshot summary should be present");
-    assert_eq!(latest_snapshot.id, "snap-latest".into());
-    assert_eq!(latest_snapshot.surface, "frontmost");
-    assert_eq!(latest_snapshot.root_element_count, 1);
-    assert_eq!(latest_snapshot.element_count, 2);
-    assert_eq!(
-        latest_snapshot.screenshot_artifact,
-        Some(ArtifactId("capture-latest.png".into()))
-    );
 }
 
 #[test]
