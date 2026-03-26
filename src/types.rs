@@ -162,6 +162,25 @@ pub struct UiEvent {
     pub kind: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiComponentInfo {
+    pub id: String,
+    pub key: String,
+    pub kind: String,
+    pub text: String,
+    pub description: String,
+    pub selected: bool,
+    pub checked: bool,
+    pub enabled: bool,
+    pub focused: bool,
+    pub checkable: bool,
+    pub clickable: bool,
+    pub long_clickable: bool,
+    pub scrollable: bool,
+    pub bounds: Bounds,
+    pub center: Point,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyCode(u32);
 

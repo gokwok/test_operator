@@ -16,7 +16,7 @@ pub use error::{HdcError, Result};
 pub use forward::TcpForwardHandle;
 pub use types::{
     Bounds, CommandStatus, Coord, CurrentApp, DisplayRotation, DriverMessage, DriverMessageLevel,
-    KeyCode, Point, ShellResult, UiEvent,
+    KeyCode, Point, ShellResult, UiComponentInfo, UiEvent,
 };
 pub use ui::{UiComponent, UiDriver, UiDriverBuilder, UiSelector};
 pub use xpath::XPathNode;

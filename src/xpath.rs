@@ -82,8 +82,8 @@ impl<'a> XPathNode<'a> {
 
 #[derive(Debug)]
 struct XPathMatcher {
-    attribute: String,
-    value: String,
+    node_kind: Option<String>,
+    predicate_groups: Vec<Vec<Predicate>>,
 }
 
 #[derive(Debug)]
@@ -95,39 +95,45 @@ struct XPathMatch {
 impl XPathMatcher {
     fn parse(expression: &str) -> Result<Self> {
         let expression = expression.trim();
-        let start = expression
-            .find("[@")
-            .ok_or_else(|| HdcError::protocol("only simple attribute xpath is supported"))?;
-        if !expression.ends_with(']') {
-            return Err(HdcError::protocol("invalid xpath expression"));
+        if !expression.starts_with("//") {
+            return Err(HdcError::protocol("xpath must start with //"));
         }
-        let predicate = &expression[start + 2..expression.len() - 1];
-        let (attribute, raw_value) = predicate
-            .split_once('=')
-            .ok_or_else(|| HdcError::protocol("invalid xpath predicate"))?;
-        let value = raw_value.trim();
-        let value = if value.len() >= 2
-            && ((value.starts_with('\'') && value.ends_with('\''))
-                || (value.starts_with('"') && value.ends_with('"')))
-        {
-            value[1..value.len() - 1].to_string()
+        let body = &expression[2..];
+        let (node_kind, predicates) = if let Some(start) = body.find('[') {
+            if !body.ends_with(']') {
+                return Err(HdcError::protocol("invalid xpath expression"));
+            }
+            (&body[..start], Some(&body[start + 1..body.len() - 1]))
         } else {
-            return Err(HdcError::protocol("xpath value must be quoted"));
+            (body, None)
+        };
+
+        let node_kind = match node_kind.trim() {
+            "" | "*" => None,
+            value => Some(value.to_string()),
+        };
+
+        let predicate_groups = match predicates {
+            Some(raw) => raw
+                .split(" or ")
+                .map(|group| {
+                    group.split(" and ")
+                        .map(|item| Predicate::parse(item.trim()))
+                        .collect::<Result<Vec<Predicate>>>()
+                })
+                .collect::<Result<Vec<Vec<Predicate>>>>()?,
+            None => vec![Vec::new()],
         };
         Ok(Self {
-            attribute: attribute.trim().to_string(),
-            value,
+            node_kind,
+            predicate_groups,
         })
     }
 }
 
 fn find_first_match(node: &Value, matcher: &XPathMatcher) -> Option<XPathMatch> {
     let attributes = node.get("attributes")?.as_object()?;
-    if attributes
-        .get(&matcher.attribute)
-        .and_then(Value::as_str)
-        == Some(matcher.value.as_str())
-    {
+    if matcher.matches(attributes) {
         return Some(XPathMatch {
             bounds: attributes
                 .get("bounds")
@@ -144,6 +150,104 @@ fn find_first_match(node: &Value, matcher: &XPathMatcher) -> Option<XPathMatch> 
         }
     }
     None
+}
+
+impl XPathMatcher {
+    fn matches(&self, attributes: &Map<String, Value>) -> bool {
+        if let Some(kind) = &self.node_kind {
+            if attributes.get("type").and_then(Value::as_str) != Some(kind.as_str()) {
+                return false;
+            }
+        }
+        self.predicate_groups
+            .iter()
+            .any(|group| group.iter().all(|predicate| predicate.matches(attributes)))
+    }
+}
+
+#[derive(Debug)]
+enum Predicate {
+    Equals { attribute: String, value: String },
+    Contains { attribute: String, value: String },
+    StartsWith { attribute: String, value: String },
+}
+
+impl Predicate {
+    fn parse(input: &str) -> Result<Self> {
+        if let Some(inner) = input
+            .strip_prefix("contains(")
+            .and_then(|value| value.strip_suffix(')'))
+        {
+            let (attribute, value) = split_call_args(inner)?;
+            return Ok(Self::Contains {
+                attribute: normalize_attribute(attribute),
+                value: parse_quoted(value)?,
+            });
+        }
+        if let Some(inner) = input
+            .strip_prefix("starts-with(")
+            .and_then(|value| value.strip_suffix(')'))
+        {
+            let (attribute, value) = split_call_args(inner)?;
+            return Ok(Self::StartsWith {
+                attribute: normalize_attribute(attribute),
+                value: parse_quoted(value)?,
+            });
+        }
+        let (attribute, value) = input
+            .split_once('=')
+            .ok_or_else(|| HdcError::protocol("invalid xpath predicate"))?;
+        Ok(Self::Equals {
+            attribute: normalize_attribute(attribute),
+            value: parse_quoted(value)?,
+        })
+    }
+
+    fn matches(&self, attributes: &Map<String, Value>) -> bool {
+        let (attribute, expected, mode) = match self {
+            Self::Equals { attribute, value } => (attribute, value, 0_u8),
+            Self::Contains { attribute, value } => (attribute, value, 1_u8),
+            Self::StartsWith { attribute, value } => (attribute, value, 2_u8),
+        };
+        let actual = attributes
+            .get(attribute)
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        match mode {
+            0 => actual == expected,
+            1 => actual.contains(expected),
+            2 => actual.starts_with(expected),
+            _ => false,
+        }
+    }
+}
+
+fn split_call_args(input: &str) -> Result<(&str, &str)> {
+    input
+        .split_once(',')
+        .map(|(left, right)| (left.trim(), right.trim()))
+        .ok_or_else(|| HdcError::protocol("invalid xpath function arguments"))
+}
+
+fn normalize_attribute(input: &str) -> String {
+    let input = input.trim();
+    if input == "text()" {
+        "text".to_string()
+    } else {
+        input.trim_start_matches('@').to_string()
+    }
+}
+
+fn parse_quoted(input: &str) -> Result<String> {
+    let value = input.trim();
+    if value.len() >= 2
+        && ((value.starts_with('\'') && value.ends_with('\''))
+            || (value.starts_with('"') && value.ends_with('"')))
+    {
+        Ok(value[1..value.len() - 1].to_string())
+    } else {
+        Err(HdcError::protocol("xpath value must be quoted"))
+    }
 }
 
 fn parse_bounds_string(value: &str) -> Option<Bounds> {
@@ -168,14 +272,30 @@ fn parse_bounds_string(value: &str) -> Option<Bounds> {
 
 #[cfg(test)]
 mod tests {
-    use super::{XPathMatcher, find_first_match, parse_bounds_string};
+    use super::{Predicate, XPathMatcher, find_first_match, parse_bounds_string};
     use serde_json::json;
 
     #[test]
     fn parse_simple_xpath_attribute_equals() {
         let matcher = XPathMatcher::parse("//*[@text='Hello']").unwrap();
-        assert_eq!(matcher.attribute, "text");
-        assert_eq!(matcher.value, "Hello");
+        assert!(matcher.node_kind.is_none());
+        assert_eq!(matcher.predicate_groups.len(), 1);
+        assert_eq!(matcher.predicate_groups[0].len(), 1);
+    }
+
+    #[test]
+    fn parse_xpath_with_type_and_multiple_predicates() {
+        let matcher =
+            XPathMatcher::parse("//Button[@text='Hello' and contains(@id,'primary')]").unwrap();
+        assert_eq!(matcher.node_kind.as_deref(), Some("Button"));
+        assert_eq!(matcher.predicate_groups.len(), 1);
+        assert_eq!(matcher.predicate_groups[0].len(), 2);
+    }
+
+    #[test]
+    fn parse_xpath_with_or_groups() {
+        let matcher = XPathMatcher::parse("//*[@text='Hello' or @text='World']").unwrap();
+        assert_eq!(matcher.predicate_groups.len(), 2);
     }
 
     #[test]
@@ -190,17 +310,25 @@ mod tests {
     #[test]
     fn find_first_match_recurses_children() {
         let tree = json!({
-            "attributes": {"text": "", "bounds": "[0,0][10,10]"},
+            "attributes": {"text": "", "type": "root", "bounds": "[0,0][10,10]"},
             "children": [
                 {
-                    "attributes": {"text": "Hello", "bounds": "[10,20][30,40]"},
+                    "attributes": {"text": "Hello", "type": "Button", "id": "primary-1", "bounds": "[10,20][30,40]"},
                     "children": []
                 }
             ]
         });
-        let matcher = XPathMatcher::parse("//*[@text='Hello']").unwrap();
+        let matcher =
+            XPathMatcher::parse("//Button[@text='Hello' and starts-with(@id,'primary')]").unwrap();
         let matched = find_first_match(&tree, &matcher).unwrap();
         assert_eq!(matched.info.get("text").and_then(|v| v.as_str()), Some("Hello"));
         assert_eq!(matched.bounds.unwrap().left, 10);
+    }
+
+    #[test]
+    fn predicate_matches_text_function_alias() {
+        let attributes = json!({"text": "Hello World"}).as_object().unwrap().clone();
+        let predicate = Predicate::parse("contains(text(), 'Hello')").unwrap();
+        assert!(predicate.matches(&attributes));
     }
 }

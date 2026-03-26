@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::driver::Driver;
 use crate::error::{HdcError, Result};
 use crate::forward::TcpForwardHandle;
-use crate::types::{Bounds, Coord, DisplayRotation, Point, UiEvent};
+use crate::types::{Bounds, Coord, DisplayRotation, Point, UiComponentInfo, UiEvent};
 
 const UITEST_SERVICE_PORT: u16 = 8012;
 const DEFAULT_REMOTE_AGENT_PATH: &str = "/data/local/tmp/agent.so";
@@ -347,11 +347,20 @@ impl UiComponent {
             .ok_or_else(|| HdcError::protocol("Component.getText returned invalid payload"))
     }
 
+    pub fn id(&self) -> Result<String> {
+        self.invoke_string("Component.getId")
+    }
+
+    pub fn key(&self) -> Result<String> {
+        self.invoke_string("Component.getId")
+    }
+
+    pub fn kind(&self) -> Result<String> {
+        self.invoke_string("Component.getType")
+    }
+
     pub fn description(&self) -> Result<String> {
-        self.invoke("Component.getDescription", Vec::new())?
-            .as_str()
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| HdcError::protocol("Component.getDescription returned invalid payload"))
+        self.invoke_string("Component.getDescription")
     }
 
     pub fn bounds(&self) -> Result<Bounds> {
@@ -375,6 +384,10 @@ impl UiComponent {
         self.invoke_bool("Component.isFocused")
     }
 
+    pub fn checkable(&self) -> Result<bool> {
+        self.invoke_bool("Component.isCheckable")
+    }
+
     pub fn selected(&self) -> Result<bool> {
         self.invoke_bool("Component.isSelected")
     }
@@ -383,8 +396,38 @@ impl UiComponent {
         self.invoke_bool("Component.isChecked")
     }
 
+    pub fn long_clickable(&self) -> Result<bool> {
+        self.invoke_bool("Component.isLongClickable")
+    }
+
+    pub fn scrollable(&self) -> Result<bool> {
+        self.invoke_bool("Component.isScrollable")
+    }
+
     pub fn exists(&self) -> Result<bool> {
         Ok(self.bounds().is_ok())
+    }
+
+    pub fn info(&self) -> Result<UiComponentInfo> {
+        let bounds = self.bounds()?;
+        let center = bounds.center();
+        Ok(UiComponentInfo {
+            id: self.id()?,
+            key: self.key()?,
+            kind: self.kind()?,
+            text: self.text()?,
+            description: self.description()?,
+            selected: self.selected()?,
+            checked: self.checked()?,
+            enabled: self.enabled()?,
+            focused: self.focused()?,
+            checkable: self.checkable()?,
+            clickable: self.clickable()?,
+            long_clickable: self.long_clickable()?,
+            scrollable: self.scrollable()?,
+            bounds,
+            center,
+        })
     }
 
     pub fn click(&self) -> Result<()> {
@@ -433,6 +476,15 @@ impl UiComponent {
         Ok(())
     }
 
+    pub fn drag_to(&self, target: &UiComponent) -> Result<()> {
+        let from = self.center()?;
+        let to = target.center()?;
+        self.inner
+            .borrow_mut()
+            .driver
+            .drag(from.x, from.y, to.x, to.y, Some(2000))
+    }
+
     fn invoke(&self, api: &str, args: Vec<Value>) -> Result<Value> {
         self.inner
             .borrow_mut()
@@ -442,6 +494,13 @@ impl UiComponent {
     fn invoke_bool(&self, api: &str) -> Result<bool> {
         self.invoke(api, Vec::new())?
             .as_bool()
+            .ok_or_else(|| HdcError::protocol(format!("{api} returned invalid payload")))
+    }
+
+    fn invoke_string(&self, api: &str) -> Result<String> {
+        self.invoke(api, Vec::new())?
+            .as_str()
+            .map(ToOwned::to_owned)
             .ok_or_else(|| HdcError::protocol(format!("{api} returned invalid payload")))
     }
 }
