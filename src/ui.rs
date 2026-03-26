@@ -528,6 +528,16 @@ impl UiComponent {
         Ok(())
     }
 
+    pub fn pinch_in(&self, scale: f64) -> Result<()> {
+        let _ = self.invoke("Component.pinchIn", vec![Value::from(scale)])?;
+        Ok(())
+    }
+
+    pub fn pinch_out(&self, scale: f64) -> Result<()> {
+        let _ = self.invoke("Component.pinchOut", vec![Value::from(scale)])?;
+        Ok(())
+    }
+
     pub fn drag_to(&self, target: &UiComponent) -> Result<()> {
         let from = self.center()?;
         let to = target.center()?;

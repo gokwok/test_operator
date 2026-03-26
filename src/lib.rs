@@ -9,11 +9,13 @@ mod codec;
 mod forward;
 mod protocol;
 mod session;
+mod swipe;
 mod xpath;
 
 pub use driver::{Driver, DriverBuilder, HdcDriver, HdcDriverBuilder};
 pub use error::{HdcError, Result};
 pub use forward::TcpForwardHandle;
+pub use swipe::{SwipeArea, SwipeDirection, SwipeExt};
 pub use types::{
     AppAbilityInfo, AppVersion, Bounds, CommandStatus, Coord, CurrentApp, DeviceInfo,
     DisplayRotation, DriverMessage, DriverMessageLevel, KeyCode, Point, ShellResult,

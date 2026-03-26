@@ -10,6 +10,7 @@ use crate::error::{HdcError, Result};
 use crate::forward::{TcpForwardHandle, send_file_via_shell};
 use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
+use crate::swipe::SwipeExt;
 use crate::types::{
     AppAbilityInfo, AppVersion, Coord, CurrentApp, DeviceInfo, DisplayRotation, KeyCode, Point,
     ShellResult,
@@ -214,6 +215,10 @@ impl Driver {
         let (x2, y2) = self.resolve_point(x2.into(), y2.into())?;
         let speed = normalize_velocity(speed)?;
         self.exec_side_effect_checked(&format!("uitest uiInput drag {x1} {y1} {x2} {y2} {speed}"))
+    }
+
+    pub fn swipe_ext(&mut self) -> SwipeExt<'_> {
+        SwipeExt::new(self)
     }
 
     pub fn input_text(&mut self, text: &str) -> Result<()> {
