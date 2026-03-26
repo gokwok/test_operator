@@ -7,11 +7,11 @@ use operator_agent::{
     session::{load_persisted_session, ReplayableTranscriptEvent},
     AgentConfig, AgentError, AgentRunRequest, AgentRunner,
 };
-use operator_core::{Capability, CapabilitySet, OperatorError, TargetId};
+use operator_core::{ArtifactId, Capability, CapabilitySet, OperatorError, TargetId};
 use operator_runtime::{
     FileSessionStore, RuntimeBuilder, RuntimeConfig, SessionStatus, SessionStore,
 };
-use operator_testkit::{InMemorySnapshotStore, MockPlatformDriver};
+use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use tempfile::tempdir;
 
 use support::DeterministicTestProvider;
@@ -39,11 +39,26 @@ async fn runner_with(
 #[tokio::test]
 async fn file_session_store_loads_deterministic_replayable_transcripts() {
     let dir = tempdir().unwrap();
-    let driver = Arc::new(MockPlatformDriver::new("macos", CapabilitySet::new([])));
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
+    ));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: test_snapshot("snap-verified"),
+    }));
     let provider = Arc::new(DeterministicTestProvider::from_texts([
-        r#"{"decision":"finish","summary":"Bootstrap gathered enough context."}"#.to_string(),
-        r#"{"verdict":"ok","reason":"Stopping after bootstrap is correct for this test."}"#
+        r#"{"decision":"call_tool","name":"observe","arguments":{"surface":{"kind":"Frontmost"},"include_elements":true,"include_screenshot":false},"summary":"Verify the UI before finishing."}"#
             .to_string(),
+        r#"{"decision":"finish","summary":"Verified the task after an explicit observe."}"#
+            .to_string(),
+        r#"{"verdict":"ok","reason":"The final observe verified the task outcome."}"#.to_string(),
     ]));
     let runner = runner_with(driver, provider, dir.path(), AgentConfig::default()).await;
 
@@ -69,7 +84,7 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
     assert_eq!(transcript, replayed_again);
     assert_eq!(transcript.session.id, result.session_id);
     assert_eq!(transcript.session.status, SessionStatus::Running);
-    assert_eq!(transcript.events.len(), 5);
+    assert_eq!(transcript.events.len(), 8);
     assert!(matches!(
         &transcript.events[0],
         ReplayableTranscriptEvent::UserInput { text }
@@ -78,22 +93,26 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
     assert!(matches!(
         &transcript.events[1],
         ReplayableTranscriptEvent::ToolCall { name, .. }
-            if name == "capabilities"
+            if name == "observe"
     ));
     assert!(matches!(
         &transcript.events[2],
         ReplayableTranscriptEvent::ToolResult { result }
-            if result.tool_name == "capabilities" && !result.is_error && result.read_only
+            if result.tool_name == "observe"
+                && !result.is_error
+                && result.read_only
+                && result.arguments["include_screenshot"] == true
+                && result.arguments["include_elements"] == false
     ));
     assert!(matches!(
-        &transcript.events[3],
-        ReplayableTranscriptEvent::ModelResponse { content }
-            if content.contains("\"decision\":\"finish\"")
+        &transcript.events[4],
+        ReplayableTranscriptEvent::ToolCall { name, input }
+            if name == "observe" && input["include_elements"] == true
     ));
     assert_eq!(
-        transcript.events[4],
+        transcript.events[7],
         ReplayableTranscriptEvent::Completed {
-            summary: Some("Bootstrap gathered enough context.".into()),
+            summary: Some("Verified the task after an explicit observe.".into()),
         }
     );
 }

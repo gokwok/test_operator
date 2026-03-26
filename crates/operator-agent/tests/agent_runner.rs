@@ -6,7 +6,7 @@ use operator_agent::{
     model::{Context, Message, ModelRegistry, ProviderKind, UserMessage},
     AgentConfig, AgentError, AgentRunRequest, AgentRunner,
 };
-use operator_core::{Capability, CapabilitySet, FocusInfo, OperatorError, QueryResult, TargetId};
+use operator_core::{ArtifactId, Capability, CapabilitySet, OperatorError, TargetId};
 use operator_runtime::{RuntimeBuilder, RuntimeConfig, SessionEvent, SessionStore};
 use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
@@ -83,12 +83,13 @@ async fn runner_executes_tool_then_finishes_with_reflection() {
         "macos",
         CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
     ));
-    driver.push_query_result(Ok(QueryResult::Focus(Some(FocusInfo {
-        role: "AXWindow".into(),
-        label: Some("Desktop".into()),
-        bounds: None,
-        app_name: Some("Finder".into()),
-    }))));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
     driver.push_observe_result(Ok(operator_core::ObserveResult {
         snapshot: test_snapshot("snap-runner"),
     }));
@@ -126,10 +127,17 @@ async fn runner_executes_tool_then_finishes_with_reflection() {
         tool_call_names(&events).contains(&"observe".to_string()),
         "observe call should be persisted: {events:?}"
     );
-    assert_eq!(driver.observe_calls().await.len(), 1);
+    assert_eq!(driver.observe_calls().await.len(), 2);
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 3, "two planner calls plus one reflector");
+
+    let first_planner_request = current_request_json(&requests[0].context);
+    assert_eq!(
+        first_planner_request["latest_snapshot"]["id"],
+        Value::String("snap-initial".into())
+    );
+    assert_eq!(first_planner_request["ui_state_stale"], Value::Bool(true));
 
     let second_planner_request = current_request_json(&requests[1].context);
     assert_eq!(
@@ -298,11 +306,7 @@ async fn runner_stops_on_repeated_tool_failures() {
         .expect("session events should be readable");
     assert_eq!(
         tool_call_names(&events),
-        vec![
-            "capabilities".to_string(),
-            "click".to_string(),
-            "click".to_string(),
-        ]
+        vec!["click".to_string(), "click".to_string(),]
     );
     assert!(
         events.iter().any(|event| matches!(

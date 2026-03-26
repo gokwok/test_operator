@@ -6,9 +6,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use operator_core::{SessionId, Snapshot};
+use operator_core::{Capability, SessionId, Snapshot};
 use operator_runtime::{Runtime, Session, SessionEvent, SessionStatus};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::{
     model::{
@@ -71,8 +71,9 @@ impl AgentRunner {
         let planner_retry = PlannerRetryPolicy::new(self.config.max_parse_attempts);
         let repeated_error = RepeatedErrorPolicy::new(self.config.repeated_error_limit);
 
-        self.bootstrap_context(&executor, &tools, &mut state)
-            .await?;
+        if let Some(reason) = self.maybe_auto_observe(&executor, &mut state, None).await? {
+            return self.fail_run(&mut state, reason).await;
+        }
 
         for _ in 0..self.config.max_steps {
             state.start_turn();
@@ -94,6 +95,15 @@ impl AgentRunner {
                         repeated_error.register_tool_result(&mut state, &result)
                     {
                         return self.fail_run(&mut state, reason).await;
+                    }
+
+                    if should_auto_observe_after_tool(&result) {
+                        if let Some(reason) = self
+                            .maybe_auto_observe(&executor, &mut state, Some(name.as_str()))
+                            .await?
+                        {
+                            return self.fail_run(&mut state, reason).await;
+                        }
                     }
                 }
                 AgentDecision::Finish { summary } => {
@@ -142,27 +152,24 @@ impl AgentRunner {
         .await
     }
 
-    async fn bootstrap_context(
+    async fn maybe_auto_observe(
         &self,
         executor: &ToolExecutor,
-        tools: &[AgentToolSpec],
         state: &mut AgentSessionState,
-    ) -> Result<(), AgentError> {
-        for name in bootstrap_tool_names(tools) {
-            let result = self
-                .execute_tool(executor, state, name, Value::Object(Default::default()))
-                .await?;
-            if result.is_error {
-                let message = result
-                    .error
-                    .as_ref()
-                    .map(|error| format!("bootstrap tool `{name}` failed: {}", error.message))
-                    .unwrap_or_else(|| format!("bootstrap tool `{name}` failed"));
-                return self.fail_run(state, message).await;
-            }
+        trigger_tool: Option<&str>,
+    ) -> Result<Option<String>, AgentError> {
+        if !self.supports_auto_observe(&state.target)? {
+            return Ok(None);
         }
 
-        Ok(())
+        let result = self
+            .execute_tool(executor, state, "observe", default_auto_observe_arguments())
+            .await?;
+        if result.is_error {
+            return Ok(Some(auto_observe_failure_reason(trigger_tool, &result)));
+        }
+
+        Ok(None)
     }
 
     async fn next_decision(
@@ -402,6 +409,11 @@ impl AgentRunner {
         state.record_observation_snapshot(&snapshot);
     }
 
+    fn supports_auto_observe(&self, target: &operator_core::TargetId) -> Result<bool, AgentError> {
+        let (_, driver) = self.runtime.core().resolve_driver(target)?;
+        Ok(driver.capabilities().supports(&Capability::Capture))
+    }
+
     fn validate_config(&self) -> Result<(), AgentError> {
         if self.config.max_steps == 0 {
             return Err(AgentError::Config(
@@ -416,17 +428,6 @@ impl AgentRunner {
 
         Ok(())
     }
-}
-
-fn bootstrap_tool_names(tools: &[AgentToolSpec]) -> Vec<&'static str> {
-    let mut names = vec!["capabilities"];
-    if tools.iter().any(|tool| tool.name == "permissions-status") {
-        names.push("permissions-status");
-    }
-    if tools.iter().any(|tool| tool.name == "get-focus") {
-        names.push("get-focus");
-    }
-    names
 }
 
 fn assistant_text(message: &AssistantMessage) -> Result<String, AgentError> {
@@ -486,4 +487,31 @@ fn snapshot_from_tool_output(output: &Value) -> Option<Snapshot> {
         .get("snapshot")
         .cloned()
         .and_then(|snapshot| serde_json::from_value(snapshot).ok())
+}
+
+fn should_auto_observe_after_tool(result: &AgentToolResult) -> bool {
+    !result.is_error && !result.read_only
+}
+
+fn default_auto_observe_arguments() -> Value {
+    json!({
+        "surface": { "kind": "Frontmost" },
+        "include_screenshot": true,
+        "include_elements": false,
+    })
+}
+
+fn auto_observe_failure_reason(trigger_tool: Option<&str>, result: &AgentToolResult) -> String {
+    let detail = result
+        .error
+        .as_ref()
+        .map(|error| error.message.clone())
+        .unwrap_or_else(|| "unknown observe failure".into());
+
+    match trigger_tool {
+        Some(tool_name) => {
+            format!("automatic screenshot observe after `{tool_name}` failed: {detail}")
+        }
+        None => format!("automatic screenshot observe before planning failed: {detail}"),
+    }
 }
