@@ -11,9 +11,10 @@ use operator_runtime::{Runtime, Session, SessionEvent, SessionStatus};
 use serde_json::{json, Value};
 
 use crate::{
+    journal::SessionJournal,
     model::{
         AssistantMessage, ContentBlock, Message, ModelError, ModelRegistry, ModelRequest,
-        ResolvedModel, ToolResultMessage, UserMessage,
+        ResolvedModel, UserMessage,
     },
     planner::{
         AgentDecision, DecisionParser, DecisionValidator, FinishGate, FinishGateVerdict,
@@ -23,7 +24,7 @@ use crate::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
         RepeatedErrorPolicy,
     },
-    session::{AgentSessionState, SessionJournal},
+    session::AgentSessionState,
     tools::{AgentToolResult, AgentToolSpec, ToolExecutor},
     AgentConfig, AgentError, AgentRunRequest, AgentRunResult,
 };
@@ -215,9 +216,12 @@ impl AgentRunner {
         loop {
             let planner_context =
                 LoopStateContextManager::new(self.runtime.core()).assemble(state)?;
-            let prompt =
-                self.prompt_builder
-                    .assemble(&state.task, &planner_context, tools, &state.messages);
+            let prompt = self.prompt_builder.assemble(
+                &state.task,
+                &planner_context,
+                tools,
+                state.model_context(),
+            );
             let assistant = self
                 .call_model(model, prompt)
                 .await
@@ -292,16 +296,7 @@ impl AgentRunner {
 
         let timestamp_ms = now_ms();
         state.push_tool_trace(result.clone(), timestamp_ms);
-        state.push_message(Message::ToolResult(ToolResultMessage {
-            tool_call_id: tool_call_id(state, name),
-            tool_name: Arc::<str>::from(name.to_string()),
-            content: vec![ContentBlock::Text {
-                text: serde_json::to_string_pretty(&payload)
-                    .expect("tool result payloads should serialize"),
-            }],
-            is_error: result.is_error,
-            timestamp_ms,
-        }));
+        state.push_tool_result_message(tool_call_id(state, name), &result, timestamp_ms);
 
         if !result.is_error {
             self.update_observation_state(state, &result);

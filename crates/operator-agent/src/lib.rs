@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 pub mod harness;
+pub mod journal;
 pub mod model;
 pub mod planner;
 pub mod policy;
@@ -19,6 +20,7 @@ pub use harness::{
     render_harness_report, summarize_timing, summarize_transcript_replay, HarnessReplaySummary,
     HarnessReport, HarnessTimingSummary, ToolTimingSummary,
 };
+pub use journal::{load_persisted_session, PersistedSessionTranscript, ReplayableTranscriptEvent};
 pub use planner::{AgentDecision, DecisionParser, DecisionValidator};
 pub use planner::{FinishGate, FinishGateVerdict};
 pub use policy::{
@@ -27,9 +29,8 @@ pub use policy::{
 };
 pub use runner::AgentRunner;
 pub use session::{
-    load_persisted_session, AgentMessage, AgentSessionState, AgentSessionStatus, LoopHistoryItem,
-    LoopState, PersistedSessionTranscript, ReplayableTranscriptEvent, SessionJournal,
-    ToolTraceEntry, VisualObservationSummary,
+    AgentMessage, AgentSessionState, AgentSessionStatus, LoopHistoryItem, LoopState,
+    ModelContextBuffer, SessionJournal, ToolTraceEntry, VisualObservationSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

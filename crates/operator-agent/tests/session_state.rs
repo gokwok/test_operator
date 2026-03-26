@@ -55,7 +55,7 @@ fn new_session_state_starts_with_clean_tracking_fields() {
     assert_eq!(state.turn_index, 0);
     assert_eq!(state.step_index, 0);
     assert_eq!(state.parse_attempts, 0);
-    assert!(state.messages.is_empty());
+    assert!(state.model_context.is_empty());
     assert!(state.tool_trace.is_empty());
     assert!(state.notes.is_empty());
     assert_eq!(state.latest_snapshot, None);
@@ -100,6 +100,7 @@ fn session_state_records_tool_trace_and_observation_updates() {
 
     let result = sample_tool_result();
     state.push_tool_trace(result.clone(), 99);
+    state.push_tool_result_message("tool-1".into(), &result, 99);
     state.record_observation(
         SnapshotId("snap-1".into()),
         vec![
@@ -110,8 +111,21 @@ fn session_state_records_tool_trace_and_observation_updates() {
     );
 
     assert_eq!(
-        state.messages,
-        vec![AgentMessage::from(sample_user_message())]
+        state.model_context.messages(),
+        &[
+            AgentMessage::from(sample_user_message()),
+            AgentMessage::from(Message::ToolResult(
+                operator_agent::model::ToolResultMessage {
+                    tool_call_id: "tool-1".into(),
+                    tool_name: "observe".into(),
+                    content: vec![ContentBlock::Text {
+                        text: "tool observe completed".into(),
+                    }],
+                    is_error: false,
+                    timestamp_ms: 99,
+                }
+            )),
+        ]
     );
     assert_eq!(
         state.tool_trace,
@@ -263,4 +277,43 @@ fn tool_trace_entries_keep_error_results_for_transcript_replay() {
     )
     .expect("tool trace entry should deserialize");
     assert_eq!(round_trip, entry);
+}
+
+#[test]
+fn model_context_tool_results_use_compact_summaries() {
+    let mut state = AgentSessionState::new(
+        SessionId("sess-4".into()),
+        TargetId("local:macos".into()),
+        "List windows",
+    );
+    let result = AgentToolResult {
+        tool_name: "list-windows".into(),
+        arguments: json!({}),
+        output: Some(json!({
+            "windows": [
+                {"title": "Finder"}
+            ]
+        })),
+        error: None,
+        is_error: false,
+        read_only: true,
+    };
+
+    state.push_tool_result_message("tool-2".into(), &result, 123);
+
+    let Some(AgentMessage::Base {
+        message: Message::ToolResult(message),
+    }) = state.model_context.messages().first()
+    else {
+        panic!("expected a tool result message in the model context");
+    };
+
+    let Some(ContentBlock::Text { text }) = message.content.first() else {
+        panic!("expected text content in the model-context tool result");
+    };
+    assert_eq!(text, "tool list-windows completed");
+    assert!(
+        !text.contains("\"windows\""),
+        "model-context tool summaries should stay compact: {text}"
+    );
 }

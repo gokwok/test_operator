@@ -43,11 +43,12 @@ fn planner_retry_policy_records_feedback_and_remaining_budget() {
         }
     );
     assert_eq!(state.parse_attempts, 1);
-    assert_eq!(state.messages.len(), 1);
+    assert_eq!(state.model_context().len(), 1);
 
     let (kind, payload) = custom_payload(
         state
-            .messages
+            .model_context()
+            .messages()
             .last()
             .expect("feedback message should be recorded"),
     );
@@ -100,7 +101,8 @@ fn planner_retry_policy_stops_after_budget_is_exhausted() {
 
     let (kind, payload) = custom_payload(
         state
-            .messages
+            .model_context()
+            .messages()
             .last()
             .expect("final feedback message should be recorded"),
     );

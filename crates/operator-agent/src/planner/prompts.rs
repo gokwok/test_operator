@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::{
     model::{Context, Message, ToolSpec, UserMessage},
-    session::AgentMessage,
+    session::{AgentMessage, ModelContextBuffer},
     tools::AgentToolSpec,
 };
 
@@ -49,9 +49,9 @@ impl PlannerPromptBuilder {
         task: &str,
         planner_context: &PlannerContext,
         tools: &[AgentToolSpec],
-        transcript: &[AgentMessage],
+        model_context: &ModelContextBuffer,
     ) -> Context {
-        let mut messages = self.recent_transcript_messages(transcript);
+        let mut messages = self.recent_model_context_messages(model_context);
         messages.push(Message::User(UserMessage {
             content: vec![crate::model::ContentBlock::Text {
                 text: serialize_pretty_json(current_request(task, planner_context)),
@@ -66,9 +66,10 @@ impl PlannerPromptBuilder {
         }
     }
 
-    fn recent_transcript_messages(&self, transcript: &[AgentMessage]) -> Vec<Message> {
-        let start = transcript.len().saturating_sub(self.recent_message_limit);
-        transcript[start..].iter().map(transcript_message).collect()
+    fn recent_model_context_messages(&self, model_context: &ModelContextBuffer) -> Vec<Message> {
+        let messages = model_context.messages();
+        let start = messages.len().saturating_sub(self.recent_message_limit);
+        messages[start..].iter().map(transcript_message).collect()
     }
 }
 

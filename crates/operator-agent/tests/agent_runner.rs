@@ -147,6 +147,28 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
     assert_eq!(first_planner_request["ui_state_stale"], Value::Bool(true));
 
     let second_planner_request = current_request_json(&requests[1].context);
+    let tool_result_message = requests[1]
+        .context
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            Message::ToolResult(tool_result) => Some(tool_result),
+            _ => None,
+        })
+        .expect("second planner request should include a model-context tool summary");
+    let compact_tool_summary = tool_result_message
+        .content
+        .iter()
+        .find_map(|block| match block {
+            operator_agent::model::ContentBlock::Text { text } => Some(text),
+            _ => None,
+        })
+        .expect("tool result summary should contain text");
+    assert_eq!(compact_tool_summary, "observe snapshot snap-initial on frontmost (roots=0, elements=0), screenshot=capture-initial.png");
+    assert!(
+        !compact_tool_summary.contains("\"snapshot\""),
+        "planner-visible tool summaries should not inline persisted JSON: {compact_tool_summary}"
+    );
     assert_eq!(
         second_planner_request["current_observation"]["snapshot_id"],
         Value::String("snap-runner".into())

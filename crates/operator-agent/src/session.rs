@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use operator_core::{ArtifactId, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId};
-use operator_runtime::{Session, SessionEvent, SessionStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
     model::Message,
     tools::{AgentToolResult, ObservationCache},
-    AgentError,
+};
+
+pub use crate::journal::{
+    load_persisted_session, PersistedSessionTranscript, ReplayableTranscriptEvent, SessionJournal,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -37,6 +39,56 @@ impl AgentMessage {
 impl From<Message> for AgentMessage {
     fn from(value: Message) -> Self {
         Self::Base { message: value }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModelContextBuffer {
+    messages: Vec<AgentMessage>,
+}
+
+impl ModelContextBuffer {
+    pub fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.messages.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    pub fn messages(&self) -> &[AgentMessage] {
+        &self.messages
+    }
+
+    pub fn push(&mut self, message: impl Into<AgentMessage>) {
+        self.messages.push(message.into());
+    }
+
+    pub fn push_tool_result(
+        &mut self,
+        tool_call_id: Arc<str>,
+        result: &AgentToolResult,
+        timestamp_ms: u64,
+    ) {
+        self.push(Message::ToolResult(crate::model::ToolResultMessage {
+            tool_call_id,
+            tool_name: Arc::<str>::from(result.tool_name.clone()),
+            content: vec![crate::model::ContentBlock::Text {
+                text: history_summary_from_tool_result(result),
+            }],
+            is_error: result.is_error,
+            timestamp_ms,
+        }));
     }
 }
 
@@ -106,7 +158,7 @@ pub struct LoopState {
     pub turn_index: u32,
     pub step_index: u32,
     pub parse_attempts: u32,
-    pub messages: Vec<AgentMessage>,
+    pub model_context: ModelContextBuffer,
     pub history: Vec<LoopHistoryItem>,
     pub tool_trace: Vec<ToolTraceEntry>,
     pub notes: Vec<String>,
@@ -132,7 +184,7 @@ impl LoopState {
             turn_index: 0,
             step_index: 0,
             parse_attempts: 0,
-            messages: Vec::new(),
+            model_context: ModelContextBuffer::new(),
             history: Vec::new(),
             tool_trace: Vec::new(),
             notes: Vec::new(),
@@ -159,7 +211,7 @@ impl LoopState {
         self.turn_index = 0;
         self.step_index = 0;
         self.parse_attempts = 0;
-        self.messages.clear();
+        self.model_context.clear();
         self.history.clear();
         self.tool_trace.clear();
         self.notes.clear();
@@ -183,7 +235,21 @@ impl LoopState {
     }
 
     pub fn push_message(&mut self, message: impl Into<AgentMessage>) {
-        self.messages.push(message.into());
+        self.model_context.push(message);
+    }
+
+    pub fn push_tool_result_message(
+        &mut self,
+        tool_call_id: Arc<str>,
+        result: &AgentToolResult,
+        timestamp_ms: u64,
+    ) {
+        self.model_context
+            .push_tool_result(tool_call_id, result, timestamp_ms);
+    }
+
+    pub fn model_context(&self) -> &ModelContextBuffer {
+        &self.model_context
     }
 
     pub fn push_tool_trace(&mut self, result: AgentToolResult, timestamp_ms: u64) {
@@ -376,98 +442,4 @@ fn observe_result_is_usable(result: &AgentToolResult) -> bool {
         .map_or(0, |items| items.len());
 
     root_count > 0 && element_count > 0
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "event_type", rename_all = "snake_case")]
-pub enum ReplayableTranscriptEvent {
-    UserInput { text: String },
-    ToolCall { name: String, input: Value },
-    ToolResult { result: AgentToolResult },
-    ModelResponse { content: String },
-    Completed { summary: Option<String> },
-    Error { message: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PersistedSessionTranscript {
-    pub session: Session,
-    pub events: Vec<ReplayableTranscriptEvent>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SessionJournal {
-    session_id: SessionId,
-    pending: Vec<SessionEvent>,
-}
-
-impl SessionJournal {
-    pub fn new(session_id: SessionId) -> Self {
-        Self {
-            session_id,
-            pending: Vec::new(),
-        }
-    }
-
-    pub fn record(&mut self, event: SessionEvent) {
-        self.pending.push(event);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    pub fn pending_len(&self) -> usize {
-        self.pending.len()
-    }
-
-    pub async fn flush(
-        &mut self,
-        store: &dyn SessionStore,
-    ) -> Result<(), operator_core::OperatorError> {
-        let mut pending = std::mem::take(&mut self.pending).into_iter();
-        while let Some(event) = pending.next() {
-            if let Err(error) = store.append(&self.session_id, &event).await {
-                self.pending.push(event);
-                self.pending.extend(pending);
-                return Err(error);
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl TryFrom<SessionEvent> for ReplayableTranscriptEvent {
-    type Error = operator_core::OperatorError;
-
-    fn try_from(value: SessionEvent) -> Result<Self, operator_core::OperatorError> {
-        match value {
-            SessionEvent::UserInput { text } => Ok(Self::UserInput { text }),
-            SessionEvent::ToolCall { name, input } => Ok(Self::ToolCall { name, input }),
-            SessionEvent::ToolResult { output, .. } => Ok(Self::ToolResult {
-                result: serde_json::from_value(output)?,
-            }),
-            SessionEvent::ModelResponse { content } => Ok(Self::ModelResponse { content }),
-            SessionEvent::Completed { summary } => Ok(Self::Completed { summary }),
-            SessionEvent::Error { message } => Ok(Self::Error { message }),
-        }
-    }
-}
-
-pub async fn load_persisted_session(
-    store: &dyn SessionStore,
-    id: &SessionId,
-) -> Result<Option<PersistedSessionTranscript>, AgentError> {
-    let Some(session) = store.get(id).await? else {
-        return Ok(None);
-    };
-    let events = store
-        .events(id)
-        .await?
-        .into_iter()
-        .map(ReplayableTranscriptEvent::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(Some(PersistedSessionTranscript { session, events }))
 }

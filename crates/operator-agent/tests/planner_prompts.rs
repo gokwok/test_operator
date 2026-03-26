@@ -1,7 +1,7 @@
 use operator_agent::{
     model::{AssistantMessage, ContentBlock, Message, StopReason, Usage, UserMessage},
     planner::{PlannerContext, PlannerPromptBuilder, TargetSummary, ToolResultSummary},
-    session::{AgentMessage, VisualObservationSummary},
+    session::{AgentMessage, ModelContextBuffer, VisualObservationSummary},
     tools::AgentToolSpec,
 };
 use operator_core::{ArtifactId, TargetId};
@@ -102,12 +102,16 @@ fn planner_prompts_build_json_first_contract_snapshot() {
             }),
         ),
     ];
+    let mut model_context = ModelContextBuffer::new();
+    for message in transcript {
+        model_context.push(message);
+    }
 
     let context = builder.assemble(
         "Open Finder and confirm the window appears.",
         &planner_context(),
         &tools,
-        &transcript,
+        &model_context,
     );
 
     insta::assert_json_snapshot!(
@@ -125,12 +129,16 @@ fn planner_prompts_limit_recent_transcript_before_appending_current_request_snap
         AgentMessage::from(assistant_message("latest assistant", 3)),
         AgentMessage::custom("parser.feedback.v1", json!({ "error": "invalid json" })),
     ];
+    let mut model_context = ModelContextBuffer::new();
+    for message in transcript {
+        model_context.push(message);
+    }
 
     let context = builder.assemble(
         "Retry with valid JSON.",
         &planner_context(),
         &[],
-        &transcript,
+        &model_context,
     );
     insta::assert_json_snapshot!(
         "planner_prompts_recent_transcript_window",
