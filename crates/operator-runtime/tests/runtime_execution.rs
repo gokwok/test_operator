@@ -911,7 +911,6 @@ async fn runtime_focus_verification_accepts_matching_bundle_id_when_app_name_dif
                 )),
                 focus_policy: ActionFocusPolicy::Auto,
                 verifications: vec![operator_core::ActionVerification::Focus],
-                ..default_action_request()
             },
             ExecContext {
                 target: "local:macos".into(),

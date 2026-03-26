@@ -9,7 +9,8 @@ use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
     ActionTargetSelector, AppInfo, Capability, CapabilitySet, ClickMode, DragMotion, ExecContext,
     HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, Point,
-    QueryRequest, QueryResult, Rect, Snapshot, SnapshotMetadata, TypeTrailingKey, WindowInfo,
+    QueryRequest, QueryResult, Rect, Snapshot, SnapshotMetadata, Surface, SurfaceKind,
+    TypeTrailingKey, WindowInfo,
 };
 
 use crate::{
@@ -185,15 +186,16 @@ where
         let permissions = self.permission_reader.current_permissions()?;
         require_observe_permissions(&permissions, &req)?;
         let started = Instant::now();
+        let resolved_surface = self.resolve_observe_surface(&req.surface);
 
         let capture = if req.include_screenshot {
-            Some(self.capture_provider.capture(&req.surface)?)
+            Some(self.capture_provider.capture(&resolved_surface.surface)?)
         } else {
             None
         };
 
         let inspection = if req.include_elements {
-            self.tree_inspector.inspect(&req.surface)?
+            self.tree_inspector.inspect(&resolved_surface.surface)?
         } else {
             InspectResult {
                 elements: Default::default(),
@@ -203,7 +205,10 @@ where
 
         let image_artifact = capture.as_ref().map(|result| result.artifact_id.clone());
         let display_scale = capture.as_ref().and_then(|result| result.display_scale);
-        let capture_bounds = capture.as_ref().and_then(|result| result.capture_bounds);
+        let capture_bounds = capture
+            .as_ref()
+            .and_then(|result| result.capture_bounds)
+            .or(resolved_surface.capture_bounds);
         let image_size_px = capture.as_ref().and_then(|result| result.image_size_px);
 
         Ok(ObserveResult {
@@ -717,7 +722,7 @@ where
         focus_policy: ActionFocusPolicy,
         anchor_window: AnchorWindowResolution,
     ) -> Result<Option<PreparedActionTarget>, OperatorError> {
-        let prepared = selector
+        let mut prepared = selector
             .map(|selector| self.resolve_action_target(selector, anchor_window))
             .transpose()?;
 
@@ -725,6 +730,9 @@ where
             if let Some(target) = prepared.as_ref() {
                 target.focus(&self.app_service)?;
                 thread::sleep(std::time::Duration::from_millis(50));
+            }
+            if let Some(target) = prepared.as_mut() {
+                self.refresh_prepared_target_window(target, anchor_window)?;
             }
         }
 
@@ -798,7 +806,57 @@ where
 
     fn resolve_anchor_window(&self, app: &AppInfo) -> Result<Option<WindowInfo>, OperatorError> {
         let windows = self.app_service.list_windows(Some(&app.name))?;
-        Ok(select_anchor_window(&windows))
+        if let Some(window) = select_anchor_window(&windows) {
+            return Ok(Some(window));
+        }
+
+        let windows = self.app_service.list_windows(None)?;
+        if let Some(window) = select_matching_app_window(&windows, app) {
+            return Ok(Some(window));
+        }
+
+        let focus = self.app_service.get_focus()?;
+        if focus_matches_expected_app(focus.as_ref(), app) {
+            if let Some(window) =
+                select_focused_window(&windows).or_else(|| select_observe_window(&windows))
+            {
+                return Ok(Some(window));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn resolve_observe_surface(&self, surface: &Surface) -> ResolvedObserveSurface {
+        match &surface.kind {
+            SurfaceKind::Frontmost => self.resolve_frontmost_observe_surface(),
+            _ => ResolvedObserveSurface::new(surface.clone(), None),
+        }
+    }
+
+    fn resolve_frontmost_observe_surface(&self) -> ResolvedObserveSurface {
+        if let Ok(windows) = self.app_service.list_windows(None) {
+            if let Some(window) = select_observe_window(&windows) {
+                return ResolvedObserveSurface::window(window);
+            }
+        }
+
+        if let Ok(Some(focus)) = self.app_service.get_focus() {
+            if let Some(app_name) = focus.app_name {
+                if let Ok(windows) = self.app_service.list_windows(Some(&app_name)) {
+                    if let Some(window) = select_observe_window(&windows) {
+                        return ResolvedObserveSurface::window(window);
+                    }
+                }
+            }
+        }
+
+        ResolvedObserveSurface::new(
+            Surface {
+                kind: SurfaceKind::Frontmost,
+            },
+            None,
+        )
     }
 
     fn resolve_app_anchor_window(
@@ -880,6 +938,31 @@ where
         })?;
         prepared.window()
     }
+
+    fn refresh_prepared_target_window(
+        &self,
+        prepared: &mut PreparedActionTarget,
+        anchor_window: AnchorWindowResolution,
+    ) -> Result<(), OperatorError> {
+        let PreparedActionTarget::App(target) = prepared else {
+            return Ok(());
+        };
+        if target.anchor_window.is_some() {
+            return Ok(());
+        }
+        target.anchor_window = self.resolve_app_anchor_window(&target.app, anchor_window)?;
+        if target.anchor_window.is_none() {
+            target.anchor_window = self.resolve_frontmost_observe_window();
+        }
+        Ok(())
+    }
+
+    fn resolve_frontmost_observe_window(&self) -> Option<WindowInfo> {
+        self.app_service
+            .list_windows(None)
+            .ok()
+            .and_then(|windows| select_observe_window(&windows))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -958,6 +1041,30 @@ struct TypeActionConfig<'a> {
     delay_ms: Option<u64>,
     trailing_keys: &'a [TypeTrailingKey],
     target: ActionTargetConfig<'a>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedObserveSurface {
+    surface: Surface,
+    capture_bounds: Option<Rect>,
+}
+
+impl ResolvedObserveSurface {
+    fn new(surface: Surface, capture_bounds: Option<Rect>) -> Self {
+        Self {
+            surface,
+            capture_bounds,
+        }
+    }
+
+    fn window(window: WindowInfo) -> Self {
+        Self {
+            surface: Surface {
+                kind: SurfaceKind::Window { id: window.id },
+            },
+            capture_bounds: window.bounds,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1041,6 +1148,66 @@ fn select_anchor_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
         .cloned()
         .or_else(|| windows.iter().find(|window| !window.is_minimized).cloned())
         .or_else(|| windows.first().cloned())
+}
+
+fn select_observe_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
+    windows
+        .iter()
+        .filter(|window| window_has_usable_observe_bounds(window))
+        .find(|window| window.is_focused && !window.is_minimized)
+        .cloned()
+        .or_else(|| {
+            windows
+                .iter()
+                .filter(|window| window_has_usable_observe_bounds(window))
+                .find(|window| !window.is_minimized)
+                .cloned()
+        })
+        .or_else(|| select_anchor_window(windows))
+}
+
+fn window_has_usable_observe_bounds(window: &WindowInfo) -> bool {
+    window
+        .bounds
+        .is_some_and(|bounds| bounds.width >= 80.0 && bounds.height >= 80.0)
+}
+
+fn select_matching_app_window(windows: &[WindowInfo], app: &AppInfo) -> Option<WindowInfo> {
+    let matching = windows
+        .iter()
+        .filter(|window| {
+            window
+                .app_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case(&app.name))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    select_anchor_window(&matching)
+}
+
+fn select_focused_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
+    windows.iter().find(|window| window.is_focused).cloned()
+}
+
+fn focus_matches_expected_app(focus: Option<&operator_core::FocusInfo>, app: &AppInfo) -> bool {
+    let Some(focus) = focus else {
+        return false;
+    };
+
+    if let (Some(actual_bundle_id), Some(expected_bundle_id)) =
+        (focus.bundle_id.as_deref(), app.bundle_id.as_deref())
+    {
+        if actual_bundle_id.eq_ignore_ascii_case(expected_bundle_id) {
+            return true;
+        }
+    }
+
+    focus
+        .app_name
+        .as_deref()
+        .is_some_and(|actual_name| actual_name.eq_ignore_ascii_case(&app.name))
 }
 
 fn window_app_name(window: WindowInfo) -> Result<String, OperatorError> {
