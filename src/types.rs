@@ -102,6 +102,36 @@ pub struct CurrentApp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bounds {
+    pub left: i32,
+    pub right: i32,
+    pub top: i32,
+    pub bottom: i32,
+}
+
+impl Bounds {
+    pub fn center(self) -> Point {
+        Point {
+            x: (self.left + self.right) / 2,
+            y: (self.top + self.bottom) / 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiEvent {
+    pub bundle_name: String,
+    pub text: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyCode(u32);
 
 impl KeyCode {

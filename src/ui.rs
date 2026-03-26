@@ -1,0 +1,645 @@
+use std::cell::RefCell;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde_json::{Value, json};
+
+use crate::driver::Driver;
+use crate::error::{HdcError, Result};
+use crate::forward::TcpForwardHandle;
+use crate::types::{Bounds, Coord, Point, UiEvent};
+
+const UITEST_SERVICE_PORT: u16 = 8012;
+const DEFAULT_REMOTE_AGENT_PATH: &str = "/data/local/tmp/agent.so";
+
+#[derive(Debug, Clone)]
+pub struct UiDriverBuilder {
+    target: String,
+    agent_path: Option<PathBuf>,
+    remote_agent_path: String,
+    key_dir: Option<PathBuf>,
+    connect_key: Option<String>,
+    version: Option<String>,
+    timeout: Duration,
+    startup_delay: Duration,
+}
+
+pub struct UiDriver {
+    inner: Rc<RefCell<UiSession>>,
+    handle: String,
+}
+
+#[derive(Clone)]
+pub struct UiComponent {
+    inner: Rc<RefCell<UiSession>>,
+    handle: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiSelector {
+    filters: Vec<SelectorFilter>,
+}
+
+#[derive(Debug, Clone)]
+enum SelectorFilter {
+    Text(String),
+    Id(String),
+    Key(String),
+    Kind(String),
+    Description(String),
+    Enabled(bool),
+    Clickable(bool),
+}
+
+struct UiSession {
+    driver: Driver,
+    _forward: TcpForwardHandle,
+    reader: TcpStream,
+    writer: TcpStream,
+}
+
+impl UiDriverBuilder {
+    pub fn new(target: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+            agent_path: None,
+            remote_agent_path: DEFAULT_REMOTE_AGENT_PATH.to_string(),
+            key_dir: None,
+            connect_key: None,
+            version: None,
+            timeout: Duration::from_secs(20),
+            startup_delay: Duration::from_millis(500),
+        }
+    }
+
+    pub fn agent_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.agent_path = Some(path.into());
+        self
+    }
+
+    pub fn remote_agent_path(mut self, path: impl Into<String>) -> Self {
+        self.remote_agent_path = path.into();
+        self
+    }
+
+    pub fn key_dir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.key_dir = Some(path.into());
+        self
+    }
+
+    pub fn connect_key(mut self, value: impl Into<String>) -> Self {
+        self.connect_key = Some(value.into());
+        self
+    }
+
+    pub fn version(mut self, value: impl Into<String>) -> Self {
+        self.version = Some(value.into());
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn startup_delay(mut self, delay: Duration) -> Self {
+        self.startup_delay = delay;
+        self
+    }
+
+    pub fn connect(self) -> Result<UiDriver> {
+        let mut driver_builder = Driver::builder(self.target).timeout(self.timeout);
+        if let Some(key_dir) = self.key_dir {
+            driver_builder = driver_builder.key_dir(key_dir);
+        }
+        if let Some(connect_key) = self.connect_key {
+            driver_builder = driver_builder.connect_key(connect_key);
+        }
+        if let Some(version) = self.version {
+            driver_builder = driver_builder.version(version);
+        }
+        let mut driver = driver_builder.connect()?;
+        let agent_path = resolve_agent_path(self.agent_path)?;
+
+        kill_uitest_daemon(&mut driver)?;
+        push_agent(&mut driver, &agent_path, &self.remote_agent_path)?;
+        start_uitest_daemon(&mut driver)?;
+        thread::sleep(self.startup_delay);
+
+        let local_port = free_local_port()?;
+        let forward = driver.forward_tcp(local_port, UITEST_SERVICE_PORT)?;
+        let stream = TcpStream::connect(("127.0.0.1", local_port))?;
+        stream.set_read_timeout(Some(self.timeout))?;
+        stream.set_write_timeout(Some(self.timeout))?;
+        let reader = stream.try_clone()?;
+
+        let inner = Rc::new(RefCell::new(UiSession {
+            driver,
+            _forward: forward,
+            reader,
+            writer: stream,
+        }));
+
+        let handle = {
+            let mut session = inner.borrow_mut();
+            session
+                .invoke("Driver.create", None, Vec::new())?
+                .as_str()
+                .ok_or_else(|| HdcError::protocol("Driver.create returned invalid handle"))?
+                .to_string()
+        };
+
+        Ok(UiDriver { inner, handle })
+    }
+}
+
+impl UiDriver {
+    pub fn builder(target: impl Into<String>) -> UiDriverBuilder {
+        UiDriverBuilder::new(target)
+    }
+
+    pub fn display_size(&self) -> Result<Point> {
+        let value = self.invoke("Driver.getDisplaySize", Vec::new())?;
+        parse_point(&value)
+    }
+
+    pub fn click<X, Y>(&self, x: X, y: Y) -> Result<()>
+    where
+        X: Into<Coord>,
+        Y: Into<Coord>,
+    {
+        let point = self.resolve_point(x.into(), y.into())?;
+        self.shell_action(&format!("uitest uiInput click {} {}", point.x, point.y))
+    }
+
+    pub fn double_click<X, Y>(&self, x: X, y: Y) -> Result<()>
+    where
+        X: Into<Coord>,
+        Y: Into<Coord>,
+    {
+        let point = self.resolve_point(x.into(), y.into())?;
+        self.shell_action(&format!(
+            "uitest uiInput doubleClick {} {}",
+            point.x, point.y
+        ))
+    }
+
+    pub fn long_click<X, Y>(&self, x: X, y: Y) -> Result<()>
+    where
+        X: Into<Coord>,
+        Y: Into<Coord>,
+    {
+        let point = self.resolve_point(x.into(), y.into())?;
+        self.shell_action(&format!("uitest uiInput longClick {} {}", point.x, point.y))
+    }
+
+    pub fn swipe<X1, Y1, X2, Y2>(&self, x1: X1, y1: Y1, x2: X2, y2: Y2, speed: u32) -> Result<()>
+    where
+        X1: Into<Coord>,
+        Y1: Into<Coord>,
+        X2: Into<Coord>,
+        Y2: Into<Coord>,
+    {
+        let start = self.resolve_point(x1.into(), y1.into())?;
+        let end = self.resolve_point(x2.into(), y2.into())?;
+        self.shell_action(&format!(
+            "uitest uiInput swipe {} {} {} {} {}",
+            start.x, start.y, end.x, end.y, speed
+        ))
+    }
+
+    pub fn find_component(&self, selector: UiSelector) -> Result<Option<UiComponent>> {
+        let by = self.selector_handle(selector)?;
+        let value = self.invoke("Driver.findComponent", vec![Value::from(by)])?;
+        Ok(value
+            .as_str()
+            .map(|handle| UiComponent::new(self.inner.clone(), handle)))
+    }
+
+    pub fn find_components(&self, selector: UiSelector) -> Result<Vec<UiComponent>> {
+        let by = self.selector_handle(selector)?;
+        let value = self.invoke("Driver.findComponents", vec![Value::from(by)])?;
+        let array = value
+            .as_array()
+            .ok_or_else(|| HdcError::protocol("Driver.findComponents returned invalid payload"))?;
+        Ok(array
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|handle| UiComponent::new(self.inner.clone(), handle))
+            .collect())
+    }
+
+    pub fn wait_for_component(
+        &self,
+        selector: UiSelector,
+        timeout_ms: u64,
+    ) -> Result<Option<UiComponent>> {
+        let by = self.selector_handle(selector)?;
+        let value = self.invoke(
+            "Driver.waitForComponent",
+            vec![Value::from(by), Value::from(timeout_ms)],
+        )?;
+        Ok(value
+            .as_str()
+            .map(|handle| UiComponent::new(self.inner.clone(), handle)))
+    }
+
+    pub fn watch_toast_once(&self) -> Result<bool> {
+        let value = self.invoke("Driver.uiEventObserverOnce", vec![Value::from("toastShow")])?;
+        value.as_bool().ok_or_else(|| {
+            HdcError::protocol("Driver.uiEventObserverOnce returned invalid payload")
+        })
+    }
+
+    pub fn recent_ui_event(&self, timeout_ms: u64) -> Result<Option<UiEvent>> {
+        let value = self.invoke("Driver.getRecentUiEvent", vec![Value::from(timeout_ms)])?;
+        if value.is_null() {
+            return Ok(None);
+        }
+        Ok(Some(parse_ui_event(&value)?))
+    }
+
+    fn resolve_point(&self, x: Coord, y: Coord) -> Result<Point> {
+        let size = self.display_size()?;
+        Ok(Point {
+            x: x.resolve(size.x)?,
+            y: y.resolve(size.y)?,
+        })
+    }
+
+    fn selector_handle(&self, selector: UiSelector) -> Result<String> {
+        let mut current = "On#seed".to_string();
+        for filter in selector.filters {
+            let (api, arg) = filter.into_api_arg();
+            let value = self.invoke_on(&api, &current, arg)?;
+            current = value
+                .as_str()
+                .ok_or_else(|| {
+                    HdcError::protocol(format!("{api} returned invalid selector handle"))
+                })?
+                .to_string();
+        }
+        Ok(current)
+    }
+
+    fn invoke(&self, api: &str, args: Vec<Value>) -> Result<Value> {
+        self.inner
+            .borrow_mut()
+            .invoke(api, Some(self.handle.as_str()), args)
+    }
+
+    fn shell_action(&self, command: &str) -> Result<()> {
+        shell_checked(&mut self.inner.borrow_mut().driver, command)
+    }
+
+    fn invoke_on(&self, api: &str, this: &str, arg: Value) -> Result<Value> {
+        self.inner.borrow_mut().invoke(api, Some(this), vec![arg])
+    }
+}
+
+impl UiComponent {
+    fn new(inner: Rc<RefCell<UiSession>>, handle: &str) -> Self {
+        Self {
+            inner,
+            handle: handle.to_string(),
+        }
+    }
+
+    pub fn text(&self) -> Result<String> {
+        self.invoke("Component.getText", Vec::new())?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HdcError::protocol("Component.getText returned invalid payload"))
+    }
+
+    pub fn bounds(&self) -> Result<Bounds> {
+        let value = self.invoke("Component.getBounds", Vec::new())?;
+        parse_bounds(&value)
+    }
+
+    pub fn click(&self) -> Result<()> {
+        let center = self.bounds()?.center();
+        self.inner
+            .borrow_mut()
+            .driver
+            .click(center.x, center.y)
+    }
+
+    pub fn input_text(&self, text: &str) -> Result<()> {
+        let center = self.bounds()?.center();
+        self.inner
+            .borrow_mut()
+            .driver
+            .click(center.x, center.y)?;
+        self.inner.borrow_mut().driver.input_text(text)
+    }
+
+    fn invoke(&self, api: &str, args: Vec<Value>) -> Result<Value> {
+        self.inner
+            .borrow_mut()
+            .invoke(api, Some(self.handle.as_str()), args)
+    }
+}
+
+impl UiSelector {
+    pub fn new() -> Self {
+        Self {
+            filters: Vec::new(),
+        }
+    }
+
+    pub fn text(mut self, value: impl Into<String>) -> Self {
+        self.filters.push(SelectorFilter::Text(value.into()));
+        self
+    }
+
+    pub fn id(mut self, value: impl Into<String>) -> Self {
+        self.filters.push(SelectorFilter::Id(value.into()));
+        self
+    }
+
+    pub fn key(mut self, value: impl Into<String>) -> Self {
+        self.filters.push(SelectorFilter::Key(value.into()));
+        self
+    }
+
+    pub fn kind(mut self, value: impl Into<String>) -> Self {
+        self.filters.push(SelectorFilter::Kind(value.into()));
+        self
+    }
+
+    pub fn description(mut self, value: impl Into<String>) -> Self {
+        self.filters.push(SelectorFilter::Description(value.into()));
+        self
+    }
+
+    pub fn enabled(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Enabled(value));
+        self
+    }
+
+    pub fn clickable(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Clickable(value));
+        self
+    }
+}
+
+impl Default for UiSelector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SelectorFilter {
+    fn into_api_arg(self) -> (String, Value) {
+        match self {
+            Self::Text(value) => ("On.text".to_string(), Value::from(value)),
+            Self::Id(value) => ("On.id".to_string(), Value::from(value)),
+            Self::Key(value) => ("On.key".to_string(), Value::from(value)),
+            Self::Kind(value) => ("On.type".to_string(), Value::from(value)),
+            Self::Description(value) => ("On.description".to_string(), Value::from(value)),
+            Self::Enabled(value) => ("On.enabled".to_string(), Value::from(value)),
+            Self::Clickable(value) => ("On.clickable".to_string(), Value::from(value)),
+        }
+    }
+}
+
+impl UiSession {
+    fn invoke(&mut self, api: &str, this: Option<&str>, args: Vec<Value>) -> Result<Value> {
+        let request_id = format!(
+            "{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|value| value.as_micros())
+                .unwrap_or(0)
+        );
+        let request = json!({
+            "module": "com.ohos.devicetest.hypiumApiHelper",
+            "method": "callHypiumApi",
+            "params": {
+                "api": api,
+                "this": this,
+                "args": args,
+                "message_type": "hypium"
+            },
+            "request_id": request_id
+        });
+
+        let payload = serde_json::to_vec(&request)?;
+        self.writer.write_all(&payload)?;
+        self.writer.write_all(b"\n")?;
+        self.writer.flush()?;
+
+        let mut buffer = vec![0_u8; 4096];
+        let size = self.reader.read(&mut buffer)?;
+        if size == 0 {
+            return Err(HdcError::protocol(format!(
+                "{api} returned an empty response"
+            )));
+        }
+        let response: Value = serde_json::from_slice(&buffer[..size])?;
+        if let Some(exception) = response.get("exception") {
+            if !exception.is_null() {
+                return Err(HdcError::protocol(format!(
+                    "{api} failed: {}",
+                    exception
+                        .as_str()
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| exception.to_string())
+                )));
+            }
+        }
+        Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    }
+}
+
+fn resolve_agent_path(path: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = path {
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(HdcError::protocol(format!(
+            "agent file not found: {}",
+            path.display()
+        )));
+    }
+
+    let candidates = [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("third_party/hmdriver2/hmdriver2/assets/uitest_agent_v1.1.0.so"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("third_party/hmdriver2/hmdriver2/assets/uitest_agent_v1.0.7.so"),
+    ];
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            HdcError::protocol(
+                "failed to locate agent.so, pass an explicit path with UiDriverBuilder::agent_path",
+            )
+        })
+}
+
+fn kill_uitest_daemon(driver: &mut Driver) -> Result<()> {
+    let output = shell_stdout(driver, "ps -ef")?;
+    for line in output.lines() {
+        if !line.contains("uitest start-daemon singleness") {
+            continue;
+        }
+        let pid = line
+            .split_whitespace()
+            .nth(1)
+            .ok_or_else(|| HdcError::protocol("failed to parse uitest daemon pid"))?;
+        let _ = shell_checked(driver, &format!("kill -9 {pid}"));
+    }
+    Ok(())
+}
+
+fn push_agent(driver: &mut Driver, local_path: &Path, remote_path: &str) -> Result<()> {
+    let remote_staging_path = format!("{remote_path}.upload");
+    let _ = shell_checked(driver, &format!(
+        "rm -f {} {}",
+        shell_escape(&remote_staging_path),
+        shell_escape(remote_path)
+    ));
+    driver.send_file(local_path, &remote_staging_path)?;
+    shell_checked(driver, &format!(
+        "cp {} {}",
+        shell_escape(&remote_staging_path),
+        shell_escape(remote_path)
+    ))?;
+    shell_checked(driver, &format!("chmod +x {}", shell_escape(remote_path)))?;
+    Ok(())
+}
+
+fn start_uitest_daemon(driver: &mut Driver) -> Result<()> {
+    shell_checked(driver, "uitest start-daemon singleness")
+}
+
+fn shell_checked(driver: &mut Driver, command: &str) -> Result<()> {
+    let result = driver.shell(command)?;
+    if result.failed() {
+        let message = result
+            .messages
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<&str>>()
+            .join(" | ");
+        return Err(HdcError::protocol(format!("{command} failed: {message}")));
+    }
+    Ok(())
+}
+
+fn shell_stdout(driver: &mut Driver, command: &str) -> Result<String> {
+    let result = driver.shell(command)?;
+    if result.failed() {
+        let message = result
+            .messages
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<&str>>()
+            .join(" | ");
+        return Err(HdcError::protocol(format!("{command} failed: {message}")));
+    }
+    Ok(result.stdout_text().into_owned())
+}
+
+fn free_local_port() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    Ok(listener.local_addr()?.port())
+}
+
+fn shell_escape(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn parse_point(value: &Value) -> Result<Point> {
+    Ok(Point {
+        x: read_i32_field(value, "x")?,
+        y: read_i32_field(value, "y")?,
+    })
+}
+
+fn parse_bounds(value: &Value) -> Result<Bounds> {
+    Ok(Bounds {
+        left: read_i32_field(value, "left")?,
+        right: read_i32_field(value, "right")?,
+        top: read_i32_field(value, "top")?,
+        bottom: read_i32_field(value, "bottom")?,
+    })
+}
+
+fn parse_ui_event(value: &Value) -> Result<UiEvent> {
+    Ok(UiEvent {
+        bundle_name: read_string_field(value, "bundleName")?,
+        text: read_string_field(value, "text")?,
+        kind: read_string_field(value, "type")?,
+    })
+}
+
+fn read_i32_field(value: &Value, key: &str) -> Result<i32> {
+    let raw = value
+        .get(key)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| HdcError::protocol(format!("missing integer field `{key}`")))?;
+    i32::try_from(raw).map_err(|_| HdcError::protocol(format!("field `{key}` is out of range")))
+}
+
+fn read_string_field(value: &Value, key: &str) -> Result<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| HdcError::protocol(format!("missing string field `{key}`")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SelectorFilter, parse_bounds, parse_point, parse_ui_event, shell_escape};
+    use serde_json::json;
+
+    #[test]
+    fn selector_filter_maps_text_to_on_text() {
+        let (api, value) = SelectorFilter::Text("Settings".to_string()).into_api_arg();
+        assert_eq!(api, "On.text");
+        assert_eq!(value, json!("Settings"));
+    }
+
+    #[test]
+    fn parse_point_reads_xy_fields() {
+        let point = parse_point(&json!({"x": 1260, "y": 2720})).unwrap();
+        assert_eq!(point.x, 1260);
+        assert_eq!(point.y, 2720);
+    }
+
+    #[test]
+    fn parse_bounds_reads_edge_fields() {
+        let bounds = parse_bounds(&json!({"left": 1, "right": 3, "top": 5, "bottom": 7})).unwrap();
+        assert_eq!(bounds.left, 1);
+        assert_eq!(bounds.right, 3);
+        assert_eq!(bounds.top, 5);
+        assert_eq!(bounds.bottom, 7);
+    }
+
+    #[test]
+    fn parse_ui_event_reads_payload_fields() {
+        let event = parse_ui_event(&json!({
+            "bundleName": "com.example.app",
+            "text": "hello",
+            "type": "Toast"
+        }))
+        .unwrap();
+        assert_eq!(event.bundle_name, "com.example.app");
+        assert_eq!(event.text, "hello");
+        assert_eq!(event.kind, "Toast");
+    }
+
+    #[test]
+    fn shell_escape_quotes_single_quotes() {
+        assert_eq!(shell_escape("it's"), "'it'\"'\"'s'");
+    }
+}
