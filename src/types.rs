@@ -108,6 +108,37 @@ pub struct Point {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayRotation {
+    Rotation0,
+    Rotation90,
+    Rotation180,
+    Rotation270,
+}
+
+impl DisplayRotation {
+    pub fn from_value(value: i32) -> Result<Self> {
+        match value {
+            0 => Ok(Self::Rotation0),
+            1 => Ok(Self::Rotation90),
+            2 => Ok(Self::Rotation180),
+            3 => Ok(Self::Rotation270),
+            _ => Err(HdcError::protocol(format!(
+                "unknown display rotation value: {value}"
+            ))),
+        }
+    }
+
+    pub fn value(self) -> i32 {
+        match self {
+            Self::Rotation0 => 0,
+            Self::Rotation90 => 1,
+            Self::Rotation180 => 2,
+            Self::Rotation270 => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bounds {
     pub left: i32,
     pub right: i32,

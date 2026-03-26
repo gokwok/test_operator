@@ -10,7 +10,9 @@ use crate::error::{HdcError, Result};
 use crate::forward::{TcpForwardHandle, send_file_via_shell};
 use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
-use crate::types::{Coord, CurrentApp, KeyCode, ShellResult};
+use crate::types::{Coord, CurrentApp, DisplayRotation, KeyCode, Point, ShellResult};
+use crate::ui::UiDriver;
+use crate::xpath::XPathNode;
 
 pub struct Driver {
     addr: String,
@@ -63,6 +65,31 @@ impl Driver {
     pub fn current_app(&mut self) -> Result<Option<CurrentApp>> {
         let output = self.exec_stdout_checked("aa dump -l")?;
         Ok(parse_current_app(&output))
+    }
+
+    pub fn open_url(&mut self, url: &str) -> Result<()> {
+        self.exec_side_effect_checked(&format!(
+            "aa start -A ohos.want.action.viewData -e entity.system.browsable -U {}",
+            shell_escape(url)
+        ))
+    }
+
+    pub fn display_size(&mut self) -> Result<Point> {
+        let output = self.exec_stdout_checked("hidumper -s RenderService -a screen")?;
+        let (width, height) = parse_display_size(&output)
+            .ok_or_else(|| HdcError::protocol("failed to read display size"))?;
+        Ok(Point {
+            x: width,
+            y: height,
+        })
+    }
+
+    pub fn display_rotation(&self) -> Result<DisplayRotation> {
+        self.ui()?.display_rotation()
+    }
+
+    pub fn set_display_rotation(&self, rotation: DisplayRotation) -> Result<()> {
+        self.ui()?.set_display_rotation(rotation)
     }
 
     pub fn click<X, Y>(&mut self, x: X, y: Y) -> Result<()>
@@ -209,6 +236,19 @@ impl Driver {
         );
         let output = self.exec_stdout_checked(&command)?;
         Ok(serde_json::from_str(output.trim())?)
+    }
+
+    pub fn ui(&self) -> Result<UiDriver> {
+        let builder = UiDriver::builder(self.addr.clone())
+            .key_dir(self.options.key_dir.clone())
+            .connect_key(self.options.connect_key.clone())
+            .version(self.options.version.clone())
+            .timeout(self.options.timeout);
+        builder.connect()
+    }
+
+    pub fn xpath<'a>(&'a mut self, expression: &str) -> Result<XPathNode<'a>> {
+        XPathNode::find(self, expression)
     }
 
     pub fn close(&mut self) -> Result<()> {

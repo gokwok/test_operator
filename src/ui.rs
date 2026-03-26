@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::driver::Driver;
 use crate::error::{HdcError, Result};
 use crate::forward::TcpForwardHandle;
-use crate::types::{Bounds, Coord, Point, UiEvent};
+use crate::types::{Bounds, Coord, DisplayRotation, Point, UiEvent};
 
 const UITEST_SERVICE_PORT: u16 = 8012;
 const DEFAULT_REMOTE_AGENT_PATH: &str = "/data/local/tmp/agent.so";
@@ -53,6 +53,9 @@ enum SelectorFilter {
     Description(String),
     Enabled(bool),
     Clickable(bool),
+    Focused(bool),
+    Selected(bool),
+    Checked(bool),
 }
 
 struct UiSession {
@@ -167,6 +170,22 @@ impl UiDriver {
         parse_point(&value)
     }
 
+    pub fn display_rotation(&self) -> Result<DisplayRotation> {
+        let value = self.invoke("Driver.getDisplayRotation", Vec::new())?;
+        let raw = value
+            .as_i64()
+            .ok_or_else(|| HdcError::protocol("Driver.getDisplayRotation returned invalid payload"))?;
+        DisplayRotation::from_value(raw as i32)
+    }
+
+    pub fn set_display_rotation(&self, rotation: DisplayRotation) -> Result<()> {
+        let _ = self.invoke(
+            "Driver.setDisplayRotation",
+            vec![Value::from(rotation.value())],
+        )?;
+        Ok(())
+    }
+
     pub fn click<X, Y>(&self, x: X, y: Y) -> Result<()>
     where
         X: Into<Coord>,
@@ -220,6 +239,10 @@ impl UiDriver {
             .map(|handle| UiComponent::new(self.inner.clone(), handle)))
     }
 
+    pub fn find_one(&self, selector: UiSelector) -> Result<Option<UiComponent>> {
+        self.find_component(selector)
+    }
+
     pub fn find_components(&self, selector: UiSelector) -> Result<Vec<UiComponent>> {
         let by = self.selector_handle(selector)?;
         let value = self.invoke("Driver.findComponents", vec![Value::from(by)])?;
@@ -231,6 +254,14 @@ impl UiDriver {
             .filter_map(Value::as_str)
             .map(|handle| UiComponent::new(self.inner.clone(), handle))
             .collect())
+    }
+
+    pub fn find_all(&self, selector: UiSelector) -> Result<Vec<UiComponent>> {
+        self.find_components(selector)
+    }
+
+    pub fn exists(&self, selector: UiSelector) -> Result<bool> {
+        Ok(self.find_component(selector)?.is_some())
     }
 
     pub fn wait_for_component(
@@ -316,21 +347,80 @@ impl UiComponent {
             .ok_or_else(|| HdcError::protocol("Component.getText returned invalid payload"))
     }
 
+    pub fn description(&self) -> Result<String> {
+        self.invoke("Component.getDescription", Vec::new())?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HdcError::protocol("Component.getDescription returned invalid payload"))
+    }
+
     pub fn bounds(&self) -> Result<Bounds> {
         let value = self.invoke("Component.getBounds", Vec::new())?;
         parse_bounds(&value)
     }
 
+    pub fn center(&self) -> Result<Point> {
+        Ok(self.bounds()?.center())
+    }
+
+    pub fn enabled(&self) -> Result<bool> {
+        self.invoke_bool("Component.isEnabled")
+    }
+
+    pub fn clickable(&self) -> Result<bool> {
+        self.invoke_bool("Component.isClickable")
+    }
+
+    pub fn focused(&self) -> Result<bool> {
+        self.invoke_bool("Component.isFocused")
+    }
+
+    pub fn selected(&self) -> Result<bool> {
+        self.invoke_bool("Component.isSelected")
+    }
+
+    pub fn checked(&self) -> Result<bool> {
+        self.invoke_bool("Component.isChecked")
+    }
+
+    pub fn exists(&self) -> Result<bool> {
+        Ok(self.bounds().is_ok())
+    }
+
     pub fn click(&self) -> Result<()> {
-        let center = self.bounds()?.center();
+        let center = self.center()?;
         self.inner
             .borrow_mut()
             .driver
             .click(center.x, center.y)
     }
 
+    pub fn click_if_exists(&self) -> Result<bool> {
+        if !self.exists()? {
+            return Ok(false);
+        }
+        self.click()?;
+        Ok(true)
+    }
+
+    pub fn double_click(&self) -> Result<()> {
+        let center = self.center()?;
+        self.inner
+            .borrow_mut()
+            .driver
+            .double_click(center.x, center.y)
+    }
+
+    pub fn long_click(&self) -> Result<()> {
+        let center = self.center()?;
+        self.inner
+            .borrow_mut()
+            .driver
+            .long_click(center.x, center.y)
+    }
+
     pub fn input_text(&self, text: &str) -> Result<()> {
-        let center = self.bounds()?.center();
+        let center = self.center()?;
         self.inner
             .borrow_mut()
             .driver
@@ -338,10 +428,21 @@ impl UiComponent {
         self.inner.borrow_mut().driver.input_text(text)
     }
 
+    pub fn clear_text(&self) -> Result<()> {
+        let _ = self.invoke("Component.clearText", Vec::new())?;
+        Ok(())
+    }
+
     fn invoke(&self, api: &str, args: Vec<Value>) -> Result<Value> {
         self.inner
             .borrow_mut()
             .invoke(api, Some(self.handle.as_str()), args)
+    }
+
+    fn invoke_bool(&self, api: &str) -> Result<bool> {
+        self.invoke(api, Vec::new())?
+            .as_bool()
+            .ok_or_else(|| HdcError::protocol(format!("{api} returned invalid payload")))
     }
 }
 
@@ -386,6 +487,21 @@ impl UiSelector {
         self.filters.push(SelectorFilter::Clickable(value));
         self
     }
+
+    pub fn focused(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Focused(value));
+        self
+    }
+
+    pub fn selected(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Selected(value));
+        self
+    }
+
+    pub fn checked(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Checked(value));
+        self
+    }
 }
 
 impl Default for UiSelector {
@@ -404,6 +520,9 @@ impl SelectorFilter {
             Self::Description(value) => ("On.description".to_string(), Value::from(value)),
             Self::Enabled(value) => ("On.enabled".to_string(), Value::from(value)),
             Self::Clickable(value) => ("On.clickable".to_string(), Value::from(value)),
+            Self::Focused(value) => ("On.focused".to_string(), Value::from(value)),
+            Self::Selected(value) => ("On.selected".to_string(), Value::from(value)),
+            Self::Checked(value) => ("On.checked".to_string(), Value::from(value)),
         }
     }
 }
