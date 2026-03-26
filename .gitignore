@@ -24,6 +24,3 @@
 
 # Git worktrees
 .worktrees/
-
-# Superpowers 实施计划（本地生成，不纳入版本控制）
-docs/superpowers/

@@ -8,9 +8,9 @@
 
 1. 读取 `DESIGN.md`，了解架构边界、核心抽象和依赖方向。
 2. 如果当前 issue 触及 CLI 或 MCP 的 shell surface，读取 [`docs/COMMAND.md`](./docs/COMMAND.md)。对于 `OPE-54` 到 `OPE-61`，这是强制步骤。
-3. 读取 `docs/superpowers/plans/` 下最新日期的实施计划，确认任务列表和当前阶段。
-4. 查询 Linear 项目 `Operator Implementation`，确认当前 `In Progress` issue、最后一个 `Done` issue、以及下一个待处理 issue。
-5. 以 Linear 状态为准，确定本次 session 的工作范围，再开始实现。
+3. 查询 Linear 项目 `Operator Implementation`，确认当前 `In Progress` issue、最后一个 `Done` issue、以及下一个待处理 issue。
+4. 读取当前 Linear issue 的描述、blocker、验证命令和关联里程碑。
+5. 以 Linear 状态和仓库内已提交代码为准，确定本次 session 的工作范围，再开始实现。
 
 > 跳过上述步骤直接写代码，会导致实现偏离计划或重复已完成工作。
 
@@ -21,17 +21,16 @@
 1. 本文件 `AGENTS.md`
 2. 设计文档 [`DESIGN.md`](./DESIGN.md)
 3. CLI 命令面规范 [`docs/COMMAND.md`](./docs/COMMAND.md)
-   仅在当前 issue 触及 CLI 或 MCP shell surface 时适用；对于 `OPE-54` 到 `OPE-61`，此项优先于实施计划。
-4. 实施计划：`docs/superpowers/plans/` 目录下最新日期的计划文件
-5. 当前正在处理的 Linear issue
-6. 仓库内已提交代码的实际结构
+   仅在当前 issue 触及 CLI 或 MCP shell surface 时适用；对于 `OPE-54` 到 `OPE-61`，此项优先于 Linear issue 的 shell 文案。
+4. 当前正在处理的 Linear issue
+5. 仓库内已提交代码的实际结构
 
 执行规则：
 
 - `DESIGN.md` 是架构边界、核心抽象、crate 分层、执行模型的权威来源。
 - `docs/COMMAND.md` 是 CLI / MCP 用户面、help 分组、参数契约、命令迁移的权威来源。
-- 实施顺序、任务粒度、验证命令，以实施计划和对应 Linear issue 为准。
-- 如果 `DESIGN.md`、实施计划、Linear issue、当前代码实现之间存在冲突，先停止扩写功能，先澄清并更新 Linear，再继续实现。
+- 实施顺序、任务粒度、验证命令，以对应 Linear issue 为准。
+- 如果 `DESIGN.md`、`docs/COMMAND.md`、Linear issue、当前代码实现之间存在冲突，先停止扩写功能，先澄清并更新 Linear，再继续实现。
 
 ## 2. 项目定位
 
@@ -46,7 +45,7 @@ Operator 是一个 Rust 实现的跨平台自动化内核，目标是统一 CLI�
 
 ## 3. 项目总体结构
 
-当前仓库可能处于逐步搭建状态，但目标结构以 `DESIGN.md` 和实施计划为准。
+当前仓库可能处于逐步搭建状态，但目标结构以 `DESIGN.md` 和 Linear 中的当前里程碑/issue 链为准。
 
 目标 workspace 结构：
 
@@ -66,7 +65,6 @@ operator/
     operator-platform-windows/  # Phase 4，暂未实现
     operator-platform-harmony/  # Phase 4，暂未实现
   docs/
-    superpowers/plans/
     platforms/
 ```
 
@@ -91,7 +89,7 @@ operator/
 - `operator-agent`
   - Agent runner 和 `ModelClient` 抽象，复用 runtime 和工具定义。
 - `docs/`
-  - 设计、实施计划、平台调研、补充说明。
+  - 设计、平台调研、补充说明。
 
 依赖方向必须保持单向：
 
@@ -145,7 +143,7 @@ operator/
 
 推荐执行顺序：
 
-- 按实施计划中的 issue 顺序推进。
+- 按 Linear 中的 blocker 关系和 issue 顺序推进。
 - 无明确理由时，不跳过前置 issue。
 - 若需要并行推进，必须确认两个 issue 在代码和职责上没有重叠冲突。
 - 如果用户明确指定为串行链路，则同一时间只能有一个 issue 处于 `In Progress`。`OPE-54` 到 `OPE-61` 默认按串行链路执行。
@@ -250,7 +248,7 @@ git commit -s -m "feat(core): add typed automation domain models" \
 当遇到以下情况时，不要强行推进：
 
 - 编译错误或测试失败无法自行修复
-- `DESIGN.md`、实施计划、Linear issue、当前代码之间存在冲突
+- `DESIGN.md`、`docs/COMMAND.md`、Linear issue、当前代码之间存在冲突
 - issue 描述不足以确定实现范围
 
 处理步骤：
@@ -281,7 +279,7 @@ git commit -s -m "feat(core): add typed automation domain models" \
 
 ## 11. 实施顺序
 
-默认按实施计划推进：
+默认按当前里程碑对应的 Linear issue 链推进：
 
 1. workspace bootstrap
 2. `operator-core`
@@ -294,7 +292,7 @@ git commit -s -m "feat(core): add typed automation domain models" \
 9. Agent
 10. Windows/Harmony scaffolds
 
-详细任务顺序和验证命令见 `docs/superpowers/plans/` 目录下最新日期的计划文件。
+详细任务顺序、blocker 链和验证命令以 Linear 项目 `Operator Implementation` 中的当前 issue 为准。
 
 ## 12. 完成标准
 

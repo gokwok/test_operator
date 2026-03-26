@@ -75,10 +75,9 @@ Always follow this order:
 1. `AGENTS.md`
 2. `DESIGN.md`
 3. `docs/COMMAND.md` when the current issue touches the CLI or MCP shell surface. This is mandatory for `OPE-54` through `OPE-61`.
-4. The latest plan file under `docs/superpowers/plans/`
-5. The current Linear issue
-6. The real source repository checkout named by `.symphony-source-repo-path`
-7. The current workspace state
+4. The current Linear issue
+5. The real source repository checkout named by `.symphony-source-repo-path`
+6. The current workspace state
 
 If these sources conflict, stop scope expansion and take the most conservative path.
 
@@ -89,10 +88,9 @@ Before any code change:
 1. Read `AGENTS.md`
 2. Read `DESIGN.md`
 3. If the issue touches the CLI or MCP shell surface, read `docs/COMMAND.md`. For `OPE-54` through `OPE-61`, this step is mandatory.
-4. Read the latest plan file under `docs/superpowers/plans/`
-5. Read `.symphony-source-repo-path` to identify the real source repository checkout for final delivery
-6. Read `.symphony-dev-branch` to identify the shared serial-development branch expected for the current chain
-7. Re-check the current Linear issue state and description
+4. Read `.symphony-source-repo-path` to identify the real source repository checkout for final delivery
+5. Read `.symphony-dev-branch` to identify the shared serial-development branch expected for the current chain
+6. Re-check the current Linear issue state, blockers, and description
 
 State rules:
 
