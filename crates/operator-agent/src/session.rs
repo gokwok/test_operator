@@ -395,6 +395,49 @@ pub struct PersistedSessionTranscript {
     pub events: Vec<ReplayableTranscriptEvent>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionJournal {
+    session_id: SessionId,
+    pending: Vec<SessionEvent>,
+}
+
+impl SessionJournal {
+    pub fn new(session_id: SessionId) -> Self {
+        Self {
+            session_id,
+            pending: Vec::new(),
+        }
+    }
+
+    pub fn record(&mut self, event: SessionEvent) {
+        self.pending.push(event);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub async fn flush(
+        &mut self,
+        store: &dyn SessionStore,
+    ) -> Result<(), operator_core::OperatorError> {
+        let mut pending = std::mem::take(&mut self.pending).into_iter();
+        while let Some(event) = pending.next() {
+            if let Err(error) = store.append(&self.session_id, &event).await {
+                self.pending.push(event);
+                self.pending.extend(pending);
+                return Err(error);
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl TryFrom<SessionEvent> for ReplayableTranscriptEvent {
     type Error = operator_core::OperatorError;
 

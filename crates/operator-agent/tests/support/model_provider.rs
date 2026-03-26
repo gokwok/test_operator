@@ -21,19 +21,22 @@ impl DeterministicTestProvider {
         Self::from_texts([text.into()])
     }
 
+    #[allow(dead_code)]
+    pub fn from_results<I>(responses: I) -> Self
+    where
+        I: IntoIterator<Item = Result<AssistantMessage, ModelError>>,
+    {
+        Self {
+            responses: Arc::new(Mutex::new(responses.into_iter().collect())),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
     pub fn from_texts<I>(texts: I) -> Self
     where
         I: IntoIterator<Item = String>,
     {
-        let responses = texts
-            .into_iter()
-            .map(|text| Ok(text_message(text)))
-            .collect::<VecDeque<_>>();
-
-        Self {
-            responses: Arc::new(Mutex::new(responses)),
-            requests: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self::from_results(texts.into_iter().map(|text| Ok(text_message(text))))
     }
 
     #[allow(dead_code)]

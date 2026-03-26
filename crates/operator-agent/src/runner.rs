@@ -23,7 +23,7 @@ use crate::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
         RepeatedErrorPolicy,
     },
-    session::AgentSessionState,
+    session::{AgentSessionState, SessionJournal},
     tools::{AgentToolResult, AgentToolSpec, ToolExecutor},
     AgentConfig, AgentError, AgentRunRequest, AgentRunResult,
 };
@@ -63,7 +63,24 @@ impl AgentRunner {
 
         let mut state = AgentSessionState::new(session_id.clone(), req.target.clone(), req.task);
         self.create_runtime_session(&state).await?;
-        self.record_user_input(&mut state).await?;
+        let mut journal = SessionJournal::new(state.session_id.clone());
+
+        let result = self
+            .run_loop(&model_name, &model, &mut state, &mut journal)
+            .await;
+
+        self.flush_session_journal(&mut journal).await?;
+        result
+    }
+
+    async fn run_loop(
+        &self,
+        model_name: &str,
+        model: &ResolvedModel,
+        state: &mut AgentSessionState,
+        journal: &mut SessionJournal,
+    ) -> Result<AgentRunResult, AgentError> {
+        self.record_user_input(journal, state).await?;
 
         let executor = ToolExecutor::new(self.runtime.core(), self.runtime.tools().clone());
         let tools = executor.catalog(&state.target)?;
@@ -71,8 +88,11 @@ impl AgentRunner {
         let planner_retry = PlannerRetryPolicy::new(self.config.max_parse_attempts);
         let repeated_error = RepeatedErrorPolicy::new(self.config.repeated_error_limit);
 
-        if let Some(reason) = self.maybe_auto_observe(&executor, &mut state, None).await? {
-            return self.fail_run(&mut state, reason).await;
+        if let Some(reason) = self
+            .maybe_auto_observe(&executor, journal, state, None)
+            .await?
+        {
+            return self.fail_run(journal, state, reason).await;
         }
 
         for _ in 0..self.config.max_steps {
@@ -80,7 +100,7 @@ impl AgentRunner {
             state.start_step();
 
             let decision = self
-                .next_decision(&model, &tools, &validator, &planner_retry, &mut state)
+                .next_decision(model, &tools, &validator, &planner_retry, journal, state)
                 .await?;
 
             match decision {
@@ -88,28 +108,28 @@ impl AgentRunner {
                     name, arguments, ..
                 } => {
                     let result = self
-                        .execute_tool(&executor, &mut state, &name, arguments)
+                        .execute_tool(&executor, journal, state, &name, arguments)
                         .await?;
 
                     if let RepeatedErrorDecision::Stop { reason, .. } =
-                        repeated_error.register_tool_result(&mut state, &result)
+                        repeated_error.register_tool_result(state, &result)
                     {
-                        return self.fail_run(&mut state, reason).await;
+                        return self.fail_run(journal, state, reason).await;
                     }
 
                     if should_auto_observe_after_tool(&result) {
                         if let Some(reason) = self
-                            .maybe_auto_observe(&executor, &mut state, Some(name.as_str()))
+                            .maybe_auto_observe(&executor, journal, state, Some(name.as_str()))
                             .await?
                         {
-                            return self.fail_run(&mut state, reason).await;
+                            return self.fail_run(journal, state, reason).await;
                         }
                     }
                 }
                 AgentDecision::Finish { summary } => {
                     let reflection = self
                         .reflector
-                        .reflect(&model, &state, &summary)
+                        .reflect(model, state, &summary)
                         .await
                         .map_err(|error| self.decorate_model_failure("reflector", error))?;
 
@@ -117,33 +137,37 @@ impl AgentRunner {
                         TaskReflection::Ok { .. } => {
                             state.complete(summary.clone());
                             self.append_session_event(
-                                &state.session_id,
+                                journal,
                                 SessionEvent::Completed {
                                     summary: Some(summary.clone()),
                                 },
                             )
                             .await?;
+                            self.flush_session_journal(journal).await?;
 
                             return Ok(AgentRunResult {
                                 session_id: state.session_id.clone(),
                                 target: state.target.clone(),
-                                model: model_name,
+                                model: model_name.to_string(),
                                 summary,
                             });
                         }
                         TaskReflection::NotOk { .. } => {
-                            self.reflector.record_feedback(&mut state, &reflection);
+                            self.reflector.record_feedback(state, &reflection);
                         }
                     }
                 }
                 AgentDecision::Fail { reason } => {
-                    return self.fail_run(&mut state, reason).await;
+                    return self.fail_run(journal, state, reason).await;
                 }
             }
+
+            self.flush_session_journal(journal).await?;
         }
 
         self.fail_run(
-            &mut state,
+            journal,
+            state,
             format!(
                 "agent stopped after reaching max_steps ({})",
                 self.config.max_steps
@@ -155,6 +179,7 @@ impl AgentRunner {
     async fn maybe_auto_observe(
         &self,
         executor: &ToolExecutor,
+        journal: &mut SessionJournal,
         state: &mut AgentSessionState,
         trigger_tool: Option<&str>,
     ) -> Result<Option<String>, AgentError> {
@@ -163,7 +188,13 @@ impl AgentRunner {
         }
 
         let result = self
-            .execute_tool(executor, state, "observe", default_auto_observe_arguments())
+            .execute_tool(
+                executor,
+                journal,
+                state,
+                "observe",
+                default_auto_observe_arguments(),
+            )
             .await?;
         if result.is_error {
             return Ok(Some(auto_observe_failure_reason(trigger_tool, &result)));
@@ -178,6 +209,7 @@ impl AgentRunner {
         tools: &[AgentToolSpec],
         validator: &DecisionValidator,
         retry_policy: &PlannerRetryPolicy,
+        journal: &mut SessionJournal,
         state: &mut AgentSessionState,
     ) -> Result<AgentDecision, AgentError> {
         loop {
@@ -192,7 +224,8 @@ impl AgentRunner {
                 .map_err(|error| self.decorate_model_failure("planner", error))?;
             let raw = assistant_text(&assistant)?;
 
-            self.append_model_response(state, &assistant, &raw).await?;
+            self.append_model_response(journal, state, &assistant, &raw)
+                .await?;
 
             let decision = match self.parser.parse(&raw) {
                 Ok(decision) => decision,
@@ -200,7 +233,7 @@ impl AgentRunner {
                     match retry_policy.register_failure(state, PlannerFailureStage::Parse, &error) {
                         PlannerRetryDecision::Retry { .. } => continue,
                         PlannerRetryDecision::Stop { reason, .. } => {
-                            return self.fail_run(state, reason).await;
+                            return self.fail_run(journal, state, reason).await;
                         }
                     }
                 }
@@ -211,7 +244,7 @@ impl AgentRunner {
                 {
                     PlannerRetryDecision::Retry { .. } => continue,
                     PlannerRetryDecision::Stop { reason, .. } => {
-                        return self.fail_run(state, reason).await;
+                        return self.fail_run(journal, state, reason).await;
                     }
                 }
             }
@@ -223,12 +256,13 @@ impl AgentRunner {
     async fn execute_tool(
         &self,
         executor: &ToolExecutor,
+        journal: &mut SessionJournal,
         state: &mut AgentSessionState,
         name: &str,
         arguments: Value,
     ) -> Result<AgentToolResult, AgentError> {
         self.append_session_event(
-            &state.session_id,
+            journal,
             SessionEvent::ToolCall {
                 name: name.to_string(),
                 input: arguments.clone(),
@@ -248,7 +282,7 @@ impl AgentRunner {
 
         let payload = serde_json::to_value(&result).expect("agent tool results should serialize");
         self.append_session_event(
-            &state.session_id,
+            journal,
             SessionEvent::ToolResult {
                 name: name.to_string(),
                 output: payload.clone(),
@@ -301,12 +335,13 @@ impl AgentRunner {
 
     async fn append_model_response(
         &self,
+        journal: &mut SessionJournal,
         state: &mut AgentSessionState,
         assistant: &AssistantMessage,
         raw: &str,
     ) -> Result<(), AgentError> {
         self.append_session_event(
-            &state.session_id,
+            journal,
             SessionEvent::ModelResponse {
                 content: raw.to_string(),
             },
@@ -316,9 +351,13 @@ impl AgentRunner {
         Ok(())
     }
 
-    async fn record_user_input(&self, state: &mut AgentSessionState) -> Result<(), AgentError> {
+    async fn record_user_input(
+        &self,
+        journal: &mut SessionJournal,
+        state: &mut AgentSessionState,
+    ) -> Result<(), AgentError> {
         self.append_session_event(
-            &state.session_id,
+            journal,
             SessionEvent::UserInput {
                 text: state.task.clone(),
             },
@@ -351,31 +390,39 @@ impl AgentRunner {
 
     async fn append_session_event(
         &self,
-        session_id: &SessionId,
+        journal: &mut SessionJournal,
         event: SessionEvent,
     ) -> Result<(), AgentError> {
-        self.runtime
-            .core()
-            .sessions()
-            .append(session_id, &event)
-            .await?;
+        journal.record(event);
         Ok(())
     }
 
     async fn fail_run<T>(
         &self,
+        journal: &mut SessionJournal,
         state: &mut AgentSessionState,
         reason: String,
     ) -> Result<T, AgentError> {
         state.fail(reason.clone());
         self.append_session_event(
-            &state.session_id,
+            journal,
             SessionEvent::Error {
                 message: reason.clone(),
             },
         )
         .await?;
+        self.flush_session_journal(journal).await?;
         Err(AgentError::Planner(reason))
+    }
+
+    async fn flush_session_journal(&self, journal: &mut SessionJournal) -> Result<(), AgentError> {
+        if journal.is_empty() {
+            return Ok(());
+        }
+
+        let session_store = self.runtime.core().sessions();
+        journal.flush(session_store.as_ref()).await?;
+        Ok(())
     }
 
     fn resolve_model(&self, name: &str) -> Result<ResolvedModel, AgentError> {

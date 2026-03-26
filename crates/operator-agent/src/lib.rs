@@ -23,8 +23,8 @@ pub use policy::{
 pub use runner::AgentRunner;
 pub use session::{
     load_persisted_session, AgentMessage, AgentSessionState, AgentSessionStatus, LoopHistoryItem,
-    LoopState, PersistedSessionTranscript, ReplayableTranscriptEvent, ToolTraceEntry,
-    VisualObservationSummary,
+    LoopState, PersistedSessionTranscript, ReplayableTranscriptEvent, SessionJournal,
+    ToolTraceEntry, VisualObservationSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
