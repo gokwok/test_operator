@@ -207,6 +207,71 @@ async fn observe_frontmost_prefers_focused_window_over_tiny_auxiliary_window() {
 }
 
 #[tokio::test]
+async fn observe_frontmost_uses_frontmost_surface_for_synthetic_window_ids() {
+    let synthetic_window = WindowInfo {
+        id: WindowId(1 << 63 | 42),
+        title: Some("计算器".into()),
+        app_name: Some("Calculator".into()),
+        bounds: Some(Rect {
+            x: 535.0,
+            y: 260.0,
+            width: 230.0,
+            height: 408.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    };
+    let driver = MacosDriver::with_observe(
+        StubAppService {
+            windows: vec![synthetic_window.clone()],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("artifact-frontmost.png".into()),
+            display_scale: Some(2.0),
+            capture_bounds: None,
+            image_size_px: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+    );
+
+    let observed = driver
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: true,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        driver.capture_provider().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Frontmost,
+        }]
+    );
+    assert_eq!(
+        driver.tree_inspector().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Frontmost,
+        }]
+    );
+    assert_eq!(
+        observed.snapshot.metadata.capture_bounds,
+        synthetic_window.bounds
+    );
+}
+
+#[tokio::test]
 async fn permissions_query_returns_report() {
     let driver = MacosDriver::new(
         StubAppService::default(),

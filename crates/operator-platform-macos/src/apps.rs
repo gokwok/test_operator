@@ -342,7 +342,7 @@ impl From<FocusRecord> for FocusInfo {
     }
 }
 
-const SYNTHETIC_WINDOW_ID_MASK: u64 = 1 << 63;
+pub(crate) const SYNTHETIC_WINDOW_ID_MASK: u64 = 1 << 63;
 
 fn synthetic_window_id(window: &WindowRecord) -> WindowId {
     // Some macOS apps expose enough AX metadata to observe and verify windows but do not
@@ -367,6 +367,10 @@ fn synthetic_window_id(window: &WindowRecord) -> WindowId {
         value = 1;
     }
     WindowId(value | SYNTHETIC_WINDOW_ID_MASK)
+}
+
+pub(crate) fn is_synthetic_window_id(id: WindowId) -> bool {
+    id.0 & SYNTHETIC_WINDOW_ID_MASK != 0
 }
 
 fn parse_jxa_json<T>(json: String) -> Result<T, OperatorError>

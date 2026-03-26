@@ -14,9 +14,9 @@ use operator_core::{
 };
 
 use crate::{
-    locator::resolve_locator, AppService, CaptureProvider, InputSynthesizer, InspectResult,
-    PermissionReader, SystemAppService, SystemCaptureProvider, SystemInputSynthesizer,
-    SystemPermissionReader, SystemTreeInspector, TreeInspector,
+    apps::is_synthetic_window_id, locator::resolve_locator, AppService, CaptureProvider,
+    InputSynthesizer, InspectResult, PermissionReader, SystemAppService, SystemCaptureProvider,
+    SystemInputSynthesizer, SystemPermissionReader, SystemTreeInspector, TreeInspector,
 };
 
 static SNAPSHOT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1056,6 +1056,15 @@ impl ResolvedObserveSurface {
     }
 
     fn window(window: WindowInfo) -> Self {
+        if is_synthetic_window_id(window.id) {
+            return Self {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                capture_bounds: window.bounds,
+            };
+        }
+
         Self {
             surface: Surface {
                 kind: SurfaceKind::Window { id: window.id },
