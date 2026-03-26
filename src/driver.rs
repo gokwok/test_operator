@@ -10,8 +10,11 @@ use crate::error::{HdcError, Result};
 use crate::forward::{TcpForwardHandle, send_file_via_shell};
 use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
-use crate::types::{Coord, CurrentApp, DisplayRotation, KeyCode, Point, ShellResult};
-use crate::ui::UiDriver;
+use crate::types::{
+    AppAbilityInfo, AppVersion, Coord, CurrentApp, DeviceInfo, DisplayRotation, KeyCode, Point,
+    ShellResult,
+};
+use crate::ui::{UiDriver, UiQuery, UiSelector};
 use crate::xpath::XPathNode;
 
 pub struct Driver {
@@ -65,6 +68,51 @@ impl Driver {
     pub fn current_app(&mut self) -> Result<Option<CurrentApp>> {
         let output = self.exec_stdout_checked("aa dump -l")?;
         Ok(parse_current_app(&output))
+    }
+
+    pub fn has_app(&mut self, bundle: &str) -> Result<bool> {
+        Ok(self.list_apps(true)?.iter().any(|item| item == bundle))
+    }
+
+    pub fn app_version(&mut self, bundle: &str) -> Result<AppVersion> {
+        let info = self.get_app_info(bundle)?;
+        parse_app_version(&info)
+            .ok_or_else(|| HdcError::protocol(format!("failed to parse app version for {bundle}")))
+    }
+
+    pub fn get_app_info(&mut self, bundle: &str) -> Result<Value> {
+        let output = self.exec_stdout_checked(&format!("bm dump -n {}", shell_escape(bundle)))?;
+        parse_app_info_json(&output)
+    }
+
+    pub fn get_app_abilities(&mut self, bundle: &str) -> Result<Vec<AppAbilityInfo>> {
+        let info = self.get_app_info(bundle)?;
+        Ok(parse_app_abilities(&info))
+    }
+
+    pub fn get_app_main_ability(&mut self, bundle: &str) -> Result<Option<AppAbilityInfo>> {
+        let mut abilities = self.get_app_abilities(bundle)?;
+        abilities.sort_by(|left, right| {
+            left.is_launcher_ability
+                .cmp(&right.is_launcher_ability)
+                .reverse()
+                .then(right.score.cmp(&left.score))
+                .then(left.name.cmp(&right.name))
+        });
+        Ok(abilities.into_iter().next())
+    }
+
+    pub fn device_info(&mut self) -> Result<DeviceInfo> {
+        Ok(DeviceInfo {
+            product_name: self.param_get("const.product.name")?,
+            model: self.param_get("const.product.model")?,
+            sdk_version: self.param_get("const.ohos.apiversion")?,
+            sys_version: self.param_get("const.product.software.version")?,
+            cpu_abi: self.param_get("const.product.cpu.abilist")?,
+            wlan_ip: parse_wlan_ip(&self.exec_stdout_checked("ifconfig")?),
+            display_size: self.display_size()?,
+            display_rotation: self.display_rotation()?,
+        })
     }
 
     pub fn open_url(&mut self, url: &str) -> Result<()> {
@@ -251,6 +299,34 @@ impl Driver {
         XPathNode::find(self, expression)
     }
 
+    pub fn select(&self, selector: UiSelector) -> Result<UiQuery> {
+        Ok(self.ui()?.select(selector))
+    }
+
+    pub fn query(&self) -> Result<UiQuery> {
+        Ok(self.ui()?.query())
+    }
+
+    pub fn text(&self, value: impl Into<String>) -> Result<UiQuery> {
+        Ok(self.ui()?.text(value))
+    }
+
+    pub fn id(&self, value: impl Into<String>) -> Result<UiQuery> {
+        Ok(self.ui()?.id(value))
+    }
+
+    pub fn key(&self, value: impl Into<String>) -> Result<UiQuery> {
+        Ok(self.ui()?.key(value))
+    }
+
+    pub fn kind(&self, value: impl Into<String>) -> Result<UiQuery> {
+        Ok(self.ui()?.kind(value))
+    }
+
+    pub fn description(&self, value: impl Into<String>) -> Result<UiQuery> {
+        Ok(self.ui()?.description(value))
+    }
+
     pub fn close(&mut self) -> Result<()> {
         self.session.close_active_command_channel()
     }
@@ -290,10 +366,18 @@ impl Driver {
     }
 
     fn resolve_main_ability(&mut self, bundle: &str) -> Result<String> {
-        let output = self.exec_stdout_checked(&format!("bm dump -n {}", shell_escape(bundle)))?;
-        parse_main_ability_from_dump(&output).ok_or_else(|| {
-            HdcError::protocol(format!("failed to resolve main ability for {bundle}"))
-        })
+        self.get_app_main_ability(bundle)?
+            .map(|item| item.name)
+            .ok_or_else(|| {
+                HdcError::protocol(format!("failed to resolve main ability for {bundle}"))
+            })
+    }
+
+    fn param_get(&mut self, key: &str) -> Result<String> {
+        let output = self.exec_stdout_checked(&format!("param get {key}"))?;
+        first_nonempty_line(&output)
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HdcError::protocol(format!("param get {key} returned empty output")))
     }
 }
 
@@ -379,34 +463,18 @@ fn parse_current_app(output: &str) -> Option<CurrentApp> {
     })
 }
 
+#[cfg(test)]
 fn parse_main_ability_from_dump(output: &str) -> Option<String> {
-    let json_start = output.find('{')?;
-    let json_end = output.rfind('}')? + 1;
-    let value: Value = serde_json::from_str(&output[json_start..json_end]).ok()?;
-    let main_entry = value.get("mainEntry").and_then(Value::as_str);
-    let modules = value.get("hapModuleInfos").and_then(Value::as_array)?;
-
-    let mut best_match: Option<(i32, String)> = None;
-    for module in modules {
-        let module_main = module.get("mainAbility").and_then(Value::as_str);
-        let module_name = module.get("moduleName").and_then(Value::as_str);
-        let ability_infos = module.get("abilityInfos").and_then(Value::as_array)?;
-        for ability in ability_infos {
-            let name = ability.get("name").and_then(Value::as_str)?;
-            let mut score = 0;
-            if module_main == Some(name) {
-                score += 1;
-            }
-            if main_entry.is_some() && module_name == main_entry {
-                score += 1;
-            }
-            match &best_match {
-                Some((best_score, _)) if *best_score >= score => {}
-                _ => best_match = Some((score, name.to_string())),
-            }
-        }
-    }
-    best_match.map(|(_, name)| name)
+    let value = parse_app_info_json(output).ok()?;
+    parse_app_abilities(&value)
+        .into_iter()
+        .max_by(|left, right| {
+            left.is_launcher_ability
+                .cmp(&right.is_launcher_ability)
+                .then(left.score.cmp(&right.score))
+                .then(right.name.cmp(&left.name))
+        })
+        .map(|item| item.name)
 }
 
 fn parse_display_size(output: &str) -> Option<(i32, i32)> {
@@ -416,6 +484,145 @@ fn parse_display_size(output: &str) -> Option<(i32, i32)> {
     let dims = rest.split(',').next()?.trim();
     let (width, height) = dims.split_once('x')?;
     Some((width.trim().parse().ok()?, height.trim().parse().ok()?))
+}
+
+fn parse_app_info_json(output: &str) -> Result<Value> {
+    let json_start = output
+        .find('{')
+        .ok_or_else(|| HdcError::protocol("bm dump output missing json payload"))?;
+    let json_end = output
+        .rfind('}')
+        .map(|value| value + 1)
+        .ok_or_else(|| HdcError::protocol("bm dump output missing json payload"))?;
+    Ok(serde_json::from_str(&output[json_start..json_end])?)
+}
+
+fn parse_app_abilities(value: &Value) -> Vec<AppAbilityInfo> {
+    let main_entry = value
+        .get("mainEntry")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let Some(modules) = value.get("hapModuleInfos").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    let mut result = Vec::new();
+    for module in modules {
+        let module_main = module
+            .get("mainAbility")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let ability_infos = module
+            .get("abilityInfos")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for ability in ability_infos {
+            let Some(name) = ability.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            let module_name = ability
+                .get("moduleName")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let is_launcher_ability = ability
+                .get("skills")
+                .and_then(Value::as_array)
+                .map(|skills| {
+                    skills.iter().any(|skill| {
+                        skill
+                            .get("actions")
+                            .and_then(Value::as_array)
+                            .map(|actions| {
+                                actions
+                                    .iter()
+                                    .any(|action| action.as_str() == Some("action.system.home"))
+                            })
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            let mut score = 0;
+            if name == module_main {
+                score += 1;
+            }
+            if !main_entry.is_empty() && module_name == main_entry {
+                score += 1;
+            }
+            result.push(AppAbilityInfo {
+                name: name.to_string(),
+                module_name,
+                module_main_ability: module_main.clone(),
+                main_module: main_entry.clone(),
+                is_launcher_ability,
+                score,
+            });
+        }
+    }
+    result
+}
+
+fn parse_app_version(value: &Value) -> Option<AppVersion> {
+    let version_name = value
+        .get("versionName")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            value
+                .get("applicationInfo")
+                .and_then(|item| item.get("versionName"))
+                .and_then(Value::as_str)
+        })?;
+    let version_code = value
+        .get("versionCode")
+        .and_then(Value::as_i64)
+        .or_else(|| {
+            value
+                .get("applicationInfo")
+                .and_then(|item| item.get("versionCode"))
+                .and_then(Value::as_i64)
+        })?;
+    Some(AppVersion {
+        version_name: version_name.to_string(),
+        version_code,
+    })
+}
+
+fn first_nonempty_line(output: &str) -> Option<&str> {
+    output.lines().map(str::trim).find(|line| !line.is_empty())
+}
+
+fn parse_wlan_ip(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("127.0.0.1") {
+            continue;
+        }
+        if let Some(ip) = extract_ipv4_after(trimmed, "inet addr:") {
+            return Some(ip);
+        }
+        if let Some(ip) = extract_ipv4_after(trimmed, "inet ") {
+            return Some(ip);
+        }
+    }
+    None
+}
+
+fn extract_ipv4_after(line: &str, marker: &str) -> Option<String> {
+    let start = line.find(marker)? + marker.len();
+    let rest = line[start..].trim_start();
+    let token = rest.split_whitespace().next()?;
+    let candidate = token.split('/').next()?;
+    if candidate.split('.').count() == 4
+        && candidate
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        return Some(candidate.to_string());
+    }
+    None
 }
 
 fn normalize_velocity(value: Option<u32>) -> Result<u32> {
@@ -488,11 +695,13 @@ fn decode_base64_output(value: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DriverBuilder, build_press_keys_command, build_right_click_command, decode_base64_output,
-        normalize_velocity, parse_app_list, parse_current_app, parse_display_size,
-        parse_main_ability_from_dump, shell_escape,
+        AppAbilityInfo, DriverBuilder, build_press_keys_command, build_right_click_command,
+        decode_base64_output, extract_ipv4_after, normalize_velocity, parse_app_abilities,
+        parse_app_info_json, parse_app_list, parse_app_version, parse_current_app,
+        parse_display_size, parse_main_ability_from_dump, parse_wlan_ip, shell_escape,
     };
     use crate::types::Coord;
+    use serde_json::{Value, json};
 
     #[test]
     fn builder_uses_addr_as_default_connect_key() {
@@ -550,6 +759,62 @@ Mission ID #12 {
     }
 
     #[test]
+    fn parse_app_info_json_extracts_embedded_payload() {
+        let value = parse_app_info_json("prefix {\"bundleName\":\"com.example\"} suffix").unwrap();
+
+        assert_eq!(
+            value.get("bundleName").and_then(Value::as_str),
+            Some("com.example")
+        );
+    }
+
+    #[test]
+    fn parse_app_abilities_scores_launcher_and_main_entry() {
+        let value = json!({
+            "mainEntry": "entry",
+            "hapModuleInfos": [{
+                "mainAbility": "MainAbility",
+                "abilityInfos": [{
+                    "name": "MainAbility",
+                    "moduleName": "entry",
+                    "skills": [{"actions": ["action.system.home"]}]
+                }]
+            }]
+        });
+
+        let abilities = parse_app_abilities(&value);
+
+        assert_eq!(abilities.len(), 1);
+        assert_eq!(
+            abilities[0],
+            AppAbilityInfo {
+                name: "MainAbility".to_string(),
+                module_name: "entry".to_string(),
+                module_main_ability: "MainAbility".to_string(),
+                main_module: "entry".to_string(),
+                is_launcher_ability: true,
+                score: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_app_version_prefers_top_level_fields() {
+        let version = parse_app_version(&json!({
+            "versionName": "12.2.40",
+            "versionCode": 999999,
+            "applicationInfo": {
+                "versionName": "ignored",
+                "versionCode": 1
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(version.version_name, "12.2.40");
+        assert_eq!(version.version_code, 999999);
+    }
+
+    #[test]
     fn display_size_parser_extracts_dimensions() {
         let output = "activeMode: 1260x2720, refreshrate=120";
 
@@ -587,6 +852,26 @@ Mission ID #12 {
     #[test]
     fn coord_rejects_invalid_percentage() {
         assert!(Coord::from(1.5_f64).resolve(100).is_err());
+    }
+
+    #[test]
+    fn parse_wlan_ip_supports_legacy_ifconfig_output() {
+        let output =
+            "wlan0 Link encap:Ethernet\n          inet addr:192.168.8.43  Bcast:192.168.8.255";
+
+        assert_eq!(parse_wlan_ip(output), Some("192.168.8.43".to_string()));
+    }
+
+    #[test]
+    fn parse_wlan_ip_supports_modern_ifconfig_output() {
+        let output = "wlan0: flags=4163<UP> mtu 1500\n    inet 192.168.8.43 netmask 255.255.255.0";
+
+        assert_eq!(parse_wlan_ip(output), Some("192.168.8.43".to_string()));
+    }
+
+    #[test]
+    fn extract_ipv4_after_rejects_non_ipv4_tokens() {
+        assert_eq!(extract_ipv4_after("inet fe80::1", "inet "), None);
     }
 
     #[test]

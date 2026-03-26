@@ -101,6 +101,22 @@ pub struct CurrentApp {
     pub ability_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppVersion {
+    pub version_name: String,
+    pub version_code: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppAbilityInfo {
+    pub name: String,
+    pub module_name: String,
+    pub module_main_ability: String,
+    pub main_module: String,
+    pub is_launcher_ability: bool,
+    pub score: i32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point {
     pub x: i32,
@@ -179,6 +195,18 @@ pub struct UiComponentInfo {
     pub scrollable: bool,
     pub bounds: Bounds,
     pub center: Point,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceInfo {
+    pub product_name: String,
+    pub model: String,
+    pub sdk_version: String,
+    pub sys_version: String,
+    pub cpu_abi: String,
+    pub wlan_ip: Option<String>,
+    pub display_size: Point,
+    pub display_rotation: DisplayRotation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

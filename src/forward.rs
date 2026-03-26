@@ -252,7 +252,9 @@ enum ForwardReadState {
     Io(std::io::Error),
 }
 
-fn read_local_client(connection: &mut ForwardConnection) -> std::result::Result<Option<Vec<u8>>, ForwardReadState> {
+fn read_local_client(
+    connection: &mut ForwardConnection,
+) -> std::result::Result<Option<Vec<u8>>, ForwardReadState> {
     let mut buffer = [0_u8; 8192];
     match connection.stream.read(&mut buffer) {
         Ok(0) => Err(ForwardReadState::Closed),

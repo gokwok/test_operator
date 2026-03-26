@@ -4,7 +4,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
@@ -28,6 +28,7 @@ pub struct UiDriverBuilder {
     startup_delay: Duration,
 }
 
+#[derive(Clone)]
 pub struct UiDriver {
     inner: Rc<RefCell<UiSession>>,
     handle: String,
@@ -42,6 +43,15 @@ pub struct UiComponent {
 #[derive(Debug, Clone)]
 pub struct UiSelector {
     filters: Vec<SelectorFilter>,
+    index: usize,
+    is_before: bool,
+    is_after: bool,
+}
+
+#[derive(Clone)]
+pub struct UiQuery {
+    ui: UiDriver,
+    selector: UiSelector,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +66,9 @@ enum SelectorFilter {
     Focused(bool),
     Selected(bool),
     Checked(bool),
+    LongClickable(bool),
+    Scrollable(bool),
+    Checkable(bool),
 }
 
 struct UiSession {
@@ -172,9 +185,9 @@ impl UiDriver {
 
     pub fn display_rotation(&self) -> Result<DisplayRotation> {
         let value = self.invoke("Driver.getDisplayRotation", Vec::new())?;
-        let raw = value
-            .as_i64()
-            .ok_or_else(|| HdcError::protocol("Driver.getDisplayRotation returned invalid payload"))?;
+        let raw = value.as_i64().ok_or_else(|| {
+            HdcError::protocol("Driver.getDisplayRotation returned invalid payload")
+        })?;
         DisplayRotation::from_value(raw as i32)
     }
 
@@ -231,12 +244,40 @@ impl UiDriver {
         ))
     }
 
+    pub fn select(&self, selector: UiSelector) -> UiQuery {
+        UiQuery {
+            ui: self.clone(),
+            selector,
+        }
+    }
+
+    pub fn query(&self) -> UiQuery {
+        UiQuery::new(self.clone())
+    }
+
+    pub fn text(&self, value: impl Into<String>) -> UiQuery {
+        self.query().text(value)
+    }
+
+    pub fn id(&self, value: impl Into<String>) -> UiQuery {
+        self.query().id(value)
+    }
+
+    pub fn key(&self, value: impl Into<String>) -> UiQuery {
+        self.query().key(value)
+    }
+
+    pub fn kind(&self, value: impl Into<String>) -> UiQuery {
+        self.query().kind(value)
+    }
+
+    pub fn description(&self, value: impl Into<String>) -> UiQuery {
+        self.query().description(value)
+    }
+
     pub fn find_component(&self, selector: UiSelector) -> Result<Option<UiComponent>> {
-        let by = self.selector_handle(selector)?;
-        let value = self.invoke("Driver.findComponent", vec![Value::from(by)])?;
-        Ok(value
-            .as_str()
-            .map(|handle| UiComponent::new(self.inner.clone(), handle)))
+        let mut components = self.find_components(selector.clone())?;
+        Ok(components.drain(..).nth(selector.index))
     }
 
     pub fn find_one(&self, selector: UiSelector) -> Result<Option<UiComponent>> {
@@ -244,7 +285,7 @@ impl UiDriver {
     }
 
     pub fn find_components(&self, selector: UiSelector) -> Result<Vec<UiComponent>> {
-        let by = self.selector_handle(selector)?;
+        let by = self.selector_handle(&selector)?;
         let value = self.invoke("Driver.findComponents", vec![Value::from(by)])?;
         let array = value
             .as_array()
@@ -269,14 +310,17 @@ impl UiDriver {
         selector: UiSelector,
         timeout_ms: u64,
     ) -> Result<Option<UiComponent>> {
-        let by = self.selector_handle(selector)?;
-        let value = self.invoke(
-            "Driver.waitForComponent",
-            vec![Value::from(by), Value::from(timeout_ms)],
-        )?;
-        Ok(value
-            .as_str()
-            .map(|handle| UiComponent::new(self.inner.clone(), handle)))
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        loop {
+            if let Some(component) = self.find_component(selector.clone())? {
+                return Ok(Some(component));
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+            thread::sleep((deadline - now).min(Duration::from_millis(250)));
+        }
     }
 
     pub fn watch_toast_once(&self) -> Result<bool> {
@@ -302,9 +346,9 @@ impl UiDriver {
         })
     }
 
-    fn selector_handle(&self, selector: UiSelector) -> Result<String> {
+    fn selector_handle(&self, selector: &UiSelector) -> Result<String> {
         let mut current = "On#seed".to_string();
-        for filter in selector.filters {
+        for filter in selector.filters.iter().cloned() {
             let (api, arg) = filter.into_api_arg();
             let value = self.invoke_on(&api, &current, arg)?;
             current = value
@@ -312,6 +356,20 @@ impl UiDriver {
                 .ok_or_else(|| {
                     HdcError::protocol(format!("{api} returned invalid selector handle"))
                 })?
+                .to_string();
+        }
+        if selector.is_before {
+            let value = self.invoke_on("On.isBefore", "On#seed", Value::from(current.clone()))?;
+            current = value
+                .as_str()
+                .ok_or_else(|| HdcError::protocol("On.isBefore returned invalid selector handle"))?
+                .to_string();
+        }
+        if selector.is_after {
+            let value = self.invoke_on("On.isAfter", "On#seed", Value::from(current.clone()))?;
+            current = value
+                .as_str()
+                .ok_or_else(|| HdcError::protocol("On.isAfter returned invalid selector handle"))?
                 .to_string();
         }
         Ok(current)
@@ -432,10 +490,7 @@ impl UiComponent {
 
     pub fn click(&self) -> Result<()> {
         let center = self.center()?;
-        self.inner
-            .borrow_mut()
-            .driver
-            .click(center.x, center.y)
+        self.inner.borrow_mut().driver.click(center.x, center.y)
     }
 
     pub fn click_if_exists(&self) -> Result<bool> {
@@ -464,10 +519,7 @@ impl UiComponent {
 
     pub fn input_text(&self, text: &str) -> Result<()> {
         let center = self.center()?;
-        self.inner
-            .borrow_mut()
-            .driver
-            .click(center.x, center.y)?;
+        self.inner.borrow_mut().driver.click(center.x, center.y)?;
         self.inner.borrow_mut().driver.input_text(text)
     }
 
@@ -509,6 +561,9 @@ impl UiSelector {
     pub fn new() -> Self {
         Self {
             filters: Vec::new(),
+            index: 0,
+            is_before: false,
+            is_after: false,
         }
     }
 
@@ -561,6 +616,36 @@ impl UiSelector {
         self.filters.push(SelectorFilter::Checked(value));
         self
     }
+
+    pub fn long_clickable(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::LongClickable(value));
+        self
+    }
+
+    pub fn scrollable(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Scrollable(value));
+        self
+    }
+
+    pub fn checkable(mut self, value: bool) -> Self {
+        self.filters.push(SelectorFilter::Checkable(value));
+        self
+    }
+
+    pub fn index(mut self, value: usize) -> Self {
+        self.index = value;
+        self
+    }
+
+    pub fn is_before(mut self, value: bool) -> Self {
+        self.is_before = value;
+        self
+    }
+
+    pub fn is_after(mut self, value: bool) -> Self {
+        self.is_after = value;
+        self
+    }
 }
 
 impl Default for UiSelector {
@@ -582,7 +667,192 @@ impl SelectorFilter {
             Self::Focused(value) => ("On.focused".to_string(), Value::from(value)),
             Self::Selected(value) => ("On.selected".to_string(), Value::from(value)),
             Self::Checked(value) => ("On.checked".to_string(), Value::from(value)),
+            Self::LongClickable(value) => ("On.longClickable".to_string(), Value::from(value)),
+            Self::Scrollable(value) => ("On.scrollable".to_string(), Value::from(value)),
+            Self::Checkable(value) => ("On.checkable".to_string(), Value::from(value)),
         }
+    }
+}
+
+impl UiQuery {
+    const DEFAULT_RETRIES: u32 = 2;
+    const DEFAULT_WAIT: Duration = Duration::from_secs(1);
+
+    fn new(ui: UiDriver) -> Self {
+        Self {
+            ui,
+            selector: UiSelector::new(),
+        }
+    }
+
+    pub fn text(mut self, value: impl Into<String>) -> Self {
+        self.selector = self.selector.text(value);
+        self
+    }
+
+    pub fn id(mut self, value: impl Into<String>) -> Self {
+        self.selector = self.selector.id(value);
+        self
+    }
+
+    pub fn key(mut self, value: impl Into<String>) -> Self {
+        self.selector = self.selector.key(value);
+        self
+    }
+
+    pub fn kind(mut self, value: impl Into<String>) -> Self {
+        self.selector = self.selector.kind(value);
+        self
+    }
+
+    pub fn description(mut self, value: impl Into<String>) -> Self {
+        self.selector = self.selector.description(value);
+        self
+    }
+
+    pub fn enabled(mut self, value: bool) -> Self {
+        self.selector = self.selector.enabled(value);
+        self
+    }
+
+    pub fn clickable(mut self, value: bool) -> Self {
+        self.selector = self.selector.clickable(value);
+        self
+    }
+
+    pub fn focused(mut self, value: bool) -> Self {
+        self.selector = self.selector.focused(value);
+        self
+    }
+
+    pub fn selected(mut self, value: bool) -> Self {
+        self.selector = self.selector.selected(value);
+        self
+    }
+
+    pub fn checked(mut self, value: bool) -> Self {
+        self.selector = self.selector.checked(value);
+        self
+    }
+
+    pub fn long_clickable(mut self, value: bool) -> Self {
+        self.selector = self.selector.long_clickable(value);
+        self
+    }
+
+    pub fn scrollable(mut self, value: bool) -> Self {
+        self.selector = self.selector.scrollable(value);
+        self
+    }
+
+    pub fn checkable(mut self, value: bool) -> Self {
+        self.selector = self.selector.checkable(value);
+        self
+    }
+
+    pub fn index(mut self, value: usize) -> Self {
+        self.selector = self.selector.index(value);
+        self
+    }
+
+    pub fn nth(self, value: usize) -> Self {
+        self.index(value)
+    }
+
+    pub fn is_before(mut self, value: bool) -> Self {
+        self.selector = self.selector.is_before(value);
+        self
+    }
+
+    pub fn is_after(mut self, value: bool) -> Self {
+        self.selector = self.selector.is_after(value);
+        self
+    }
+
+    pub fn count(&self) -> Result<usize> {
+        Ok(self.ui.find_components(self.selector.clone())?.len())
+    }
+
+    pub fn all(&self) -> Result<Vec<UiComponent>> {
+        self.ui.find_components(self.selector.clone())
+    }
+
+    pub fn first(&self) -> Result<Option<UiComponent>> {
+        self.find_component()
+    }
+
+    pub fn must_find(&self) -> Result<UiComponent> {
+        self.require_component(Self::DEFAULT_RETRIES, Self::DEFAULT_WAIT)
+    }
+
+    pub fn find_component(&self) -> Result<Option<UiComponent>> {
+        self.find_component_with_retry(1, Duration::from_secs(0))
+    }
+
+    pub fn find_component_with_retry(
+        &self,
+        retries: u32,
+        wait_time: Duration,
+    ) -> Result<Option<UiComponent>> {
+        let attempts = retries.max(1);
+        for attempt in 0..attempts {
+            if let Some(component) = self.ui.find_component(self.selector.clone())? {
+                return Ok(Some(component));
+            }
+            if attempt + 1 < attempts {
+                thread::sleep(wait_time);
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn exists(&self) -> Result<bool> {
+        self.exists_with_retry(Self::DEFAULT_RETRIES, Self::DEFAULT_WAIT)
+    }
+
+    pub fn wait(&self, timeout: Duration) -> Result<Option<UiComponent>> {
+        self.ui
+            .wait_for_component(self.selector.clone(), timeout.as_millis() as u64)
+    }
+
+    pub fn must_wait(&self, timeout: Duration) -> Result<UiComponent> {
+        self.wait(timeout)?
+            .ok_or_else(|| HdcError::protocol("ui component not found before timeout"))
+    }
+
+    pub fn exists_with_retry(&self, retries: u32, wait_time: Duration) -> Result<bool> {
+        Ok(self
+            .find_component_with_retry(retries, wait_time)?
+            .is_some())
+    }
+
+    pub fn click(&self) -> Result<()> {
+        self.click_with_retry(Self::DEFAULT_RETRIES, Self::DEFAULT_WAIT)
+    }
+
+    pub fn click_with_retry(&self, retries: u32, wait_time: Duration) -> Result<()> {
+        let component = self.require_component(retries, wait_time)?;
+        component.click()
+    }
+
+    pub fn double_click(&self) -> Result<()> {
+        let component = self.require_component(Self::DEFAULT_RETRIES, Self::DEFAULT_WAIT)?;
+        component.double_click()
+    }
+
+    pub fn long_click(&self) -> Result<()> {
+        let component = self.require_component(Self::DEFAULT_RETRIES, Self::DEFAULT_WAIT)?;
+        component.long_click()
+    }
+
+    pub fn input_text(&self, text: &str) -> Result<()> {
+        let component = self.require_component(Self::DEFAULT_RETRIES, Self::DEFAULT_WAIT)?;
+        component.input_text(text)
+    }
+
+    fn require_component(&self, retries: u32, wait_time: Duration) -> Result<UiComponent> {
+        self.find_component_with_retry(retries, wait_time)?
+            .ok_or_else(|| HdcError::protocol("ui component not found"))
     }
 }
 
@@ -679,17 +949,23 @@ fn kill_uitest_daemon(driver: &mut Driver) -> Result<()> {
 
 fn push_agent(driver: &mut Driver, local_path: &Path, remote_path: &str) -> Result<()> {
     let remote_staging_path = format!("{remote_path}.upload");
-    let _ = shell_checked(driver, &format!(
-        "rm -f {} {}",
-        shell_escape(&remote_staging_path),
-        shell_escape(remote_path)
-    ));
+    let _ = shell_checked(
+        driver,
+        &format!(
+            "rm -f {} {}",
+            shell_escape(&remote_staging_path),
+            shell_escape(remote_path)
+        ),
+    );
     driver.send_file(local_path, &remote_staging_path)?;
-    shell_checked(driver, &format!(
-        "cp {} {}",
-        shell_escape(&remote_staging_path),
-        shell_escape(remote_path)
-    ))?;
+    shell_checked(
+        driver,
+        &format!(
+            "cp {} {}",
+            shell_escape(&remote_staging_path),
+            shell_escape(remote_path)
+        ),
+    )?;
     shell_checked(driver, &format!("chmod +x {}", shell_escape(remote_path)))?;
     Ok(())
 }
@@ -777,8 +1053,12 @@ fn read_string_field(value: &Value, key: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{SelectorFilter, parse_bounds, parse_point, parse_ui_event, shell_escape};
+    use super::{
+        SelectorFilter, UiQuery, UiSelector, parse_bounds, parse_point, parse_ui_event,
+        shell_escape,
+    };
     use serde_json::json;
+    use std::time::Duration;
 
     #[test]
     fn selector_filter_maps_text_to_on_text() {
@@ -819,5 +1099,55 @@ mod tests {
     #[test]
     fn shell_escape_quotes_single_quotes() {
         assert_eq!(shell_escape("it's"), "'it'\"'\"'s'");
+    }
+
+    #[test]
+    fn selector_filter_maps_long_clickable_to_on_long_clickable() {
+        let (api, value) = SelectorFilter::LongClickable(true).into_api_arg();
+        assert_eq!(api, "On.longClickable");
+        assert_eq!(value, json!(true));
+    }
+
+    #[test]
+    fn selector_tracks_index_and_relative_flags() {
+        let selector = UiSelector::new()
+            .text("Settings")
+            .index(2)
+            .is_before(true)
+            .is_after(false);
+
+        assert_eq!(selector.filters.len(), 1);
+        assert_eq!(selector.index, 2);
+        assert!(selector.is_before);
+        assert!(!selector.is_after);
+    }
+
+    #[test]
+    fn ui_query_defaults_match_hmdriver_style_polling() {
+        assert_eq!(UiQuery::DEFAULT_RETRIES, 2);
+        assert_eq!(UiQuery::DEFAULT_WAIT, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn selector_chain_supports_extended_filters() {
+        let selector = UiSelector::new()
+            .text("Settings")
+            .enabled(true)
+            .long_clickable(false)
+            .scrollable(true)
+            .checkable(false)
+            .index(1)
+            .is_after(true);
+
+        assert_eq!(selector.filters.len(), 5);
+        assert_eq!(selector.index, 1);
+        assert!(selector.is_after);
+    }
+
+    #[test]
+    fn ui_query_wait_converts_duration_to_timeout_ms() {
+        let timeout = Duration::from_millis(1500);
+
+        assert_eq!(timeout.as_millis() as u64, 1500);
     }
 }

@@ -15,8 +15,9 @@ pub use driver::{Driver, DriverBuilder, HdcDriver, HdcDriverBuilder};
 pub use error::{HdcError, Result};
 pub use forward::TcpForwardHandle;
 pub use types::{
-    Bounds, CommandStatus, Coord, CurrentApp, DisplayRotation, DriverMessage, DriverMessageLevel,
-    KeyCode, Point, ShellResult, UiComponentInfo, UiEvent,
+    AppAbilityInfo, AppVersion, Bounds, CommandStatus, Coord, CurrentApp, DeviceInfo,
+    DisplayRotation, DriverMessage, DriverMessageLevel, KeyCode, Point, ShellResult,
+    UiComponentInfo, UiEvent,
 };
-pub use ui::{UiComponent, UiDriver, UiDriverBuilder, UiSelector};
+pub use ui::{UiComponent, UiDriver, UiDriverBuilder, UiQuery, UiSelector};
 pub use xpath::XPathNode;

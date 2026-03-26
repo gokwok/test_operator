@@ -117,7 +117,8 @@ impl XPathMatcher {
             Some(raw) => raw
                 .split(" or ")
                 .map(|group| {
-                    group.split(" and ")
+                    group
+                        .split(" and ")
                         .map(|item| Predicate::parse(item.trim()))
                         .collect::<Result<Vec<Predicate>>>()
                 })
@@ -321,7 +322,10 @@ mod tests {
         let matcher =
             XPathMatcher::parse("//Button[@text='Hello' and starts-with(@id,'primary')]").unwrap();
         let matched = find_first_match(&tree, &matcher).unwrap();
-        assert_eq!(matched.info.get("text").and_then(|v| v.as_str()), Some("Hello"));
+        assert_eq!(
+            matched.info.get("text").and_then(|v| v.as_str()),
+            Some("Hello")
+        );
         assert_eq!(matched.bounds.unwrap().left, 10);
     }
 
