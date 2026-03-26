@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod error;
+pub mod harness;
 pub mod model;
 pub mod planner;
 pub mod policy;
@@ -14,6 +15,10 @@ use serde::{Deserialize, Serialize};
 
 pub use config::{AgentConfig, PlannerFormat};
 pub use error::AgentError;
+pub use harness::{
+    render_harness_report, summarize_timing, summarize_transcript_replay, HarnessReplaySummary,
+    HarnessReport, HarnessTimingSummary, ToolTimingSummary,
+};
 pub use planner::{AgentDecision, DecisionParser, DecisionValidator};
 pub use planner::{FinishGate, FinishGateVerdict};
 pub use policy::{
