@@ -600,6 +600,187 @@ async fn runtime_resolves_scroll_snapshot_element_locator_before_driver_call() {
     );
 }
 
+#[tokio::test]
+async fn runtime_resolves_snapshot_coords_locator_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-coords");
+    snapshot.metadata.capture_bounds = Some(Rect {
+        x: 400.0,
+        y: 240.0,
+        width: 300.0,
+        height: 640.0,
+    });
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(successful_action_outcome("clicked", 7)));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::SnapshotCoords {
+                    snapshot: snapshot.id.clone(),
+                    point: Point { x: 152.0, y: 772.0 },
+                }),
+                ..default_action_request()
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Click {
+                mode: ClickMode::Left,
+            },
+            locator: Some(Locator::Coords(Point {
+                x: 552.0,
+                y: 1012.0
+            })),
+            ..default_action_request()
+        }
+    );
+}
+
+#[tokio::test]
+async fn runtime_resolves_snapshot_normalized_coords_locator_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-normalized");
+    snapshot.metadata.capture_bounds = Some(Rect {
+        x: 400.0,
+        y: 240.0,
+        width: 300.0,
+        height: 640.0,
+    });
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(successful_action_outcome("clicked", 7)));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::SnapshotNormalizedCoords {
+                    snapshot: snapshot.id.clone(),
+                    point: Point { x: 152.0, y: 772.0 },
+                    basis: 1000.0,
+                }),
+                ..default_action_request()
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Click {
+                mode: ClickMode::Left,
+            },
+            locator: Some(Locator::Coords(Point {
+                x: 445.6,
+                y: 734.08,
+            })),
+            ..default_action_request()
+        }
+    );
+}
+
+#[tokio::test]
+async fn runtime_rejects_snapshot_coords_without_capture_bounds() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let snapshot = test_snapshot("snap-missing-bounds");
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::SnapshotCoords {
+                    snapshot: "snap-missing-bounds".into(),
+                    point: Point { x: 152.0, y: 772.0 },
+                }),
+                ..default_action_request()
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        OperatorError::Platform(message)
+            if message.contains("has no capture bounds for coordinate normalization")
+    ));
+    assert!(driver.action_calls().await.is_empty());
+}
+
 #[derive(Default)]
 struct RecordingEventSink {
     events: Mutex<Vec<AuditEvent>>,

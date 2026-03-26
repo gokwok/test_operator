@@ -8,9 +8,9 @@ use std::{
 };
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, Message, ModelConfig, ModelError, ModelEvent,
-    ModelProvider, OpenAiProviderConfig, OpenAiResponsesProvider, ProviderKind, ReasoningLevel,
-    ResponseFormat, ToolSpec, UserMessage,
+    CallOptions, ContentBlock, Context, CoordinatePolicy, Message, ModelConfig, ModelError,
+    ModelEvent, ModelProvider, OpenAiProviderConfig, OpenAiResponsesProvider, ProviderKind,
+    ReasoningLevel, ResponseFormat, ToolSpec, UserMessage,
 };
 use serde_json::{json, Value};
 
@@ -26,6 +26,7 @@ fn model_config() -> ModelConfig {
     ModelConfig {
         provider: ProviderKind::OpenAi,
         id: "gpt-5.4".into(),
+        coordinate_policy: CoordinatePolicy::ScreenAbsolutePixels,
         default_options: CallOptions::default(),
         default_timeout_ms: Some(30_000),
     }

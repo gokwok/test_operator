@@ -4,7 +4,7 @@ use super::{
     doubao::{DoubaoChatCompletionsProvider, DoubaoProviderConfig},
     openai::{OpenAiProviderConfig, OpenAiResponsesProvider},
     provider::{ModelError, ModelProvider},
-    types::{CallOptions, ModelConfig, ProviderKind, ReasoningLevel},
+    types::{CallOptions, CoordinatePolicy, ModelConfig, ProviderKind, ReasoningLevel},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -206,10 +206,15 @@ fn phase1_model(provider: ProviderKind, id: &'static str) -> ModelConfig {
         "gpt-5.4" | "doubao-seed-2-0-lite-260215" => Some(ReasoningLevel::Minimal),
         _ => Some(ReasoningLevel::Medium),
     };
+    let coordinate_policy = match id {
+        "doubao-seed-2-0-lite-260215" => CoordinatePolicy::SurfaceNormalized1000,
+        _ => CoordinatePolicy::ScreenAbsolutePixels,
+    };
 
     ModelConfig {
         provider,
         id: Arc::from(id),
+        coordinate_policy,
         default_options: CallOptions {
             temperature: None,
             max_output_tokens: None,

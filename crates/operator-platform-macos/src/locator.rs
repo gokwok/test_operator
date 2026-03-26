@@ -18,6 +18,12 @@ pub fn resolve_locator<I: TreeInspector>(
             point: *point,
             warning: Some("coordinate fallback in use; prefer snapshot_id + element_id".into()),
         }),
+        Locator::SnapshotCoords { .. } | Locator::SnapshotNormalizedCoords { .. } => Err(
+            OperatorError::Platform(
+                "snapshot-relative coordinate locators must be normalized by runtime before reaching the macOS driver"
+                    .into(),
+            ),
+        ),
         Locator::Text(text) => resolve_text_locator(text, tree_inspector),
         Locator::Role { role, index } => resolve_role_locator(role, *index, tree_inspector),
         Locator::SnapshotElement { .. } => Err(OperatorError::Platform(

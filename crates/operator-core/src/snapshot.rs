@@ -45,5 +45,6 @@ pub enum ElementSource {
 pub struct SnapshotMetadata {
     pub platform: String,
     pub display_scale: Option<f32>,
+    pub capture_bounds: Option<Rect>,
     pub capture_duration_ms: u64,
 }

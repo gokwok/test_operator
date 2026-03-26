@@ -9,6 +9,15 @@ pub enum Locator {
         snapshot: SnapshotId,
         element: ElementId,
     },
+    SnapshotCoords {
+        snapshot: SnapshotId,
+        point: Point,
+    },
+    SnapshotNormalizedCoords {
+        snapshot: SnapshotId,
+        point: Point,
+        basis: f64,
+    },
     Text(String),
     Role {
         role: String,

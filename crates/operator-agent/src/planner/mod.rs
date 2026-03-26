@@ -1,5 +1,6 @@
 pub mod context;
 pub mod finish_gate;
+pub mod normalizer;
 pub mod parser;
 pub mod prompts;
 pub mod renderer;
@@ -10,6 +11,7 @@ pub use context::{
     TargetSummary, ToolResultSummary,
 };
 pub use finish_gate::{FinishGate, FinishGateVerdict};
+pub use normalizer::DecisionNormalizer;
 pub use parser::{AgentDecision, DecisionParser};
 pub use prompts::PlannerPromptBuilder;
 pub use renderer::{PlannerRenderer, PlannerVisualInput};

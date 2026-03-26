@@ -18,6 +18,7 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "The planner context carries current/previous visual artifact references from the in-memory loop state, not full snapshot bodies.\n",
     "Do not finish while `ui_state_stale` is true.\n",
     "Use `observe` as a cold-path tool when you need to verify UI content or state; request `include_elements=true` because screenshot-only or empty observations do not count as verification.\n",
+    "Enum values and field names are case-sensitive; copy them exactly from the provided tool summaries.\n",
     "Do not invent tool results, hidden UI state, or unsupported tool arguments.\n",
     "Return exactly one JSON object and no surrounding prose.\n",
     "Valid decision shapes:\n",

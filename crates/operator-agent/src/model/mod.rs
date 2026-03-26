@@ -13,7 +13,7 @@ pub use registry::{
     EnvironmentProviderBootstrap, ModelRegistry, ModelRegistryBootstrapError, ResolvedModel,
 };
 pub use types::{
-    AssistantMessage, CallOptions, ContentBlock, Context, Cost, Message, ModelConfig, ModelId,
-    ProviderKind, ReasoningLevel, ResponseFormat, StopReason, ToolResultMessage, ToolSpec, Usage,
-    UserMessage,
+    AssistantMessage, CallOptions, ContentBlock, Context, CoordinatePolicy, Cost, Message,
+    ModelConfig, ModelId, ProviderKind, ReasoningLevel, ResponseFormat, StopReason,
+    ToolResultMessage, ToolSpec, Usage, UserMessage,
 };

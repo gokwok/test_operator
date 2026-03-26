@@ -34,6 +34,7 @@ async fn observe_frontmost_returns_snapshot_with_metadata() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("artifact-frontmost.png".into()),
             display_scale: Some(2.0),
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -880,6 +881,7 @@ async fn click_action_resolves_text_locator_to_button_center() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -940,6 +942,7 @@ async fn click_action_without_locator_uses_current_cursor_position() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),
@@ -982,6 +985,7 @@ async fn click_action_supports_double_click_mode() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -1057,6 +1061,7 @@ async fn click_action_focuses_window_selector_before_resolving_locator() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -1122,6 +1127,7 @@ async fn type_action_clicks_role_target_before_typing() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([
@@ -1217,6 +1223,7 @@ async fn type_action_supports_clear_delay_and_trailing_keys() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -1304,6 +1311,7 @@ async fn scroll_action_returns_successful_outcome() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),
@@ -1348,6 +1356,7 @@ async fn move_action_resolves_text_locator_before_moving_cursor() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -1444,6 +1453,7 @@ async fn move_action_uses_window_index_selector_when_locator_is_absent() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),
@@ -1488,6 +1498,7 @@ async fn scroll_action_resolves_text_locator_before_scrolling() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([(
@@ -1550,6 +1561,7 @@ async fn drag_action_resolves_between_locators_and_returns_successful_outcome() 
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([
@@ -1645,6 +1657,7 @@ async fn swipe_action_resolves_between_locators_and_returns_successful_outcome()
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::from([
@@ -1749,6 +1762,7 @@ async fn hotkey_action_returns_successful_outcome() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),
@@ -1803,6 +1817,7 @@ async fn hotkey_with_app_target_tolerates_anchor_window_query_failures() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),
@@ -1868,6 +1883,7 @@ async fn type_with_app_target_tolerates_anchor_window_query_failures() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),
@@ -1918,6 +1934,7 @@ async fn press_action_returns_successful_outcome() {
         StubCaptureProvider::with_result(CaptureResult {
             artifact_id: ArtifactId("unused.png".into()),
             display_scale: None,
+            capture_bounds: None,
         }),
         StubTreeInspector::with_result(InspectResult {
             elements: HashMap::new(),

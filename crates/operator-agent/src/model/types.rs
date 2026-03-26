@@ -15,8 +15,17 @@ pub enum ProviderKind {
 pub struct ModelConfig {
     pub provider: ProviderKind,
     pub id: ModelId,
+    pub coordinate_policy: CoordinatePolicy,
     pub default_options: CallOptions,
     pub default_timeout_ms: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoordinatePolicy {
+    ScreenAbsolutePixels,
+    SurfaceAbsolutePixels,
+    SurfaceNormalized1000,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

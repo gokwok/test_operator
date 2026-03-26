@@ -18,6 +18,7 @@ pub trait CaptureProvider: Send + Sync {
 pub struct CaptureResult {
     pub artifact_id: ArtifactId,
     pub display_scale: Option<f32>,
+    pub capture_bounds: Option<Rect>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,11 +50,13 @@ impl CaptureProvider for SystemCaptureProvider {
         fs::create_dir_all(&self.artifacts_dir)?;
 
         let path = self.artifact_path(&artifact_id);
-        capture_to_path(surface, &path)?;
+        let capture_bounds = capture_bounds_for_surface(surface)?;
+        capture_to_path(surface, capture_bounds.as_ref(), &path)?;
 
         Ok(CaptureResult {
             artifact_id,
             display_scale: display_scale_from_path(&path),
+            capture_bounds,
         })
     }
 }
@@ -81,7 +84,11 @@ fn next_artifact_id() -> ArtifactId {
 }
 
 #[cfg(target_os = "macos")]
-fn capture_to_path(surface: &Surface, path: &Path) -> Result<(), OperatorError> {
+fn capture_to_path(
+    surface: &Surface,
+    capture_bounds: Option<&Rect>,
+    path: &Path,
+) -> Result<(), OperatorError> {
     let mut command = Command::new("screencapture");
     command.arg("-x");
 
@@ -92,8 +99,8 @@ fn capture_to_path(surface: &Surface, path: &Path) -> Result<(), OperatorError> 
             }
         }
         SurfaceKind::Frontmost => {
-            if let Some(rect) = frontmost_window_bounds()? {
-                command.arg("-R").arg(rect_argument(&rect));
+            if let Some(rect) = capture_bounds {
+                command.arg("-R").arg(rect_argument(rect));
             }
         }
         SurfaceKind::Window { id } => {
@@ -120,6 +127,15 @@ fn capture_to_path(surface: &Surface, path: &Path) -> Result<(), OperatorError> 
     Err(OperatorError::Platform(format!(
         "screencapture failed: {stderr}"
     )))
+}
+
+#[cfg(target_os = "macos")]
+fn capture_bounds_for_surface(surface: &Surface) -> Result<Option<Rect>, OperatorError> {
+    match &surface.kind {
+        SurfaceKind::Frontmost => frontmost_window_bounds(),
+        SurfaceKind::Region { rect } => Ok(Some(*rect)),
+        SurfaceKind::Fullscreen { .. } | SurfaceKind::Window { .. } => Ok(None),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -202,10 +218,19 @@ fn command_output(command: &str, output: std::process::Output) -> Result<String,
 }
 
 #[cfg(not(target_os = "macos"))]
-fn capture_to_path(_surface: &Surface, _path: &Path) -> Result<(), OperatorError> {
+fn capture_to_path(
+    _surface: &Surface,
+    _capture_bounds: Option<&Rect>,
+    _path: &Path,
+) -> Result<(), OperatorError> {
     Err(OperatorError::Platform(
         "macOS capture is unavailable on non-macOS hosts".into(),
     ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_bounds_for_surface(_surface: &Surface) -> Result<Option<Rect>, OperatorError> {
+    Ok(None)
 }
 
 #[cfg(target_os = "macos")]

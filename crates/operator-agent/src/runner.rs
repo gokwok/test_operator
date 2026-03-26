@@ -20,8 +20,8 @@ use crate::{
         ResolvedModel, UserMessage,
     },
     planner::{
-        AgentDecision, DecisionParser, DecisionValidator, FinishGate, FinishGateVerdict,
-        LoopStateContextManager, PlannerPromptBuilder, PlannerVisualInput,
+        AgentDecision, DecisionNormalizer, DecisionParser, DecisionValidator, FinishGate,
+        FinishGateVerdict, LoopStateContextManager, PlannerPromptBuilder, PlannerVisualInput,
     },
     policy::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
@@ -40,6 +40,7 @@ pub struct AgentRunner {
     config: AgentConfig,
     prompt_builder: PlannerPromptBuilder,
     parser: DecisionParser,
+    normalizer: DecisionNormalizer,
     finish_gate: FinishGate,
 }
 
@@ -51,6 +52,7 @@ impl AgentRunner {
             config,
             prompt_builder: PlannerPromptBuilder::new(),
             parser: DecisionParser::new(),
+            normalizer: DecisionNormalizer::new(),
             finish_gate: FinishGate::new(),
         }
     }
@@ -257,6 +259,8 @@ impl AgentRunner {
                     }
                 }
             }
+
+            let decision = self.normalizer.normalize(decision, &model.config, state)?;
 
             return Ok(decision);
         }

@@ -85,3 +85,49 @@ async fn catalog_hides_side_effect_tools_when_runtime_policy_disables_them() {
     assert!(!names.contains(&"move"));
     assert!(!names.contains(&"drag"));
 }
+
+#[tokio::test]
+async fn planner_summary_keeps_flattened_click_arguments_visible() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([
+            Capability::Capture,
+            Capability::InspectTree,
+            Capability::PointerInput,
+        ]),
+    ));
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver)
+        .build()
+        .await
+        .expect("runtime should build");
+    let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
+
+    let catalog = executor
+        .catalog(&TargetId("local:macos".into()))
+        .expect("catalog should resolve for the target");
+    let click = catalog
+        .into_iter()
+        .find(|spec| spec.name == "click")
+        .expect("click should be available");
+
+    let summary = click.planner_summary();
+
+    assert!(
+        summary
+            .arguments
+            .iter()
+            .any(|argument| argument.contains("focus_policy: enum(Auto|Never)")),
+        "planner summary should expose the legal focus_policy enum: {:?}",
+        summary.arguments
+    );
+    assert!(
+        summary
+            .arguments
+            .iter()
+            .any(|argument| argument.contains("target_selector: null | object")),
+        "planner summary should expose the flattened target_selector argument: {:?}",
+        summary.arguments
+    );
+}

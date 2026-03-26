@@ -3,9 +3,10 @@ mod support;
 use std::{sync::Arc, time::Duration};
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, DoubaoProviderConfig, EnvironmentProviderBootstrap,
-    Message, ModelConfig, ModelError, ModelEvent, ModelRegistry, ModelRegistryBootstrapError,
-    ModelRequest, OpenAiProviderConfig, ProviderKind, ReasoningLevel, ToolSpec, UserMessage,
+    CallOptions, ContentBlock, Context, CoordinatePolicy, DoubaoProviderConfig,
+    EnvironmentProviderBootstrap, Message, ModelConfig, ModelError, ModelEvent, ModelRegistry,
+    ModelRegistryBootstrapError, ModelRequest, OpenAiProviderConfig, ProviderKind, ReasoningLevel,
+    ToolSpec, UserMessage,
 };
 use serde_json::json;
 use support::DeterministicTestProvider;
@@ -19,6 +20,10 @@ fn default_registry_exposes_phase1_models() {
     assert_eq!(gpt.id.as_ref(), "gpt-5.4");
     assert_eq!(gpt.default_timeout_ms, Some(30_000));
     assert_eq!(
+        gpt.coordinate_policy,
+        CoordinatePolicy::ScreenAbsolutePixels
+    );
+    assert_eq!(
         gpt.default_options.reasoning_level,
         Some(ReasoningLevel::Minimal)
     );
@@ -29,6 +34,10 @@ fn default_registry_exposes_phase1_models() {
     assert_eq!(doubao.provider, ProviderKind::OpenAiCompatible);
     assert_eq!(doubao.id.as_ref(), "doubao-seed-2-0-lite-260215");
     assert_eq!(doubao.default_timeout_ms, Some(30_000));
+    assert_eq!(
+        doubao.coordinate_policy,
+        CoordinatePolicy::SurfaceNormalized1000
+    );
     assert_eq!(
         doubao.default_options.reasoning_level,
         Some(ReasoningLevel::Minimal)
@@ -63,6 +72,7 @@ async fn resolve_returns_registered_provider_for_known_model() {
         ModelConfig {
             provider: ProviderKind::OpenAi,
             id: Arc::from("gpt-5.4"),
+            coordinate_policy: CoordinatePolicy::ScreenAbsolutePixels,
             default_options: CallOptions {
                 temperature: None,
                 max_output_tokens: None,

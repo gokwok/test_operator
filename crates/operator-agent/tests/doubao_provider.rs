@@ -8,9 +8,9 @@ use std::{
 };
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, DoubaoChatCompletionsProvider, DoubaoProviderConfig,
-    Message, ModelConfig, ModelError, ModelEvent, ModelProvider, ProviderKind, ReasoningLevel,
-    ResponseFormat, ToolSpec, UserMessage,
+    CallOptions, ContentBlock, Context, CoordinatePolicy, DoubaoChatCompletionsProvider,
+    DoubaoProviderConfig, Message, ModelConfig, ModelError, ModelEvent, ModelProvider,
+    ProviderKind, ReasoningLevel, ResponseFormat, ToolSpec, UserMessage,
 };
 use serde_json::{json, Value};
 
@@ -26,6 +26,7 @@ fn model_config() -> ModelConfig {
     ModelConfig {
         provider: ProviderKind::OpenAiCompatible,
         id: "doubao-seed-2-0-lite-260215".into(),
+        coordinate_policy: CoordinatePolicy::SurfaceNormalized1000,
         default_options: CallOptions::default(),
         default_timeout_ms: Some(30_000),
     }

@@ -643,29 +643,95 @@ impl RuntimeCore {
 
     async fn normalize_locator(&self, locator: Locator) -> Result<Locator, OperatorError> {
         match locator {
-            Locator::SnapshotElement { snapshot, element } => {
-                let snapshot_record = self
-                    .snapshots
-                    .get(&snapshot)
-                    .await?
-                    .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
-                let element_record = snapshot_record
-                    .elements
-                    .get(&element)
-                    .ok_or_else(|| OperatorError::ElementNotFound(element.clone()))?;
-                let bounds = element_record.bounds.ok_or_else(|| {
-                    OperatorError::Platform(format!(
-                        "snapshot element {element} in {snapshot} has no bounds"
-                    ))
-                })?;
-
-                Ok(Locator::Coords(Point {
-                    x: bounds.x + bounds.width / 2.0,
-                    y: bounds.y + bounds.height / 2.0,
-                }))
-            }
+            Locator::SnapshotElement { snapshot, element } => Ok(Locator::Coords(
+                self.snapshot_element_point(&snapshot, &element).await?,
+            )),
+            Locator::SnapshotCoords { snapshot, point } => Ok(Locator::Coords(
+                self.snapshot_relative_point(&snapshot, point).await?,
+            )),
+            Locator::SnapshotNormalizedCoords {
+                snapshot,
+                point,
+                basis,
+            } => Ok(Locator::Coords(
+                self.snapshot_normalized_point(&snapshot, point, basis)
+                    .await?,
+            )),
             other => Ok(other),
         }
+    }
+
+    async fn snapshot_element_point(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+        element: &operator_core::ElementId,
+    ) -> Result<Point, OperatorError> {
+        let snapshot_record = self
+            .snapshots
+            .get(snapshot)
+            .await?
+            .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
+        let element_record = snapshot_record
+            .elements
+            .get(element)
+            .ok_or_else(|| OperatorError::ElementNotFound(element.clone()))?;
+        let bounds = element_record.bounds.ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "snapshot element {element} in {snapshot} has no bounds"
+            ))
+        })?;
+
+        Ok(Point {
+            x: bounds.x + bounds.width / 2.0,
+            y: bounds.y + bounds.height / 2.0,
+        })
+    }
+
+    async fn snapshot_relative_point(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+        point: Point,
+    ) -> Result<Point, OperatorError> {
+        let bounds = self.snapshot_capture_bounds(snapshot).await?;
+        Ok(Point {
+            x: bounds.x + point.x,
+            y: bounds.y + point.y,
+        })
+    }
+
+    async fn snapshot_normalized_point(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+        point: Point,
+        basis: f64,
+    ) -> Result<Point, OperatorError> {
+        if basis <= 0.0 {
+            return Err(OperatorError::Platform(format!(
+                "snapshot normalized coords for {snapshot} require a positive basis"
+            )));
+        }
+
+        let bounds = self.snapshot_capture_bounds(snapshot).await?;
+        Ok(Point {
+            x: bounds.x + bounds.width * (point.x / basis),
+            y: bounds.y + bounds.height * (point.y / basis),
+        })
+    }
+
+    async fn snapshot_capture_bounds(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+    ) -> Result<operator_core::Rect, OperatorError> {
+        let snapshot_record = self
+            .snapshots
+            .get(snapshot)
+            .await?
+            .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
+        snapshot_record.metadata.capture_bounds.ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "snapshot {snapshot} has no capture bounds for coordinate normalization"
+            ))
+        })
     }
 
     async fn emit_invoked<T: serde::Serialize>(

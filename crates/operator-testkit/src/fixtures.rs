@@ -34,6 +34,7 @@ pub fn test_snapshot(id: &str) -> Snapshot {
         metadata: SnapshotMetadata {
             platform: "macos".into(),
             display_scale: Some(2.0),
+            capture_bounds: None,
             capture_duration_ms: 8,
         },
         created_at: SystemTime::UNIX_EPOCH,

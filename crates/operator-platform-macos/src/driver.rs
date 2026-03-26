@@ -201,17 +201,22 @@ where
             }
         };
 
+        let image_artifact = capture.as_ref().map(|result| result.artifact_id.clone());
+        let display_scale = capture.as_ref().and_then(|result| result.display_scale);
+        let capture_bounds = capture.as_ref().and_then(|result| result.capture_bounds);
+
         Ok(ObserveResult {
             snapshot: Snapshot {
                 id: next_snapshot_id(),
                 target: ctx.target.clone(),
                 surface: req.surface,
-                image_artifact: capture.as_ref().map(|result| result.artifact_id.clone()),
+                image_artifact,
                 elements: inspection.elements,
                 root_ids: inspection.root_ids,
                 metadata: SnapshotMetadata {
                     platform: "macos".into(),
-                    display_scale: capture.and_then(|result| result.display_scale),
+                    display_scale,
+                    capture_bounds,
                     capture_duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX))
                         as u64,
                 },
