@@ -7,11 +7,14 @@ use serde_json::Value;
 
 use crate::auth::default_key_dir;
 use crate::error::{HdcError, Result};
+use crate::forward::{TcpForwardHandle, send_file_via_shell};
 use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
 use crate::types::{Coord, CurrentApp, KeyCode, ShellResult};
 
 pub struct Driver {
+    addr: String,
+    options: SessionOptions,
     session: Session,
 }
 
@@ -212,6 +215,23 @@ impl Driver {
         self.session.close_active_command_channel()
     }
 
+    pub fn send_file(
+        &mut self,
+        local_path: impl AsRef<Path>,
+        remote_path: impl AsRef<str>,
+    ) -> Result<()> {
+        send_file_via_shell(&mut self.session, local_path.as_ref(), remote_path.as_ref())
+    }
+
+    pub fn forward_tcp(&self, local_port: u16, remote_port: u16) -> Result<TcpForwardHandle> {
+        TcpForwardHandle::spawn(
+            self.addr.clone(),
+            self.options.clone(),
+            local_port,
+            remote_port,
+        )
+    }
+
     fn exec_stdout_checked(&mut self, command: &str) -> Result<String> {
         let result = self.shell(command)?;
         ensure_shell_success(&result, command)?;
@@ -269,17 +289,19 @@ impl DriverBuilder {
     }
 
     pub fn connect(self) -> Result<Driver> {
-        let mut session = Session::connect(
-            &self.addr,
-            SessionOptions {
-                key_dir: self.key_dir,
-                connect_key: self.connect_key.unwrap_or_else(|| self.addr.clone()),
-                version: self.version,
-                timeout: self.timeout,
-            },
-        )?;
+        let options = SessionOptions {
+            key_dir: self.key_dir,
+            connect_key: self.connect_key.unwrap_or_else(|| self.addr.clone()),
+            version: self.version,
+            timeout: self.timeout,
+        };
+        let mut session = Session::connect(&self.addr, options.clone())?;
         session.authenticate()?;
-        Ok(Driver { session })
+        Ok(Driver {
+            addr: self.addr,
+            options,
+            session,
+        })
     }
 }
 

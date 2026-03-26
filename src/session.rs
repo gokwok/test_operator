@@ -209,6 +209,48 @@ impl Session {
         }
     }
 
+    pub(crate) fn exec_checked(&mut self, command: &str) -> Result<()> {
+        let result = self.exec_shell(command)?;
+        if result.failed() {
+            let message = result
+                .messages
+                .iter()
+                .map(|item| item.text.as_str())
+                .collect::<Vec<&str>>()
+                .join(" | ");
+            return Err(HdcError::protocol(format!("{command} failed: {message}")));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn send_custom(
+        &mut self,
+        channel_id: u32,
+        command: HdcCommand,
+        payload: Vec<u8>,
+    ) -> Result<()> {
+        self.send_frame(Frame {
+            channel_id,
+            command,
+            payload,
+        })
+    }
+
+    pub(crate) fn try_recv_custom(&mut self) -> Result<Option<Frame>> {
+        match self.recv_frame() {
+            Ok(frame) => Ok(Some(frame)),
+            Err(HdcError::Io(error))
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub(crate) fn close_active_command_channel(&mut self) -> Result<()> {
         if !self.command_channel_open {
             return Ok(());
@@ -280,7 +322,7 @@ impl Session {
     }
 }
 
-fn parse_driver_message(payload: &[u8]) -> Result<Option<DriverMessage>> {
+pub(crate) fn parse_driver_message(payload: &[u8]) -> Result<Option<DriverMessage>> {
     if payload.is_empty() {
         return Ok(None);
     }

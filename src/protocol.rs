@@ -12,6 +12,7 @@ pub const DEFAULT_VERSION: &str = "Ver: 3.1.0e";
 pub const MIN_AUTH_VERSION: &str = "Ver: 3.0.0b";
 pub const CHANNEL_HANDSHAKE: u32 = 0;
 pub const CHANNEL_COMMAND: u32 = 1;
+pub const CHANNEL_FORWARD: u32 = 3;
 pub const TLV_TAG_LEN: usize = 16;
 pub const TLV_VAL_LEN: usize = 16;
 pub const TAG_AUTH_TYPE: &str = "authtype";
@@ -65,7 +66,17 @@ pub enum HdcCommand {
     KernelChannelClose,
     KernelEcho,
     KernelEchoRaw,
+    KernelWakeupSlavetask,
     UnityExecute,
+    ShellInit,
+    ShellData,
+    ForwardInit,
+    ForwardCheck,
+    ForwardCheckResult,
+    ForwardActiveSlave,
+    ForwardActiveMaster,
+    ForwardData,
+    ForwardFreeContext,
     HeartbeatMsg,
     Unknown(u32),
 }
@@ -78,7 +89,17 @@ impl HdcCommand {
             2 => Self::KernelChannelClose,
             9 => Self::KernelEcho,
             10 => Self::KernelEchoRaw,
+            12 => Self::KernelWakeupSlavetask,
             1001 => Self::UnityExecute,
+            2000 => Self::ShellInit,
+            2001 => Self::ShellData,
+            2500 => Self::ForwardInit,
+            2501 => Self::ForwardCheck,
+            2502 => Self::ForwardCheckResult,
+            2503 => Self::ForwardActiveSlave,
+            2504 => Self::ForwardActiveMaster,
+            2505 => Self::ForwardData,
+            2506 => Self::ForwardFreeContext,
             5000 => Self::HeartbeatMsg,
             other => Self::Unknown(other),
         }
@@ -91,7 +112,17 @@ impl HdcCommand {
             Self::KernelChannelClose => 2,
             Self::KernelEcho => 9,
             Self::KernelEchoRaw => 10,
+            Self::KernelWakeupSlavetask => 12,
             Self::UnityExecute => 1001,
+            Self::ShellInit => 2000,
+            Self::ShellData => 2001,
+            Self::ForwardInit => 2500,
+            Self::ForwardCheck => 2501,
+            Self::ForwardCheckResult => 2502,
+            Self::ForwardActiveSlave => 2503,
+            Self::ForwardActiveMaster => 2504,
+            Self::ForwardData => 2505,
+            Self::ForwardFreeContext => 2506,
             Self::HeartbeatMsg => 5000,
             Self::Unknown(value) => value,
         }
