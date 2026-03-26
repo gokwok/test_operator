@@ -26,7 +26,7 @@ fn model_config() -> ModelConfig {
     ModelConfig {
         provider: ProviderKind::OpenAi,
         id: "gpt-5.4".into(),
-        coordinate_policy: CoordinatePolicy::ScreenAbsolutePixels,
+        coordinate_policy: CoordinatePolicy::SurfaceImagePixels,
         default_options: CallOptions::default(),
         default_timeout_ms: Some(30_000),
     }

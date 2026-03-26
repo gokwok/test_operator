@@ -146,7 +146,15 @@ if (processes.length === 0) {
   const process = processes[0];
   const focused = safeAttr(process, "AXFocusedUIElement");
   if (!focused) {
-    JSON.stringify(null);
+    JSON.stringify({
+      role: "AXApplication",
+      label: null,
+      bounds: null,
+      bundle_id: typeof process.bundleIdentifier === "function"
+        ? process.bundleIdentifier()
+        : null,
+      app_name: process.name() || null
+    });
   } else {
     JSON.stringify({
       role: safeCall(focused, "role") || safeAttr(focused, "AXRole") || "AXUnknown",
@@ -155,6 +163,9 @@ if (processes.length === 0) {
         || safeCall(focused, "title")
         || null,
       bounds: rectForElement(focused),
+      bundle_id: typeof process.bundleIdentifier === "function"
+        ? process.bundleIdentifier()
+        : null,
       app_name: process.name() || null
     });
   }
@@ -281,6 +292,7 @@ struct FocusRecord {
     role: String,
     label: Option<String>,
     bounds: Option<Rect>,
+    bundle_id: Option<String>,
     app_name: Option<String>,
 }
 
@@ -290,6 +302,7 @@ impl From<FocusRecord> for FocusInfo {
             role: value.role,
             label: value.label,
             bounds: value.bounds,
+            bundle_id: value.bundle_id,
             app_name: value.app_name,
         }
     }

@@ -28,6 +28,6 @@ pub use locator::Locator;
 pub use query::{
     AppInfo, FocusInfo, PermissionStatus, PermissionsReport, QueryRequest, QueryResult, WindowInfo,
 };
-pub use snapshot::{ElementSource, Snapshot, SnapshotMetadata, UiElement};
+pub use snapshot::{ElementSource, ImageSizePx, Snapshot, SnapshotMetadata, UiElement};
 pub use surface::{Surface, SurfaceKind};
 pub use target::{TargetConnection, TargetDescriptor};

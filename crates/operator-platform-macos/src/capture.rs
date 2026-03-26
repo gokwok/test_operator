@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use operator_core::{ArtifactId, OperatorError, Rect, Surface, SurfaceKind};
+use operator_core::{ArtifactId, ImageSizePx, OperatorError, Rect, Surface, SurfaceKind};
 
 static CAPTURE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -19,6 +19,7 @@ pub struct CaptureResult {
     pub artifact_id: ArtifactId,
     pub display_scale: Option<f32>,
     pub capture_bounds: Option<Rect>,
+    pub image_size_px: Option<ImageSizePx>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,7 @@ impl CaptureProvider for SystemCaptureProvider {
             artifact_id,
             display_scale: display_scale_from_path(&path),
             capture_bounds,
+            image_size_px: image_size_from_path(&path),
         })
     }
 }
@@ -253,6 +255,39 @@ fn display_scale_from_path(_path: &Path) -> Option<f32> {
     None
 }
 
+#[cfg(target_os = "macos")]
+fn image_size_from_path(path: &Path) -> Option<ImageSizePx> {
+    let output = Command::new("sips")
+        .arg("-g")
+        .arg("pixelWidth")
+        .arg("-g")
+        .arg("pixelHeight")
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    image_size_from_sips_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn image_size_from_path(_path: &Path) -> Option<ImageSizePx> {
+    None
+}
+
+fn image_size_from_sips_output(output: &str) -> Option<ImageSizePx> {
+    let width = output
+        .lines()
+        .find_map(|line| line.split_once("pixelWidth:"))
+        .and_then(|(_, value)| value.trim().parse::<u32>().ok())?;
+    let height = output
+        .lines()
+        .find_map(|line| line.split_once("pixelHeight:"))
+        .and_then(|(_, value)| value.trim().parse::<u32>().ok())?;
+    Some(ImageSizePx { width, height })
+}
+
 fn display_scale_from_sips_output(output: &str) -> Option<f32> {
     let width = parse_sips_value(output, "dpiWidth");
     let height = parse_sips_value(output, "dpiHeight");
@@ -286,6 +321,19 @@ mod tests {
         let output = "  dpiWidth: 144.000\n  dpiHeight: 144.000\n";
 
         assert_eq!(display_scale_from_sips_output(output), Some(2.0));
+    }
+
+    #[test]
+    fn parses_image_size_from_sips_output() {
+        let output = "  pixelWidth: 460\n  pixelHeight: 816\n";
+
+        assert_eq!(
+            image_size_from_sips_output(output),
+            Some(ImageSizePx {
+                width: 460,
+                height: 816,
+            })
+        );
     }
 
     #[test]

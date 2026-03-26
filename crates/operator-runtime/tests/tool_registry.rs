@@ -348,6 +348,7 @@ async fn get_focus_query_tool_forwards_runtime_results() {
             width: 280.0,
             height: 32.0,
         }),
+        bundle_id: Some("com.apple.Safari".into()),
         app_name: Some("Safari".into()),
     }))));
 
@@ -365,6 +366,7 @@ async fn get_focus_query_tool_forwards_runtime_results() {
         .unwrap();
 
     assert_eq!(focus["focus"]["role"], json!("AXTextField"));
+    assert_eq!(focus["focus"]["bundle_id"], json!("com.apple.Safari"));
     assert_eq!(focus["focus"]["app_name"], json!("Safari"));
 
     let calls = driver.query_calls().await;

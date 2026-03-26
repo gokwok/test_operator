@@ -44,6 +44,7 @@ pub struct FocusInfo {
     pub role: String,
     pub label: Option<String>,
     pub bounds: Option<Rect>,
+    pub bundle_id: Option<String>,
     pub app_name: Option<String>,
 }
 

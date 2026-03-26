@@ -35,6 +35,7 @@ pub fn test_snapshot(id: &str) -> Snapshot {
             platform: "macos".into(),
             display_scale: Some(2.0),
             capture_bounds: None,
+            image_size_px: None,
             capture_duration_ms: 8,
         },
         created_at: SystemTime::UNIX_EPOCH,

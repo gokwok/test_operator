@@ -5,9 +5,9 @@ use std::{
 };
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, ActionVerification, Capability, ExecContext, Locator,
-    ObserveRequest, ObserveResult, OperatorError, PlatformDriver, Point, QueryRequest, QueryResult,
-    TargetDescriptor, TargetId, WindowInfo,
+    Action, ActionOutcome, ActionRequest, ActionVerification, Capability, ExecContext, FocusInfo,
+    ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError, PlatformDriver, Point,
+    QueryRequest, QueryResult, TargetDescriptor, TargetId, WindowInfo,
 };
 use tokio::time;
 
@@ -422,7 +422,7 @@ impl RuntimeCore {
         }
 
         let mut cached_windows: Option<Vec<WindowInfo>> = None;
-        let mut cached_focus: Option<Option<String>> = None;
+        let mut cached_focus: Option<Option<FocusInfo>> = None;
 
         for verification in &req.verifications {
             match verification {
@@ -466,10 +466,15 @@ impl RuntimeCore {
                         let focused_app = self
                             .verification_focus_app(driver, ctx, timeout_ms, &mut cached_focus)
                             .await?;
-                        if focused_app.as_deref() != Some(expected_app.name.as_str()) {
+                        if !focus_matches_expected_app(&focused_app, expected_app) {
+                            let actual = focused_app
+                                .as_ref()
+                                .map(render_focus_app_identity)
+                                .unwrap_or_else(|| "none".to_string());
                             return Err(OperatorError::Platform(format!(
-                                "post-action focus verification failed: expected focused app {}",
-                                expected_app.name
+                                "post-action focus verification failed: expected focused app {}, got {}",
+                                render_expected_app_identity(expected_app),
+                                actual,
                             )));
                         }
                     }
@@ -577,14 +582,14 @@ impl RuntimeCore {
         driver: &dyn PlatformDriver,
         ctx: &ExecContext,
         timeout_ms: u64,
-        cached_focus: &mut Option<Option<String>>,
-    ) -> Result<Option<String>, OperatorError> {
+        cached_focus: &mut Option<Option<FocusInfo>>,
+    ) -> Result<Option<FocusInfo>, OperatorError> {
         if cached_focus.is_none() {
             let result = self
                 .query_with_timeout(driver, QueryRequest::GetFocus, ctx, timeout_ms)
                 .await?;
             let focused = match result {
-                QueryResult::Focus(focus) => focus.and_then(|focus| focus.app_name),
+                QueryResult::Focus(focus) => focus,
                 _ => {
                     return Err(OperatorError::Platform(
                         "post-action verification expected focus query result".into(),
@@ -646,6 +651,9 @@ impl RuntimeCore {
             Locator::SnapshotElement { snapshot, element } => Ok(Locator::Coords(
                 self.snapshot_element_point(&snapshot, &element).await?,
             )),
+            Locator::SnapshotPixelCoords { snapshot, point } => Ok(Locator::Coords(
+                self.snapshot_pixel_point(&snapshot, point).await?,
+            )),
             Locator::SnapshotCoords { snapshot, point } => Ok(Locator::Coords(
                 self.snapshot_relative_point(&snapshot, point).await?,
             )),
@@ -699,6 +707,39 @@ impl RuntimeCore {
         })
     }
 
+    async fn snapshot_pixel_point(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+        point: Point,
+    ) -> Result<Point, OperatorError> {
+        let bounds = self.snapshot_capture_bounds(snapshot).await?;
+
+        if let Some(image_size) = self.snapshot_image_size(snapshot).await? {
+            if image_size.width == 0 || image_size.height == 0 {
+                return Err(OperatorError::Platform(format!(
+                    "snapshot {snapshot} has invalid image_size_px for coordinate normalization"
+                )));
+            }
+
+            return Ok(Point {
+                x: bounds.x + bounds.width * (point.x / f64::from(image_size.width)),
+                y: bounds.y + bounds.height * (point.y / f64::from(image_size.height)),
+            });
+        }
+
+        let scale = self.snapshot_display_scale(snapshot).await?;
+        if scale <= 0.0 {
+            return Err(OperatorError::Platform(format!(
+                "snapshot {snapshot} requires positive display_scale or image_size_px for pixel coordinate normalization"
+            )));
+        }
+
+        Ok(Point {
+            x: bounds.x + point.x / scale,
+            y: bounds.y + point.y / scale,
+        })
+    }
+
     async fn snapshot_normalized_point(
         &self,
         snapshot: &operator_core::SnapshotId,
@@ -732,6 +773,38 @@ impl RuntimeCore {
                 "snapshot {snapshot} has no capture bounds for coordinate normalization"
             ))
         })
+    }
+
+    async fn snapshot_image_size(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+    ) -> Result<Option<ImageSizePx>, OperatorError> {
+        let snapshot_record = self
+            .snapshots
+            .get(snapshot)
+            .await?
+            .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
+        Ok(snapshot_record.metadata.image_size_px)
+    }
+
+    async fn snapshot_display_scale(
+        &self,
+        snapshot: &operator_core::SnapshotId,
+    ) -> Result<f64, OperatorError> {
+        let snapshot_record = self
+            .snapshots
+            .get(snapshot)
+            .await?
+            .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
+        snapshot_record
+            .metadata
+            .display_scale
+            .map(f64::from)
+            .ok_or_else(|| {
+                OperatorError::Platform(format!(
+                    "snapshot {snapshot} has no display_scale for coordinate normalization"
+                ))
+            })
     }
 
     async fn emit_invoked<T: serde::Serialize>(
@@ -789,6 +862,45 @@ impl RuntimeCore {
 
     fn timeout_ms(&self, ctx: &ExecContext) -> u64 {
         ctx.timeout_ms.unwrap_or(self.config.default_timeout_ms)
+    }
+}
+
+fn focus_matches_expected_app(
+    focused_app: &Option<FocusInfo>,
+    expected_app: &operator_core::AppInfo,
+) -> bool {
+    let Some(focused_app) = focused_app.as_ref() else {
+        return false;
+    };
+
+    if let (Some(actual_bundle_id), Some(expected_bundle_id)) = (
+        focused_app.bundle_id.as_deref(),
+        expected_app.bundle_id.as_deref(),
+    ) {
+        if actual_bundle_id.eq_ignore_ascii_case(expected_bundle_id) {
+            return true;
+        }
+    }
+
+    focused_app
+        .app_name
+        .as_deref()
+        .is_some_and(|actual_name| actual_name.eq_ignore_ascii_case(&expected_app.name))
+}
+
+fn render_expected_app_identity(app: &operator_core::AppInfo) -> String {
+    match app.bundle_id.as_deref() {
+        Some(bundle_id) => format!("{} ({bundle_id})", app.name),
+        None => app.name.clone(),
+    }
+}
+
+fn render_focus_app_identity(focus: &FocusInfo) -> String {
+    match (focus.app_name.as_deref(), focus.bundle_id.as_deref()) {
+        (Some(app_name), Some(bundle_id)) => format!("{app_name} ({bundle_id})"),
+        (Some(app_name), None) => app_name.to_string(),
+        (None, Some(bundle_id)) => bundle_id.to_string(),
+        (None, None) => "unknown".to_string(),
     }
 }
 

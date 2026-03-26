@@ -24,6 +24,7 @@ pub struct ModelConfig {
 #[serde(rename_all = "snake_case")]
 pub enum CoordinatePolicy {
     ScreenAbsolutePixels,
+    SurfaceImagePixels,
     SurfaceAbsolutePixels,
     SurfaceNormalized1000,
 }

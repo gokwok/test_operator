@@ -24,7 +24,7 @@ fn session_with_current_snapshot(snapshot_id: &str) -> AgentSessionState {
 }
 
 #[test]
-fn normalizer_keeps_screen_absolute_coordinates_unchanged() {
+fn normalizer_rewrites_surface_image_pixel_coordinates_against_current_snapshot() {
     let decision = AgentDecision::CallTool {
         name: "click".into(),
         arguments: json!({
@@ -42,13 +42,31 @@ fn normalizer_keeps_screen_absolute_coordinates_unchanged() {
 
     let normalized = DecisionNormalizer::new()
         .normalize(
-            decision.clone(),
-            &model_config(CoordinatePolicy::ScreenAbsolutePixels),
+            decision,
+            &model_config(CoordinatePolicy::SurfaceImagePixels),
             &state,
         )
-        .expect("screen-absolute policy should keep raw coordinates");
+        .expect("surface image policy should rewrite image-pixel coordinates");
 
-    assert_eq!(normalized, decision);
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "click".into(),
+            arguments: json!({
+                "locator": {
+                    "SnapshotPixelCoords": {
+                        "snapshot": "snap-1",
+                        "point": {
+                            "x": 152.0,
+                            "y": 772.0,
+                        }
+                    }
+                }
+            }),
+            summary: "Click the 1 button".into(),
+            thought: None,
+        }
+    );
 }
 
 #[test]
@@ -126,5 +144,55 @@ fn normalizer_requires_current_snapshot_for_surface_relative_coordinates() {
     assert!(
         error.to_string().contains("current observation snapshot"),
         "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn normalizer_canonicalizes_snapshot_normalized_coords_to_surface_image_pixels() {
+    let decision = AgentDecision::CallTool {
+        name: "click".into(),
+        arguments: json!({
+            "locator": {
+                "SnapshotNormalizedCoords": {
+                    "snapshot": "older-snapshot",
+                    "point": {
+                        "x": 176.0,
+                        "y": 314.0
+                    },
+                    "basis": 460.0
+                }
+            }
+        }),
+        summary: "Click the clear button".into(),
+        thought: None,
+    };
+    let state = session_with_current_snapshot("snap-current");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::SurfaceImagePixels),
+            &state,
+        )
+        .expect("surface image policy should canonicalize coordinates");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "click".into(),
+            arguments: json!({
+                "locator": {
+                    "SnapshotPixelCoords": {
+                        "snapshot": "snap-current",
+                        "point": {
+                            "x": 176.0,
+                            "y": 314.0,
+                        }
+                    }
+                }
+            }),
+            summary: "Click the clear button".into(),
+            thought: None,
+        }
     );
 }

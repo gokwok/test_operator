@@ -84,6 +84,7 @@ fn snapshot_and_exec_context_keep_typed_state() {
             platform: "macos".into(),
             display_scale: Some(2.0),
             capture_bounds: None,
+            image_size_px: None,
             capture_duration_ms: 12,
         },
         created_at: SystemTime::UNIX_EPOCH,

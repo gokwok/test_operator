@@ -204,6 +204,7 @@ where
         let image_artifact = capture.as_ref().map(|result| result.artifact_id.clone());
         let display_scale = capture.as_ref().and_then(|result| result.display_scale);
         let capture_bounds = capture.as_ref().and_then(|result| result.capture_bounds);
+        let image_size_px = capture.as_ref().and_then(|result| result.image_size_px);
 
         Ok(ObserveResult {
             snapshot: Snapshot {
@@ -217,6 +218,7 @@ where
                     platform: "macos".into(),
                     display_scale,
                     capture_bounds,
+                    image_size_px,
                     capture_duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX))
                         as u64,
                 },

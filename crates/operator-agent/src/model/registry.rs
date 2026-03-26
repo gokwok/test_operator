@@ -208,6 +208,7 @@ fn phase1_model(provider: ProviderKind, id: &'static str) -> ModelConfig {
     };
     let coordinate_policy = match id {
         "doubao-seed-2-0-lite-260215" => CoordinatePolicy::SurfaceNormalized1000,
+        "gpt-5.4" => CoordinatePolicy::SurfaceImagePixels,
         _ => CoordinatePolicy::ScreenAbsolutePixels,
     };
 

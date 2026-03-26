@@ -5,10 +5,11 @@ use std::{
 
 use async_trait::async_trait;
 use operator_core::{
-    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, Capability, CapabilitySet, ClickMode,
-    DragMotion, ElementId, ElementSource, ExecContext, HealthStatus, Locator, ObserveRequest,
-    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver, Point,
-    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, UiElement,
+    Action, ActionFocusPolicy, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet,
+    ClickMode, DragMotion, ElementId, ElementSource, ExecContext, FocusInfo, HealthStatus,
+    ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
+    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
+    SurfaceKind, UiElement,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
@@ -734,6 +735,73 @@ async fn runtime_resolves_snapshot_normalized_coords_locator_before_driver_call(
 }
 
 #[tokio::test]
+async fn runtime_resolves_snapshot_pixel_coords_locator_before_driver_call() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-pixels");
+    snapshot.metadata.capture_bounds = Some(Rect {
+        x: 338.0,
+        y: 216.0,
+        width: 230.0,
+        height: 408.0,
+    });
+    snapshot.metadata.image_size_px = Some(ImageSizePx {
+        width: 460,
+        height: 816,
+    });
+    store.save(&snapshot).await.unwrap();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    driver.push_action_result(Ok(successful_action_outcome("clicked", 7)));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store)
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::SnapshotPixelCoords {
+                    snapshot: snapshot.id.clone(),
+                    point: Point { x: 176.0, y: 314.0 },
+                }),
+                ..default_action_request()
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+
+    let calls = driver.action_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].0,
+        ActionRequest {
+            action: Action::Click {
+                mode: ClickMode::Left,
+            },
+            locator: Some(Locator::Coords(Point { x: 426.0, y: 373.0 })),
+            ..default_action_request()
+        }
+    );
+}
+
+#[tokio::test]
 async fn runtime_rejects_snapshot_coords_without_capture_bounds() {
     let store = Arc::new(InMemorySnapshotStore::new());
     let snapshot = test_snapshot("snap-missing-bounds");
@@ -779,6 +847,83 @@ async fn runtime_rejects_snapshot_coords_without_capture_bounds() {
             if message.contains("has no capture bounds for coordinate normalization")
     ));
     assert!(driver.action_calls().await.is_empty());
+}
+
+#[tokio::test]
+async fn runtime_focus_verification_accepts_matching_bundle_id_when_app_name_differs() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([
+            Capability::PointerInput,
+            Capability::InspectTree,
+            Capability::WindowManagement,
+        ]),
+    ));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 7,
+        detail: Some("clicked".into()),
+        coordinates: Some(operator_core::ActionCoordinates {
+            point: Some(Point { x: 70.0, y: 651.0 }),
+            from: None,
+            to: None,
+        }),
+        target_app: Some(AppInfo {
+            bundle_id: Some("com.apple.calculator".into()),
+            name: "Calculator".into(),
+            pid: Some(42),
+            is_running: true,
+        }),
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }));
+    driver.push_query_result(Ok(QueryResult::Focus(Some(FocusInfo {
+        role: "AXButton".into(),
+        label: Some("1".into()),
+        bounds: Some(Rect {
+            x: 348.0,
+            y: 565.0,
+            width: 48.0,
+            height: 48.0,
+        }),
+        bundle_id: Some("com.apple.calculator".into()),
+        app_name: Some("计算器".into()),
+    }))));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let outcome = runtime
+        .core()
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::Coords(Point { x: 70.0, y: 651.0 })),
+                target_selector: Some(operator_core::ActionTargetSelector::App(
+                    "Calculator".into(),
+                )),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: vec![operator_core::ActionVerification::Focus],
+                ..default_action_request()
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .expect("bundle id should satisfy focus verification even with localized app name");
+
+    assert!(outcome.success);
+    assert_eq!(driver.query_calls().await.len(), 1);
 }
 
 #[derive(Default)]

@@ -46,5 +46,12 @@ pub struct SnapshotMetadata {
     pub platform: String,
     pub display_scale: Option<f32>,
     pub capture_bounds: Option<Rect>,
+    pub image_size_px: Option<ImageSizePx>,
     pub capture_duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ImageSizePx {
+    pub width: u32,
+    pub height: u32,
 }

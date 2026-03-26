@@ -19,10 +19,7 @@ fn default_registry_exposes_phase1_models() {
     assert_eq!(gpt.provider, ProviderKind::OpenAi);
     assert_eq!(gpt.id.as_ref(), "gpt-5.4");
     assert_eq!(gpt.default_timeout_ms, Some(30_000));
-    assert_eq!(
-        gpt.coordinate_policy,
-        CoordinatePolicy::ScreenAbsolutePixels
-    );
+    assert_eq!(gpt.coordinate_policy, CoordinatePolicy::SurfaceImagePixels);
     assert_eq!(
         gpt.default_options.reasoning_level,
         Some(ReasoningLevel::Minimal)
@@ -72,7 +69,7 @@ async fn resolve_returns_registered_provider_for_known_model() {
         ModelConfig {
             provider: ProviderKind::OpenAi,
             id: Arc::from("gpt-5.4"),
-            coordinate_policy: CoordinatePolicy::ScreenAbsolutePixels,
+            coordinate_policy: CoordinatePolicy::SurfaceImagePixels,
             default_options: CallOptions {
                 temperature: None,
                 max_output_tokens: None,

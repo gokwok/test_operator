@@ -9,6 +9,10 @@ pub enum Locator {
         snapshot: SnapshotId,
         element: ElementId,
     },
+    SnapshotPixelCoords {
+        snapshot: SnapshotId,
+        point: Point,
+    },
     SnapshotCoords {
         snapshot: SnapshotId,
         point: Point,
