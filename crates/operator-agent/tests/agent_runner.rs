@@ -11,7 +11,6 @@ use operator_runtime::{RuntimeBuilder, RuntimeConfig, SessionEvent, SessionStore
 use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
 };
-use serde_json::Value;
 
 use support::DeterministicTestProvider;
 
@@ -52,19 +51,17 @@ async fn runner_with_provider_kind(
     AgentRunner::new(Arc::new(runtime), models, config)
 }
 
-fn current_request_json(context: &Context) -> Value {
+fn current_request_text(context: &Context) -> &str {
     let Some(Message::User(UserMessage { content, .. })) = context.messages.last() else {
         panic!("planner request should append a final user message");
     };
-    let text = content
+    content
         .iter()
         .find_map(|block| match block {
             operator_agent::model::ContentBlock::Text { text } => Some(text),
             _ => None,
         })
-        .expect("planner request should contain a text block");
-
-    serde_json::from_str(text).expect("planner request payload should be valid json")
+        .expect("planner request should contain a text block")
 }
 
 fn tool_call_names(events: &[SessionEvent]) -> Vec<String> {
@@ -135,14 +132,12 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
         "verified read-only completion should stay on the planner hot path"
     );
 
-    let first_planner_request = current_request_json(&requests[0].context);
-    assert_eq!(
-        first_planner_request["current_observation"]["snapshot_id"],
-        Value::String("snap-initial".into())
-    );
-    assert_eq!(first_planner_request["ui_state_stale"], Value::Bool(true));
+    let first_planner_request = current_request_text(&requests[0].context);
+    assert!(first_planner_request.contains("Task\nObserve the frontmost UI."));
+    assert!(first_planner_request.contains("- snapshot: snap-initial"));
+    assert!(first_planner_request.contains("- stale: yes"));
 
-    let second_planner_request = current_request_json(&requests[1].context);
+    let second_planner_request = current_request_text(&requests[1].context);
     let tool_result_message = requests[1]
         .context
         .messages
@@ -165,22 +160,12 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
         !compact_tool_summary.contains("\"snapshot\""),
         "planner-visible tool summaries should not inline persisted JSON: {compact_tool_summary}"
     );
-    assert_eq!(
-        second_planner_request["current_observation"]["snapshot_id"],
-        Value::String("snap-runner".into())
-    );
-    let tool_names = second_planner_request["recent_tool_results"]
-        .as_array()
-        .expect("recent tool results should be an array")
-        .iter()
-        .filter_map(|item| item.get("tool_name"))
-        .cloned()
-        .collect::<Vec<_>>();
+    assert!(second_planner_request.contains("- snapshot: snap-runner"));
     assert!(
-        tool_names.contains(&Value::String("observe".into())),
+        second_planner_request.contains("observe [read-only]"),
         "second planner request should carry the observe result: {second_planner_request}"
     );
-    assert_eq!(second_planner_request["ui_state_stale"], Value::Bool(false));
+    assert!(second_planner_request.contains("- stale: no"));
 }
 
 #[tokio::test]
@@ -255,13 +240,11 @@ async fn runner_replans_when_finish_gate_rejects_false_finish() {
         "planner, early false finish, replan, final finish, finish gate"
     );
 
-    let replanned_request = current_request_json(&requests[2].context);
-    assert_eq!(
-        replanned_request["notes"],
-        Value::Array(vec![Value::String(
-            "The task is not verified yet because there is no fresh usable observe result after the last UI change.".into()
-        )])
-    );
+    let replanned_request = current_request_text(&requests[2].context);
+    assert!(replanned_request.contains("Notes"));
+    assert!(replanned_request.contains(
+        "The task is not verified yet because there is no fresh usable observe result after the last UI change."
+    ));
 }
 
 #[tokio::test]
@@ -448,7 +431,7 @@ async fn runner_retries_invalid_planner_output_before_continuing() {
         "planner retry, planner success, planner finish"
     );
 
-    let retry_request = current_request_json(&requests[1].context);
+    let retry_request = current_request_text(&requests[1].context);
     let last_feedback = requests[1]
         .context
         .messages
@@ -470,8 +453,5 @@ async fn runner_retries_invalid_planner_output_before_continuing() {
         feedback_text.contains("planner.feedback.v1"),
         "retry prompt should include planner feedback: {feedback_text}"
     );
-    assert_eq!(
-        retry_request["task"],
-        Value::String("Retry after invalid JSON.".into())
-    );
+    assert!(retry_request.contains("Task\nRetry after invalid JSON."));
 }

@@ -1,5 +1,6 @@
 ---
 source: crates/operator-agent/tests/planner_prompts.rs
+assertion_line: 167
 expression: "serde_json::to_value(&context.messages).expect(\"messages should serialize\")"
 ---
 [
@@ -40,7 +41,7 @@ expression: "serde_json::to_value(&context.messages).expect(\"messages should se
       "content": [
         {
           "Text": {
-            "text": "{\n  \"current_observation\": {\n    \"element_count\": 2,\n    \"root_element_count\": 1,\n    \"screenshot_artifact\": \"capture-1.png\",\n    \"snapshot_id\": \"snap-1\",\n    \"surface\": \"frontmost\"\n  },\n  \"notes\": [\n    \"Observe again before finishing.\"\n  ],\n  \"recent_tool_results\": [\n    {\n      \"is_error\": false,\n      \"read_only\": true,\n      \"step_index\": 1,\n      \"summary\": \"snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)\",\n      \"tool_name\": \"observe\",\n      \"turn_index\": 1\n    }\n  ],\n  \"target\": {\n    \"capabilities\": [\n      \"app_lifecycle\",\n      \"capture\",\n      \"inspect_tree\"\n    ],\n    \"id\": \"local:macos\",\n    \"platform\": \"macos\"\n  },\n  \"task\": \"Retry with valid JSON.\",\n  \"ui_state_stale\": true\n}"
+            "text": "Task\nRetry with valid JSON.\n\nTarget\n- id: local:macos\n- platform: macos\n- capabilities: app_lifecycle, capture, inspect_tree\n\nRecent activity\n- turn 1 step 1 observe [read-only]: snapshot snap-1 on frontmost (roots=1, elements=2, screenshot=capture-1.png)\n\nCurrent observation\n- snapshot: snap-1\n- surface: frontmost\n- roots: 1\n- elements: 2\n- screenshot: capture-1.png\n\nNotes\n- Observe again before finishing.\n\nUI state\n- stale: yes\n- guidance: Do not choose `finish` until the UI is freshly verified."
           }
         },
         {

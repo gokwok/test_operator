@@ -127,6 +127,16 @@ pub struct TargetSummary {
     pub capabilities: Vec<String>,
 }
 
+impl TargetSummary {
+    pub fn capabilities_text(&self) -> String {
+        if self.capabilities.is_empty() {
+            "none".into()
+        } else {
+            self.capabilities.join(", ")
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolResultSummary {
     pub turn_index: u32,
@@ -135,6 +145,23 @@ pub struct ToolResultSummary {
     pub is_error: bool,
     pub read_only: bool,
     pub summary: String,
+}
+
+impl ToolResultSummary {
+    pub fn render_line(&self) -> String {
+        let outcome = if self.is_error {
+            "error"
+        } else if self.read_only {
+            "read-only"
+        } else {
+            "side-effect"
+        };
+
+        format!(
+            "turn {} step {} {} [{}]: {}",
+            self.turn_index, self.step_index, self.tool_name, outcome, self.summary
+        )
+    }
 }
 
 fn summarize_tool_output(result: &crate::tools::AgentToolResult) -> String {

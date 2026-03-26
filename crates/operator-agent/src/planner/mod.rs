@@ -2,6 +2,7 @@ pub mod context;
 pub mod finish_gate;
 pub mod parser;
 pub mod prompts;
+pub mod renderer;
 pub mod validator;
 
 pub use context::{
@@ -10,5 +11,6 @@ pub use context::{
 };
 pub use finish_gate::{FinishGate, FinishGateVerdict};
 pub use parser::{AgentDecision, DecisionParser};
-pub use prompts::{PlannerPromptBuilder, PlannerVisualInput};
+pub use prompts::PlannerPromptBuilder;
+pub use renderer::{PlannerRenderer, PlannerVisualInput};
 pub use validator::DecisionValidator;

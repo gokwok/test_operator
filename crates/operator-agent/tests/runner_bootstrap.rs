@@ -11,7 +11,6 @@ use operator_runtime::{RuntimeBuilder, RuntimeConfig, SessionEvent, SessionStore
 use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
 };
-use serde_json::Value;
 use tempfile::tempdir;
 
 use support::DeterministicTestProvider;
@@ -50,19 +49,17 @@ async fn runner_with_snapshot_store(
     AgentRunner::new(Arc::new(runtime), models, AgentConfig::default())
 }
 
-fn current_request_json(context: &Context) -> Value {
+fn current_request_text(context: &Context) -> &str {
     let Some(Message::User(UserMessage { content, .. })) = context.messages.last() else {
         panic!("planner request should append a final user message");
     };
-    let text = content
+    content
         .iter()
         .find_map(|block| match block {
             operator_agent::model::ContentBlock::Text { text } => Some(text),
             _ => None,
         })
-        .expect("planner request should contain a text block");
-
-    serde_json::from_str(text).expect("planner request payload should be valid json")
+        .expect("planner request should contain a text block")
 }
 
 fn planner_user_content(context: &Context) -> &[ContentBlock] {
@@ -170,16 +167,10 @@ async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() 
     let requests = provider.requests();
     assert_eq!(requests.len(), 1, "only the planner should be called");
 
-    let first_request = current_request_json(&requests[0].context);
-    assert_eq!(
-        first_request["current_observation"]["snapshot_id"],
-        Value::String("snap-initial".into())
-    );
-    assert_eq!(first_request["ui_state_stale"], Value::Bool(true));
-    assert_eq!(
-        first_request["recent_tool_results"][0]["tool_name"],
-        Value::String("observe".into())
-    );
+    let first_request = current_request_text(&requests[0].context);
+    assert!(first_request.contains("- snapshot: snap-initial"));
+    assert!(first_request.contains("- stale: yes"));
+    assert!(first_request.contains("observe [read-only]"));
 
     assert!(driver.query_calls().await.is_empty());
     let observe_calls = driver.observe_calls().await;
@@ -264,12 +255,9 @@ async fn auto_observe_refreshes_after_successful_side_effect_tools() {
         2,
         "planner should see the refreshed post-action context"
     );
-    let second_request = current_request_json(&requests[1].context);
-    assert_eq!(
-        second_request["current_observation"]["snapshot_id"],
-        Value::String("snap-after-click".into())
-    );
-    assert_eq!(second_request["ui_state_stale"], Value::Bool(true));
+    let second_request = current_request_text(&requests[1].context);
+    assert!(second_request.contains("- snapshot: snap-after-click"));
+    assert!(second_request.contains("- stale: yes"));
 
     assert!(driver.query_calls().await.is_empty());
     let observe_calls = driver.observe_calls().await;
