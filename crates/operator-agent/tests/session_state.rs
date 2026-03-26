@@ -119,7 +119,7 @@ fn session_state_records_tool_trace_and_observation_updates() {
                     tool_call_id: "tool-1".into(),
                     tool_name: "observe".into(),
                     content: vec![ContentBlock::Text {
-                        text: "tool observe completed".into(),
+                        text: "snapshot snap-1 on unknown (roots=1, elements=1)".into(),
                     }],
                     is_error: false,
                     timestamp_ms: 99,
@@ -311,7 +311,7 @@ fn model_context_tool_results_use_compact_summaries() {
     let Some(ContentBlock::Text { text }) = message.content.first() else {
         panic!("expected text content in the model-context tool result");
     };
-    assert_eq!(text, "tool list-windows completed");
+    assert_eq!(text, "list-windows: result: windows[1]");
     assert!(
         !text.contains("\"windows\""),
         "model-context tool summaries should stay compact: {text}"

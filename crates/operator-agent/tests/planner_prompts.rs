@@ -169,3 +169,39 @@ fn planner_prompts_limit_recent_transcript_before_appending_current_request_snap
         serde_json::to_value(&context.messages).expect("messages should serialize")
     );
 }
+
+#[test]
+fn planner_prompts_bound_recent_transcript_by_char_budget() {
+    let builder = PlannerPromptBuilder::new()
+        .with_recent_message_limit(4)
+        .with_recent_message_char_limit(80);
+    let mut model_context = ModelContextBuffer::new();
+    model_context.push(AgentMessage::from(user_message("earliest", 1)));
+    model_context.push(AgentMessage::from(assistant_message(&"x".repeat(200), 2)));
+    model_context.push(AgentMessage::custom(
+        "planner.feedback.v1",
+        json!({
+            "reason": "Need another observe because the UI changed after clicking Save."
+        }),
+    ));
+
+    let context = builder.assemble(
+        "Retry with valid JSON.",
+        &planner_context(),
+        &[],
+        &model_context,
+        &[],
+    );
+
+    assert_eq!(
+        context.messages.len(),
+        2,
+        "char budget should keep only the newest compact history entry plus the current request"
+    );
+    let feedback = serde_json::to_string(&context.messages[0]).expect("message should serialize");
+    assert!(feedback.contains("planner.feedback.v1"));
+    assert!(
+        !feedback.contains(&"x".repeat(50)),
+        "long older history should be dropped once the character budget is exhausted"
+    );
+}

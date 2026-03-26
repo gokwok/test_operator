@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
-use serde_json::json;
-
 use crate::{
-    model::{ContentBlock, Context, Message, ToolSpec, UserMessage},
-    session::{AgentMessage, ModelContextBuffer},
+    model::{Context, Message, ToolSpec, UserMessage},
+    session::ModelContextBuffer,
     tools::AgentToolSpec,
 };
 
 use super::{PlannerContext, PlannerRenderer, PlannerVisualInput};
 
 const DEFAULT_RECENT_MESSAGES: usize = 8;
+const DEFAULT_RECENT_MESSAGE_CHARS: usize = 1600;
 const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "You are the Operator planner.\n",
     "Choose exactly one next decision for the current desktop automation task.\n",
@@ -30,6 +29,7 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
 #[derive(Clone, Debug)]
 pub struct PlannerPromptBuilder {
     recent_message_limit: usize,
+    recent_message_char_limit: usize,
     renderer: PlannerRenderer,
 }
 
@@ -37,12 +37,18 @@ impl PlannerPromptBuilder {
     pub fn new() -> Self {
         Self {
             recent_message_limit: DEFAULT_RECENT_MESSAGES,
+            recent_message_char_limit: DEFAULT_RECENT_MESSAGE_CHARS,
             renderer: PlannerRenderer::new(),
         }
     }
 
     pub fn with_recent_message_limit(mut self, recent_message_limit: usize) -> Self {
         self.recent_message_limit = recent_message_limit;
+        self
+    }
+
+    pub fn with_recent_message_char_limit(mut self, recent_message_char_limit: usize) -> Self {
+        self.recent_message_char_limit = recent_message_char_limit;
         self
     }
 
@@ -70,9 +76,7 @@ impl PlannerPromptBuilder {
     }
 
     fn recent_model_context_messages(&self, model_context: &ModelContextBuffer) -> Vec<Message> {
-        let messages = model_context.messages();
-        let start = messages.len().saturating_sub(self.recent_message_limit);
-        messages[start..].iter().map(transcript_message).collect()
+        model_context.planner_messages(self.recent_message_limit, self.recent_message_char_limit)
     }
 }
 
@@ -86,25 +90,7 @@ fn tool_spec(spec: &AgentToolSpec) -> ToolSpec {
     ToolSpec {
         name: Arc::<str>::from(spec.name.as_str()),
         description: Arc::<str>::from(spec.description.as_str()),
-        input_schema: spec.input_schema.clone(),
+        input_schema: serde_json::to_value(spec.planner_summary())
+            .expect("planner tool summaries should serialize"),
     }
-}
-
-fn transcript_message(message: &AgentMessage) -> Message {
-    match message {
-        AgentMessage::Base { message } => message.clone(),
-        AgentMessage::Custom { kind, payload } => Message::User(UserMessage {
-            content: vec![ContentBlock::Text {
-                text: serialize_pretty_json(json!({
-                    "kind": kind,
-                    "payload": payload,
-                })),
-            }],
-            timestamp_ms: 0,
-        }),
-    }
-}
-
-fn serialize_pretty_json(value: serde_json::Value) -> String {
-    serde_json::to_string_pretty(&value).expect("planner prompt payloads should serialize")
 }

@@ -42,7 +42,7 @@ expression: "serde_json::to_value(&context).expect(\"planner context should seri
         "content": [
           {
             "Text": {
-              "text": "{\n  \"kind\": \"planner.feedback.v1\",\n  \"payload\": {\n    \"reason\": \"Need another observe.\"\n  }\n}"
+              "text": "planner.feedback.v1: result: reason=Need another observe."
             }
           }
         ],
@@ -89,27 +89,21 @@ expression: "serde_json::to_value(&context).expect(\"planner context should seri
     {
       "description": "Capture a surface and persist the resulting snapshot.",
       "input_schema": {
-        "properties": {
-          "surface": {
-            "type": "string"
-          }
-        },
-        "type": "object"
+        "arguments": [
+          "surface: string"
+        ],
+        "mode": "read_only"
       },
       "name": "observe"
     },
     {
       "description": "Click a locator, coordinate, or target.",
       "input_schema": {
-        "properties": {
-          "x": {
-            "type": "number"
-          },
-          "y": {
-            "type": "number"
-          }
-        },
-        "type": "object"
+        "arguments": [
+          "x: number",
+          "y: number"
+        ],
+        "mode": "side_effect"
       },
       "name": "click"
     }

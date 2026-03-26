@@ -155,7 +155,10 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
             _ => None,
         })
         .expect("tool result summary should contain text");
-    assert_eq!(compact_tool_summary, "observe snapshot snap-initial on frontmost (roots=0, elements=0), screenshot=capture-initial.png");
+    assert_eq!(
+        compact_tool_summary,
+        "snapshot snap-initial on frontmost (roots=0, elements=0), screenshot=capture-initial.png"
+    );
     assert!(
         !compact_tool_summary.contains("\"snapshot\""),
         "planner-visible tool summaries should not inline persisted JSON: {compact_tool_summary}"

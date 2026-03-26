@@ -29,7 +29,7 @@ expression: "serde_json::to_value(&context.messages).expect(\"messages should se
       "content": [
         {
           "Text": {
-            "text": "{\n  \"kind\": \"parser.feedback.v1\",\n  \"payload\": {\n    \"error\": \"invalid json\"\n  }\n}"
+            "text": "parser.feedback.v1: result: error=invalid json"
           }
         }
       ],

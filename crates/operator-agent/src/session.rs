@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    model::Message,
+    model::{AssistantMessage, ContentBlock, Message, ToolResultMessage, UserMessage},
     tools::{AgentToolResult, ObservationCache},
 };
 
@@ -47,6 +47,9 @@ pub struct ModelContextBuffer {
     messages: Vec<AgentMessage>,
 }
 
+const MAX_TEXT_SUMMARY_CHARS: usize = 120;
+const MAX_CONTEXT_TEXT_CHARS: usize = 240;
+
 impl ModelContextBuffer {
     pub fn new() -> Self {
         Self {
@@ -68,6 +71,27 @@ impl ModelContextBuffer {
 
     pub fn messages(&self) -> &[AgentMessage] {
         &self.messages
+    }
+
+    pub fn planner_messages(&self, message_limit: usize, char_limit: usize) -> Vec<Message> {
+        let mut total_chars = 0;
+        let mut selected = Vec::new();
+
+        for message in self.messages.iter().rev() {
+            let compact = planner_message(message);
+            let compact_chars = message_char_count(&compact);
+            if !selected.is_empty()
+                && (selected.len() >= message_limit || total_chars + compact_chars > char_limit)
+            {
+                break;
+            }
+
+            total_chars += compact_chars;
+            selected.push(compact);
+        }
+
+        selected.reverse();
+        selected
     }
 
     pub fn push(&mut self, message: impl Into<AgentMessage>) {
@@ -135,7 +159,7 @@ impl VisualObservationSummary {
             .map(|artifact| format!(", screenshot={artifact}"))
             .unwrap_or_default();
         format!(
-            "observe snapshot {} on {} (roots={}, elements={}){}",
+            "snapshot {} on {} (roots={}, elements={}){}",
             self.snapshot_id, self.surface, self.root_element_count, self.element_count, screenshot
         )
     }
@@ -385,19 +409,12 @@ fn history_summary_from_tool_result(result: &AgentToolResult) -> String {
             .unwrap_or_else(|| format!("tool {} failed", result.tool_name));
     }
 
+    let summary = summarize_tool_result(result);
     if result.tool_name == "observe" {
-        if let Some(snapshot) = result
-            .output
-            .as_ref()
-            .and_then(|output| output.get("snapshot"))
-            .cloned()
-            .and_then(|snapshot| serde_json::from_value::<Snapshot>(snapshot).ok())
-        {
-            return VisualObservationSummary::from_snapshot(&snapshot).describe();
-        }
+        summary
+    } else {
+        format!("{}: {}", result.tool_name, summary)
     }
-
-    format!("tool {} completed", result.tool_name)
 }
 
 fn surface_name(kind: &SurfaceKind) -> String {
@@ -442,4 +459,228 @@ fn observe_result_is_usable(result: &AgentToolResult) -> bool {
         .map_or(0, |items| items.len());
 
     root_count > 0 && element_count > 0
+}
+
+pub(crate) fn summarize_tool_result(result: &AgentToolResult) -> String {
+    if result.is_error {
+        return result
+            .error
+            .as_ref()
+            .map(|error| truncate(&format!("error [{}]: {}", error.kind, error.message)))
+            .unwrap_or_else(|| "tool returned an unknown error".into());
+    }
+
+    let Some(output) = result.output.as_ref() else {
+        return "completed without structured output".into();
+    };
+
+    if let Some(summary) = output.get("snapshot").and_then(snapshot_summary) {
+        return summary;
+    }
+
+    if let Some(artifact_id) = output
+        .get("artifact")
+        .and_then(Value::as_object)
+        .and_then(|artifact| artifact.get("id"))
+        .cloned()
+        .and_then(|id| serde_json::from_value::<ArtifactId>(id).ok())
+    {
+        return format!("artifact {artifact_id} is available for follow-up reads");
+    }
+
+    summarize_json(output)
+}
+
+fn snapshot_summary(snapshot: &Value) -> Option<String> {
+    if let Ok(snapshot) = serde_json::from_value::<Snapshot>(snapshot.clone()) {
+        return Some(VisualObservationSummary::from_snapshot(&snapshot).describe());
+    }
+
+    let snapshot_id = snapshot.get("id").and_then(Value::as_str)?;
+    let surface = snapshot
+        .get("surface")
+        .and_then(|surface| match surface {
+            Value::String(name) => Some(name.clone()),
+            Value::Object(map) => map
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(|kind| kind.to_ascii_lowercase()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "unknown".into());
+    let root_count = snapshot
+        .get("root_ids")
+        .and_then(Value::as_array)
+        .map_or(0, |items| items.len());
+    let element_count = snapshot
+        .get("elements")
+        .and_then(Value::as_object)
+        .map_or(0, |items| items.len());
+    let screenshot = snapshot
+        .get("image_artifact")
+        .and_then(Value::as_str)
+        .map(|artifact| format!(", screenshot={artifact}"))
+        .unwrap_or_default();
+
+    Some(format!(
+        "snapshot {snapshot_id} on {surface} (roots={root_count}, elements={element_count}){screenshot}"
+    ))
+}
+
+pub(crate) fn summarize_json(value: &Value) -> String {
+    match value {
+        Value::Null => "null result".into(),
+        Value::Bool(flag) => format!("result={flag}"),
+        Value::Number(number) => format!("result={number}"),
+        Value::String(text) => truncate(text),
+        Value::Array(items) => summarize_array(items),
+        Value::Object(map) => summarize_object(map),
+    }
+}
+
+fn planner_message(message: &AgentMessage) -> Message {
+    match message {
+        AgentMessage::Base { message } => compact_message(message),
+        AgentMessage::Custom { kind, payload } => Message::User(UserMessage {
+            content: vec![ContentBlock::Text {
+                text: format!("{kind}: {}", summarize_json(payload)),
+            }],
+            timestamp_ms: 0,
+        }),
+    }
+}
+
+fn compact_message(message: &Message) -> Message {
+    match message {
+        Message::User(message) => Message::User(UserMessage {
+            content: compact_content(&message.content),
+            timestamp_ms: message.timestamp_ms,
+        }),
+        Message::Assistant(message) => Message::Assistant(AssistantMessage {
+            content: compact_content(&message.content),
+            usage: message.usage.clone(),
+            stop: message.stop,
+            error_message: message.error_message.clone(),
+            timestamp_ms: message.timestamp_ms,
+        }),
+        Message::ToolResult(message) => Message::ToolResult(ToolResultMessage {
+            tool_call_id: message.tool_call_id.clone(),
+            tool_name: message.tool_name.clone(),
+            content: compact_content(&message.content),
+            is_error: message.is_error,
+            timestamp_ms: message.timestamp_ms,
+        }),
+    }
+}
+
+fn compact_content(content: &[ContentBlock]) -> Vec<ContentBlock> {
+    content
+        .iter()
+        .map(|block| match block {
+            ContentBlock::Text { text } => ContentBlock::Text {
+                text: truncate_to(text, MAX_CONTEXT_TEXT_CHARS),
+            },
+            ContentBlock::Thinking { thinking } => ContentBlock::Thinking {
+                thinking: truncate_to(thinking, MAX_CONTEXT_TEXT_CHARS),
+            },
+            ContentBlock::ToolCall {
+                id,
+                name,
+                arguments_json,
+            } => ContentBlock::ToolCall {
+                id: id.clone(),
+                name: name.clone(),
+                arguments_json: truncate_to(arguments_json, MAX_CONTEXT_TEXT_CHARS),
+            },
+            ContentBlock::Image { mime, data_base64 } => ContentBlock::Image {
+                mime: mime.clone(),
+                data_base64: data_base64.clone(),
+            },
+        })
+        .collect()
+}
+
+fn message_char_count(message: &Message) -> usize {
+    match message {
+        Message::User(message) => content_char_count(&message.content),
+        Message::Assistant(message) => content_char_count(&message.content),
+        Message::ToolResult(message) => content_char_count(&message.content),
+    }
+}
+
+fn content_char_count(content: &[ContentBlock]) -> usize {
+    content
+        .iter()
+        .map(|block| match block {
+            ContentBlock::Text { text } => text.chars().count(),
+            ContentBlock::Thinking { thinking } => thinking.chars().count(),
+            ContentBlock::ToolCall {
+                id,
+                name,
+                arguments_json,
+            } => id.chars().count() + name.chars().count() + arguments_json.chars().count(),
+            ContentBlock::Image { .. } => 0,
+        })
+        .sum()
+}
+
+fn summarize_array(items: &[Value]) -> String {
+    if items.is_empty() {
+        return "empty list".into();
+    }
+
+    let preview = items
+        .iter()
+        .take(3)
+        .map(summarize_preview_value)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = if items.len() > 3 { ", ..." } else { "" };
+    format!("list(len={}, items=[{}{suffix}])", items.len(), preview)
+}
+
+fn summarize_object(map: &serde_json::Map<String, Value>) -> String {
+    let mut keys = map.keys().cloned().collect::<Vec<_>>();
+    keys.sort();
+
+    let preview = keys
+        .iter()
+        .take(4)
+        .map(|key| match map.get(key).expect("sorted key should exist") {
+            Value::Null => format!("{key}=null"),
+            Value::Bool(flag) => format!("{key}={flag}"),
+            Value::Number(number) => format!("{key}={number}"),
+            Value::String(text) => format!("{key}={}", truncate(text)),
+            Value::Array(items) => format!("{key}[{}]", items.len()),
+            Value::Object(_) => key.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = if keys.len() > 4 { ", ..." } else { "" };
+    format!("result: {preview}{suffix}")
+}
+
+fn summarize_preview_value(value: &Value) -> String {
+    match value {
+        Value::Null => "null".into(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(number) => number.to_string(),
+        Value::String(text) => truncate(text),
+        Value::Array(items) => format!("list({})", items.len()),
+        Value::Object(_) => "object".into(),
+    }
+}
+
+fn truncate(text: &str) -> String {
+    truncate_to(text, MAX_TEXT_SUMMARY_CHARS)
+}
+
+fn truncate_to(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let mut truncated = text.chars().take(max_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
 }

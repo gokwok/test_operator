@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
-use operator_core::{ArtifactId, Capability, Snapshot, TargetId};
+use operator_core::{ArtifactId, Capability, TargetId};
 use operator_runtime::RuntimeCore;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 use crate::{
-    session::{AgentSessionState, VisualObservationSummary},
+    session::{summarize_tool_result, AgentSessionState, VisualObservationSummary},
     AgentError,
 };
 
 const DEFAULT_RECENT_TOOL_RESULTS: usize = 5;
-const MAX_TEXT_SUMMARY_CHARS: usize = 120;
 
 #[derive(Clone)]
 pub struct LoopStateContextManager {
@@ -72,7 +70,7 @@ impl LoopStateContextManager {
                 tool_name: entry.result.tool_name.clone(),
                 is_error: entry.result.is_error,
                 read_only: entry.result.read_only,
-                summary: summarize_tool_output(&entry.result),
+                summary: summarize_tool_result(&entry.result),
             })
             .collect()
     }
@@ -162,130 +160,6 @@ impl ToolResultSummary {
             self.turn_index, self.step_index, self.tool_name, outcome, self.summary
         )
     }
-}
-
-fn summarize_tool_output(result: &crate::tools::AgentToolResult) -> String {
-    if result.is_error {
-        return result
-            .error
-            .as_ref()
-            .map(|error| truncate(&format!("error [{}]: {}", error.kind, error.message)))
-            .unwrap_or_else(|| "tool returned an unknown error".into());
-    }
-
-    let Some(output) = result.output.as_ref() else {
-        return "completed without structured output".into();
-    };
-
-    if let Some(snapshot) = snapshot_from_output(output) {
-        return VisualObservationSummary::from_snapshot(&snapshot).describe();
-    }
-
-    if let Some(artifact_id) = artifact_id_from_output(output) {
-        return format!("artifact {} is available for follow-up reads", artifact_id);
-    }
-
-    summarize_json(output)
-}
-
-fn snapshot_from_output(output: &Value) -> Option<Snapshot> {
-    output
-        .get("snapshot")
-        .cloned()
-        .and_then(|snapshot| serde_json::from_value(snapshot).ok())
-}
-
-fn artifact_id_from_output(output: &Value) -> Option<ArtifactId> {
-    output
-        .get("artifact")
-        .and_then(Value::as_object)
-        .and_then(|artifact| artifact.get("id"))
-        .cloned()
-        .and_then(|id| serde_json::from_value(id).ok())
-}
-
-fn summarize_json(value: &Value) -> String {
-    match value {
-        Value::Null => "null result".into(),
-        Value::Bool(flag) => format!("result={flag}"),
-        Value::Number(number) => format!("result={number}"),
-        Value::String(text) => truncate(text),
-        Value::Array(items) => summarize_array(items),
-        Value::Object(map) => summarize_object(map),
-    }
-}
-
-fn summarize_array(items: &[Value]) -> String {
-    if items.is_empty() {
-        return "empty list".into();
-    }
-
-    let preview = items
-        .iter()
-        .take(3)
-        .map(summarize_preview_value)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let suffix = if items.len() > 3 { ", ..." } else { "" };
-    format!("list(len={}, items=[{}{suffix}])", items.len(), preview)
-}
-
-fn summarize_object(map: &Map<String, Value>) -> String {
-    let mut keys = map.keys().cloned().collect::<Vec<_>>();
-    keys.sort();
-
-    let preview = keys
-        .iter()
-        .take(4)
-        .map(|key| match map.get(key).expect("sorted key should exist") {
-            Value::Null => format!("{key}=null"),
-            Value::Bool(flag) => format!("{key}={flag}"),
-            Value::Number(number) => format!("{key}={number}"),
-            Value::String(text) => format!("{key}={}", truncate(text)),
-            Value::Array(items) => format!("{key}[{}]", items.len()),
-            Value::Object(_) => key.clone(),
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let suffix = if keys.len() > 4 { ", ..." } else { "" };
-    format!("result: {preview}{suffix}")
-}
-
-fn summarize_preview_value(value: &Value) -> String {
-    match value {
-        Value::Null => "null".into(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::String(text) => truncate(text),
-        Value::Array(items) => format!("list({})", items.len()),
-        Value::Object(map) => {
-            if let Some(name) = map.get("name").and_then(Value::as_str) {
-                return format!("name={}", truncate(name));
-            }
-            if let Some(title) = map.get("title").and_then(Value::as_str) {
-                return format!("title={}", truncate(title));
-            }
-
-            let mut keys = map.keys().cloned().collect::<Vec<_>>();
-            keys.sort();
-            format!(
-                "object(keys=[{}])",
-                keys.into_iter().take(3).collect::<Vec<_>>().join(", ")
-            )
-        }
-    }
-}
-
-fn truncate(text: &str) -> String {
-    if text.chars().count() <= MAX_TEXT_SUMMARY_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text
-        .chars()
-        .take(MAX_TEXT_SUMMARY_CHARS)
-        .collect::<String>();
-    format!("{truncated}...")
 }
 
 fn capability_name(capability: &Capability) -> String {
