@@ -16,8 +16,8 @@ use crate::{
         ResolvedModel, ToolResultMessage, UserMessage,
     },
     planner::{
-        AgentDecision, DecisionParser, DecisionValidator, LoopStateContextManager,
-        PlannerPromptBuilder, TaskReflection, TaskReflector,
+        AgentDecision, DecisionParser, DecisionValidator, FinishGate, FinishGateVerdict,
+        LoopStateContextManager, PlannerPromptBuilder,
     },
     policy::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
@@ -36,7 +36,7 @@ pub struct AgentRunner {
     config: AgentConfig,
     prompt_builder: PlannerPromptBuilder,
     parser: DecisionParser,
-    reflector: TaskReflector,
+    finish_gate: FinishGate,
 }
 
 impl AgentRunner {
@@ -47,7 +47,7 @@ impl AgentRunner {
             config,
             prompt_builder: PlannerPromptBuilder::new(),
             parser: DecisionParser::new(),
-            reflector: TaskReflector::new(),
+            finish_gate: FinishGate::new(),
         }
     }
 
@@ -127,14 +127,14 @@ impl AgentRunner {
                     }
                 }
                 AgentDecision::Finish { summary } => {
-                    let reflection = self
-                        .reflector
-                        .reflect(model, state, &summary)
+                    let verdict = self
+                        .finish_gate
+                        .evaluate(model, state, &summary)
                         .await
-                        .map_err(|error| self.decorate_model_failure("reflector", error))?;
+                        .map_err(|error| self.decorate_model_failure("finish_gate", error))?;
 
-                    match reflection {
-                        TaskReflection::Ok { .. } => {
+                    match verdict {
+                        FinishGateVerdict::Ok { .. } => {
                             state.complete(summary.clone());
                             self.append_session_event(
                                 journal,
@@ -152,8 +152,8 @@ impl AgentRunner {
                                 summary,
                             });
                         }
-                        TaskReflection::NotOk { .. } => {
-                            self.reflector.record_feedback(state, &reflection);
+                        FinishGateVerdict::NotOk { .. } => {
+                            self.finish_gate.record_feedback(state, &verdict);
                         }
                     }
                 }

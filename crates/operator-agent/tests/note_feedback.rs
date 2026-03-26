@@ -1,5 +1,5 @@
 use operator_agent::{
-    planner::{TaskReflection, TaskReflector},
+    planner::{FinishGate, FinishGateVerdict},
     AgentSessionState,
 };
 use operator_core::{SessionId, TargetId};
@@ -16,25 +16,25 @@ fn sample_state() -> AgentSessionState {
 }
 
 #[test]
-fn reflector_not_ok_feedback_appends_notes_for_the_same_task() {
-    let reflector = TaskReflector::new();
+fn finish_gate_not_ok_feedback_appends_notes_for_the_same_task() {
+    let finish_gate = FinishGate::new();
     let mut state = sample_state();
 
-    reflector.record_feedback(
+    finish_gate.record_feedback(
         &mut state,
-        &TaskReflection::NotOk {
+        &FinishGateVerdict::NotOk {
             reason: "The transcript never confirmed Finder became frontmost.".into(),
         },
     );
-    reflector.record_feedback(
+    finish_gate.record_feedback(
         &mut state,
-        &TaskReflection::NotOk {
+        &FinishGateVerdict::NotOk {
             reason: "The finish summary skipped the final observe.".into(),
         },
     );
-    reflector.record_feedback(
+    finish_gate.record_feedback(
         &mut state,
-        &TaskReflection::Ok {
+        &FinishGateVerdict::Ok {
             reason: "The task is complete.".into(),
         },
     );
@@ -49,13 +49,13 @@ fn reflector_not_ok_feedback_appends_notes_for_the_same_task() {
 }
 
 #[test]
-fn bootstrapping_a_new_task_clears_notes_from_the_previous_task() {
-    let reflector = TaskReflector::new();
+fn finish_gate_feedback_is_cleared_when_bootstrapping_a_new_task() {
+    let finish_gate = FinishGate::new();
     let mut state = sample_state();
 
-    reflector.record_feedback(
+    finish_gate.record_feedback(
         &mut state,
-        &TaskReflection::NotOk {
+        &FinishGateVerdict::NotOk {
             reason: "Need another observe before finishing.".into(),
         },
     );

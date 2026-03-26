@@ -78,7 +78,7 @@ fn tool_call_names(events: &[SessionEvent]) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn runner_executes_tool_then_finishes_with_reflection() {
+async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
         CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
@@ -97,7 +97,6 @@ async fn runner_executes_tool_then_finishes_with_reflection() {
     let provider = Arc::new(DeterministicTestProvider::from_texts([
         r#"{"decision":"call_tool","name":"observe","arguments":{"surface":{"kind":"Frontmost"},"include_elements":true,"include_screenshot":false},"summary":"Capture the current UI."}"#.to_string(),
         r#"{"decision":"finish","summary":"Observed the frontmost UI."}"#.to_string(),
-        r#"{"verdict":"ok","reason":"The observe result confirms the task outcome."}"#.to_string(),
     ]));
     let session_store = Arc::new(InMemorySessionStore::new());
     let runner = runner_with(
@@ -130,7 +129,11 @@ async fn runner_executes_tool_then_finishes_with_reflection() {
     assert_eq!(driver.observe_calls().await.len(), 2);
 
     let requests = provider.requests();
-    assert_eq!(requests.len(), 3, "two planner calls plus one reflector");
+    assert_eq!(
+        requests.len(),
+        2,
+        "verified read-only completion should stay on the planner hot path"
+    );
 
     let first_planner_request = current_request_json(&requests[0].context);
     assert_eq!(
@@ -167,15 +170,49 @@ async fn runner_executes_tool_then_finishes_with_reflection() {
 }
 
 #[tokio::test]
-async fn runner_replans_when_reflector_rejects_finish() {
-    let driver = Arc::new(MockPlatformDriver::new("macos", CapabilitySet::new([])));
+async fn runner_replans_when_finish_gate_rejects_false_finish() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([
+            Capability::Capture,
+            Capability::InspectTree,
+            Capability::PointerInput,
+        ]),
+    ));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
+    driver.push_action_result(Ok(operator_core::ActionOutcome {
+        success: true,
+        duration_ms: 12,
+        detail: Some("clicked Save".into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }));
+    let mut after_click = test_snapshot("snap-after-click");
+    after_click.root_ids.clear();
+    after_click.elements.clear();
+    after_click.image_artifact = Some(ArtifactId("capture-after-click.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: after_click,
+    }));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: test_snapshot("snap-confirmed"),
+    }));
     let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"call_tool","name":"click","arguments":{},"summary":"Click Save before finishing."}"#
+            .to_string(),
         r#"{"decision":"finish","summary":"The task is done."}"#.to_string(),
-        r#"{"verdict":"not_ok","reason":"Need a concrete confirmation before finishing."}"#
-            .to_string(),
+        r#"{"decision":"call_tool","name":"observe","arguments":{"surface":{"kind":"Frontmost"},"include_elements":true,"include_screenshot":false},"summary":"Verify the UI after clicking Save."}"#.to_string(),
         r#"{"decision":"finish","summary":"The task is now confirmed."}"#.to_string(),
-        r#"{"verdict":"ok","reason":"The second finish summary addresses the missing proof."}"#
-            .to_string(),
+        r#"{"verdict":"ok","reason":"The post-action observe confirms the UI after clicking Save."}"#.to_string(),
     ]));
     let session_store = Arc::new(InMemorySessionStore::new());
     let runner = runner_with(
@@ -188,34 +225,55 @@ async fn runner_replans_when_reflector_rejects_finish() {
 
     let result = runner
         .run(AgentRunRequest {
-            task: "Confirm the task with a second pass.".into(),
+            task: "Click Save and confirm the UI after the click.".into(),
             target: TargetId("local:macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
-        .expect("runner should succeed after reflector feedback");
+        .expect("runner should succeed after finish-gate feedback");
 
     assert_eq!(result.summary, "The task is now confirmed.");
 
     let requests = provider.requests();
-    assert_eq!(requests.len(), 4, "planner, reflector, planner, reflector");
+    assert_eq!(
+        requests.len(),
+        5,
+        "planner, early false finish, replan, final finish, finish gate"
+    );
 
     let replanned_request = current_request_json(&requests[2].context);
     assert_eq!(
         replanned_request["notes"],
         Value::Array(vec![Value::String(
-            "Need a concrete confirmation before finishing.".into()
+            "The task is not verified yet because there is no fresh usable observe result after the last UI change.".into()
         )])
     );
 }
 
 #[tokio::test]
-async fn runner_avoids_structured_output_for_doubao_planner_and_reflector() {
-    let driver = Arc::new(MockPlatformDriver::new("macos", CapabilitySet::new([])));
+async fn runner_avoids_structured_output_for_doubao_planner_and_finish_gate() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
+    ));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: test_snapshot("snap-confirmed"),
+    }));
     let provider = Arc::new(DeterministicTestProvider::from_texts([
         "I will return only the JSON payload you need.\n```json\n{\"decision\":\"finish\",\"summary\":\"The task is confirmed.\"}\n```"
             .to_string(),
-        "Reflection complete.\n{\"verdict\":\"ok\",\"reason\":\"The wrapped JSON verdict is still recoverable without structured output.\"}"
+        "I will verify first.\n```json\n{\"decision\":\"call_tool\",\"name\":\"observe\",\"arguments\":{\"surface\":{\"kind\":\"Frontmost\"},\"include_elements\":true,\"include_screenshot\":false},\"summary\":\"Verify the current UI before finishing.\"}\n```"
+            .to_string(),
+        "I will return JSON only next time.\n```json\n{\"decision\":\"finish\",\"summary\":\"The task is confirmed.\"}\n```"
+            .to_string(),
+        "Finish gate complete.\n{\"verdict\":\"ok\",\"reason\":\"The wrapped JSON verdict is still recoverable without structured output.\"}"
             .to_string(),
     ]));
     let session_store = Arc::new(InMemorySessionStore::new());
@@ -230,22 +288,22 @@ async fn runner_avoids_structured_output_for_doubao_planner_and_reflector() {
 
     let result = runner
         .run(AgentRunRequest {
-            task: "Finish from wrapped JSON without structured output.".into(),
+            task: "Finish from wrapped JSON without structured output after verification.".into(),
             target: TargetId("local:macos".into()),
             model: Some("doubao-seed".into()),
         })
         .await
-        .expect("runner should parse wrapped planner and reflector JSON");
+        .expect("runner should parse wrapped planner and finish-gate JSON");
 
     assert_eq!(result.summary, "The task is confirmed.");
 
     let requests = provider.requests();
-    assert_eq!(requests.len(), 2, "planner + reflector");
+    assert_eq!(requests.len(), 4, "planner, replan, planner, finish gate");
     assert!(
         requests
             .iter()
             .all(|request| request.options.response_format.is_none()),
-        "planner and reflector should not request structured output: {requests:?}"
+        "planner and finish gate should not request structured output: {requests:?}"
     );
 }
 
@@ -327,11 +385,24 @@ async fn runner_stops_on_repeated_tool_failures() {
 
 #[tokio::test]
 async fn runner_retries_invalid_planner_output_before_continuing() {
-    let driver = Arc::new(MockPlatformDriver::new("macos", CapabilitySet::new([])));
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
+    ));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: test_snapshot("snap-verified"),
+    }));
     let provider = Arc::new(DeterministicTestProvider::from_texts([
         "not valid json".to_string(),
+        r#"{"decision":"call_tool","name":"observe","arguments":{"surface":{"kind":"Frontmost"},"include_elements":true,"include_screenshot":false},"summary":"Verify the UI before finishing."}"#.to_string(),
         r#"{"decision":"finish","summary":"Recovered after retry."}"#.to_string(),
-        r#"{"verdict":"ok","reason":"The retry produced a valid finish decision."}"#.to_string(),
     ]));
     let session_store = Arc::new(InMemorySessionStore::new());
     let runner = runner_with(
@@ -360,7 +431,7 @@ async fn runner_retries_invalid_planner_output_before_continuing() {
     assert_eq!(
         requests.len(),
         3,
-        "planner retry, planner success, reflector"
+        "planner retry, planner success, planner finish"
     );
 
     let retry_request = current_request_json(&requests[1].context);
