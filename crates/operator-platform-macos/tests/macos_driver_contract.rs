@@ -1393,6 +1393,96 @@ async fn click_action_with_app_target_uses_frontmost_usable_window_when_focus_fl
 }
 
 #[tokio::test]
+async fn click_action_with_app_target_ignores_non_matching_frontmost_window_when_focus_flags_lag() {
+    let input = StubInputSynthesizer::default();
+    let app = AppInfo {
+        bundle_id: Some("com.apple.calculator".into()),
+        name: "Calculator".into(),
+        pid: Some(42),
+        is_running: true,
+    };
+    let wrong_frontmost_window = WindowInfo {
+        id: 10.into(),
+        title: Some("Editor".into()),
+        app_name: Some("Codex".into()),
+        bounds: Some(Rect {
+            x: 120.0,
+            y: 80.0,
+            width: 920.0,
+            height: 680.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    };
+    let candidate_window = WindowInfo {
+        id: 11.into(),
+        title: Some("计算器".into()),
+        app_name: Some("计算器".into()),
+        bounds: Some(Rect {
+            x: 535.0,
+            y: 260.0,
+            width: 230.0,
+            height: 408.0,
+        }),
+        is_focused: false,
+        is_minimized: false,
+    };
+    let driver = MacosDriver::with_components(
+        StubAppService {
+            apps: vec![app.clone()],
+            windows: vec![wrong_frontmost_window, candidate_window.clone()],
+            filtered_windows: Some(Vec::new()),
+            focus: Some(FocusInfo {
+                role: "AXApplication".into(),
+                label: None,
+                bounds: None,
+                bundle_id: Some("com.apple.calculator".into()),
+                app_name: Some("计算器".into()),
+            }),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("unused.png".into()),
+            display_scale: None,
+            capture_bounds: None,
+            image_size_px: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+        input.clone(),
+    );
+
+    let outcome = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::Coords(Point { x: 622.5, y: 417.0 })),
+                target_selector: Some(ActionTargetSelector::App("Calculator".into())),
+                ..default_action_request()
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert!(outcome.success);
+    assert_eq!(outcome.target_app, Some(app));
+    assert_eq!(outcome.target_window, Some(candidate_window));
+    assert_eq!(
+        input.calls(),
+        vec![RecordedInput::Click {
+            point: Some(Point { x: 622.5, y: 417.0 }),
+            mode: ClickMode::Left,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn click_action_with_app_target_uses_frontmost_window_after_auto_focus_when_metadata_is_missing(
 ) {
     let input = StubInputSynthesizer::default();

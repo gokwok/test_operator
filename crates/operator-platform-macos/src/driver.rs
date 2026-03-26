@@ -811,15 +811,13 @@ where
         }
 
         let windows = self.app_service.list_windows(None)?;
-        if let Some(window) = select_matching_app_window(&windows, app) {
+        let focus = self.app_service.get_focus()?;
+        if let Some(window) = select_matching_app_window(&windows, app, focus.as_ref()) {
             return Ok(Some(window));
         }
 
-        let focus = self.app_service.get_focus()?;
         if focus_matches_expected_app(focus.as_ref(), app) {
-            if let Some(window) =
-                select_focused_window(&windows).or_else(|| select_observe_window(&windows))
-            {
+            if let Some(window) = select_observe_app_window(&windows, app, focus.as_ref()) {
                 return Ok(Some(window));
             }
         }
@@ -1172,23 +1170,50 @@ fn window_has_usable_observe_bounds(window: &WindowInfo) -> bool {
         .is_some_and(|bounds| bounds.width >= 80.0 && bounds.height >= 80.0)
 }
 
-fn select_matching_app_window(windows: &[WindowInfo], app: &AppInfo) -> Option<WindowInfo> {
+fn select_matching_app_window(
+    windows: &[WindowInfo],
+    app: &AppInfo,
+    focus: Option<&operator_core::FocusInfo>,
+) -> Option<WindowInfo> {
     let matching = windows
         .iter()
-        .filter(|window| {
-            window
-                .app_name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case(&app.name))
-        })
+        .filter(|window| window_matches_expected_app(window, app, focus))
         .cloned()
         .collect::<Vec<_>>();
 
     select_anchor_window(&matching)
 }
 
-fn select_focused_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
-    windows.iter().find(|window| window.is_focused).cloned()
+fn select_observe_app_window(
+    windows: &[WindowInfo],
+    app: &AppInfo,
+    focus: Option<&operator_core::FocusInfo>,
+) -> Option<WindowInfo> {
+    let matching = windows
+        .iter()
+        .filter(|window| window_matches_expected_app(window, app, focus))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    select_observe_window(&matching)
+}
+
+fn window_matches_expected_app(
+    window: &WindowInfo,
+    app: &AppInfo,
+    focus: Option<&operator_core::FocusInfo>,
+) -> bool {
+    let Some(actual_name) = window.app_name.as_deref() else {
+        return false;
+    };
+
+    if actual_name.eq_ignore_ascii_case(&app.name) {
+        return true;
+    }
+
+    focus
+        .and_then(|focus| focus.app_name.as_deref())
+        .is_some_and(|focus_name| actual_name.eq_ignore_ascii_case(focus_name))
 }
 
 fn focus_matches_expected_app(focus: Option<&operator_core::FocusInfo>, app: &AppInfo) -> bool {

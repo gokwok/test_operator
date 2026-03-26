@@ -1,4 +1,8 @@
-use std::process::Command;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    process::Command,
+};
 
 use operator_core::{AppInfo, FocusInfo, OperatorError, Rect, WindowId, WindowInfo};
 use serde::Deserialize;
@@ -59,9 +63,27 @@ JSON.stringify(apps);
             r#"
 const filter = {app_literal};
 const systemEvents = Application("System Events");
+function safeString(value) {{
+  return value == null ? null : String(value);
+}}
 function safeAttr(target, name) {{
   try {{
     return target.attributes.byName(name).value();
+  }} catch (error) {{
+    return null;
+  }}
+}}
+function safeStringAttr(target, name) {{
+  return safeString(safeAttr(target, name));
+}}
+function safeWindowId(window) {{
+  try {{
+    const value = typeof window.id === "function" ? window.id() : null;
+    if (value == null) {{
+      return null;
+    }}
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
   }} catch (error) {{
     return null;
   }}
@@ -86,13 +108,19 @@ const processes = filter
 let windows = [];
 for (const process of processes) {{
   const appName = process.name();
+  const pid = Number(process.unixId());
   const isFrontmost = process.frontmost();
-  for (const window of process.windows()) {{
+  const processWindows = process.windows();
+  for (let index = 0; index < processWindows.length; index += 1) {{
+    const window = processWindows[index];
     const isMain = safeAttr(window, "AXMain");
     const isFocused = safeAttr(window, "AXFocused");
     windows.push({{
-      id: Number(window.id()),
-      title: window.name() || null,
+      id: safeWindowId(window),
+      pid: Number.isFinite(pid) ? pid : null,
+      window_index: index,
+      ax_identifier: safeStringAttr(window, "AXIdentifier"),
+      title: safeString(window.name()),
       app_name: appName,
       bounds: rectForElement(window),
       is_focused: Boolean(isFrontmost && (isMain || isFocused)),
@@ -264,9 +292,12 @@ impl From<AppRecord> for AppInfo {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct WindowRecord {
-    id: u64,
+    id: Option<u64>,
+    pid: Option<u32>,
+    window_index: usize,
+    ax_identifier: Option<String>,
     title: Option<String>,
     app_name: Option<String>,
     bounds: Option<Rect>,
@@ -277,7 +308,10 @@ struct WindowRecord {
 impl From<WindowRecord> for WindowInfo {
     fn from(value: WindowRecord) -> Self {
         Self {
-            id: WindowId::from(value.id),
+            id: value
+                .id
+                .map(WindowId::from)
+                .unwrap_or_else(|| synthetic_window_id(&value)),
             title: value.title,
             app_name: value.app_name,
             bounds: value.bounds,
@@ -306,6 +340,33 @@ impl From<FocusRecord> for FocusInfo {
             app_name: value.app_name,
         }
     }
+}
+
+const SYNTHETIC_WINDOW_ID_MASK: u64 = 1 << 63;
+
+fn synthetic_window_id(window: &WindowRecord) -> WindowId {
+    // Some macOS apps expose enough AX metadata to observe and verify windows but do not
+    // surface a native `window.id()` through System Events. Derive a stable per-process id so
+    // verification can still correlate the same window across repeated `list_windows` calls.
+    let mut hasher = DefaultHasher::new();
+    window.pid.hash(&mut hasher);
+    window.app_name.hash(&mut hasher);
+    if let Some(identifier) = window
+        .ax_identifier
+        .as_deref()
+        .filter(|identifier| !identifier.is_empty())
+    {
+        identifier.hash(&mut hasher);
+    } else {
+        window.title.hash(&mut hasher);
+        window.window_index.hash(&mut hasher);
+    }
+
+    let mut value = hasher.finish() & !SYNTHETIC_WINDOW_ID_MASK;
+    if value == 0 {
+        value = 1;
+    }
+    WindowId(value | SYNTHETIC_WINDOW_ID_MASK)
 }
 
 fn parse_jxa_json<T>(json: String) -> Result<T, OperatorError>
@@ -637,4 +698,60 @@ fn command_output(command: &str, output: std::process::Output) -> Result<String,
     Err(OperatorError::Platform(format!(
         "{command} failed: {stderr}"
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use operator_core::WindowInfo;
+
+    use super::{WindowRecord, SYNTHETIC_WINDOW_ID_MASK};
+
+    #[test]
+    fn missing_native_window_id_uses_stable_synthetic_id() {
+        let record = WindowRecord {
+            id: None,
+            pid: Some(42),
+            window_index: 0,
+            ax_identifier: Some("main".into()),
+            title: Some("计算器".into()),
+            app_name: Some("Calculator".into()),
+            bounds: None,
+            is_focused: true,
+            is_minimized: false,
+        };
+
+        let first = WindowInfo::from(record.clone());
+        let second = WindowInfo::from(record);
+
+        assert_eq!(first.id, second.id);
+        assert_ne!(first.id.0 & SYNTHETIC_WINDOW_ID_MASK, 0);
+    }
+
+    #[test]
+    fn synthetic_window_id_changes_when_window_slot_changes_without_identifier() {
+        let first = WindowInfo::from(WindowRecord {
+            id: None,
+            pid: Some(42),
+            window_index: 0,
+            ax_identifier: None,
+            title: Some("Untitled".into()),
+            app_name: Some("Notes".into()),
+            bounds: None,
+            is_focused: false,
+            is_minimized: false,
+        });
+        let second = WindowInfo::from(WindowRecord {
+            id: None,
+            pid: Some(42),
+            window_index: 1,
+            ax_identifier: None,
+            title: Some("Untitled".into()),
+            app_name: Some("Notes".into()),
+            bounds: None,
+            is_focused: false,
+            is_minimized: false,
+        });
+
+        assert_ne!(first.id, second.id);
+    }
 }
