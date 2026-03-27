@@ -41,24 +41,41 @@ struct RootHelpSection {
     commands: &'static [CommandHelpEntry],
 }
 
+#[derive(Clone, Copy)]
+struct LeafHelpSection {
+    heading: &'static str,
+    rows: &'static [CommandHelpEntry],
+}
+
+#[derive(Clone, Copy)]
+struct LeafHelp {
+    usage: &'static str,
+    about: &'static str,
+    sections: &'static [LeafHelpSection],
+    include_global_runtime_flags: bool,
+    examples: &'static [&'static str],
+    footer: &'static str,
+}
+
 const ROOT_ABOUT: &str = "Operator - Turn any desktop app into an API, from CLI to AI";
-const ROOT_USAGE: &str = "operator [OPTIONS] [COMMAND]";
-const ROOT_FOOTER: &str =
-    "Use 'operator <command> --help' or 'operator <group> <command> --help' for detailed usage.";
+const ROOT_USAGE: &str = "operator [OPTIONS] <COMMAND>";
+const ROOT_FOOTER: &str = "Use 'operator <command> --help' for detailed usage.";
 const ROOT_EXAMPLES: &[&str] = &[
     "operator capture frontmost",
     "operator elements window --window-id 42",
-    "operator window list",
     "operator click --text Save",
     "operator mcp serve",
 ];
 
-const PRINT_HELP_ABOUT: &str = "Print this message or the help of the given subcommand(s)";
 const PERMISSIONS_ABOUT: &str = "Check automation permissions and runtime readiness";
 const CAPABILITIES_ABOUT: &str =
     "Show supported surfaces, queries, and actions for the active target";
 const SHOW_ABOUT: &str = "Show the currently focused app, window, and element";
-const AGENT_ABOUT: &str = "Execute a single-shot natural-language task against a target";
+const AGENT_ABOUT: &str = "Execute a natural-language task against a target";
+const AGENT_LONG_ABOUT: &str =
+    "Execute a natural-language task against the active target. The agent
+observes the screen, plans actions, and drives the UI autonomously until
+the task is complete or the step limit is reached.";
 
 const CAPTURE_ABOUT: &str = "Take a screenshot of a surface";
 const CAPTURE_FRONTMOST_ABOUT: &str = "Take a screenshot of the frontmost app surface";
@@ -88,6 +105,10 @@ const INPUT_HOTKEY_ABOUT: &str = "Press a key chord";
 const INPUT_SCROLL_ABOUT: &str = "Scroll by delta against a locator or target";
 const INPUT_DRAG_ABOUT: &str = "Drag between two locators";
 const INPUT_SWIPE_ABOUT: &str = "Swipe between two locators";
+const ROOT_DRAG_ABOUT: &str = "Drag from one locator to another";
+const ROOT_SWIPE_ABOUT: &str = "Swipe from one locator to another";
+const ROOT_MOVE_ABOUT: &str = "Move the pointer to a locator or coordinates";
+const PASTE_ABOUT: &str = "Clipboard-aware paste [planned]";
 
 const APP_ABOUT: &str = "Manage application lifecycle";
 const APP_LAUNCH_ABOUT: &str = "Launch an application by name or bundle identifier";
@@ -105,9 +126,15 @@ const WINDOW_MAXIMIZE_ABOUT: &str = "Maximize a window to fill the display";
 const WINDOW_MOVE_ABOUT: &str = "Move a window to new screen coordinates";
 const WINDOW_RESIZE_ABOUT: &str = "Resize a window";
 const WINDOW_SET_BOUNDS_ABOUT: &str = "Set the full position and size of a window in one operation";
+const CLIPBOARD_ABOUT: &str = "Read/write the clipboard [planned]";
+const OPEN_ABOUT: &str = "Open a URL or file with its default application [planned]";
 
-const MCP_ABOUT: &str = "Run the Operator MCP entrypoint";
+const MCP_ABOUT: &str = "Run the Operator MCP server";
 const MCP_SERVE_ABOUT: &str = "Start the MCP stdio server";
+const MCP_SERVE_LONG_ABOUT: &str =
+    "Start the MCP stdio server. Reads JSON-RPC messages from stdin and writes
+responses to stdout. Intended to be launched by an MCP host such as Claude
+Desktop or a custom integration.";
 
 const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
@@ -117,6 +144,14 @@ const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "capabilities",
         about: CAPABILITIES_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "snapshot",
+        about: SNAPSHOT_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "artifact",
+        about: ARTIFACT_ABOUT,
     },
 ];
 
@@ -133,19 +168,9 @@ const ROOT_OBSERVE_COMMANDS: &[CommandHelpEntry] = &[
         command: "show",
         about: SHOW_ABOUT,
     },
-    CommandHelpEntry {
-        command: "snapshot",
-        about: SNAPSHOT_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "artifact",
-        about: ARTIFACT_ABOUT,
-    },
 ];
 
-const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[];
-
-const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
+const ROOT_INTERACT_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "click",
         about: INPUT_CLICK_ABOUT,
@@ -168,16 +193,23 @@ const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
     },
     CommandHelpEntry {
         command: "drag",
-        about: INPUT_DRAG_ABOUT,
+        about: ROOT_DRAG_ABOUT,
     },
     CommandHelpEntry {
         command: "swipe",
-        about: INPUT_SWIPE_ABOUT,
+        about: ROOT_SWIPE_ABOUT,
     },
     CommandHelpEntry {
         command: "move",
-        about: INPUT_MOVE_ABOUT,
+        about: ROOT_MOVE_ABOUT,
     },
+    CommandHelpEntry {
+        command: "paste",
+        about: PASTE_ABOUT,
+    },
+];
+
+const ROOT_SYSTEM_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "app",
         about: APP_ABOUT,
@@ -186,14 +218,22 @@ const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
         command: "window",
         about: WINDOW_ABOUT,
     },
+    CommandHelpEntry {
+        command: "clipboard",
+        about: CLIPBOARD_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "open",
+        about: OPEN_ABOUT,
+    },
 ];
 
-const ROOT_MCP_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+const ROOT_INTEGRATION_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "mcp",
     about: MCP_ABOUT,
 }];
 
-const ROOT_AGENT_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+const ROOT_AI_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "agent",
     about: AGENT_ABOUT,
 }];
@@ -208,20 +248,20 @@ const ROOT_HELP_SECTIONS: &[RootHelpSection] = &[
         commands: ROOT_OBSERVE_COMMANDS,
     },
     RootHelpSection {
-        heading: "Query",
-        commands: ROOT_QUERY_COMMANDS,
+        heading: "Interact",
+        commands: ROOT_INTERACT_COMMANDS,
     },
     RootHelpSection {
-        heading: "Action",
-        commands: ROOT_ACTION_COMMANDS,
+        heading: "System",
+        commands: ROOT_SYSTEM_COMMANDS,
     },
     RootHelpSection {
-        heading: "MCP",
-        commands: ROOT_MCP_COMMANDS,
+        heading: "Integration",
+        commands: ROOT_INTEGRATION_COMMANDS,
     },
     RootHelpSection {
-        heading: "Agent",
-        commands: ROOT_AGENT_COMMANDS,
+        heading: "AI",
+        commands: ROOT_AI_COMMANDS,
     },
 ];
 
@@ -292,10 +332,6 @@ const APP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
         command: "unhide",
         about: APP_UNHIDE_ABOUT,
     },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
 ];
 
 const WINDOW_GROUP_COMMANDS: &[CommandHelpEntry] = &[
@@ -331,22 +367,12 @@ const WINDOW_GROUP_COMMANDS: &[CommandHelpEntry] = &[
         command: "set-bounds",
         about: WINDOW_SET_BOUNDS_ABOUT,
     },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
 ];
 
-const MCP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
-    CommandHelpEntry {
-        command: "serve",
-        about: MCP_SERVE_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
-];
+const MCP_GROUP_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "serve",
+    about: MCP_SERVE_ABOUT,
+}];
 
 const CAPTURE_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator capture [OPTIONS] <SURFACE>",
@@ -404,7 +430,7 @@ const MCP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     entries_heading: "Commands",
     commands: MCP_GROUP_COMMANDS,
     examples: &["operator mcp serve"],
-    footer: "Use 'operator mcp <command> --help' for detailed usage.",
+    footer: "",
 };
 
 const PERMISSIONS_AFTER_HELP: &str = "Examples
@@ -473,7 +499,57 @@ const MCP_SERVE_AFTER_HELP: &str = "Examples
 
 const AGENT_AFTER_HELP: &str = "Examples
   operator agent \"Open Notes and type hello\"
-  operator agent --target macos --model doubao-seed --max-steps 8 \"Summarize the frontmost window\"";
+  operator agent \"Find the largest file in Downloads and move it to the Trash\"
+  operator agent --model doubao-seed --max-steps 10 \"Summarize the frontmost window\"";
+
+const MCP_SERVE_HELP: LeafHelp = LeafHelp {
+    usage: "operator mcp serve [OPTIONS]",
+    about: MCP_SERVE_LONG_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &["operator mcp serve"],
+    footer: "",
+};
+
+const AGENT_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<TASK>",
+    about: "Natural-language description of the task to perform",
+}];
+
+const AGENT_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--model <MODEL>",
+        about: "Model to use for the agent [possible values: gpt-5.4, doubao-seed]",
+    },
+    CommandHelpEntry {
+        command: "--max-steps <N>",
+        about: "Maximum number of agent steps before stopping",
+    },
+];
+
+const AGENT_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: AGENT_ARGUMENT_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: AGENT_OPTION_ROWS,
+    },
+];
+
+const AGENT_HELP: LeafHelp = LeafHelp {
+    usage: "operator agent [OPTIONS] <TASK>",
+    about: AGENT_LONG_ABOUT,
+    sections: AGENT_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator agent \"Open Notes and type hello\"",
+        "operator agent \"Find the largest file in Downloads and move it to the Trash\"",
+        "operator agent --model doubao-seed --max-steps 10 \"Summarize the frontmost window\"",
+    ],
+    footer: "",
+};
 
 fn styled_global_runtime_flags() -> String {
     let flags = [
@@ -586,15 +662,90 @@ fn styled_group_help(group: &CommandHelpGroup) -> String {
         )
         .expect("write example row");
     }
+    if !group.footer.is_empty() {
+        help.push('\n');
+        writeln!(
+            &mut help,
+            "{muted}{footer}{reset}",
+            muted = MUTED_STYLE,
+            footer = group.footer,
+            reset = RESET_STYLE,
+        )
+        .expect("write footer");
+    }
+
+    help
+}
+
+fn styled_leaf_help(spec: &LeafHelp) -> String {
+    let mut help = String::new();
+    writeln!(
+        &mut help,
+        "{header}Usage{reset} {command}{usage}{reset}",
+        header = HEADER_STYLE,
+        command = COMMAND_STYLE,
+        usage = spec.usage,
+        reset = RESET_STYLE,
+    )
+    .expect("write usage");
     help.push('\n');
     writeln!(
         &mut help,
-        "{muted}{footer}{reset}",
-        muted = MUTED_STYLE,
-        footer = group.footer,
+        "{body}{description}{reset}",
+        body = BODY_STYLE,
+        description = spec.about,
         reset = RESET_STYLE,
     )
-    .expect("write footer");
+    .expect("write description");
+    help.push('\n');
+
+    for section in spec.sections {
+        writeln!(
+            &mut help,
+            "{header}{heading}{reset}",
+            header = HEADER_STYLE,
+            heading = section.heading,
+            reset = RESET_STYLE,
+        )
+        .expect("write section header");
+        write_command_rows(&mut help, section.rows);
+        help.push('\n');
+    }
+
+    if spec.include_global_runtime_flags {
+        help.push_str(&styled_global_runtime_flags());
+        help.push('\n');
+    }
+
+    writeln!(
+        &mut help,
+        "{header}Examples{reset}",
+        header = HEADER_STYLE,
+        reset = RESET_STYLE,
+    )
+    .expect("write examples header");
+    for example in spec.examples {
+        writeln!(
+            &mut help,
+            "  {command}{example}{reset}",
+            command = COMMAND_STYLE,
+            example = example,
+            reset = RESET_STYLE,
+        )
+        .expect("write example row");
+    }
+
+    if !spec.footer.is_empty() {
+        help.push('\n');
+        writeln!(
+            &mut help,
+            "{muted}{footer}{reset}",
+            muted = MUTED_STYLE,
+            footer = spec.footer,
+            reset = RESET_STYLE,
+        )
+        .expect("write footer");
+    }
 
     help
 }
@@ -905,7 +1056,9 @@ fn legacy_command_error(args: &[OsString]) -> Option<clap::Error> {
     let (legacy, replacement) = legacy_command_replacement(args)?;
     Some(clap::Error::raw(
         clap::error::ErrorKind::InvalidSubcommand,
-        format!("legacy command path `{legacy}` has been removed; use `{replacement}` instead"),
+        format!(
+            "legacy command path `operator {legacy}` has been removed; use `{replacement}` instead"
+        ),
     ))
 }
 
@@ -987,7 +1140,9 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["elements"] => Some(styled_group_help(&ELEMENTS_GROUP_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
         ["window"] => Some(styled_group_help(&WINDOW_GROUP_HELP)),
+        ["mcp", "serve", ..] => Some(styled_leaf_help(&MCP_SERVE_HELP)),
         ["mcp"] => Some(styled_group_help(&MCP_GROUP_HELP)),
+        ["agent", ..] => Some(styled_leaf_help(&AGENT_HELP)),
         _ => generated_help(args).map(|help| post_process_generated_help(&help)),
     }
 }
@@ -1190,15 +1345,15 @@ pub(crate) struct AgentCommand {
 struct AgentArgs {
     #[command(flatten)]
     common: CommonArgs,
-    #[arg(help = "Natural-language task to execute")]
+    #[arg(help = "Natural-language description of the task to perform")]
     task: String,
     #[arg(
         long,
         value_parser = ["gpt-5.4", "doubao-seed"],
-        help = "Registered phase-1 model name"
+        help = "Model to use for the agent"
     )]
     model: Option<String>,
-    #[arg(long, help = "Override the maximum number of agent steps")]
+    #[arg(long, help = "Maximum number of agent steps before stopping")]
     max_steps: Option<NonZeroU32>,
 }
 

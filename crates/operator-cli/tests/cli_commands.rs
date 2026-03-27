@@ -205,14 +205,14 @@ fn window_list_command_maps_to_list_windows_tool() {
 #[test]
 fn mcp_help_lists_serve_subcommand() {
     let help = command_help(["operator", "mcp", "--help"]);
-    assert!(help.contains("Run the Operator MCP entrypoint"));
+    assert!(help.contains("Run the Operator MCP server"));
     assert!(help.contains("serve"));
     assert!(help.contains("Start the MCP stdio server"));
     assert!(help.contains("Usage operator mcp [OPTIONS] <COMMAND>"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator mcp serve"));
-    assert!(help.contains("Use 'operator mcp <command> --help' for detailed usage."));
+    assert!(!help.contains("Use 'operator mcp <command> --help' for detailed usage."));
 }
 
 #[test]
@@ -226,17 +226,22 @@ fn mcp_serve_command_maps_to_mcp_execution_mode() {
 #[test]
 fn agent_help_shows_first_phase_flags_and_examples() {
     let help = command_help(["operator", "agent", "--help"]);
-    assert!(help.contains("Execute a single-shot natural-language task against a target"));
+    assert!(help.contains("Execute a natural-language task against the active target."));
+    assert!(help.contains("observes the screen, plans actions, and drives the UI autonomously"));
     assert!(help.contains("Usage operator agent [OPTIONS] <TASK>"));
     assert!(help.contains("Arguments\n  <TASK>"));
     assert!(help.contains("--model <MODEL>"));
-    assert!(help.contains("--max-steps <MAX_STEPS>"));
+    assert!(help.contains("--max-steps <N>"));
+    assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("--target <TARGET>"));
     assert!(help.contains("--timeout-ms <TIMEOUT_MS>"));
     assert!(help.contains("--json"));
     assert!(help.contains("Examples\n  operator agent \"Open Notes and type hello\""));
     assert!(help.contains(
-        "operator agent --target macos --model doubao-seed --max-steps 8 \"Summarize the frontmost window\""
+        "operator agent \"Find the largest file in Downloads and move it to the Trash\""
+    ));
+    assert!(help.contains(
+        "operator agent --model doubao-seed --max-steps 10 \"Summarize the frontmost window\""
     ));
 }
 
@@ -349,37 +354,51 @@ fn show_help_shows_examples() {
 #[test]
 fn root_help_groups_commands_by_domain() {
     let help = command_help(["operator", "--help"]);
-    assert!(help.contains("Usage operator [OPTIONS] [COMMAND]"));
+    assert!(help.contains("Usage operator [OPTIONS] <COMMAND>"));
     assert!(help.contains("Operator - Turn any desktop app into an API, from CLI to AI"));
     assert!(!help.contains("Tip:\n  Start with operator observe --help"));
+    assert!(help.contains("Core"));
+    assert!(help.contains("Observe"));
+    assert!(help.contains("Interact"));
+    assert!(help.contains("System"));
+    assert!(help.contains("Integration"));
+    assert!(help.contains("AI"));
+    assert!(!help.contains("\nQuery\n"));
+    assert!(!help.contains("\nAction\n"));
+    assert!(!help.contains("\nMCP\n"));
+    assert!(!help.contains("\nAgent\n"));
     assert!(help.contains("permissions"));
     assert!(help.contains("Check automation permissions and runtime readiness"));
-    assert!(help.contains("capture"));
-    assert!(help.contains("Take a screenshot of a surface"));
-    assert!(help.contains("elements"));
-    assert!(help.contains("Query the accessibility element tree for a surface"));
     assert!(help.contains("snapshot"));
     assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("artifact"));
     assert!(help.contains("Read a stored capture artifact by ID"));
+    assert!(help.contains("capture"));
+    assert!(help.contains("Take a screenshot of a surface"));
+    assert!(help.contains("elements"));
+    assert!(help.contains("Query the accessibility element tree for a surface"));
     assert!(help.contains("show"));
     assert!(help.contains("Show the currently focused app, window, and element"));
-    assert!(help.contains("window"));
-    assert!(help.contains("Manage application windows"));
     assert!(help.contains("click"));
     assert!(help.contains("Click a locator, coordinates, or target"));
+    assert!(help.contains("paste"));
+    assert!(help.contains("Clipboard-aware paste [planned]"));
+    assert!(help.contains("window"));
+    assert!(help.contains("Manage application windows"));
+    assert!(help.contains("clipboard"));
+    assert!(help.contains("Read/write the clipboard [planned]"));
+    assert!(help.contains("open"));
+    assert!(help.contains("Open a URL or file with its default application [planned]"));
     assert!(!help.contains("operator list windows"));
-    assert!(help.contains("operator window list"));
     assert!(help.contains("mcp"));
-    assert!(help.contains("Run the Operator MCP entrypoint"));
-    assert!(help.contains("Agent"));
-    assert!(help.contains("Execute a single-shot natural-language task against a target"));
+    assert!(help.contains("Run the Operator MCP server"));
+    assert!(help.contains("agent"));
+    assert!(help.contains("Execute a natural-language task against a target"));
     assert!(!help.contains("Not yet implemented. Reserved for future agent interface commands."));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator capture frontmost"));
-    assert!(help.contains(
-        "Use 'operator <command> --help' or 'operator <group> <command> --help' for detailed usage."
-    ));
+    assert!(!help.contains("operator window list"));
+    assert!(help.contains("Use 'operator <command> --help' for detailed usage."));
 }
 
 #[test]
@@ -464,7 +483,7 @@ fn root_help_uses_highlight_and_muted_tip_styles() {
     let help = styled_command_help(["operator", "--help"]);
 
     assert!(help.contains("\u{1b}[1;38;5;214mUsage\u{1b}[0m"));
-    assert!(help.contains("\u{1b}[1;38;5;255moperator [OPTIONS] [COMMAND]\u{1b}[0m"));
+    assert!(help.contains("\u{1b}[1;38;5;255moperator [OPTIONS] <COMMAND>\u{1b}[0m"));
     assert!(help.contains("\u{1b}[38;5;245mUse 'operator <command> --help'"));
     assert!(!help.contains("\u{1b}[38;5;245mTip"));
 }
@@ -589,9 +608,10 @@ fn window_list_help_snapshot_is_stable() {
 #[test]
 fn mcp_serve_help_snapshot_is_stable() {
     let help = command_help(["operator", "mcp", "serve", "--help"]);
-    assert!(help.contains("Start the MCP stdio server"));
+    assert!(help.contains("Start the MCP stdio server. Reads JSON-RPC messages from stdin"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator mcp serve"));
 }
 
@@ -2270,9 +2290,10 @@ fn strip_ansi(input: &str) -> String {
 fn assert_legacy_command_migration(args: &[&str], legacy: &str, replacement: &str) {
     let error = cli_main::args::Cli::try_parse_from(args.iter().copied()).unwrap_err();
     let message = error.to_string();
+    let legacy_path = format!("operator {legacy}");
 
     assert!(
-        message.contains(legacy),
+        message.contains(&legacy_path),
         "missing legacy command in `{message}`"
     );
     assert!(
