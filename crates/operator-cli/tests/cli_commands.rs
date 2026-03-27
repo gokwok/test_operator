@@ -214,7 +214,7 @@ fn list_windows_command_moves_under_list_group() {
 #[test]
 fn mcp_help_lists_serve_subcommand() {
     let help = command_help(["operator", "mcp", "--help"]);
-    assert!(help.contains("Run MCP stdio server commands"));
+    assert!(help.contains("Run the MCP stdio server"));
     assert!(help.contains("Usage operator mcp [OPTIONS] <COMMAND>"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Emit machine-readable JSON output"));
@@ -321,16 +321,18 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Usage operator [OPTIONS] [COMMAND]"));
     assert!(help.contains("Operator - Turn any desktop app into an API, from CLI to AI"));
     assert!(!help.contains("Tip:\n  Start with operator observe --help"));
-    assert!(help.contains("permissions   Check automation permissions and runtime readiness"));
-    assert!(help.contains("snapshot      Read stored snapshots by ID"));
-    assert!(help.contains("focus         Show the currently focused app, window, and element"));
+    assert!(help.contains("permissions    Check automation permissions and runtime readiness"));
     assert!(help.contains(
-        "input         Pointer and keyboard actions against locators or target windows/apps"
+        "observe    Capture snapshots from frontmost, window, region, or fullscreen surfaces"
     ));
-    assert!(help.contains("mcp           Run MCP stdio server commands"));
-    assert!(help.contains(
-        "A2A\n  agent         Execute a single-shot natural-language task against a target"
-    ));
+    assert!(help.contains("snapshot   Read a stored snapshot by ID"));
+    assert!(help.contains("artifact   Read a stored capture artifact by ID"));
+    assert!(help.contains("focus   Show the currently focused app, window, and element"));
+    assert!(help
+        .contains("input    Pointer and keyboard actions against locators or target windows/apps"));
+    assert!(help.contains("mcp   Run the MCP stdio server"));
+    assert!(help
+        .contains("A2A\n  agent   Execute a single-shot natural-language task against a target"));
     assert!(!help.contains("Not yet implemented. Reserved for future agent interface commands."));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator observe frontmost"));
@@ -343,12 +345,12 @@ fn root_help_groups_commands_by_domain() {
 fn observe_help_lists_surface_subcommands() {
     let help = command_help(["operator", "observe", "--help"]);
     assert!(
-        help.contains("Create snapshots from frontmost, window, region, or fullscreen surfaces")
+        help.contains("Capture snapshots from frontmost, window, region, or fullscreen surfaces")
     );
     assert!(help.contains("frontmost"));
-    assert!(help.contains("Create a snapshot from the frontmost surface"));
+    assert!(help.contains("Capture the frontmost surface"));
     assert!(help.contains("window"));
-    assert!(help.contains("Create a snapshot from a specific window"));
+    assert!(help.contains("Capture a specific window"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Use 'operator observe <command> --help' for detailed usage."));
 }
@@ -356,7 +358,7 @@ fn observe_help_lists_surface_subcommands() {
 #[test]
 fn snapshot_help_lists_get_subcommand() {
     let help = command_help(["operator", "snapshot", "--help"]);
-    assert!(help.contains("Read stored snapshots by ID"));
+    assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("get"));
     assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("Global Runtime Flags"));
@@ -366,9 +368,9 @@ fn snapshot_help_lists_get_subcommand() {
 #[test]
 fn artifact_help_lists_get_subcommand() {
     let help = command_help(["operator", "artifact", "--help"]);
-    assert!(help.contains("Resolve stored capture artifacts by ID"));
+    assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("get"));
-    assert!(help.contains("Resolve a stored capture artifact by ID"));
+    assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Use 'operator artifact <command> --help' for detailed usage."));
 }
@@ -381,7 +383,8 @@ fn input_help_lists_pointer_and_keyboard_subcommands() {
     ));
     assert!(help.contains("Pointer and keyboard actions against locators or target windows/apps"));
     assert!(help.contains("click"));
-    assert!(help.contains("Click a locator, coordinate, or target"));
+    assert!(help.contains("Click a locator, coordinates, or target"));
+    assert!(help.contains("Press a single key"));
     assert!(help.contains("Use 'operator input <command> --help' for detailed usage."));
 }
 
@@ -417,7 +420,7 @@ fn root_help_uses_highlight_and_muted_tip_styles() {
     let help = styled_command_help(["operator", "--help"]);
 
     assert!(help.contains("\u{1b}[1;38;5;214mUsage\u{1b}[0m"));
-    assert!(help.contains("\u{1b}[1;38;5;255moperator\u{1b}[0m"));
+    assert!(help.contains("\u{1b}[1;38;5;255moperator [OPTIONS] [COMMAND]\u{1b}[0m"));
     assert!(help.contains("\u{1b}[38;5;245mUse 'operator <group> --help'"));
     assert!(!help.contains("\u{1b}[38;5;245mTip"));
 }
@@ -454,7 +457,7 @@ fn snapshot_get_help_snapshot_is_stable() {
 #[test]
 fn artifact_get_help_snapshot_is_stable() {
     let help = command_help(["operator", "artifact", "get", "--help"]);
-    assert!(help.contains("Resolve a stored capture artifact by ID"));
+    assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator artifact get capture-1.png"));
@@ -465,9 +468,9 @@ fn input_click_help_snapshot_is_stable() {
     let help = command_help(["operator", "input", "click", "--help"]);
     assert!(help.starts_with("Usage operator input click"));
     assert!(help.contains(
-        "Usage operator input click [OPTIONS]\n\nClick a locator, coordinate, or target"
+        "Usage operator input click [OPTIONS]\n\nClick a locator, coordinates, or target"
     ));
-    assert!(help.contains("Click a locator, coordinate, or target"));
+    assert!(help.contains("Click a locator, coordinates, or target"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--mode <MODE>"));

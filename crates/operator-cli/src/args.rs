@@ -19,200 +19,432 @@ const BODY_STYLE: &str = "\x1b[38;5;255m";
 const MUTED_STYLE: &str = "\x1b[38;5;245m";
 const RESET_STYLE: &str = "\x1b[0m";
 
-const OBSERVE_HELP: &str = "Usage operator observe [OPTIONS] <COMMAND>
+#[derive(Clone, Copy)]
+struct CommandHelpEntry {
+    command: &'static str,
+    about: &'static str,
+}
 
-Create snapshots from frontmost, window, region, or fullscreen surfaces
+#[derive(Clone, Copy)]
+struct CommandHelpGroup {
+    usage: &'static str,
+    about: &'static str,
+    commands: &'static [CommandHelpEntry],
+    examples: &'static [&'static str],
+    footer: &'static str,
+}
 
-Commands
-  frontmost   Create a snapshot from the frontmost surface
-  window      Create a snapshot from a specific window
-  region      Create a snapshot from a specific screen region
-  fullscreen  Create a snapshot from the full display or the active display
-  help        Print this message or the help of the given subcommand(s)
+#[derive(Clone, Copy)]
+struct RootHelpSection {
+    heading: &'static str,
+    commands: &'static [CommandHelpEntry],
+}
 
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
+const ROOT_ABOUT: &str = "Operator - Turn any desktop app into an API, from CLI to AI";
+const ROOT_USAGE: &str = "operator [OPTIONS] [COMMAND]";
+const ROOT_FOOTER: &str =
+    "Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage.";
+const ROOT_EXAMPLES: &[&str] = &[
+    "operator observe frontmost",
+    "operator list windows",
+    "operator input click --text Save",
+    "operator mcp serve",
+];
 
-Examples
-  operator observe frontmost --capture all
-  operator observe window --window-id 42 --capture elements
+const PRINT_HELP_ABOUT: &str = "Print this message or the help of the given subcommand(s)";
+const PERMISSIONS_ABOUT: &str = "Check automation permissions and runtime readiness";
+const CAPABILITIES_ABOUT: &str =
+    "Show supported surfaces, queries, and actions for the active target";
+const FOCUS_ABOUT: &str = "Show the currently focused app, window, and element";
+const AGENT_ABOUT: &str = "Execute a single-shot natural-language task against a target";
 
-Use 'operator observe <command> --help' for detailed usage.
-";
+const OBSERVE_ABOUT: &str =
+    "Capture snapshots from frontmost, window, region, or fullscreen surfaces";
+const OBSERVE_FRONTMOST_ABOUT: &str = "Capture the frontmost surface";
+const OBSERVE_WINDOW_ABOUT: &str = "Capture a specific window";
+const OBSERVE_REGION_ABOUT: &str = "Capture a specific screen region";
+const OBSERVE_FULLSCREEN_ABOUT: &str = "Capture the full display or the active display";
 
-const SNAPSHOT_HELP: &str = "Usage operator snapshot [OPTIONS] <COMMAND>
+const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
+const SNAPSHOT_GET_ABOUT: &str = "Read a stored snapshot by ID";
 
-Read stored snapshots by ID
+const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
+const ARTIFACT_GET_ABOUT: &str = "Read a stored capture artifact by ID";
 
-Commands
-  get   Read a stored snapshot by ID
-  help  Print this message or the help of the given subcommand(s)
+const LIST_ABOUT: &str = "List running apps or windows";
+const LIST_APPS_ABOUT: &str = "List running applications";
+const LIST_WINDOWS_ABOUT: &str = "List windows, optionally filtered by app";
 
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
+const INPUT_ABOUT: &str = "Pointer and keyboard actions against locators or target windows/apps";
+const INPUT_CLICK_ABOUT: &str = "Click a locator, coordinates, or target";
+const INPUT_MOVE_ABOUT: &str = "Move the pointer to a locator, coordinates, or target";
+const INPUT_TYPE_ABOUT: &str = "Type text into the focused or resolved target";
+const INPUT_PRESS_ABOUT: &str = "Press a single key";
+const INPUT_HOTKEY_ABOUT: &str = "Press a key chord";
+const INPUT_SCROLL_ABOUT: &str = "Scroll by delta against a locator or target";
+const INPUT_DRAG_ABOUT: &str = "Drag between two locators";
+const INPUT_SWIPE_ABOUT: &str = "Swipe between two locators";
 
-Examples
-  operator snapshot get s_123
+const APP_ABOUT: &str = "Launch, switch, hide, quit, and relaunch applications";
+const APP_LAUNCH_ABOUT: &str = "Launch an application by bundle identifier or name";
+const APP_SWITCH_ABOUT: &str = "Bring an application to the foreground";
+const APP_QUIT_ABOUT: &str = "Quit an application";
+const APP_RELAUNCH_ABOUT: &str = "Relaunch an application";
+const APP_HIDE_ABOUT: &str = "Hide an application";
+const APP_UNHIDE_ABOUT: &str = "Unhide an application";
 
-Use 'operator snapshot <command> --help' for detailed usage.
-";
+const WINDOW_ABOUT: &str = "Focus, close, resize, or move application windows";
+const WINDOW_FOCUS_ABOUT: &str = "Focus a specific window";
+const WINDOW_CLOSE_ABOUT: &str = "Close a specific window";
+const WINDOW_MINIMIZE_ABOUT: &str = "Minimize a specific window";
+const WINDOW_MAXIMIZE_ABOUT: &str = "Maximize a specific window";
+const WINDOW_MOVE_ABOUT: &str = "Move a specific window";
+const WINDOW_RESIZE_ABOUT: &str = "Resize a specific window";
+const WINDOW_SET_BOUNDS_ABOUT: &str = "Set the full bounds of a specific window";
 
-const ARTIFACT_HELP: &str = "Usage operator artifact [OPTIONS] <COMMAND>
+const MCP_ABOUT: &str = "Run the MCP stdio server";
+const MCP_SERVE_ABOUT: &str = "Run the MCP stdio server";
 
-Resolve stored capture artifacts by ID
+const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "permissions",
+        about: PERMISSIONS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "capabilities",
+        about: CAPABILITIES_ABOUT,
+    },
+];
 
-Commands
-  get   Resolve a stored capture artifact by ID
-  help  Print this message or the help of the given subcommand(s)
+const ROOT_OBSERVE_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "observe",
+        about: OBSERVE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "snapshot",
+        about: SNAPSHOT_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "artifact",
+        about: ARTIFACT_ABOUT,
+    },
+];
 
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
+const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "list",
+        about: LIST_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "focus",
+        about: FOCUS_ABOUT,
+    },
+];
 
-Examples
-  operator artifact get capture-1.png
+const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "input",
+        about: INPUT_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "app",
+        about: APP_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "window",
+        about: WINDOW_ABOUT,
+    },
+];
 
-Use 'operator artifact <command> --help' for detailed usage.
-";
+const ROOT_MCP_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "mcp",
+    about: MCP_ABOUT,
+}];
 
-const LIST_HELP: &str = "Usage operator list [OPTIONS] <COMMAND>
+const ROOT_A2A_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "agent",
+    about: AGENT_ABOUT,
+}];
 
-List running apps or windows
+const ROOT_HELP_SECTIONS: &[RootHelpSection] = &[
+    RootHelpSection {
+        heading: "Core",
+        commands: ROOT_CORE_COMMANDS,
+    },
+    RootHelpSection {
+        heading: "Observe",
+        commands: ROOT_OBSERVE_COMMANDS,
+    },
+    RootHelpSection {
+        heading: "Query",
+        commands: ROOT_QUERY_COMMANDS,
+    },
+    RootHelpSection {
+        heading: "Action",
+        commands: ROOT_ACTION_COMMANDS,
+    },
+    RootHelpSection {
+        heading: "MCP",
+        commands: ROOT_MCP_COMMANDS,
+    },
+    RootHelpSection {
+        heading: "A2A",
+        commands: ROOT_A2A_COMMANDS,
+    },
+];
 
-Commands
-  apps     List running applications
-  windows  List windows, optionally filtered by app
-  help     Print this message or the help of the given subcommand(s)
+const OBSERVE_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "frontmost",
+        about: OBSERVE_FRONTMOST_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "window",
+        about: OBSERVE_WINDOW_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "region",
+        about: OBSERVE_REGION_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "fullscreen",
+        about: OBSERVE_FULLSCREEN_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
+const SNAPSHOT_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "get",
+        about: SNAPSHOT_GET_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Examples
-  operator list apps
-  operator list windows --app TextEdit
+const ARTIFACT_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "get",
+        about: ARTIFACT_GET_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Use 'operator list <command> --help' for detailed usage.
-";
+const LIST_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "apps",
+        about: LIST_APPS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "windows",
+        about: LIST_WINDOWS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-const INPUT_HELP: &str = "Usage operator input [OPTIONS] <COMMAND>
+const INPUT_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "click",
+        about: INPUT_CLICK_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "move",
+        about: INPUT_MOVE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "type",
+        about: INPUT_TYPE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "press",
+        about: INPUT_PRESS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "hotkey",
+        about: INPUT_HOTKEY_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "scroll",
+        about: INPUT_SCROLL_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "drag",
+        about: INPUT_DRAG_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "swipe",
+        about: INPUT_SWIPE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Pointer and keyboard actions against locators or target windows/apps
+const APP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "launch",
+        about: APP_LAUNCH_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "switch",
+        about: APP_SWITCH_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "quit",
+        about: APP_QUIT_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "relaunch",
+        about: APP_RELAUNCH_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "hide",
+        about: APP_HIDE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "unhide",
+        about: APP_UNHIDE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Commands
-  click   Click a locator, coordinate, or target
-  move    Move the pointer to a locator, coordinates, or target
-  type    Type text into the focused or resolved target
-  press   Press a special key
-  hotkey  Press a key chord
-  scroll  Scroll by delta against a locator or target
-  drag    Drag between two locators
-  swipe   Swipe between two locators
-  help    Print this message or the help of the given subcommand(s)
+const WINDOW_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "focus",
+        about: WINDOW_FOCUS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "close",
+        about: WINDOW_CLOSE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "minimize",
+        about: WINDOW_MINIMIZE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "maximize",
+        about: WINDOW_MAXIMIZE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "move",
+        about: WINDOW_MOVE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "resize",
+        about: WINDOW_RESIZE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "set-bounds",
+        about: WINDOW_SET_BOUNDS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
+const MCP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "serve",
+        about: MCP_SERVE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "help",
+        about: PRINT_HELP_ABOUT,
+    },
+];
 
-Examples
-  operator input click --text Save --app Notes --focus auto --verify focus
-  operator input type \"hello operator\" --window-title Draft --after-key return
+const OBSERVE_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator observe [OPTIONS] <COMMAND>",
+    about: OBSERVE_ABOUT,
+    commands: OBSERVE_GROUP_COMMANDS,
+    examples: &[
+        "operator observe frontmost --capture all",
+        "operator observe window --window-id 42 --capture elements",
+    ],
+    footer: "Use 'operator observe <command> --help' for detailed usage.",
+};
 
-Use 'operator input <command> --help' for detailed usage.
-";
+const SNAPSHOT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator snapshot [OPTIONS] <COMMAND>",
+    about: SNAPSHOT_ABOUT,
+    commands: SNAPSHOT_GROUP_COMMANDS,
+    examples: &["operator snapshot get s_123"],
+    footer: "Use 'operator snapshot <command> --help' for detailed usage.",
+};
 
-const APP_HELP: &str = "Usage operator app [OPTIONS] <COMMAND>
+const ARTIFACT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator artifact [OPTIONS] <COMMAND>",
+    about: ARTIFACT_ABOUT,
+    commands: ARTIFACT_GROUP_COMMANDS,
+    examples: &["operator artifact get capture-1.png"],
+    footer: "Use 'operator artifact <command> --help' for detailed usage.",
+};
 
-Launch, switch, hide, quit, and relaunch applications
+const LIST_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator list [OPTIONS] <COMMAND>",
+    about: LIST_ABOUT,
+    commands: LIST_GROUP_COMMANDS,
+    examples: &["operator list apps", "operator list windows --app TextEdit"],
+    footer: "Use 'operator list <command> --help' for detailed usage.",
+};
 
-Commands
-  launch    Launch an application by bundle identifier or name
-  switch    Bring an application to the foreground
-  quit      Quit an application
-  relaunch  Relaunch an application
-  hide      Hide an application
-  unhide    Unhide an application
-  help      Print this message or the help of the given subcommand(s)
+const INPUT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator input [OPTIONS] <COMMAND>",
+    about: INPUT_ABOUT,
+    commands: INPUT_GROUP_COMMANDS,
+    examples: &[
+        "operator input click --text Save --app Notes --focus auto --verify focus",
+        "operator input type \"hello operator\" --window-title Draft --after-key return",
+    ],
+    footer: "Use 'operator input <command> --help' for detailed usage.",
+};
 
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
+const APP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator app [OPTIONS] <COMMAND>",
+    about: APP_ABOUT,
+    commands: APP_GROUP_COMMANDS,
+    examples: &[
+        "operator app launch Calculator",
+        "operator app switch --app TextEdit",
+    ],
+    footer: "Use 'operator app <command> --help' for detailed usage.",
+};
 
-Examples
-  operator app launch Calculator
-  operator app switch --app TextEdit
+const WINDOW_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator window [OPTIONS] <COMMAND>",
+    about: WINDOW_ABOUT,
+    commands: WINDOW_GROUP_COMMANDS,
+    examples: &[
+        "operator window focus --window-id 42 --verify focus",
+        "operator window resize --window-id 42 --width 900 --height 700 --verify geometry",
+    ],
+    footer: "Use 'operator window <command> --help' for detailed usage.",
+};
 
-Use 'operator app <command> --help' for detailed usage.
-";
-
-const WINDOW_HELP: &str = "Usage operator window [OPTIONS] <COMMAND>
-
-Focus, close, resize, or move application windows
-
-Commands
-  focus       Focus a specific window
-  close       Close a specific window
-  minimize    Minimize a specific window
-  maximize    Maximize a specific window
-  move        Move a specific window
-  resize      Resize a specific window
-  set-bounds  Set the full bounds of a specific window
-  help        Print this message or the help of the given subcommand(s)
-
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
-
-Examples
-  operator window focus --window-id 42 --verify focus
-  operator window resize --window-id 42 --width 900 --height 700 --verify geometry
-
-Use 'operator window <command> --help' for detailed usage.
-";
-
-const MCP_HELP: &str = "Usage operator mcp [OPTIONS] <COMMAND>
-
-Run MCP stdio server commands
-
-Commands
-  serve  Run the MCP stdio server
-  help   Print this message or the help of the given subcommand(s)
-
-Global Runtime Flags
-      --json                   Emit machine-readable JSON output
-      --target <TARGET>        Select the runtime target
-      --timeout-ms <TIMEOUT_MS>
-                               Override the runtime timeout for this command
-  -h, --help                   Print help
-
-Examples
-  operator mcp serve
-
-Use 'operator mcp <command> --help' for detailed usage.
-";
+const MCP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator mcp [OPTIONS] <COMMAND>",
+    about: MCP_ABOUT,
+    commands: MCP_GROUP_COMMANDS,
+    examples: &["operator mcp serve"],
+    footer: "Use 'operator mcp <command> --help' for detailed usage.",
+};
 
 const PERMISSIONS_AFTER_HELP: &str = "Examples
   operator permissions
@@ -288,25 +520,40 @@ fn styled_global_runtime_flags() -> String {
     )
 }
 
-fn styled_group_help(
-    description: &str,
-    usage: &str,
-    commands: &[(&str, &str)],
-    examples: &[&str],
-    footer: &str,
-) -> String {
-    let width = commands
+fn command_column_width(commands: &[CommandHelpEntry]) -> usize {
+    commands
         .iter()
-        .map(|(command, _)| command.len())
+        .map(|entry| entry.command.len())
         .max()
         .unwrap_or(0)
-        + 2;
+        + 2
+}
+
+fn write_command_rows(help: &mut String, commands: &[CommandHelpEntry]) {
+    let width = command_column_width(commands);
+    for entry in commands {
+        writeln!(
+            help,
+            "  {command_style}{command:<width$}{reset} {body}{details}{reset}",
+            command_style = COMMAND_STYLE,
+            command = entry.command,
+            body = BODY_STYLE,
+            details = entry.about,
+            reset = RESET_STYLE,
+            width = width,
+        )
+        .expect("write command row");
+    }
+}
+
+fn styled_group_help(group: &CommandHelpGroup) -> String {
     let mut help = String::new();
     writeln!(
         &mut help,
         "{header}Usage{reset} {command}{usage}{reset}",
         header = HEADER_STYLE,
         command = COMMAND_STYLE,
+        usage = group.usage,
         reset = RESET_STYLE,
     )
     .expect("write usage");
@@ -315,6 +562,7 @@ fn styled_group_help(
         &mut help,
         "{body}{description}{reset}",
         body = BODY_STYLE,
+        description = group.about,
         reset = RESET_STYLE,
     )
     .expect("write description");
@@ -326,17 +574,7 @@ fn styled_group_help(
         reset = RESET_STYLE,
     )
     .expect("write commands header");
-    for (command, details) in commands {
-        writeln!(
-            &mut help,
-            "  {command_style}{command:<width$}{reset} {body}{details}{reset}",
-            command_style = COMMAND_STYLE,
-            body = BODY_STYLE,
-            reset = RESET_STYLE,
-            width = width,
-        )
-        .expect("write command row");
-    }
+    write_command_rows(&mut help, group.commands);
     help.push('\n');
     help.push_str(&styled_global_runtime_flags());
     help.push('\n');
@@ -347,11 +585,12 @@ fn styled_group_help(
         reset = RESET_STYLE,
     )
     .expect("write examples header");
-    for example in examples {
+    for example in group.examples {
         writeln!(
             &mut help,
             "  {command}{example}{reset}",
             command = COMMAND_STYLE,
+            example = example,
             reset = RESET_STYLE,
         )
         .expect("write example row");
@@ -361,6 +600,7 @@ fn styled_group_help(
         &mut help,
         "{muted}{footer}{reset}",
         muted = MUTED_STYLE,
+        footer = group.footer,
         reset = RESET_STYLE,
     )
     .expect("write footer");
@@ -369,195 +609,70 @@ fn styled_group_help(
 }
 
 fn root_help() -> String {
-    format!(
-        "{header}Usage{reset} {command}operator{reset} [OPTIONS] [COMMAND]\n\n\
-{body}Operator - Turn any desktop app into an API, from CLI to AI{reset}\n\n\
-{header}Core{reset}\n  {command}permissions{reset}   {body}Check automation permissions and runtime readiness{reset}\n  {command}capabilities{reset}  {body}Show supported surfaces, queries, and actions for the active target{reset}\n\n\
-{header}Observe{reset}\n  {command}observe{reset}       {body}Create snapshots from frontmost, window, region, or fullscreen surfaces{reset}\n  {command}snapshot{reset}      {body}Read stored snapshots by ID{reset}\n  {command}artifact{reset}      {body}Resolve stored capture artifacts by ID{reset}\n\n\
-{header}Query{reset}\n  {command}list{reset}          {body}List running apps or windows{reset}\n  {command}focus{reset}         {body}Show the currently focused app, window, and element{reset}\n\n\
-{header}Action{reset}\n  {command}input{reset}         {body}Pointer and keyboard actions against locators or target windows/apps{reset}\n  {command}app{reset}           {body}Launch, switch, hide, quit, and relaunch applications{reset}\n  {command}window{reset}        {body}Focus, close, resize, or move application windows{reset}\n\n\
-{header}MCP{reset}\n  {command}mcp{reset}           {body}Run MCP stdio server commands{reset}\n\n\
-{header}A2A{reset}\n  {command}agent{reset}         {body}Execute a single-shot natural-language task against a target{reset}\n\n\
-{header}Global Runtime Flags{reset}\n      {command}--json{reset}                   {body}Emit machine-readable JSON output{reset}\n      {command}--target <TARGET>{reset}        {body}Select the runtime target{reset}\n      {command}--timeout-ms <TIMEOUT_MS>{reset}\n                               {body}Override the runtime timeout for this command{reset}\n  {command}-h, --help{reset}                   {body}Print help{reset}\n\n\
-{header}Examples{reset}\n  {command}operator observe frontmost{reset}\n  {command}operator list windows{reset}\n  {command}operator input click --text Save{reset}\n  {command}operator mcp serve{reset}\n\n\
-{muted}Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage.{reset}\n",
+    let mut help = String::new();
+    writeln!(
+        &mut help,
+        "{header}Usage{reset} {command}{usage}{reset}",
         header = HEADER_STYLE,
         command = COMMAND_STYLE,
-        body = BODY_STYLE,
-        muted = MUTED_STYLE,
+        usage = ROOT_USAGE,
         reset = RESET_STYLE,
     )
-}
-
-fn observe_help() -> String {
-    styled_group_help(
-        "Create snapshots from frontmost, window, region, or fullscreen surfaces",
-        "operator observe [OPTIONS] <COMMAND>",
-        &[
-            ("frontmost", "Create a snapshot from the frontmost surface"),
-            ("window", "Create a snapshot from a specific window"),
-            ("region", "Create a snapshot from a specific screen region"),
-            (
-                "fullscreen",
-                "Create a snapshot from the full display or the active display",
-            ),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &[
-            "operator observe frontmost --capture all",
-            "operator observe window --window-id 42 --capture elements",
-        ],
-        "Use 'operator observe <command> --help' for detailed usage.",
+    .expect("write usage");
+    help.push('\n');
+    writeln!(
+        &mut help,
+        "{body}{about}{reset}",
+        body = BODY_STYLE,
+        about = ROOT_ABOUT,
+        reset = RESET_STYLE,
     )
-}
+    .expect("write description");
+    help.push('\n');
 
-fn snapshot_help() -> String {
-    styled_group_help(
-        "Read stored snapshots by ID",
-        "operator snapshot [OPTIONS] <COMMAND>",
-        &[
-            ("get", "Read a stored snapshot by ID"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &["operator snapshot get s_123"],
-        "Use 'operator snapshot <command> --help' for detailed usage.",
-    )
-}
+    for section in ROOT_HELP_SECTIONS {
+        writeln!(
+            &mut help,
+            "{header}{heading}{reset}",
+            header = HEADER_STYLE,
+            heading = section.heading,
+            reset = RESET_STYLE,
+        )
+        .expect("write section header");
+        write_command_rows(&mut help, section.commands);
+        help.push('\n');
+    }
 
-fn artifact_help() -> String {
-    styled_group_help(
-        "Resolve stored capture artifacts by ID",
-        "operator artifact [OPTIONS] <COMMAND>",
-        &[
-            ("get", "Resolve a stored capture artifact by ID"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &["operator artifact get capture-1.png"],
-        "Use 'operator artifact <command> --help' for detailed usage.",
+    help.push_str(&styled_global_runtime_flags());
+    help.push('\n');
+    writeln!(
+        &mut help,
+        "{header}Examples{reset}",
+        header = HEADER_STYLE,
+        reset = RESET_STYLE,
     )
-}
+    .expect("write examples header");
+    for example in ROOT_EXAMPLES {
+        writeln!(
+            &mut help,
+            "  {command}{example}{reset}",
+            command = COMMAND_STYLE,
+            example = example,
+            reset = RESET_STYLE,
+        )
+        .expect("write example row");
+    }
+    help.push('\n');
+    writeln!(
+        &mut help,
+        "{muted}{footer}{reset}",
+        muted = MUTED_STYLE,
+        footer = ROOT_FOOTER,
+        reset = RESET_STYLE,
+    )
+    .expect("write footer");
 
-fn list_help() -> String {
-    styled_group_help(
-        "List running apps or windows",
-        "operator list [OPTIONS] <COMMAND>",
-        &[
-            ("apps", "List running applications"),
-            ("windows", "List windows, optionally filtered by app"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &["operator list apps", "operator list windows --app TextEdit"],
-        "Use 'operator list <command> --help' for detailed usage.",
-    )
-}
-
-fn input_help() -> String {
-    styled_group_help(
-        "Pointer and keyboard actions against locators or target windows/apps",
-        "operator input [OPTIONS] <COMMAND>",
-        &[
-            ("click", "Click a locator, coordinate, or target"),
-            (
-                "move",
-                "Move the pointer to a locator, coordinates, or target",
-            ),
-            ("type", "Type text into the focused or resolved target"),
-            ("press", "Press a special key"),
-            ("hotkey", "Press a key chord"),
-            ("scroll", "Scroll by delta against a locator or target"),
-            ("drag", "Drag between two locators"),
-            ("swipe", "Swipe between two locators"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &[
-            "operator input click --text Save --app Notes --focus auto --verify focus",
-            "operator input type \"hello operator\" --window-title Draft --after-key return",
-        ],
-        "Use 'operator input <command> --help' for detailed usage.",
-    )
-}
-
-fn app_help() -> String {
-    styled_group_help(
-        "Launch, switch, hide, quit, and relaunch applications",
-        "operator app [OPTIONS] <COMMAND>",
-        &[
-            (
-                "launch",
-                "Launch an application by bundle identifier or name",
-            ),
-            ("switch", "Bring an application to the foreground"),
-            ("quit", "Quit an application"),
-            ("relaunch", "Relaunch an application"),
-            ("hide", "Hide an application"),
-            ("unhide", "Unhide an application"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &[
-            "operator app launch Calculator",
-            "operator app switch --app TextEdit",
-        ],
-        "Use 'operator app <command> --help' for detailed usage.",
-    )
-}
-
-fn window_help() -> String {
-    styled_group_help(
-        "Focus, close, resize, or move application windows",
-        "operator window [OPTIONS] <COMMAND>",
-        &[
-            ("focus", "Focus a specific window"),
-            ("close", "Close a specific window"),
-            ("minimize", "Minimize a specific window"),
-            ("maximize", "Maximize a specific window"),
-            ("move", "Move a specific window"),
-            ("resize", "Resize a specific window"),
-            ("set-bounds", "Set the full bounds of a specific window"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &[
-            "operator window focus --window-id 42 --verify focus",
-            "operator window resize --window-id 42 --width 900 --height 700 --verify geometry",
-        ],
-        "Use 'operator window <command> --help' for detailed usage.",
-    )
-}
-
-fn mcp_help() -> String {
-    styled_group_help(
-        "Run MCP stdio server commands",
-        "operator mcp [OPTIONS] <COMMAND>",
-        &[
-            ("serve", "Run the MCP stdio server"),
-            (
-                "help",
-                "Print this message or the help of the given subcommand(s)",
-            ),
-        ],
-        &["operator mcp serve"],
-        "Use 'operator mcp <command> --help' for detailed usage.",
-    )
+    help
 }
 
 fn help_styles() -> Styles {
@@ -741,10 +856,7 @@ fn root_command_token(args: &[OsString]) -> Option<&str> {
 }
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "operator",
-    about = "Operator - Turn any desktop app into an API, from CLI to AI"
-)]
+#[command(name = "operator", about = ROOT_ABOUT)]
 pub(crate) struct Cli {
     #[command(flatten)]
     common: CommonArgs,
@@ -817,14 +929,14 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
 
     match command_path(args).as_slice() {
         [] => Some(root_help()),
-        ["observe"] => Some(observe_help()),
-        ["snapshot"] => Some(snapshot_help()),
-        ["artifact"] => Some(artifact_help()),
-        ["list"] => Some(list_help()),
-        ["input"] => Some(input_help()),
-        ["app"] => Some(app_help()),
-        ["window"] => Some(window_help()),
-        ["mcp"] => Some(mcp_help()),
+        ["observe"] => Some(styled_group_help(&OBSERVE_GROUP_HELP)),
+        ["snapshot"] => Some(styled_group_help(&SNAPSHOT_GROUP_HELP)),
+        ["artifact"] => Some(styled_group_help(&ARTIFACT_GROUP_HELP)),
+        ["list"] => Some(styled_group_help(&LIST_GROUP_HELP)),
+        ["input"] => Some(styled_group_help(&INPUT_GROUP_HELP)),
+        ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
+        ["window"] => Some(styled_group_help(&WINDOW_GROUP_HELP)),
+        ["mcp"] => Some(styled_group_help(&MCP_GROUP_HELP)),
         _ => generated_help(args).map(|help| post_process_generated_help(&help)),
     }
 }
@@ -895,33 +1007,21 @@ pub(crate) enum CliExecution {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 enum Command {
-    #[command(
-        about = "Check automation permissions and runtime readiness",
-        after_help = PERMISSIONS_AFTER_HELP
-    )]
+    #[command(about = PERMISSIONS_ABOUT, after_help = PERMISSIONS_AFTER_HELP)]
     Permissions(CommonArgs),
-    #[command(
-        about = "Show supported surfaces, queries, and actions for the active target",
-        after_help = CAPABILITIES_AFTER_HELP
-    )]
+    #[command(about = CAPABILITIES_ABOUT, after_help = CAPABILITIES_AFTER_HELP)]
     Capabilities(CommonArgs),
     Observe(ObserveArgs),
     Snapshot(SnapshotArgs),
     Artifact(ArtifactArgs),
     List(ListArgs),
-    #[command(
-        about = "Show the currently focused app, window, and element",
-        after_help = FOCUS_AFTER_HELP
-    )]
+    #[command(about = FOCUS_ABOUT, after_help = FOCUS_AFTER_HELP)]
     Focus(CommonArgs),
     Input(InputArgs),
     App(AppArgs),
     Window(WindowArgs),
     Mcp(McpArgs),
-    #[command(
-        about = "Execute a single-shot natural-language task against a target",
-        after_help = AGENT_AFTER_HELP
-    )]
+    #[command(about = AGENT_ABOUT, after_help = AGENT_AFTER_HELP)]
     Agent(AgentArgs),
 }
 
@@ -1037,11 +1137,7 @@ impl AgentArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "List running apps or windows",
-    override_help = LIST_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = LIST_ABOUT, arg_required_else_help = true)]
 struct ListArgs {
     #[command(subcommand)]
     command: ListCommand,
@@ -1059,8 +1155,9 @@ impl ListArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum ListCommand {
+    #[command(about = LIST_APPS_ABOUT)]
     Apps(CommonArgs),
-    #[command(after_help = LIST_WINDOWS_AFTER_HELP)]
+    #[command(about = LIST_WINDOWS_ABOUT, after_help = LIST_WINDOWS_AFTER_HELP)]
     Windows(ListWindowsArgs),
 }
 
@@ -1083,11 +1180,7 @@ impl ListCommand {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Create snapshots from frontmost, window, region, or fullscreen surfaces",
-    override_help = OBSERVE_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = OBSERVE_ABOUT, arg_required_else_help = true)]
 struct ObserveArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -1104,16 +1197,13 @@ impl ObserveArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum ObserveCommand {
-    #[command(about = "Capture the frontmost surface")]
+    #[command(about = OBSERVE_FRONTMOST_ABOUT)]
     Frontmost(ObserveFrontmostArgs),
-    #[command(
-        about = "Capture a specific window",
-        after_help = OBSERVE_WINDOW_AFTER_HELP
-    )]
+    #[command(about = OBSERVE_WINDOW_ABOUT, after_help = OBSERVE_WINDOW_AFTER_HELP)]
     Window(ObserveWindowArgs),
-    #[command(about = "Capture a specific screen region")]
+    #[command(about = OBSERVE_REGION_ABOUT)]
     Region(ObserveRegionArgs),
-    #[command(about = "Capture the full display or the active display")]
+    #[command(about = OBSERVE_FULLSCREEN_ABOUT)]
     Fullscreen(ObserveFullscreenArgs),
 }
 
@@ -1213,11 +1303,7 @@ fn observe_invocation(
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Read stored snapshots by ID",
-    override_help = SNAPSHOT_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = SNAPSHOT_ABOUT, arg_required_else_help = true)]
 struct SnapshotArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -1234,10 +1320,7 @@ impl SnapshotArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum SnapshotCommand {
-    #[command(
-        about = "Read a stored snapshot by ID",
-        after_help = SNAPSHOT_GET_AFTER_HELP
-    )]
+    #[command(about = SNAPSHOT_GET_ABOUT, after_help = SNAPSHOT_GET_AFTER_HELP)]
     Get(SnapshotGetArgs),
 }
 
@@ -1271,11 +1354,7 @@ impl SnapshotGetArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Resolve stored capture artifacts by ID",
-    override_help = ARTIFACT_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = ARTIFACT_ABOUT, arg_required_else_help = true)]
 struct ArtifactArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -1292,10 +1371,7 @@ impl ArtifactArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum ArtifactCommand {
-    #[command(
-        about = "Resolve a stored capture artifact by ID",
-        after_help = ARTIFACT_GET_AFTER_HELP
-    )]
+    #[command(about = ARTIFACT_GET_ABOUT, after_help = ARTIFACT_GET_AFTER_HELP)]
     Get(ArtifactGetArgs),
 }
 
@@ -1308,11 +1384,7 @@ impl ArtifactCommand {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Pointer and keyboard actions against locators or target windows/apps",
-    override_help = INPUT_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = INPUT_ABOUT, arg_required_else_help = true)]
 struct InputArgs {
     #[command(subcommand)]
     command: InputCommand,
@@ -1330,24 +1402,21 @@ impl InputArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum InputCommand {
-    #[command(about = "Click a locator, coordinate, or target", after_help = INPUT_CLICK_AFTER_HELP)]
+    #[command(about = INPUT_CLICK_ABOUT, after_help = INPUT_CLICK_AFTER_HELP)]
     Click(InputClickArgs),
-    #[command(about = "Move the pointer to a locator, coordinates, or target")]
+    #[command(about = INPUT_MOVE_ABOUT)]
     Move(InputMoveArgs),
-    #[command(
-        about = "Type text into the focused or resolved target",
-        after_help = INPUT_TYPE_AFTER_HELP
-    )]
+    #[command(about = INPUT_TYPE_ABOUT, after_help = INPUT_TYPE_AFTER_HELP)]
     Type(InputTypeArgs),
-    #[command(about = "Press a special key")]
+    #[command(about = INPUT_PRESS_ABOUT)]
     Press(InputPressArgs),
-    #[command(about = "Press a key chord")]
+    #[command(about = INPUT_HOTKEY_ABOUT)]
     Hotkey(InputHotkeyArgs),
-    #[command(about = "Scroll by delta against a locator or target")]
+    #[command(about = INPUT_SCROLL_ABOUT)]
     Scroll(InputScrollArgs),
-    #[command(about = "Drag between two locators")]
+    #[command(about = INPUT_DRAG_ABOUT)]
     Drag(InputDragArgs),
-    #[command(about = "Swipe between two locators")]
+    #[command(about = INPUT_SWIPE_ABOUT)]
     Swipe(InputSwipeArgs),
 }
 
@@ -1679,11 +1748,7 @@ impl InputSwipeArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Launch, switch, hide, quit, and relaunch applications",
-    override_help = APP_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = APP_ABOUT, arg_required_else_help = true)]
 struct AppArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -1699,11 +1764,7 @@ impl AppArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Focus, close, resize, or move application windows",
-    override_help = WINDOW_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = WINDOW_ABOUT, arg_required_else_help = true)]
 struct WindowArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -1719,11 +1780,7 @@ impl WindowArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(
-    about = "Run MCP stdio server commands",
-    override_help = MCP_HELP,
-    arg_required_else_help = true
-)]
+#[command(about = MCP_ABOUT, arg_required_else_help = true)]
 struct McpArgs {
     #[command(flatten)]
     common: CommonArgs,
@@ -1752,7 +1809,7 @@ impl McpArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum McpCommand {
-    #[command(about = "Run the MCP stdio server", after_help = MCP_SERVE_AFTER_HELP)]
+    #[command(about = MCP_SERVE_ABOUT, after_help = MCP_SERVE_AFTER_HELP)]
     Serve,
 }
 
@@ -1766,22 +1823,19 @@ impl McpCommand {
 
 #[derive(Debug, Clone, Subcommand)]
 enum WindowCommand {
-    #[command(about = "Focus a specific window", after_help = WINDOW_FOCUS_AFTER_HELP)]
+    #[command(about = WINDOW_FOCUS_ABOUT, after_help = WINDOW_FOCUS_AFTER_HELP)]
     Focus(WindowFocusArgs),
-    #[command(about = "Close a specific window")]
+    #[command(about = WINDOW_CLOSE_ABOUT)]
     Close(WindowCloseArgs),
-    #[command(about = "Minimize a specific window")]
+    #[command(about = WINDOW_MINIMIZE_ABOUT)]
     Minimize(WindowMinimizeArgs),
-    #[command(about = "Maximize a specific window")]
+    #[command(about = WINDOW_MAXIMIZE_ABOUT)]
     Maximize(WindowMaximizeArgs),
-    #[command(about = "Move a specific window")]
+    #[command(about = WINDOW_MOVE_ABOUT)]
     Move(WindowMoveArgs),
-    #[command(
-        about = "Resize a specific window",
-        after_help = WINDOW_RESIZE_AFTER_HELP
-    )]
+    #[command(about = WINDOW_RESIZE_ABOUT, after_help = WINDOW_RESIZE_AFTER_HELP)]
     Resize(WindowResizeArgs),
-    #[command(about = "Set the full bounds of a specific window")]
+    #[command(about = WINDOW_SET_BOUNDS_ABOUT)]
     SetBounds(WindowSetBoundsArgs),
 }
 
@@ -1978,23 +2032,17 @@ impl WindowSetBoundsArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum AppCommand {
-    #[command(
-        about = "Launch an application by bundle identifier or name",
-        after_help = APP_LAUNCH_AFTER_HELP
-    )]
+    #[command(about = APP_LAUNCH_ABOUT, after_help = APP_LAUNCH_AFTER_HELP)]
     Launch(AppLaunchArgs),
-    #[command(
-        about = "Bring an application to the foreground",
-        after_help = APP_SWITCH_AFTER_HELP
-    )]
+    #[command(about = APP_SWITCH_ABOUT, after_help = APP_SWITCH_AFTER_HELP)]
     Switch(AppLifecycleArgs),
-    #[command(about = "Quit an application")]
+    #[command(about = APP_QUIT_ABOUT)]
     Quit(AppLifecycleArgs),
-    #[command(about = "Relaunch an application")]
+    #[command(about = APP_RELAUNCH_ABOUT)]
     Relaunch(AppLifecycleArgs),
-    #[command(about = "Hide an application")]
+    #[command(about = APP_HIDE_ABOUT)]
     Hide(AppLifecycleArgs),
-    #[command(about = "Unhide an application")]
+    #[command(about = APP_UNHIDE_ABOUT)]
     Unhide(AppLifecycleArgs),
 }
 
