@@ -982,16 +982,16 @@ impl UiSession {
             )));
         }
         let response: Value = serde_json::from_slice(&buffer[..size])?;
-        if let Some(exception) = response.get("exception") {
-            if !exception.is_null() {
-                return Err(HdcError::protocol(format!(
-                    "{api} failed: {}",
-                    exception
-                        .as_str()
-                        .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| exception.to_string())
-                )));
-            }
+        if let Some(exception) = response.get("exception")
+            && !exception.is_null()
+        {
+            return Err(HdcError::protocol(format!(
+                "{api} failed: {}",
+                exception
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| exception.to_string())
+            )));
         }
         Ok(response.get("result").cloned().unwrap_or(Value::Null))
     }

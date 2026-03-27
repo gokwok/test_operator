@@ -5,6 +5,7 @@ use std::{
 };
 
 use operator_core::{OperatorError, PlatformDriver, TargetDescriptor, TargetId};
+use operator_platform_harmony::HarmonyHdcDriverFactory;
 use operator_platform_macos::{
     MacosDriver, SystemAppService, SystemCaptureProvider, SystemPermissionReader,
     SystemTreeInspector,
@@ -46,6 +47,7 @@ pub fn load_runtime_config_from(
 
 pub fn system_platform_registry(artifacts_dir: impl AsRef<Path>) -> PlatformRegistry {
     let mut registry = PlatformRegistry::new();
+    registry.register_factory(Arc::new(HarmonyHdcDriverFactory::new()));
     registry.register_factory(Arc::new(MacosSystemDriverFactory::new(artifacts_dir)));
     registry
 }
@@ -168,7 +170,7 @@ struct SecuritySection {
 #[cfg(test)]
 mod tests {
     use super::{load_runtime_config_from, runtime_config_path};
-    use operator_core::{DriverConfig, TargetId};
+    use operator_core::{DriverConfig, TargetDescriptor, TargetId};
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -268,5 +270,22 @@ endpoint = "wss://windows-lab.internal"
         let rendered = error.to_string();
         assert!(rendered.contains("invalid runtime config"));
         assert!(rendered.contains("unknown field `endpoint`"));
+    }
+
+    #[test]
+    fn system_platform_registry_registers_harmony_hdc_factory() {
+        let registry = super::system_platform_registry("/tmp/operator-artifacts");
+        let factory = registry.factory("harmony.hdc").expect("harmony factory");
+        let driver = factory
+            .build(&TargetDescriptor {
+                id: TargetId("harmony-pc".into()),
+                platform: "harmony".into(),
+                driver: "harmony.hdc".into(),
+                driver_config: DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))]),
+            })
+            .expect("factory should build harmony scaffold");
+
+        assert_eq!(driver.platform_id(), "harmony");
+        assert_eq!(driver.driver_id(), "harmony.hdc");
     }
 }

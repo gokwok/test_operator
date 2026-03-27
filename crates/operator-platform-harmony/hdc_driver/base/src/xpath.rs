@@ -155,10 +155,10 @@ fn find_first_match(node: &Value, matcher: &XPathMatcher) -> Option<XPathMatch> 
 
 impl XPathMatcher {
     fn matches(&self, attributes: &Map<String, Value>) -> bool {
-        if let Some(kind) = &self.node_kind {
-            if attributes.get("type").and_then(Value::as_str) != Some(kind.as_str()) {
-                return false;
-            }
+        if let Some(kind) = &self.node_kind
+            && attributes.get("type").and_then(Value::as_str) != Some(kind.as_str())
+        {
+            return false;
         }
         self.predicate_groups
             .iter()

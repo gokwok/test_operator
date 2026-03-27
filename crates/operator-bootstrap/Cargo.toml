@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 operator-core = { path = "../operator-core" }
+operator-platform-harmony = { path = "../operator-platform-harmony" }
 operator-platform-macos = { path = "../operator-platform-macos" }
 operator-runtime = { path = "../operator-runtime" }
 serde.workspace = true

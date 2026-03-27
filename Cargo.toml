@@ -5,10 +5,12 @@ members = [
     "crates/operator-cli",
     "crates/operator-core",
     "crates/operator-mcp",
+    "crates/operator-platform-harmony",
     "crates/operator-platform-macos",
     "crates/operator-runtime",
     "crates/operator-testkit",
 ]
+exclude = ["crates/operator-platform-harmony/hdc_driver/base"]
 resolver = "2"
 
 [workspace.package]

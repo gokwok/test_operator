@@ -1,3 +1,5 @@
+// Imported from hmdriver_rs via git subtree; keep this module tree close to upstream.
+
 pub mod cli;
 pub mod driver;
 pub mod error;

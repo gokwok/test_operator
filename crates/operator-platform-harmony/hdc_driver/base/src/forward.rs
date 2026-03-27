@@ -200,40 +200,40 @@ fn handle_forward_frame(
             }
         }
         HdcCommand::ForwardActiveMaster => {
-            if parse_forward_cid(&frame.payload)? == cid {
-                if let Some(connection) = current.as_mut() {
-                    connection.active = true;
-                    while let Some(data) = connection.pending.pop_front() {
-                        session.send_custom(
-                            CHANNEL_FORWARD,
-                            HdcCommand::ForwardData,
-                            build_forward_data_payload(cid, &data),
-                        )?;
-                    }
+            if parse_forward_cid(&frame.payload)? == cid
+                && let Some(connection) = current.as_mut()
+            {
+                connection.active = true;
+                while let Some(data) = connection.pending.pop_front() {
+                    session.send_custom(
+                        CHANNEL_FORWARD,
+                        HdcCommand::ForwardData,
+                        build_forward_data_payload(cid, &data),
+                    )?;
                 }
             }
         }
         HdcCommand::ForwardData => {
             let (data_cid, data) = parse_forward_data(&frame.payload)?;
-            if data_cid == cid {
-                if let Some(connection) = current.as_mut() {
-                    write_local_client(&mut connection.stream, data)?;
-                }
+            if data_cid == cid
+                && let Some(connection) = current.as_mut()
+            {
+                write_local_client(&mut connection.stream, data)?;
             }
         }
         HdcCommand::ForwardFreeContext => {
-            if parse_forward_cid(&frame.payload)? == cid {
-                if let Some(connection) = current.as_mut() {
-                    let _ = connection.stream.shutdown(Shutdown::Both);
-                    *current = None;
-                }
+            if parse_forward_cid(&frame.payload)? == cid
+                && let Some(connection) = current.as_mut()
+            {
+                let _ = connection.stream.shutdown(Shutdown::Both);
+                *current = None;
             }
         }
         HdcCommand::KernelEcho => {
-            if let Some(message) = crate::session::parse_driver_message(&frame.payload)? {
-                if message.level == crate::types::DriverMessageLevel::Fail {
-                    return Err(HdcError::protocol(message.text));
-                }
+            if let Some(message) = crate::session::parse_driver_message(&frame.payload)?
+                && message.level == crate::types::DriverMessageLevel::Fail
+            {
+                return Err(HdcError::protocol(message.text));
             }
         }
         HdcCommand::HeartbeatMsg => {}

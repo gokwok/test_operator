@@ -157,12 +157,12 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<Frame> {
 }
 
 fn encode_u8_field(tag: u32, value: u8, out: &mut Vec<u8>) {
-    encode_varint(((tag << 3) | 0) as u64, out);
+    encode_varint((tag << 3) as u64, out);
     encode_varint(value as u64, out);
 }
 
 fn encode_u32_field(tag: u32, value: u32, out: &mut Vec<u8>) {
-    encode_varint(((tag << 3) | 0) as u64, out);
+    encode_varint((tag << 3) as u64, out);
     encode_varint(value as u64, out);
 }
 
