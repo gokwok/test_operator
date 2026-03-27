@@ -1001,11 +1001,15 @@ driver   = "macos.system"
 [targets.windows-lab]
 platform = "windows"
 driver   = "windows.remote"
+
+[targets.windows-lab.driver_config]
 endpoint = "wss://lab.example"
 
 [targets.harmony-phone]
 platform = "harmony"
 driver   = "harmony.node"
+
+[targets.harmony-phone.driver_config]
 node     = "phone-01"
 
 [mcp]
@@ -1026,6 +1030,8 @@ model           = "gpt-5.4"
 max_steps       = 50
 step_timeout_ms = 30_000
 ```
+
+target-specific 参数必须进入 `driver_config`，例如 `endpoint`、`node`；不要再把它们写成 target 表上的顶层字段。
 
 **配置加载优先级：**
 
