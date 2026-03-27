@@ -169,6 +169,7 @@ fn capability_name(capability: &Capability) -> String {
         Capability::InspectText => "inspect_text".into(),
         Capability::PointerInput => "pointer_input".into(),
         Capability::KeyboardInput => "keyboard_input".into(),
+        Capability::WindowQuery => "window_query".into(),
         Capability::WindowManagement => "window_management".into(),
         Capability::AppLifecycle => "app_lifecycle".into(),
         Capability::Clipboard => "clipboard".into(),

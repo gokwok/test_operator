@@ -135,6 +135,7 @@ fn macos_capabilities() -> CapabilitySet {
         Capability::AppLifecycle,
         Capability::Capture,
         Capability::InspectTree,
+        Capability::WindowQuery,
         Capability::WindowManagement,
         Capability::Permissions,
         Capability::PointerInput,

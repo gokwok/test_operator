@@ -18,6 +18,7 @@ fn macos_driver_declares_expected_capabilities() {
     let capabilities = driver.capabilities();
 
     assert!(capabilities.supports(&Capability::AppLifecycle));
+    assert!(capabilities.supports(&Capability::WindowQuery));
     assert!(capabilities.supports(&Capability::WindowManagement));
     assert!(capabilities.supports(&Capability::Permissions));
     assert!(capabilities.supports(&Capability::Capture));

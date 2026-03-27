@@ -236,7 +236,7 @@ async fn read_only_query_tools_forward_runtime_results() {
         "macos",
         CapabilitySet::new([
             Capability::AppLifecycle,
-            Capability::WindowManagement,
+            Capability::WindowQuery,
             Capability::Permissions,
             Capability::Capture,
         ]),
@@ -315,7 +315,7 @@ async fn read_only_query_tools_forward_runtime_results() {
     );
     assert_eq!(
         capabilities["capabilities"],
-        json!(["AppLifecycle", "Capture", "Permissions", "WindowManagement"])
+        json!(["AppLifecycle", "Capture", "Permissions", "WindowQuery"])
     );
 
     let calls = driver.query_calls().await;
@@ -1772,6 +1772,17 @@ async fn action_tools_export_stable_specs() {
         focus_window.capabilities_required,
         &[Capability::WindowManagement]
     );
+
+    let list_windows = specs
+        .iter()
+        .find(|spec| spec.name == "list-windows")
+        .unwrap();
+    assert!(!list_windows.has_side_effects);
+    assert_eq!(
+        list_windows.capabilities_required,
+        &[Capability::WindowQuery]
+    );
+    assert!(list_windows.input_schema["properties"]["app"].is_object());
 
     let hotkey = specs.iter().find(|spec| spec.name == "hotkey").unwrap();
     assert!(hotkey.has_side_effects);

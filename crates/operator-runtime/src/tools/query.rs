@@ -14,7 +14,7 @@ use crate::{
 };
 
 const LIST_APPS_CAPABILITIES: &[Capability] = &[Capability::AppLifecycle];
-const LIST_WINDOWS_CAPABILITIES: &[Capability] = &[Capability::WindowManagement];
+const LIST_WINDOWS_CAPABILITIES: &[Capability] = &[Capability::WindowQuery];
 const GET_FOCUS_CAPABILITIES: &[Capability] = &[Capability::InspectTree];
 const PERMISSIONS_STATUS_CAPABILITIES: &[Capability] = &[Capability::Permissions];
 
@@ -204,6 +204,7 @@ fn capability_sort_key(capability: &Capability) -> String {
         Capability::InspectText => "InspectText".into(),
         Capability::PointerInput => "PointerInput".into(),
         Capability::KeyboardInput => "KeyboardInput".into(),
+        Capability::WindowQuery => "WindowQuery".into(),
         Capability::WindowManagement => "WindowManagement".into(),
         Capability::AppLifecycle => "AppLifecycle".into(),
         Capability::Clipboard => "Clipboard".into(),

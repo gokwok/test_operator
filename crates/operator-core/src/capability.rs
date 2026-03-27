@@ -10,6 +10,7 @@ pub enum Capability {
     InspectText,
     PointerInput,
     KeyboardInput,
+    WindowQuery,
     WindowManagement,
     AppLifecycle,
     Clipboard,
