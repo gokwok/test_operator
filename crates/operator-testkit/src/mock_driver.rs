@@ -3,8 +3,8 @@ use std::{collections::VecDeque, sync::Mutex};
 use async_trait::async_trait;
 use operator_core::{
     ActionOutcome, ActionRequest, CapabilitySet, ExecContext, HealthStatus, ObserveRequest,
-    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver,
-    QueryRequest, QueryResult,
+    ObserveResult, OperatorError, PermissionCheck, PermissionStatus, PermissionsReport,
+    PlatformDriver, QueryRequest, QueryResult,
 };
 
 // Keep the future PlatformDriver method shape without pulling runtime abstractions
@@ -39,11 +39,23 @@ impl MockPlatformDriver {
             health_status: Mutex::new(HealthStatus {
                 healthy: true,
                 message: None,
-                permissions: PermissionsReport {
-                    accessibility: PermissionStatus::Granted,
-                    system_events: PermissionStatus::Granted,
-                    screen_recording: PermissionStatus::Granted,
-                },
+                permissions: PermissionsReport::new([
+                    PermissionCheck::new(
+                        "accessibility",
+                        "Accessibility",
+                        PermissionStatus::Granted,
+                    ),
+                    PermissionCheck::new(
+                        "system_events",
+                        "System Events",
+                        PermissionStatus::Granted,
+                    ),
+                    PermissionCheck::new(
+                        "screen_recording",
+                        "Screen Recording",
+                        PermissionStatus::Granted,
+                    ),
+                ]),
             }),
             observe_results: Mutex::new(VecDeque::new()),
             query_results: Mutex::new(VecDeque::new()),

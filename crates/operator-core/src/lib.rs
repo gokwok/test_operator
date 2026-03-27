@@ -26,7 +26,8 @@ pub use geometry::{Point, Rect};
 pub use ids::{ArtifactId, ElementId, SessionId, SnapshotId, TargetId, WindowId};
 pub use locator::Locator;
 pub use query::{
-    AppInfo, FocusInfo, PermissionStatus, PermissionsReport, QueryRequest, QueryResult, WindowInfo,
+    AppInfo, FocusInfo, PermissionCheck, PermissionStatus, PermissionsReport, QueryRequest,
+    QueryResult, WindowInfo,
 };
 pub use snapshot::{ElementSource, ImageSizePx, Snapshot, SnapshotMetadata, UiElement};
 pub use surface::{Surface, SurfaceKind};

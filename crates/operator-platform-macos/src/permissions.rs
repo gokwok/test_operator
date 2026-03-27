@@ -1,6 +1,19 @@
 use std::process::Command;
 
-use operator_core::{OperatorError, PermissionStatus, PermissionsReport};
+use operator_core::{OperatorError, PermissionCheck, PermissionStatus, PermissionsReport};
+
+pub(crate) const ACCESSIBILITY_CHECK_ID: &str = "accessibility";
+pub(crate) const SYSTEM_EVENTS_CHECK_ID: &str = "system_events";
+pub(crate) const SCREEN_RECORDING_CHECK_ID: &str = "screen_recording";
+
+const ACCESSIBILITY_LABEL: &str = "Accessibility";
+const SYSTEM_EVENTS_LABEL: &str = "System Events";
+const SCREEN_RECORDING_LABEL: &str = "Screen Recording";
+
+const ACCESSIBILITY_MESSAGE: &str = "Accessibility permission is required for macOS automation.";
+const SYSTEM_EVENTS_MESSAGE: &str =
+    "System Events access is required for macOS app and window queries.";
+const SCREEN_RECORDING_MESSAGE: &str = "Screen Recording permission is required for macOS capture.";
 
 pub trait PermissionReader: Send + Sync {
     fn current_permissions(&self) -> Result<PermissionsReport, OperatorError>;
@@ -11,11 +24,26 @@ pub struct SystemPermissionReader;
 
 impl PermissionReader for SystemPermissionReader {
     fn current_permissions(&self) -> Result<PermissionsReport, OperatorError> {
-        Ok(PermissionsReport {
-            accessibility: accessibility_status(),
-            system_events: system_events_status(),
-            screen_recording: screen_recording_status(),
-        })
+        Ok(PermissionsReport::new([
+            PermissionCheck::new(
+                ACCESSIBILITY_CHECK_ID,
+                ACCESSIBILITY_LABEL,
+                accessibility_status(),
+            )
+            .with_message(ACCESSIBILITY_MESSAGE),
+            PermissionCheck::new(
+                SYSTEM_EVENTS_CHECK_ID,
+                SYSTEM_EVENTS_LABEL,
+                system_events_status(),
+            )
+            .with_message(SYSTEM_EVENTS_MESSAGE),
+            PermissionCheck::new(
+                SCREEN_RECORDING_CHECK_ID,
+                SCREEN_RECORDING_LABEL,
+                screen_recording_status(),
+            )
+            .with_message(SCREEN_RECORDING_MESSAGE),
+        ]))
     }
 }
 

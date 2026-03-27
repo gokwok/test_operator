@@ -16,3 +16,6 @@ pub use factory::system_runtime_drivers;
 pub use input::{InputSynthesizer, SystemInputSynthesizer};
 pub use inspect::{InspectResult, SystemTreeInspector, TreeInspector};
 pub use permissions::{PermissionReader, SystemPermissionReader};
+pub(crate) use permissions::{
+    ACCESSIBILITY_CHECK_ID, SCREEN_RECORDING_CHECK_ID, SYSTEM_EVENTS_CHECK_ID,
+};

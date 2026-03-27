@@ -2,8 +2,8 @@ use std::{process::Command, thread, time::Duration};
 
 use operator_core::{
     Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, ClickMode, ExecContext,
-    Locator, ObserveRequest, OperatorError, PermissionStatus, PlatformDriver, QueryRequest,
-    QueryResult, Rect, Surface, SurfaceKind, WindowInfo,
+    Locator, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver,
+    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, WindowInfo,
 };
 use operator_platform_macos::MacosDriver;
 
@@ -27,8 +27,9 @@ async fn observe_frontmost_with_system_driver() {
 
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.screen_recording != PermissionStatus::Granted
-        || health.permissions.accessibility != PermissionStatus::Granted
+    if permission_status(&health.permissions, "screen_recording") != Some(PermissionStatus::Granted)
+        || permission_status(&health.permissions, "accessibility")
+            != Some(PermissionStatus::Granted)
     {
         eprintln!(
             "Skipping macOS smoke test without required permissions: {:?}",
@@ -89,7 +90,7 @@ async fn click_and_type_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS input smoke test without accessibility permission: {:?}",
             health.permissions
@@ -169,7 +170,7 @@ async fn scroll_with_locator_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS scroll smoke test without accessibility permission: {:?}",
             health.permissions
@@ -228,7 +229,7 @@ async fn hotkey_with_system_driver_selects_all_and_replaces_text() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS hotkey smoke test without accessibility permission: {:?}",
             health.permissions
@@ -331,7 +332,7 @@ async fn list_windows_and_get_focus_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS focus smoke test without accessibility permission: {:?}",
             health.permissions
@@ -417,7 +418,7 @@ async fn focus_window_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS focus-window smoke test without accessibility permission: {:?}",
             health.permissions
@@ -539,7 +540,7 @@ async fn close_window_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS close-window smoke test without accessibility permission: {:?}",
             health.permissions
@@ -656,7 +657,7 @@ async fn minimize_window_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS minimize-window smoke test without accessibility permission: {:?}",
             health.permissions
@@ -774,7 +775,7 @@ async fn maximize_window_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS maximize-window smoke test without accessibility permission: {:?}",
             health.permissions
@@ -901,7 +902,7 @@ async fn move_window_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS move-window smoke test without accessibility permission: {:?}",
             health.permissions
@@ -1034,7 +1035,7 @@ async fn resize_window_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS resize-window smoke test without accessibility permission: {:?}",
             health.permissions
@@ -1170,7 +1171,7 @@ async fn set_window_bounds_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS set-window-bounds smoke test without accessibility permission: {:?}",
             health.permissions
@@ -1311,7 +1312,7 @@ async fn switch_app_with_system_driver() {
     let cleanup_calculator = CleanupCalculatorApp;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS switch-app smoke test without accessibility permission: {:?}",
             health.permissions
@@ -1417,7 +1418,7 @@ async fn move_with_window_target_selector_with_system_driver() {
     let cleanup = CleanupTextEditDocument;
     let driver = MacosDriver::system();
     let health = driver.health_check().await.unwrap();
-    if health.permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(&health.permissions, "accessibility") != Some(PermissionStatus::Granted) {
         eprintln!(
             "Skipping macOS selector smoke test without accessibility permission: {:?}",
             health.permissions
@@ -1651,4 +1652,8 @@ fn run_osascript(script: &str) -> Result<String, OperatorError> {
     Err(OperatorError::Platform(format!(
         "osascript failed: {stderr}"
     )))
+}
+
+fn permission_status(report: &PermissionsReport, id: &str) -> Option<PermissionStatus> {
+    report.status(id)
 }

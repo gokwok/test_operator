@@ -5,8 +5,8 @@ use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
     ActionTargetSelector, ActionVerification, AppInfo, ArtifactId, Capability, CapabilitySet,
     ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest,
-    ObserveResult, OperatorError, PermissionStatus, PermissionsReport, Point, QueryRequest,
-    QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
+    ObserveResult, OperatorError, PermissionCheck, PermissionStatus, PermissionsReport, Point,
+    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
@@ -255,11 +255,18 @@ async fn read_only_query_tools_forward_runtime_results() {
         is_focused: true,
         is_minimized: false,
     }])));
-    driver.push_query_result(Ok(QueryResult::Permissions(PermissionsReport {
-        accessibility: PermissionStatus::Denied,
-        system_events: PermissionStatus::Granted,
-        screen_recording: PermissionStatus::Granted,
-    })));
+    driver.push_query_result(Ok(QueryResult::Permissions(PermissionsReport::new([
+        PermissionCheck::new("accessibility", "Accessibility", PermissionStatus::Denied)
+            .with_message("Accessibility permission is required for macOS automation."),
+        PermissionCheck::new("system_events", "System Events", PermissionStatus::Granted)
+            .with_message("System Events access is required for macOS app and window queries."),
+        PermissionCheck::new(
+            "screen_recording",
+            "Screen Recording",
+            PermissionStatus::Granted,
+        )
+        .with_message("Screen Recording permission is required for macOS capture."),
+    ]))));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
@@ -294,9 +301,16 @@ async fn read_only_query_tools_forward_runtime_results() {
 
     assert_eq!(apps["apps"][0]["name"], json!("Calculator"));
     assert_eq!(windows["windows"][0]["id"], json!(7));
-    assert_eq!(permissions["permissions"]["accessibility"], json!("Denied"));
     assert_eq!(
-        permissions["permissions"]["system_events"],
+        permissions["permissions"]["checks"][0]["id"],
+        json!("accessibility")
+    );
+    assert_eq!(
+        permissions["permissions"]["checks"][0]["status"],
+        json!("Denied")
+    );
+    assert_eq!(
+        permissions["permissions"]["checks"][1]["status"],
         json!("Granted")
     );
     assert_eq!(

@@ -50,9 +50,57 @@ pub struct FocusInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PermissionsReport {
-    pub accessibility: PermissionStatus,
-    pub system_events: PermissionStatus,
-    pub screen_recording: PermissionStatus,
+    pub checks: Vec<PermissionCheck>,
+}
+
+impl PermissionsReport {
+    pub fn new<I>(checks: I) -> Self
+    where
+        I: IntoIterator<Item = PermissionCheck>,
+    {
+        Self {
+            checks: checks.into_iter().collect(),
+        }
+    }
+
+    pub fn check(&self, id: &str) -> Option<&PermissionCheck> {
+        self.checks.iter().find(|check| check.id == id)
+    }
+
+    pub fn status(&self, id: &str) -> Option<PermissionStatus> {
+        self.check(id).map(|check| check.status)
+    }
+
+    pub fn first_non_granted(&self) -> Option<&PermissionCheck> {
+        self.checks
+            .iter()
+            .find(|check| check.status != PermissionStatus::Granted)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PermissionCheck {
+    pub id: String,
+    pub label: String,
+    pub status: PermissionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+impl PermissionCheck {
+    pub fn new(id: impl Into<String>, label: impl Into<String>, status: PermissionStatus) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            status,
+            message: None,
+        }
+    }
+
+    pub fn with_message(mut self, message: impl Into<String>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

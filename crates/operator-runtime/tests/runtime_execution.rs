@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use operator_core::{
     Action, ActionFocusPolicy, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet,
     ClickMode, DragMotion, ElementId, ElementSource, ExecContext, FocusInfo, HealthStatus,
-    ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus,
-    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface,
-    SurfaceKind, UiElement,
+    ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionCheck,
+    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
+    Surface, SurfaceKind, UiElement,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
@@ -964,11 +964,15 @@ impl PlatformDriver for SlowQueryDriver {
         Ok(HealthStatus {
             healthy: true,
             message: None,
-            permissions: PermissionsReport {
-                accessibility: PermissionStatus::Granted,
-                system_events: PermissionStatus::Granted,
-                screen_recording: PermissionStatus::Granted,
-            },
+            permissions: PermissionsReport::new([
+                PermissionCheck::new("accessibility", "Accessibility", PermissionStatus::Granted),
+                PermissionCheck::new("system_events", "System Events", PermissionStatus::Granted),
+                PermissionCheck::new(
+                    "screen_recording",
+                    "Screen Recording",
+                    PermissionStatus::Granted,
+                ),
+            ]),
         })
     }
 

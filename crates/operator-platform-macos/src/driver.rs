@@ -17,6 +17,7 @@ use crate::{
     apps::is_synthetic_window_id, locator::resolve_locator, AppService, CaptureProvider,
     InputSynthesizer, InspectResult, PermissionReader, SystemAppService, SystemCaptureProvider,
     SystemInputSynthesizer, SystemPermissionReader, SystemTreeInspector, TreeInspector,
+    ACCESSIBILITY_CHECK_ID, SCREEN_RECORDING_CHECK_ID, SYSTEM_EVENTS_CHECK_ID,
 };
 
 static SNAPSHOT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -164,19 +165,10 @@ where
 
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
         let permissions = self.permission_reader.current_permissions()?;
-        let accessibility_granted = permissions.accessibility == PermissionStatus::Granted;
-        let system_events_granted = permissions.system_events == PermissionStatus::Granted;
-        let screen_recording_granted = permissions.screen_recording == PermissionStatus::Granted;
-        let healthy = accessibility_granted && system_events_granted && screen_recording_granted;
-        let message = if !accessibility_granted {
-            Some("Accessibility permission is required for macOS automation.".into())
-        } else if !system_events_granted {
-            Some("System Events access is required for macOS app and window queries.".into())
-        } else if !screen_recording_granted {
-            Some("Screen Recording permission is required for macOS capture.".into())
-        } else {
-            None
-        };
+        let healthy = permissions.first_non_granted().is_none();
+        let message = permissions
+            .first_non_granted()
+            .and_then(|check| check.message.clone());
 
         Ok(HealthStatus {
             healthy,
@@ -1298,13 +1290,17 @@ fn require_observe_permissions(
     permissions: &operator_core::PermissionsReport,
     req: &ObserveRequest,
 ) -> Result<(), OperatorError> {
-    if req.include_screenshot && permissions.screen_recording != PermissionStatus::Granted {
+    if req.include_screenshot
+        && permission_status(permissions, SCREEN_RECORDING_CHECK_ID) != PermissionStatus::Granted
+    {
         return Err(OperatorError::PermissionDenied(
             "Screen Recording permission is required for macOS capture.".into(),
         ));
     }
 
-    if req.include_elements && permissions.accessibility != PermissionStatus::Granted {
+    if req.include_elements
+        && permission_status(permissions, ACCESSIBILITY_CHECK_ID) != PermissionStatus::Granted
+    {
         return Err(OperatorError::PermissionDenied(
             "Accessibility permission is required for macOS tree inspection.".into(),
         ));
@@ -1316,7 +1312,7 @@ fn require_observe_permissions(
 fn require_accessibility_permission(
     permissions: &operator_core::PermissionsReport,
 ) -> Result<(), OperatorError> {
-    if permissions.accessibility != PermissionStatus::Granted {
+    if permission_status(permissions, ACCESSIBILITY_CHECK_ID) != PermissionStatus::Granted {
         return Err(OperatorError::PermissionDenied(
             "Accessibility permission is required for macOS input.".into(),
         ));
@@ -1328,13 +1324,19 @@ fn require_accessibility_permission(
 fn require_system_events_permission(
     permissions: &operator_core::PermissionsReport,
 ) -> Result<(), OperatorError> {
-    if permissions.system_events != PermissionStatus::Granted {
+    if permission_status(permissions, SYSTEM_EVENTS_CHECK_ID) != PermissionStatus::Granted {
         return Err(OperatorError::PermissionDenied(
             "System Events access is required for macOS app and window queries.".into(),
         ));
     }
 
     Ok(())
+}
+
+fn permission_status(permissions: &operator_core::PermissionsReport, id: &str) -> PermissionStatus {
+    permissions
+        .status(id)
+        .unwrap_or(PermissionStatus::NotDetermined)
 }
 
 fn action_detail(action: &str, warning: Option<&str>) -> String {

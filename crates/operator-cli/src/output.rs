@@ -101,20 +101,32 @@ fn render_windows(output: &Value) -> String {
 }
 
 fn render_permissions(output: &Value) -> String {
-    let permissions = &output["permissions"];
-    let accessibility = permissions["accessibility"].as_str().unwrap_or("Unknown");
-    let system_events = permissions["system_events"].as_str().unwrap_or("Unknown");
-    let screen_recording = permissions["screen_recording"]
-        .as_str()
-        .unwrap_or("Unknown");
-    let mut rendered = format!(
-        "accessibility: {accessibility}\nsystem_events: {system_events}\nscreen_recording: {screen_recording}"
-    );
+    let checks = output["permissions"]["checks"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if checks.is_empty() {
+        return "no permission checks".into();
+    }
 
-    if accessibility == "Granted" && system_events != "Granted" {
-        rendered.push_str(
-            "\nnote: System Events access is unavailable; app and window queries may still fail.",
-        );
+    let mut rendered = checks
+        .iter()
+        .map(|check| {
+            let label = check["label"].as_str().unwrap_or("<unknown>");
+            let status = check["status"].as_str().unwrap_or("Unknown");
+            format!("{label}: {status}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for note in checks.iter().filter_map(|check| {
+        if check["status"].as_str() == Some("Granted") {
+            return None;
+        }
+
+        check["message"].as_str()
+    }) {
+        rendered.push_str(&format!("\nnote: {note}"));
     }
 
     rendered
@@ -247,15 +259,32 @@ mod tests {
     fn render_permissions_includes_system_events_status() {
         let output = json!({
             "permissions": {
-                "accessibility": "Granted",
-                "system_events": "Granted",
-                "screen_recording": "Denied"
+                "checks": [
+                    {
+                        "id": "accessibility",
+                        "label": "Accessibility",
+                        "status": "Granted",
+                        "message": "Accessibility permission is required for macOS automation."
+                    },
+                    {
+                        "id": "system_events",
+                        "label": "System Events",
+                        "status": "Granted",
+                        "message": "System Events access is required for macOS app and window queries."
+                    },
+                    {
+                        "id": "screen_recording",
+                        "label": "Screen Recording",
+                        "status": "Denied",
+                        "message": "Screen Recording permission is required for macOS capture."
+                    }
+                ]
             }
         });
 
         assert_eq!(
             render_permissions(&output),
-            "accessibility: Granted\nsystem_events: Granted\nscreen_recording: Denied"
+            "Accessibility: Granted\nSystem Events: Granted\nScreen Recording: Denied\nnote: Screen Recording permission is required for macOS capture."
         );
     }
 
@@ -263,15 +292,32 @@ mod tests {
     fn render_permissions_adds_note_when_system_events_diverges() {
         let output = json!({
             "permissions": {
-                "accessibility": "Granted",
-                "system_events": "Denied",
-                "screen_recording": "Granted"
+                "checks": [
+                    {
+                        "id": "accessibility",
+                        "label": "Accessibility",
+                        "status": "Granted",
+                        "message": "Accessibility permission is required for macOS automation."
+                    },
+                    {
+                        "id": "system_events",
+                        "label": "System Events",
+                        "status": "Denied",
+                        "message": "System Events access is required for macOS app and window queries."
+                    },
+                    {
+                        "id": "screen_recording",
+                        "label": "Screen Recording",
+                        "status": "Granted",
+                        "message": "Screen Recording permission is required for macOS capture."
+                    }
+                ]
             }
         });
 
         assert_eq!(
             render_permissions(&output),
-            "accessibility: Granted\nsystem_events: Denied\nscreen_recording: Granted\nnote: System Events access is unavailable; app and window queries may still fail."
+            "Accessibility: Granted\nSystem Events: Denied\nScreen Recording: Granted\nnote: System Events access is required for macOS app and window queries."
         );
     }
 }
