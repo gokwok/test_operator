@@ -1,13 +1,20 @@
+#[allow(dead_code)]
+#[path = "../examples/local_run.rs"]
+mod local_run_example;
+
 use std::{path::PathBuf, process::Command, time::SystemTime};
 
+use clap::Parser;
 use operator_agent::{
     render_harness_report, summarize_timing, summarize_transcript_replay, AgentRunRequest,
     AgentRunResult, HarnessReport, PersistedSessionTranscript, ReplayableTranscriptEvent,
 };
+use operator_bootstrap::runtime_config_path;
 use operator_core::{ArtifactId, SessionId, TargetId};
 use operator_runtime::{Session, SessionStatus};
 use operator_testkit::test_snapshot;
 use serde_json::json;
+use tempfile::tempdir;
 
 #[test]
 fn local_run_help_describes_the_developer_harness_surface() {
@@ -58,6 +65,54 @@ fn local_run_help_describes_the_developer_harness_surface() {
         stdout.contains("--model"),
         "help output should expose --model: {stdout}"
     );
+}
+
+#[test]
+fn local_run_runtime_config_uses_operator_home_targets_and_allows_target_override() {
+    let temp = tempdir().expect("tempdir");
+    std::fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "windows-lab"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+
+[targets.windows-lab.driver_config]
+endpoint = "wss://windows-lab.internal"
+"#,
+    )
+    .expect("write config");
+
+    let config = local_run_example::runtime_config_for_home(
+        &local_run_example::Cli::parse_from([
+            "local_run",
+            "--task",
+            "Summarize the window",
+            "--model",
+            "gpt-5.4",
+        ]),
+        temp.path(),
+    )
+    .expect("load config");
+    assert_eq!(config.default_target, TargetId("windows-lab".into()));
+
+    let overridden = local_run_example::runtime_config_for_home(
+        &local_run_example::Cli::parse_from([
+            "local_run",
+            "--task",
+            "Summarize the window",
+            "--target",
+            "harmony-phone",
+            "--model",
+            "gpt-5.4",
+        ]),
+        temp.path(),
+    )
+    .expect("load overridden config");
+    assert_eq!(overridden.default_target, TargetId("harmony-phone".into()));
 }
 
 #[test]

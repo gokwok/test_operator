@@ -20,3 +20,4 @@ features = ["macros", "rt-multi-thread"]
 [dev-dependencies]
 async-trait.workspace = true
 operator-testkit = { path = "../operator-testkit" }
+tempfile.workspace = true

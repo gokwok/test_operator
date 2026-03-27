@@ -2,6 +2,7 @@
 mod cli_main;
 
 use std::{
+    fs,
     future::Future,
     num::NonZeroU32,
     pin::Pin,
@@ -9,8 +10,10 @@ use std::{
 };
 
 use operator_agent::AgentRunResult;
+use operator_bootstrap::runtime_config_path;
 use operator_core::{SessionId, TargetId};
 use serde_json::{json, Value};
+use tempfile::tempdir;
 
 #[test]
 fn observe_frontmost_command_defaults_capture_to_all() {
@@ -277,6 +280,53 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
     assert_eq!(command.target.as_deref(), Some("local:macos"));
     assert_eq!(command.timeout_ms, Some(250));
     assert!(command.json_output);
+}
+
+#[test]
+fn agent_runtime_config_loads_named_targets_from_operator_home_and_applies_flag_overrides() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "windows-lab"
+default_timeout_ms = 500
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+
+[targets.windows-lab.driver_config]
+endpoint = "wss://windows-lab.internal"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "--target",
+        "harmony-phone",
+        "--timeout-ms",
+        "250",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    let cli_main::args::CliExecution::Agent(command) = cli.into_execution().unwrap() else {
+        panic!("agent command should map to agent execution");
+    };
+    let config = cli_main::runtime_config_for_home(&command, temp.path()).expect("runtime config");
+
+    assert_eq!(config.default_target, TargetId("harmony-phone".into()));
+    assert_eq!(config.default_timeout_ms, 250);
+    let windows_target = config.targets.get("windows-lab").expect("windows target");
+    assert_eq!(windows_target.platform, "windows");
+    assert_eq!(windows_target.driver, "windows.remote");
+    assert_eq!(
+        windows_target.driver_config.get("endpoint"),
+        Some(&json!("wss://windows-lab.internal"))
+    );
 }
 
 #[test]
