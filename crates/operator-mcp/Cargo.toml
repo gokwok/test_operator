@@ -6,8 +6,8 @@ version.workspace = true
 autobins = false
 
 [dependencies]
+operator-bootstrap = { path = "../operator-bootstrap" }
 operator-core = { path = "../operator-core" }
-operator-platform-macos = { path = "../operator-platform-macos" }
 operator-runtime = { path = "../operator-runtime" }
 serde.workspace = true
 serde_json.workspace = true

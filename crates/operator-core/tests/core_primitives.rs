@@ -1,6 +1,8 @@
 use operator_core::{
-    ArtifactId, OperatorError, Point, Rect, SnapshotId, TargetDescriptor, TargetId, WindowId,
+    ArtifactId, DriverConfig, OperatorError, Point, Rect, SnapshotId, TargetDescriptor, TargetId,
+    WindowId,
 };
+use serde_json::json;
 
 #[test]
 fn ids_round_trip_through_display() {
@@ -36,7 +38,12 @@ fn target_descriptor_keeps_driver_details() {
         id: TargetId("harmony-phone".into()),
         platform: "harmony".into(),
         driver: "harmony.node".into(),
+        driver_config: DriverConfig::from([("node".into(), json!("serial-1"))]),
     };
 
     assert_eq!(descriptor.driver, "harmony.node");
+    assert_eq!(
+        descriptor.driver_config.get("node"),
+        Some(&json!("serial-1"))
+    );
 }

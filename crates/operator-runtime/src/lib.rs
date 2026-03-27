@@ -3,6 +3,7 @@
 mod builder;
 mod config;
 mod events;
+mod platform_registry;
 mod resolver;
 mod runtime;
 pub mod stores;
@@ -14,6 +15,7 @@ pub use config::{NamedTargetConfig, RuntimeConfig};
 pub use events::{
     AuditEvent, AuditEventKind, EventSink, NullEventSink, Session, SessionEvent, SessionStatus,
 };
+pub use platform_registry::{PlatformDriverFactory, PlatformRegistry};
 pub use resolver::TargetResolver;
 pub use runtime::{Runtime, RuntimeCore};
 pub use stores::{

@@ -1,6 +1,6 @@
 use std::{env, io, path::PathBuf, sync::Arc};
 
-use operator_platform_macos::system_runtime_drivers;
+use operator_bootstrap::system_platform_registry;
 use operator_runtime::{FileArtifactStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig};
 
 pub mod server;
@@ -17,7 +17,7 @@ pub async fn run_stdio_server() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = RuntimeBuilder::new(config)
         .artifact_store(artifacts.clone())
         .snapshot_store(snapshots)
-        .register_drivers(system_runtime_drivers(artifacts.artifacts_dir()))
+        .platform_registry(system_platform_registry(artifacts.artifacts_dir()))
         .build()
         .await?;
     let server = McpServer::new(runtime.tools().clone());

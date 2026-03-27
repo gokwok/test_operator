@@ -7,10 +7,11 @@ use crate::{
     tools, ArtifactStore, EventSink, NullEventSink, NullSessionStore, Runtime, RuntimeConfig,
     RuntimeCore, SessionStore, SnapshotStore, TargetResolver, ToolRegistry,
 };
+use crate::{PlatformDriverFactory, PlatformRegistry};
 
 pub struct RuntimeBuilder {
     config: RuntimeConfig,
-    drivers: HashMap<String, Arc<dyn PlatformDriver>>,
+    platform_registry: PlatformRegistry,
     artifacts: Option<Arc<dyn ArtifactStore>>,
     snapshots: Option<Arc<dyn SnapshotStore>>,
     sessions: Arc<dyn SessionStore>,
@@ -21,7 +22,7 @@ impl RuntimeBuilder {
     pub fn new(config: RuntimeConfig) -> Self {
         Self {
             config,
-            drivers: HashMap::new(),
+            platform_registry: PlatformRegistry::new(),
             artifacts: None,
             snapshots: None,
             sessions: Arc::new(NullSessionStore),
@@ -50,7 +51,8 @@ impl RuntimeBuilder {
     }
 
     pub fn register_driver(mut self, driver: Arc<dyn PlatformDriver>) -> Self {
-        self.drivers.insert(driver.driver_id().to_string(), driver);
+        self.platform_registry
+            .register_factory(Arc::new(StaticDriverFactory::new(driver)));
         self
     }
 
@@ -62,6 +64,16 @@ impl RuntimeBuilder {
             self = self.register_driver(driver);
         }
 
+        self
+    }
+
+    pub fn register_factory(mut self, factory: Arc<dyn PlatformDriverFactory>) -> Self {
+        self.platform_registry.register_factory(factory);
+        self
+    }
+
+    pub fn platform_registry(mut self, registry: PlatformRegistry) -> Self {
+        self.platform_registry.extend(registry);
         self
     }
 
@@ -78,12 +90,13 @@ impl RuntimeBuilder {
         let named_targets = self.config.targets.clone();
         let core = RuntimeCore {
             resolver: TargetResolver::new(default_target, named_targets),
-            drivers: self.drivers,
+            platform_registry: self.platform_registry,
             artifacts,
             snapshots,
             sessions: self.sessions,
             event_sink: self.event_sink,
             config: self.config,
+            driver_cache: std::sync::Mutex::new(HashMap::new()),
         };
 
         let core = Arc::new(core);
@@ -91,6 +104,46 @@ impl RuntimeBuilder {
         tools.register_all(tools::registrations())?;
 
         Ok(Runtime { core, tools })
+    }
+}
+
+struct StaticDriverFactory {
+    driver: Arc<dyn PlatformDriver>,
+}
+
+impl StaticDriverFactory {
+    fn new(driver: Arc<dyn PlatformDriver>) -> Self {
+        Self { driver }
+    }
+}
+
+impl PlatformDriverFactory for StaticDriverFactory {
+    fn driver_id(&self) -> &str {
+        self.driver.driver_id()
+    }
+
+    fn build(
+        &self,
+        target: &operator_core::TargetDescriptor,
+    ) -> Result<Arc<dyn PlatformDriver>, OperatorError> {
+        if target.platform != self.driver.platform_id() {
+            return Err(OperatorError::Platform(format!(
+                "target {} resolved to platform {}, but registered driver {} serves {}",
+                target.id,
+                target.platform,
+                self.driver.driver_id(),
+                self.driver.platform_id()
+            )));
+        }
+
+        if !target.driver_config.is_empty() {
+            return Err(OperatorError::Platform(format!(
+                "driver {} does not accept target-level driver_config",
+                self.driver.driver_id()
+            )));
+        }
+
+        Ok(Arc::clone(&self.driver))
     }
 }
 

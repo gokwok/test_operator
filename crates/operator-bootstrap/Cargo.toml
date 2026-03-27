@@ -1,0 +1,11 @@
+[package]
+name = "operator-bootstrap"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+operator-core = { path = "../operator-core" }
+operator-platform-macos = { path = "../operator-platform-macos" }
+operator-runtime = { path = "../operator-runtime" }
+serde_json.workspace = true

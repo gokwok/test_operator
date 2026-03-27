@@ -8,10 +8,10 @@ use std::{env, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 use operator_agent::{
     model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
 };
+use operator_bootstrap::system_platform_registry;
 use operator_core::OperatorError;
 #[cfg(not(test))]
 use operator_mcp::run_stdio_server;
-use operator_platform_macos::system_runtime_drivers;
 use operator_runtime::{
     FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
     ToolRegistry,
@@ -167,7 +167,7 @@ async fn build_runtime(config: RuntimeConfig) -> Result<operator_runtime::Runtim
         .artifact_store(artifacts.clone())
         .snapshot_store(snapshots)
         .session_store(sessions)
-        .register_drivers(system_runtime_drivers(artifacts.artifacts_dir()))
+        .platform_registry(system_platform_registry(artifacts.artifacts_dir()))
         .build()
         .await
 }

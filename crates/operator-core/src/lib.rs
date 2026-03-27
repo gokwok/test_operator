@@ -31,4 +31,4 @@ pub use query::{
 };
 pub use snapshot::{ElementSource, ImageSizePx, Snapshot, SnapshotMetadata, UiElement};
 pub use surface::{Surface, SurfaceKind};
-pub use target::TargetDescriptor;
+pub use target::{DriverConfig, TargetDescriptor};

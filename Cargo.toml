@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/operator-agent",
+    "crates/operator-bootstrap",
     "crates/operator-cli",
     "crates/operator-core",
     "crates/operator-mcp",

@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
 
-use operator_core::TargetId;
+use operator_core::{DriverConfig, TargetId};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NamedTargetConfig {
     pub platform: String,
     pub driver: String,
+    #[serde(default)]
+    pub driver_config: DriverConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     pub default_target: TargetId,
     #[serde(default = "default_named_targets")]
@@ -30,6 +33,7 @@ fn default_named_targets() -> BTreeMap<String, NamedTargetConfig> {
         NamedTargetConfig {
             platform: "macos".into(),
             driver: "macos.system".into(),
+            driver_config: DriverConfig::new(),
         },
     )])
 }

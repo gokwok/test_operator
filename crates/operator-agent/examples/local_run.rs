@@ -5,8 +5,8 @@ use operator_agent::{
     load_persisted_session, model::ModelRegistry, render_harness_report, AgentConfig,
     AgentRunRequest, AgentRunner, HarnessReport,
 };
+use operator_bootstrap::system_platform_registry;
 use operator_core::TargetId;
-use operator_platform_macos::system_runtime_drivers;
 use operator_runtime::{
     FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
     SessionStore,
@@ -128,7 +128,7 @@ async fn build_runtime(
         .artifact_store(artifacts)
         .snapshot_store(snapshots)
         .session_store(session_store)
-        .register_drivers(system_runtime_drivers(state_root.join("artifacts")))
+        .platform_registry(system_platform_registry(state_root.join("artifacts")))
         .build()
         .await
         .map_err(|error| error.to_string())

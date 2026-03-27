@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -11,6 +11,7 @@ use operator_core::{
 };
 use tokio::time;
 
+use crate::PlatformRegistry;
 use crate::{
     ArtifactStore, AuditEvent, AuditEventKind, EventSink, RuntimeConfig, SessionStore,
     SnapshotStore, TargetResolver, ToolRegistry,
@@ -18,12 +19,13 @@ use crate::{
 
 pub struct RuntimeCore {
     pub(crate) resolver: TargetResolver,
-    pub(crate) drivers: HashMap<String, Arc<dyn PlatformDriver>>,
+    pub(crate) platform_registry: PlatformRegistry,
     pub(crate) artifacts: Arc<dyn ArtifactStore>,
     pub(crate) snapshots: Arc<dyn SnapshotStore>,
     pub(crate) sessions: Arc<dyn SessionStore>,
     pub(crate) event_sink: Arc<dyn EventSink>,
     pub(crate) config: RuntimeConfig,
+    pub(crate) driver_cache: Mutex<HashMap<TargetId, Arc<dyn PlatformDriver>>>,
 }
 
 impl RuntimeCore {
@@ -59,11 +61,26 @@ impl RuntimeCore {
         target: &TargetId,
     ) -> Result<(TargetDescriptor, Arc<dyn PlatformDriver>), OperatorError> {
         let descriptor = self.resolve_target(Some(target))?;
-        let driver = self
-            .drivers
-            .get(&descriptor.driver)
+        if let Some(driver) = self
+            .driver_cache
+            .lock()
+            .expect("runtime driver cache poisoned")
+            .get(target)
             .cloned()
+        {
+            return Ok((descriptor, driver));
+        }
+
+        let factory = self
+            .platform_registry
+            .factory(&descriptor.driver)
             .ok_or_else(|| OperatorError::TargetNotFound(target.to_string()))?;
+        let driver = factory.build(&descriptor)?;
+
+        self.driver_cache
+            .lock()
+            .expect("runtime driver cache poisoned")
+            .insert(target.clone(), driver.clone());
 
         Ok((descriptor, driver))
     }
