@@ -228,9 +228,8 @@ crates/
       normalize.rs
       permissions.rs
       errors.rs
-    vendor/
-      hmdriver_rs/
-        Cargo.toml
+    hdc_driver/
+      base/
         src/
         docs/
         assets/
@@ -238,11 +237,11 @@ crates/
 
 职责：
 
-- `vendor/hmdriver_rs/`
-  - 迁移后的上游库，尽量保持原始结构
+- `hdc_driver/base/`
+  - 从 `hmdriver_rs` 迁移进来的基础实现，尽量保持原始结构与历史可追溯性
 - `operator-platform-harmony/src/*`
   - Operator 适配层
-  - 把 `hmdriver_rs` 的同步 API 转成 `PlatformDriver`
+  - 把 `hdc_driver/base` 的同步 API 转成 `PlatformDriver`
   - 做 capability、错误、类型和 northbound 语义映射
 
 ### 6.2 为什么不直接把 `hmdriver_rs` 当最终 `PlatformDriver`
@@ -563,14 +562,18 @@ Harmony 第一阶段的目标是优先支撑当前 Operator agent loop。
 - 避免手工复制文件
 - 后续仍可同步上游变更
 
-### 13.2 推荐方案：`git subtree` 导入
+### 13.2 推荐方案：保留历史地导入到 `hdc_driver/base`
 
-推荐把 `hmdriver_rs` 作为 subtree 导入：
+推荐把 `hmdriver_rs` 的历史直接导入到：
+
+- `crates/operator-platform-harmony/hdc_driver/base`
+
+可以使用 `git subtree` 完成这一点：
 
 ```bash
 git remote add hmdriver-local /Users/gokwok/code/work/hmdriver_rs
 git fetch hmdriver-local
-git subtree add --prefix=crates/operator-platform-harmony/vendor/hmdriver_rs hmdriver-local main
+git subtree add --prefix=crates/operator-platform-harmony/hdc_driver/base hmdriver-local main
 ```
 
 要求：
@@ -582,8 +585,14 @@ git subtree add --prefix=crates/operator-platform-harmony/vendor/hmdriver_rs hmd
 
 ```bash
 git fetch hmdriver-local
-git subtree pull --prefix=crates/operator-platform-harmony/vendor/hmdriver_rs hmdriver-local main
+git subtree pull --prefix=crates/operator-platform-harmony/hdc_driver/base hmdriver-local main
 ```
+
+这里的重点是：
+
+- `git subtree` 只是**保留历史的迁移手段**
+- 最终目录形态是 `operator-platform-harmony/hdc_driver/base/*`
+- 它不是 `vendor/` 目录，也不表示“第三方 vendored dependency”
 
 ### 13.3 为什么不用手工复制
 
@@ -593,41 +602,37 @@ git subtree pull --prefix=crates/operator-platform-harmony/vendor/hmdriver_rs hm
 - 后续难以比对上游差异
 - 迁移审计成本高
 
-### 13.4 为什么不立即“打散”到 Operator 自己的 `src/`
+### 13.4 为什么不立即完全“打散”到 `src/`
 
-第一阶段不建议把 `hmdriver_rs` 代码直接打散进 `operator-platform-harmony/src/`，原因：
+第一阶段不建议把 `hmdriver_rs` 代码直接完全打散进 `operator-platform-harmony/src/`，原因：
 
 - 历史难保留
 - 上游同步困难
-- 很难区分“上游原始代码”和“Operator 适配层”
+- 很难区分“基础 HDC 实现”和“Operator 适配层”
 
 更合理的阶段顺序是：
 
-1. 先把整个库作为 subtree 导入 `vendor/hmdriver_rs`
+1. 先把整个库带历史导入 `hdc_driver/base`
 2. 外层写 `operator-platform-harmony` 适配层
-3. 尽量把 Operator 特有逻辑放在外层
-4. 只有在后续确认完全不需要上游同步时，再评估是否进一步吸收内部模块
+3. 尽量把 Operator 特有逻辑放在 `src/`，而不是污染 `hdc_driver/base`
+4. 只有在后续确认完全不再需要保留迁移边界时，再评估是否进一步内聚整理目录结构
 
 ### 13.5 Cargo 集成建议
 
-`operator-platform-harmony` 外层 crate 依赖：
+`operator-platform-harmony` 不应再把 `hmdriver_rs` 当作独立 vendored crate 依赖。
 
-```toml
-[dependencies]
-hmdriver_rs = { path = "vendor/hmdriver_rs" }
-```
+推荐原则：
 
-这样能同时满足：
-
-- 代码物理上迁移进 `operator-platform-harmony`
-- 保留完整上游历史
-- 外层适配层与上游库边界清晰
+- `hdc_driver/base/*` 作为 crate 内部基础实现目录
+- `src/*` 作为 Operator 适配层目录
+- 不在文档或实现中延续 `vendor/` 语义
+- 迁移完成后，以 `operator-platform-harmony` 作为唯一对外 crate 边界
 
 ---
 
 ## 14. 推荐实施顺序
 
-1. 先按 subtree 导入 `hmdriver_rs`
+1. 先把 `hmdriver_rs` 带历史导入 `hdc_driver/base`
 2. 创建 `crates/operator-platform-harmony`
 3. 添加 `HarmonyHdcDriverFactory` 与 `driver_config`
 4. 先实现：
@@ -655,6 +660,6 @@ hmdriver_rs = { path = "vendor/hmdriver_rs" }
 - 以 screenshot-first observe 为主
 - 以 Agent 当前视觉闭环为优先目标
 - 承认 Harmony 第一阶段不是桌面窗口管理 driver
-- 通过 subtree 迁移 `hmdriver_rs`，保留历史并维持后续可同步性
+- 通过保留历史的导入方式，把 `hmdriver_rs` 正式落入 `operator-platform-harmony/hdc_driver/base`
 
 如果遵守上述边界，`harmony.hdc` 可以成为 Operator 第一条真正可用的非 macOS driver。
