@@ -12,10 +12,11 @@ use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
 use crate::swipe::SwipeExt;
 use crate::types::{
-    AppAbilityInfo, AppVersion, Coord, CurrentApp, DeviceInfo, DisplayRotation, KeyCode, Point,
-    ShellResult,
+    AppAbilityInfo, AppVersion, Coord, CorrelatedWindow, CorrelatedWindowList, CurrentApp,
+    DeviceInfo, DisplayRotation, KeyCode, MissionEntry, MissionList, Point, ShellResult,
+    WindowDetail, WindowEntry, WindowList, WindowOffset, WindowRect, WindowScale,
 };
-use crate::ui::{UiDriver, UiQuery, UiSelector};
+use crate::ui::{UiDriver, UiQuery, UiSelector, UiWindow};
 use crate::xpath::XPathNode;
 
 pub struct Driver {
@@ -121,6 +122,51 @@ impl Driver {
             "aa start -A ohos.want.action.viewData -e entity.system.browsable -U {}",
             shell_escape(url)
         ))
+    }
+
+    pub fn list_windows(&mut self) -> Result<WindowList> {
+        let output = self.exec_stdout_checked("hidumper -s WindowManagerService -a '-a'")?;
+        parse_window_list(&output)
+    }
+
+    pub fn get_window(&mut self, window_id: u32) -> Result<WindowDetail> {
+        let output = self.exec_stdout_checked(&format!(
+            "hidumper -s WindowManagerService -a '-w {window_id}'"
+        ))?;
+        parse_window_detail(&output)
+    }
+
+    pub fn list_missions(&mut self) -> Result<MissionList> {
+        let output = self.exec_stdout_checked("hidumper -s AbilityManagerService -a '-l'")?;
+        parse_mission_list(&output)
+    }
+
+    pub fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList> {
+        let windows = self.list_windows()?;
+        let missions = self.list_missions()?;
+        let mission_map = missions
+            .missions
+            .into_iter()
+            .map(|mission| (mission.mission_id, mission))
+            .collect::<std::collections::HashMap<u32, MissionEntry>>();
+
+        Ok(CorrelatedWindowList {
+            windows: windows
+                .windows
+                .into_iter()
+                .map(|window| CorrelatedWindow {
+                    mission: mission_map.get(&window.window_id).cloned(),
+                    window,
+                })
+                .collect(),
+            focused_window_id: windows.focused_window_id,
+            highlighted_window_ids: windows.highlighted_window_ids,
+            total_window_count: windows.total_window_count,
+        })
+    }
+
+    pub fn correlate_windows_to_missions(&mut self) -> Result<CorrelatedWindowList> {
+        self.list_windows_with_missions()
     }
 
     pub fn display_size(&mut self) -> Result<Point> {
@@ -332,6 +378,14 @@ impl Driver {
         Ok(self.ui()?.description(value))
     }
 
+    pub fn find_window(&self, active: bool) -> Result<Option<UiWindow>> {
+        self.ui()?.find_window(active)
+    }
+
+    pub fn find_active_window(&self) -> Result<Option<UiWindow>> {
+        self.ui()?.find_active_window()
+    }
+
     pub fn close(&mut self) -> Result<()> {
         self.session.close_active_command_channel()
     }
@@ -491,6 +545,211 @@ fn parse_display_size(output: &str) -> Option<(i32, i32)> {
     Some((width.trim().parse().ok()?, height.trim().parse().ok()?))
 }
 
+fn parse_mission_list(output: &str) -> Result<MissionList> {
+    let missions = output
+        .split("Mission ID #")
+        .skip(1)
+        .map(parse_mission_entry)
+        .collect::<Result<Vec<MissionEntry>>>()?;
+    Ok(MissionList { missions })
+}
+
+fn parse_mission_entry(block: &str) -> Result<MissionEntry> {
+    let block = block.trim();
+    let first_line = block
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| HdcError::protocol("mission block missing header"))?;
+
+    let mission_id_raw = first_line
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| HdcError::protocol("mission block missing mission id"))?;
+    let mission_name = extract_between(first_line, "mission name #[", "]  lockedState #")
+        .ok_or_else(|| HdcError::protocol("mission block missing mission name"))?;
+    let locked_state = extract_between(first_line, "lockedState #", "  mission affinity #[")
+        .ok_or_else(|| HdcError::protocol("mission block missing lockedState"))?;
+    let mission_affinity = extract_between(first_line, "mission affinity #[", "]")
+        .ok_or_else(|| HdcError::protocol("mission block missing mission affinity"))?;
+
+    Ok(MissionEntry {
+        mission_id: parse_u32(mission_id_raw, "mission_id")?,
+        mission_name,
+        locked_state: parse_i32(&locked_state, "locked_state")?,
+        mission_affinity,
+        ability_record_id: extract_after_hash_u32(block, "AbilityRecord ID #"),
+        app_name: extract_between(block, "app name [", "]"),
+        main_name: extract_between(block, "main name [", "]"),
+        bundle_name: extract_between(block, "bundle name [", "]"),
+        ability_type: extract_between(block, "ability type [", "]"),
+        state: extract_after_hash_token(block, "state #"),
+        app_state: extract_after_hash_token(block, "app state #"),
+        ready: extract_after_hash_bool(block, "ready #")?,
+        window_attached: extract_after_hash_bool(block, "window attached #")?,
+        launcher: extract_after_hash_bool(block, "launcher #")?,
+        is_keep_alive: extract_after_colon_bool(block, "isKeepAlive:")?,
+    })
+}
+
+fn parse_window_list(output: &str) -> Result<WindowList> {
+    let mut windows = Vec::new();
+    let mut focused_window_id = None;
+    let mut highlighted_window_ids = Vec::new();
+    let mut total_window_count = None;
+
+    for line in output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if line.starts_with("WindowName") || line.starts_with('-') {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("Focus window:") {
+            focused_window_id = value.trim().parse().ok();
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("Highlighted windows:") {
+            highlighted_window_ids = value
+                .split(',')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .filter_map(|item| item.parse().ok())
+                .collect();
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("Total window num:") {
+            total_window_count = value.trim().parse().ok();
+            continue;
+        }
+        if line.starts_with("All Focus window:")
+            || line.starts_with("DisplayId:")
+            || line.starts_with("SingleHand:")
+        {
+            continue;
+        }
+        if let Some(window) = parse_window_list_entry(line)? {
+            windows.push(window);
+        }
+    }
+
+    Ok(WindowList {
+        windows,
+        focused_window_id,
+        highlighted_window_ids,
+        total_window_count,
+    })
+}
+
+fn parse_window_list_entry(line: &str) -> Result<Option<WindowEntry>> {
+    let Some(first_bracket) = line.find('[') else {
+        return Ok(None);
+    };
+    let prefix = line[..first_bracket].trim();
+    let columns = prefix.split_whitespace().collect::<Vec<&str>>();
+    if columns.len() < 9 {
+        return Ok(None);
+    }
+    let rect_group = bracket_groups(line)
+        .into_iter()
+        .next()
+        .ok_or_else(|| HdcError::protocol("window list row missing rect group"))?;
+    let rect_values = parse_i32_list(&rect_group)?;
+    if rect_values.len() != 4 {
+        return Err(HdcError::protocol("window rect group must have 4 integers"));
+    }
+
+    Ok(Some(WindowEntry {
+        name: columns[0].to_string(),
+        display_id: parse_i32(columns[1], "display_id")?,
+        pid: parse_i32(columns[2], "pid")?,
+        window_id: parse_u32(columns[3], "window_id")?,
+        window_type: parse_i32(columns[4], "window_type")?,
+        mode: parse_i32(columns[5], "mode")?,
+        flag: parse_i32(columns[6], "flag")?,
+        z_order: parse_i32(columns[7], "z_order")?,
+        orientation: parse_i32(columns[8], "orientation")?,
+        rect: WindowRect {
+            x: rect_values[0],
+            y: rect_values[1],
+            width: rect_values[2],
+            height: rect_values[3],
+        },
+    }))
+}
+
+fn parse_window_detail(output: &str) -> Result<WindowDetail> {
+    let mut map = std::collections::HashMap::<String, String>::new();
+    for line in output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if line.starts_with('-') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once(':') {
+            map.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+
+    let rect = parse_bracket_i32_count(
+        map.get("WindowRect")
+            .ok_or_else(|| HdcError::protocol("window detail missing WindowRect"))?,
+        4,
+        "WindowRect",
+    )?;
+    let offset = parse_bracket_i32_count(
+        map.get("Offset")
+            .ok_or_else(|| HdcError::protocol("window detail missing Offset"))?,
+        2,
+        "Offset",
+    )?;
+    let scale = parse_bracket_f64_count(
+        map.get("Scale")
+            .ok_or_else(|| HdcError::protocol("window detail missing Scale"))?,
+        4,
+        "Scale",
+    )?;
+
+    Ok(WindowDetail {
+        name: map_value(&map, "WindowName")?.to_string(),
+        display_id: parse_i32(map_value(&map, "DisplayId")?, "DisplayId")?,
+        window_id: parse_u32(map_value(&map, "WinId")?, "WinId")?,
+        pid: parse_i32(map_value(&map, "Pid")?, "Pid")?,
+        window_type: parse_i32(map_value(&map, "Type")?, "Type")?,
+        mode: parse_i32(map_value(&map, "Mode")?, "Mode")?,
+        flag: parse_i32(map_value(&map, "Flag")?, "Flag")?,
+        orientation: parse_i32(map_value(&map, "Orientation")?, "Orientation")?,
+        first_frame_callback_called: parse_bool(map_value(&map, "FirstFrameCallbackCalled")?)?,
+        is_visible: parse_bool(map_value(&map, "IsVisible")?)?,
+        is_rs_visible: parse_bool(map_value(&map, "isRSVisible")?)?,
+        focusable: parse_bool(map_value(&map, "Focusable")?)?,
+        deco_status: parse_bool(map_value(&map, "DecoStatus")?)?,
+        is_privacy_mode: parse_bool(map_value(&map, "isPrivacyMode")?)?,
+        rect: WindowRect {
+            x: rect[0],
+            y: rect[1],
+            width: rect[2],
+            height: rect[3],
+        },
+        scale_x: parse_f64(map_value(&map, "scaleX")?, "scaleX")?,
+        scale_y: parse_f64(map_value(&map, "scaleY")?, "scaleY")?,
+        offset: WindowOffset {
+            x: offset[0],
+            y: offset[1],
+        },
+        scale: WindowScale {
+            scale_x: scale[0],
+            scale_y: scale[1],
+            pivot_x: scale[2],
+            pivot_y: scale[3],
+        },
+        parent_window_id: parse_u32(map_value(&map, "ParentWindowId")?, "ParentWindowId")?,
+    })
+}
+
 fn parse_app_info_json(output: &str) -> Result<Value> {
     let json_start = output
         .find('{')
@@ -630,6 +889,126 @@ fn extract_ipv4_after(line: &str, marker: &str) -> Option<String> {
     None
 }
 
+fn bracket_groups(line: &str) -> Vec<String> {
+    let mut groups = Vec::new();
+    let mut current = String::new();
+    let mut inside = false;
+    for ch in line.chars() {
+        match ch {
+            '[' if !inside => {
+                inside = true;
+                current.clear();
+            }
+            ']' if inside => {
+                inside = false;
+                groups.push(current.trim().to_string());
+            }
+            _ if inside => current.push(ch),
+            _ => {}
+        }
+    }
+    groups
+}
+
+fn parse_i32_list(raw: &str) -> Result<Vec<i32>> {
+    raw.split([',', ' '])
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| parse_i32(item, "list item"))
+        .collect()
+}
+
+fn parse_f64_list(raw: &str) -> Result<Vec<f64>> {
+    raw.split([',', ' '])
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| parse_f64(item, "list item"))
+        .collect()
+}
+
+fn parse_bracket_i32_count(raw: &str, expected: usize, label: &str) -> Result<Vec<i32>> {
+    let trimmed = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    let values = parse_i32_list(trimmed)?;
+    if values.len() != expected {
+        return Err(HdcError::protocol(format!(
+            "{label} expected {expected} integers, got {}",
+            values.len()
+        )));
+    }
+    Ok(values)
+}
+
+fn parse_bracket_f64_count(raw: &str, expected: usize, label: &str) -> Result<Vec<f64>> {
+    let trimmed = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    let values = parse_f64_list(trimmed)?;
+    if values.len() != expected {
+        return Err(HdcError::protocol(format!(
+            "{label} expected {expected} numbers, got {}",
+            values.len()
+        )));
+    }
+    Ok(values)
+}
+
+fn parse_i32(raw: &str, label: &str) -> Result<i32> {
+    raw.parse()
+        .map_err(|_| HdcError::protocol(format!("failed to parse {label} as i32: {raw}")))
+}
+
+fn parse_u32(raw: &str, label: &str) -> Result<u32> {
+    raw.parse()
+        .map_err(|_| HdcError::protocol(format!("failed to parse {label} as u32: {raw}")))
+}
+
+fn parse_f64(raw: &str, label: &str) -> Result<f64> {
+    raw.parse()
+        .map_err(|_| HdcError::protocol(format!("failed to parse {label} as f64: {raw}")))
+}
+
+fn parse_bool(raw: &str) -> Result<bool> {
+    match raw {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        other => Err(HdcError::protocol(format!(
+            "failed to parse bool value: {other}"
+        ))),
+    }
+}
+
+fn extract_after_hash_token(haystack: &str, marker: &str) -> Option<String> {
+    let start = haystack.find(marker)? + marker.len();
+    let rest = haystack[start..].trim_start();
+    Some(rest.split_whitespace().next()?.trim().to_string())
+}
+
+fn extract_after_hash_u32(haystack: &str, marker: &str) -> Option<u32> {
+    extract_after_hash_token(haystack, marker)?.parse().ok()
+}
+
+fn extract_after_hash_bool(haystack: &str, marker: &str) -> Result<Option<bool>> {
+    match extract_after_hash_token(haystack, marker) {
+        Some(value) => parse_bool(&value).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn extract_after_colon_bool(haystack: &str, marker: &str) -> Result<Option<bool>> {
+    let Some(start) = haystack.find(marker) else {
+        return Ok(None);
+    };
+    let rest = haystack[start + marker.len()..].trim_start();
+    let Some(token) = rest.split_whitespace().next() else {
+        return Ok(None);
+    };
+    parse_bool(token).map(Some)
+}
+
+fn map_value<'a>(map: &'a std::collections::HashMap<String, String>, key: &str) -> Result<&'a str> {
+    map.get(key)
+        .map(String::as_str)
+        .ok_or_else(|| HdcError::protocol(format!("window detail missing {key}")))
+}
+
 fn normalize_velocity(value: Option<u32>) -> Result<u32> {
     let velocity = value.unwrap_or(600);
     if !(200..=40000).contains(&velocity) {
@@ -700,10 +1079,11 @@ fn decode_base64_output(value: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppAbilityInfo, DriverBuilder, build_press_keys_command, build_right_click_command,
-        decode_base64_output, extract_ipv4_after, normalize_velocity, parse_app_abilities,
-        parse_app_info_json, parse_app_list, parse_app_version, parse_current_app,
-        parse_display_size, parse_main_ability_from_dump, parse_wlan_ip, shell_escape,
+        AppAbilityInfo, DriverBuilder, bracket_groups, build_press_keys_command,
+        build_right_click_command, decode_base64_output, extract_ipv4_after, normalize_velocity,
+        parse_app_abilities, parse_app_info_json, parse_app_list, parse_app_version,
+        parse_current_app, parse_display_size, parse_main_ability_from_dump, parse_mission_list,
+        parse_window_detail, parse_window_list, parse_wlan_ip, shell_escape,
     };
     use crate::types::Coord;
     use serde_json::{Value, json};
@@ -877,6 +1257,110 @@ Mission ID #12 {
     #[test]
     fn extract_ipv4_after_rejects_non_ipv4_tokens() {
         assert_eq!(extract_ipv4_after("inet fe80::1", "inet "), None);
+    }
+
+    #[test]
+    fn bracket_groups_extract_multiple_sections() {
+        let groups = bracket_groups("foo [ 1 2 3 4 ] [ 5 6 ] [ 1, 1, 0.5, 0.5 ]");
+
+        assert_eq!(groups, vec!["1 2 3 4", "5 6", "1, 1, 0.5, 0.5"]);
+    }
+
+    #[test]
+    fn parse_window_list_extracts_rows_and_summary() {
+        let output = r#"
+WindowName           DisplayId Pid     WinId Type Mode Flag ZOrd Orientation [ x    y    w    h    ] [ OffsetX OffsetY ] [ ScaleX  ScaleY  PivotX  PivotY  ]
+installer0           0         54500   225   1    102  0    114  0           [ 584  732  1600 1065 ] [ 0       0       ] [ 1       1       0.5     0.5     ]
+browser0             0         45589   267   1    102  0    113  0           [ 0    0    2080 1303 ] [ 0       0       ] [ 1       1       0.5     0.500128]
+Focus window: 225
+Total window num: 92
+Highlighted windows: 225
+"#;
+
+        let list = parse_window_list(output).unwrap();
+
+        assert_eq!(list.windows.len(), 2);
+        assert_eq!(list.focused_window_id, Some(225));
+        assert_eq!(list.total_window_count, Some(92));
+        assert_eq!(list.highlighted_window_ids, vec![225]);
+        assert_eq!(list.windows[1].name, "browser0");
+        assert_eq!(list.windows[1].rect.width, 2080);
+    }
+
+    #[test]
+    fn parse_window_detail_extracts_visibility_and_rect() {
+        let output = r#"
+WindowName: filemanager0
+DisplayId: 0
+WinId: 266
+Pid: 44667
+Type: 1
+Mode: 102
+Flag: 0
+Orientation: 18
+FirstFrameCallbackCalled: 1
+IsVisible: true
+isRSVisible: true
+Focusable: true
+DecoStatus: true
+isPrivacyMode: false
+WindowRect: [ 1026, 320, 2068, 1394 ]
+scaleX: 1
+scaleY: 1
+Offset: [ 0, 0 ]
+Scale: [ 1, 1, 0.5, 0.5 ]
+ParentWindowId: 0
+"#;
+
+        let detail = parse_window_detail(output).unwrap();
+
+        assert_eq!(detail.name, "filemanager0");
+        assert_eq!(detail.window_id, 266);
+        assert!(detail.is_visible);
+        assert_eq!(detail.rect.height, 1394);
+        assert_eq!(detail.scale.pivot_x, 0.5);
+    }
+
+    #[test]
+    fn parse_mission_list_extracts_bundle_and_flags() {
+        let output = r#"
+Mission ID #225  mission name #[#com.openclaw.hmos.installer:entry:EntryAbility]  lockedState #0  mission affinity #[]
+  AbilityRecord ID #2058
+    app name [com.openclaw.hmos.installer]
+    main name [EntryAbility]
+    bundle name [com.openclaw.hmos.installer]
+    ability type [PAGE]
+    state #FOREGROUND  start time [181348859]
+    app state #FOREGROUND
+    ready #1  window attached #0  launcher #0
+    callee connections:
+    isKeepAlive: false
+Mission ID #266  mission name #[#com.huawei.hmos.filemanager:pc:MainAbility]  lockedState #0  mission affinity #[]
+  AbilityRecord ID #2291
+    app name [com.huawei.hmos.filemanager]
+    main name [MainAbility]
+    bundle name [com.huawei.hmos.filemanager]
+    ability type [PAGE]
+    state #FOREGROUND  start time [228934919]
+    app state #FOREGROUND
+    ready #1  window attached #0  launcher #0
+    isKeepAlive: false
+"#;
+
+        let missions = parse_mission_list(output).unwrap();
+
+        assert_eq!(missions.missions.len(), 2);
+        assert_eq!(missions.missions[0].mission_id, 225);
+        assert_eq!(
+            missions.missions[0].bundle_name.as_deref(),
+            Some("com.openclaw.hmos.installer")
+        );
+        assert_eq!(missions.missions[0].ready, Some(true));
+        assert_eq!(missions.missions[0].window_attached, Some(false));
+        assert_eq!(
+            missions.missions[1].main_name.as_deref(),
+            Some("MainAbility")
+        );
     }
 
     #[test]

@@ -40,6 +40,12 @@ pub struct UiComponent {
     handle: String,
 }
 
+#[derive(Clone)]
+pub struct UiWindow {
+    inner: Option<Rc<RefCell<UiSession>>>,
+    handle: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct UiSelector {
     filters: Vec<SelectorFilter>,
@@ -197,6 +203,17 @@ impl UiDriver {
             vec![Value::from(rotation.value())],
         )?;
         Ok(())
+    }
+
+    pub fn find_window(&self, active: bool) -> Result<Option<UiWindow>> {
+        let value = self.invoke("Driver.findWindow", vec![json!({ "actived": active })])?;
+        Ok(value
+            .as_str()
+            .map(|handle| UiWindow::new(self.inner.clone(), handle)))
+    }
+
+    pub fn find_active_window(&self) -> Result<Option<UiWindow>> {
+        self.find_window(true)
     }
 
     pub fn click<X, Y>(&self, x: X, y: Y) -> Result<()>
@@ -564,6 +581,71 @@ impl UiComponent {
             .as_str()
             .map(ToOwned::to_owned)
             .ok_or_else(|| HdcError::protocol(format!("{api} returned invalid payload")))
+    }
+}
+
+impl UiWindow {
+    fn new(inner: Rc<RefCell<UiSession>>, handle: &str) -> Self {
+        Self {
+            inner: Some(inner),
+            handle: handle.to_string(),
+        }
+    }
+
+    pub fn handle(&self) -> &str {
+        &self.handle
+    }
+
+    pub fn bounds(&self) -> Result<Bounds> {
+        let value = self.invoke("UiWindow.getBounds", Vec::new())?;
+        parse_bounds(&value)
+    }
+
+    pub fn display_id(&self) -> Result<i32> {
+        let value = self.invoke("UiWindow.getBounds", Vec::new())?;
+        read_i32_field(&value, "displayId")
+    }
+
+    pub fn title(&self) -> Result<String> {
+        self.invoke("UiWindow.getTitle", Vec::new())?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HdcError::protocol("UiWindow.getTitle returned invalid payload"))
+    }
+
+    pub fn is_focused(&self) -> Result<bool> {
+        self.invoke("UiWindow.isFocused", Vec::new())?
+            .as_bool()
+            .ok_or_else(|| HdcError::protocol("UiWindow.isFocused returned invalid payload"))
+    }
+
+    pub fn bundle_name(&self) -> Result<String> {
+        self.invoke("UiWindow.getBundleName", Vec::new())?
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| HdcError::protocol("UiWindow.getBundleName returned invalid payload"))
+    }
+
+    pub fn window_mode(&self) -> Result<i32> {
+        let value = self.invoke("UiWindow.getWindowMode", Vec::new())?;
+        value
+            .as_i64()
+            .and_then(|item| i32::try_from(item).ok())
+            .ok_or_else(|| HdcError::protocol("UiWindow.getWindowMode returned invalid payload"))
+    }
+
+    pub fn is_active(&self) -> Result<bool> {
+        self.invoke("UiWindow.isActived", Vec::new())?
+            .as_bool()
+            .ok_or_else(|| HdcError::protocol("UiWindow.isActived returned invalid payload"))
+    }
+
+    fn invoke(&self, api: &str, args: Vec<Value>) -> Result<Value> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| HdcError::protocol("ui window is detached from session"))?
+            .borrow_mut()
+            .invoke(api, Some(self.handle.as_str()), args)
     }
 }
 
@@ -1064,7 +1146,7 @@ fn read_string_field(value: &Value, key: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SelectorFilter, UiQuery, UiSelector, parse_bounds, parse_point, parse_ui_event,
+        SelectorFilter, UiQuery, UiSelector, UiWindow, parse_bounds, parse_point, parse_ui_event,
         shell_escape,
     };
     use serde_json::json;
@@ -1159,5 +1241,15 @@ mod tests {
         let timeout = Duration::from_millis(1500);
 
         assert_eq!(timeout.as_millis() as u64, 1500);
+    }
+
+    #[test]
+    fn ui_window_exposes_raw_handle() {
+        let window = UiWindow {
+            inner: None,
+            handle: "UiWindow#10".to_string(),
+        };
+
+        assert_eq!(window.handle(), "UiWindow#10");
     }
 }

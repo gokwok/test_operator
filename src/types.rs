@@ -210,6 +210,112 @@ pub struct DeviceInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowOffset {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowScale {
+    pub scale_x: f64,
+    pub scale_y: f64,
+    pub pivot_x: f64,
+    pub pivot_y: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowEntry {
+    pub name: String,
+    pub display_id: i32,
+    pub pid: i32,
+    pub window_id: u32,
+    pub window_type: i32,
+    pub mode: i32,
+    pub flag: i32,
+    pub z_order: i32,
+    pub orientation: i32,
+    pub rect: WindowRect,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowList {
+    pub windows: Vec<WindowEntry>,
+    pub focused_window_id: Option<u32>,
+    pub highlighted_window_ids: Vec<u32>,
+    pub total_window_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowDetail {
+    pub name: String,
+    pub display_id: i32,
+    pub window_id: u32,
+    pub pid: i32,
+    pub window_type: i32,
+    pub mode: i32,
+    pub flag: i32,
+    pub orientation: i32,
+    pub first_frame_callback_called: bool,
+    pub is_visible: bool,
+    pub is_rs_visible: bool,
+    pub focusable: bool,
+    pub deco_status: bool,
+    pub is_privacy_mode: bool,
+    pub rect: WindowRect,
+    pub scale_x: f64,
+    pub scale_y: f64,
+    pub offset: WindowOffset,
+    pub scale: WindowScale,
+    pub parent_window_id: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissionEntry {
+    pub mission_id: u32,
+    pub mission_name: String,
+    pub locked_state: i32,
+    pub mission_affinity: String,
+    pub ability_record_id: Option<u32>,
+    pub app_name: Option<String>,
+    pub main_name: Option<String>,
+    pub bundle_name: Option<String>,
+    pub ability_type: Option<String>,
+    pub state: Option<String>,
+    pub app_state: Option<String>,
+    pub ready: Option<bool>,
+    pub window_attached: Option<bool>,
+    pub launcher: Option<bool>,
+    pub is_keep_alive: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissionList {
+    pub missions: Vec<MissionEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrelatedWindow {
+    pub window: WindowEntry,
+    pub mission: Option<MissionEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorrelatedWindowList {
+    pub windows: Vec<CorrelatedWindow>,
+    pub focused_window_id: Option<u32>,
+    pub highlighted_window_ids: Vec<u32>,
+    pub total_window_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyCode(u32);
 
 impl KeyCode {

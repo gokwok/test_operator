@@ -17,9 +17,10 @@ pub use error::{HdcError, Result};
 pub use forward::TcpForwardHandle;
 pub use swipe::{SwipeArea, SwipeDirection, SwipeExt};
 pub use types::{
-    AppAbilityInfo, AppVersion, Bounds, CommandStatus, Coord, CurrentApp, DeviceInfo,
-    DisplayRotation, DriverMessage, DriverMessageLevel, KeyCode, Point, ShellResult,
-    UiComponentInfo, UiEvent,
+    AppAbilityInfo, AppVersion, Bounds, CommandStatus, Coord, CorrelatedWindow,
+    CorrelatedWindowList, CurrentApp, DeviceInfo, DisplayRotation, DriverMessage,
+    DriverMessageLevel, KeyCode, MissionEntry, MissionList, Point, ShellResult, UiComponentInfo,
+    UiEvent, WindowDetail, WindowEntry, WindowList, WindowOffset, WindowRect, WindowScale,
 };
-pub use ui::{UiComponent, UiDriver, UiDriverBuilder, UiQuery, UiSelector};
+pub use ui::{UiComponent, UiDriver, UiDriverBuilder, UiQuery, UiSelector, UiWindow};
 pub use xpath::XPathNode;
