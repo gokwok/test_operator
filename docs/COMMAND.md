@@ -1,6 +1,6 @@
 # Operator Command Surface
 
-日期：2026-03-27
+日期：2026-03-28
 
 ## 目的
 
@@ -360,10 +360,14 @@ operator
 
 ## 当前实现链状态
 
-截至 2026-03-27：
+截至 2026-03-28：
 
-- `OPE-135` 只同步命令规范文档，不修改 Rust 代码
-- 当前代码实现仍停留在旧命令面，后续由 `OPE-136` 到 `OPE-140` 逐步完成真实 CLI 迁移
+- `OPE-135` 到 `OPE-139` 已完成 redesign 所需的文档、help、参数解析和命令迁移
+- `OPE-140` 已在真实 macOS 目标上完成 `capture` / `elements` / `show`、扁平交互命令、`app` / `window` 分组，以及 `mcp` / `agent` help 的人工辅助验证
+- 最终实测 runbook、验证报告与命令矩阵见：
+  - [`docs/cli/redesigned-cli-validation-runbook.md`](./cli/redesigned-cli-validation-runbook.md)
+  - [`docs/cli/redesigned-cli-validation-report.md`](./cli/redesigned-cli-validation-report.md)
+  - [`docs/cli/redesigned-cli-command-matrix.md`](./cli/redesigned-cli-command-matrix.md)
 - `paste`、`clipboard`、`open` 在本链条内持续保持 `[planned]`，不应被提前视为已交付能力
 
 ## 验收准则
