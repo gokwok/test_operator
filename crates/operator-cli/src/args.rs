@@ -48,7 +48,7 @@ const ROOT_FOOTER: &str =
 const ROOT_EXAMPLES: &[&str] = &[
     "operator capture frontmost",
     "operator elements window --window-id 42",
-    "operator list windows",
+    "operator window list",
     "operator click --text Save",
     "operator mcp serve",
 ];
@@ -77,9 +77,8 @@ const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
 const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 
-const LIST_ABOUT: &str = "List running apps or windows";
-const LIST_APPS_ABOUT: &str = "List running applications";
-const LIST_WINDOWS_ABOUT: &str = "List windows, optionally filtered by app";
+const APP_LIST_ABOUT: &str = "List all running applications";
+const WINDOW_LIST_ABOUT: &str = "List application windows";
 
 const INPUT_CLICK_ABOUT: &str = "Click a locator, coordinates, or target";
 const INPUT_MOVE_ABOUT: &str = "Move the pointer to a locator, coordinates, or target";
@@ -90,22 +89,22 @@ const INPUT_SCROLL_ABOUT: &str = "Scroll by delta against a locator or target";
 const INPUT_DRAG_ABOUT: &str = "Drag between two locators";
 const INPUT_SWIPE_ABOUT: &str = "Swipe between two locators";
 
-const APP_ABOUT: &str = "Launch, switch, hide, quit, and relaunch applications";
-const APP_LAUNCH_ABOUT: &str = "Launch an application by bundle identifier or name";
+const APP_ABOUT: &str = "Manage application lifecycle";
+const APP_LAUNCH_ABOUT: &str = "Launch an application by name or bundle identifier";
 const APP_SWITCH_ABOUT: &str = "Bring an application to the foreground";
 const APP_QUIT_ABOUT: &str = "Quit an application";
-const APP_RELAUNCH_ABOUT: &str = "Relaunch an application";
+const APP_RELAUNCH_ABOUT: &str = "Quit and relaunch an application";
 const APP_HIDE_ABOUT: &str = "Hide an application";
-const APP_UNHIDE_ABOUT: &str = "Unhide an application";
+const APP_UNHIDE_ABOUT: &str = "Unhide a hidden application";
 
-const WINDOW_ABOUT: &str = "Focus, close, resize, or move application windows";
-const WINDOW_FOCUS_ABOUT: &str = "Focus a specific window";
-const WINDOW_CLOSE_ABOUT: &str = "Close a specific window";
-const WINDOW_MINIMIZE_ABOUT: &str = "Minimize a specific window";
-const WINDOW_MAXIMIZE_ABOUT: &str = "Maximize a specific window";
-const WINDOW_MOVE_ABOUT: &str = "Move a specific window";
-const WINDOW_RESIZE_ABOUT: &str = "Resize a specific window";
-const WINDOW_SET_BOUNDS_ABOUT: &str = "Set the full bounds of a specific window";
+const WINDOW_ABOUT: &str = "Manage application windows";
+const WINDOW_FOCUS_ABOUT: &str = "Bring a specific window to the foreground";
+const WINDOW_CLOSE_ABOUT: &str = "Close a window";
+const WINDOW_MINIMIZE_ABOUT: &str = "Minimize a window to the Dock";
+const WINDOW_MAXIMIZE_ABOUT: &str = "Maximize a window to fill the display";
+const WINDOW_MOVE_ABOUT: &str = "Move a window to new screen coordinates";
+const WINDOW_RESIZE_ABOUT: &str = "Resize a window";
+const WINDOW_SET_BOUNDS_ABOUT: &str = "Set the full position and size of a window in one operation";
 
 const MCP_ABOUT: &str = "Run the Operator MCP entrypoint";
 const MCP_SERVE_ABOUT: &str = "Start the MCP stdio server";
@@ -144,10 +143,7 @@ const ROOT_OBSERVE_COMMANDS: &[CommandHelpEntry] = &[
     },
 ];
 
-const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
-    command: "list",
-    about: LIST_ABOUT,
-}];
+const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[];
 
 const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
@@ -267,22 +263,11 @@ const ELEMENTS_GROUP_COMMANDS: &[CommandHelpEntry] = &[
     },
 ];
 
-const LIST_GROUP_COMMANDS: &[CommandHelpEntry] = &[
-    CommandHelpEntry {
-        command: "apps",
-        about: LIST_APPS_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "windows",
-        about: LIST_WINDOWS_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
-];
-
 const APP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "list",
+        about: APP_LIST_ABOUT,
+    },
     CommandHelpEntry {
         command: "launch",
         about: APP_LAUNCH_ABOUT,
@@ -314,6 +299,10 @@ const APP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
 ];
 
 const WINDOW_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "list",
+        about: WINDOW_LIST_ABOUT,
+    },
     CommandHelpEntry {
         command: "focus",
         about: WINDOW_FOCUS_ABOUT,
@@ -383,22 +372,14 @@ const ELEMENTS_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     footer: "Use 'operator elements <surface> --help' for detailed usage.",
 };
 
-const LIST_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
-    usage: "operator list [OPTIONS] <COMMAND>",
-    about: LIST_ABOUT,
-    entries_heading: "Commands",
-    commands: LIST_GROUP_COMMANDS,
-    examples: &["operator list apps", "operator list windows --app TextEdit"],
-    footer: "Use 'operator list <command> --help' for detailed usage.",
-};
-
 const APP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator app [OPTIONS] <COMMAND>",
     about: APP_ABOUT,
     entries_heading: "Commands",
     commands: APP_GROUP_COMMANDS,
     examples: &[
-        "operator app launch Calculator",
+        "operator app list",
+        "operator app launch Notes",
         "operator app switch --app TextEdit",
     ],
     footer: "Use 'operator app <command> --help' for detailed usage.",
@@ -410,8 +391,9 @@ const WINDOW_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     entries_heading: "Commands",
     commands: WINDOW_GROUP_COMMANDS,
     examples: &[
-        "operator window focus --window-id 42 --verify focus",
-        "operator window resize --window-id 42 --width 900 --height 700 --verify geometry",
+        "operator window list",
+        "operator window focus --window-id 42",
+        "operator window resize --window-id 42 --width 1280 --height 800",
     ],
     footer: "Use 'operator window <command> --help' for detailed usage.",
 };
@@ -453,9 +435,9 @@ const ARTIFACT_AFTER_HELP: &str = "Examples
   operator artifact capture-1.png
   operator --json artifact capture-1.png";
 
-const LIST_WINDOWS_AFTER_HELP: &str = "Examples
-  operator list windows
-  operator list windows --app TextEdit";
+const APP_LIST_AFTER_HELP: &str = "Examples
+  operator app list
+  operator --json app list";
 
 const INPUT_CLICK_AFTER_HELP: &str = "Examples
   operator click --text Save --app Notes --focus auto --verify focus
@@ -466,20 +448,25 @@ const INPUT_TYPE_AFTER_HELP: &str = "Examples
   operator type \"search\" --text Search --clear-before";
 
 const APP_LAUNCH_AFTER_HELP: &str = "Examples
-  operator app launch Calculator
+  operator app launch Notes
   operator app launch com.apple.TextEdit";
 
 const APP_SWITCH_AFTER_HELP: &str = "Examples
   operator app switch --app TextEdit
-  operator app switch --window-title Draft";
+  operator app switch --app Safari --verify focus";
 
 const WINDOW_FOCUS_AFTER_HELP: &str = "Examples
-  operator window focus --window-id 42 --verify focus
-  operator window focus --window-id 7";
+  operator window focus --window-id 42
+  operator window focus --window-id 42 --verify focus";
+
+const WINDOW_LIST_AFTER_HELP: &str = "Examples
+  operator window list
+  operator window list --app TextEdit
+  operator --json window list";
 
 const WINDOW_RESIZE_AFTER_HELP: &str = "Examples
-  operator window resize --window-id 42 --width 900 --height 700 --verify geometry
-  operator window resize --app TextEdit --width 640 --height 480";
+  operator window resize --window-id 42 --width 1280 --height 800
+  operator window resize --app TextEdit --width 900 --height 600 --verify geometry";
 
 const MCP_SERVE_AFTER_HELP: &str = "Examples
   operator mcp serve";
@@ -635,6 +622,9 @@ fn root_help() -> String {
     help.push('\n');
 
     for section in ROOT_HELP_SECTIONS {
+        if section.commands.is_empty() {
+            continue;
+        }
         writeln!(
             &mut help,
             "{header}{heading}{reset}",
@@ -828,8 +818,14 @@ fn legacy_command_replacement(args: &[OsString]) -> Option<(String, String)> {
         )),
         ["get-focus", ..] => Some(("get-focus".into(), "operator show".into())),
         ["focus", ..] => Some(("focus".into(), "operator show".into())),
-        ["list-apps", ..] => Some(("list-apps".into(), "operator list apps".into())),
-        ["list-windows", ..] => Some(("list-windows".into(), "operator list windows".into())),
+        ["list", "apps", ..] => Some(("list apps".into(), "operator app list".into())),
+        ["list", "windows", ..] => Some(("list windows".into(), "operator window list".into())),
+        ["list", ..] => Some((
+            "list".into(),
+            "operator app list or operator window list".into(),
+        )),
+        ["list-apps", ..] => Some(("list-apps".into(), "operator app list".into())),
+        ["list-windows", ..] => Some(("list-windows".into(), "operator window list".into())),
         ["permissions-status", ..] => {
             Some(("permissions-status".into(), "operator permissions".into()))
         }
@@ -989,7 +985,6 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         [] => Some(root_help()),
         ["capture"] => Some(styled_group_help(&CAPTURE_GROUP_HELP)),
         ["elements"] => Some(styled_group_help(&ELEMENTS_GROUP_HELP)),
-        ["list"] => Some(styled_group_help(&LIST_GROUP_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
         ["window"] => Some(styled_group_help(&WINDOW_GROUP_HELP)),
         ["mcp"] => Some(styled_group_help(&MCP_GROUP_HELP)),
@@ -1071,7 +1066,6 @@ enum Command {
     Elements(ElementsArgs),
     Snapshot(SnapshotArgs),
     Artifact(ArtifactArgs),
-    List(ListArgs),
     #[command(about = SHOW_ABOUT, after_help = SHOW_AFTER_HELP)]
     Show(CommonArgs),
     #[command(about = INPUT_CLICK_ABOUT, after_help = INPUT_CLICK_AFTER_HELP)]
@@ -1106,7 +1100,6 @@ impl Command {
             Self::Elements(args) => Some(&args.common),
             Self::Snapshot(args) => Some(&args.common),
             Self::Artifact(args) => Some(&args.common),
-            Self::List(args) => args.common(),
             Self::Show(args) => Some(args),
             Self::Click(args) => Some(&args.common),
             Self::Type(args) => Some(&args.common),
@@ -1136,7 +1129,6 @@ impl Command {
             Self::Elements(args) => args.into_invocation(root_common),
             Self::Snapshot(args) => args.into_invocation(root_common),
             Self::Artifact(args) => args.into_invocation(root_common),
-            Self::List(args) => args.into_invocation(root_common),
             Self::Show(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
@@ -1221,49 +1213,6 @@ impl AgentArgs {
             json_output: common.json_output,
             timeout_ms: common.timeout_ms,
         }))
-    }
-}
-
-#[derive(Debug, Clone, Args)]
-#[command(about = LIST_ABOUT, arg_required_else_help = true)]
-struct ListArgs {
-    #[command(subcommand)]
-    command: ListCommand,
-}
-
-impl ListArgs {
-    fn common(&self) -> Option<&CommonArgs> {
-        self.command.common()
-    }
-
-    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        self.command.into_invocation(root_common)
-    }
-}
-
-#[derive(Debug, Clone, Subcommand)]
-enum ListCommand {
-    #[command(about = LIST_APPS_ABOUT)]
-    Apps(CommonArgs),
-    #[command(about = LIST_WINDOWS_ABOUT, after_help = LIST_WINDOWS_AFTER_HELP)]
-    Windows(ListWindowsArgs),
-}
-
-impl ListCommand {
-    fn common(&self) -> Option<&CommonArgs> {
-        match self {
-            Self::Apps(args) => Some(args),
-            Self::Windows(args) => Some(&args.common),
-        }
-    }
-
-    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        match self {
-            Self::Apps(common) => {
-                invoke_without_specific_input("list-apps", merge_common(root_common, common))
-            }
-            Self::Windows(args) => args.into_invocation(root_common),
-        }
     }
 }
 
@@ -1898,6 +1847,8 @@ impl McpCommand {
 
 #[derive(Debug, Clone, Subcommand)]
 enum WindowCommand {
+    #[command(about = WINDOW_LIST_ABOUT, after_help = WINDOW_LIST_AFTER_HELP)]
+    List(WindowListArgs),
     #[command(about = WINDOW_FOCUS_ABOUT, after_help = WINDOW_FOCUS_AFTER_HELP)]
     Focus(WindowFocusArgs),
     #[command(about = WINDOW_CLOSE_ABOUT)]
@@ -1917,6 +1868,7 @@ enum WindowCommand {
 impl WindowCommand {
     fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         match self {
+            Self::List(args) => args.into_invocation(common),
             Self::Focus(args) => args.into_invocation(common),
             Self::Close(args) => args.into_invocation(common),
             Self::Minimize(args) => args.into_invocation(common),
@@ -2107,6 +2059,8 @@ impl WindowSetBoundsArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 enum AppCommand {
+    #[command(about = APP_LIST_ABOUT, after_help = APP_LIST_AFTER_HELP)]
+    List(AppListArgs),
     #[command(about = APP_LAUNCH_ABOUT, after_help = APP_LAUNCH_AFTER_HELP)]
     Launch(AppLaunchArgs),
     #[command(about = APP_SWITCH_ABOUT, after_help = APP_SWITCH_AFTER_HELP)]
@@ -2124,6 +2078,7 @@ enum AppCommand {
 impl AppCommand {
     fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         match self {
+            Self::List(args) => args.into_invocation(common),
             Self::Launch(args) => args.into_invocation(common),
             Self::Switch(args) => args.into_invocation("switch-app", common),
             Self::Quit(args) => args.into_invocation("quit-app", common),
@@ -2135,16 +2090,13 @@ impl AppCommand {
 }
 
 #[derive(Debug, Clone, Args)]
-struct ListWindowsArgs {
-    #[command(flatten)]
-    common: CommonArgs,
+struct WindowListArgs {
     #[arg(long)]
     app: Option<String>,
 }
 
-impl ListWindowsArgs {
-    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        let common = merge_common(root_common, self.common);
+impl WindowListArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         let mut input = common_input(&common);
         if let Some(app) = self.app {
             input.insert("app".into(), Value::String(app));
@@ -2154,6 +2106,15 @@ impl ListWindowsArgs {
             input: Value::Object(input),
             json_output: common.json_output,
         })
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct AppListArgs {}
+
+impl AppListArgs {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        invoke_without_specific_input("list-apps", common)
     }
 }
 

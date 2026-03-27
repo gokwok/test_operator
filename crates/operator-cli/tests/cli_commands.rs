@@ -178,8 +178,8 @@ fn show_command_maps_common_flags_to_internal_tool() {
 }
 
 #[test]
-fn list_apps_command_moves_under_list_group() {
-    let cli = cli_main::args::Cli::try_parse_from(["operator", "list", "apps"]).unwrap();
+fn app_list_command_maps_to_list_apps_tool() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "app", "list"]).unwrap();
 
     let invocation = cli.into_invocation().unwrap();
     assert_eq!(invocation.tool, "list-apps");
@@ -187,9 +187,9 @@ fn list_apps_command_moves_under_list_group() {
 }
 
 #[test]
-fn list_windows_command_moves_under_list_group() {
+fn window_list_command_maps_to_list_windows_tool() {
     let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "list", "windows", "--app", "TextEdit"])
+        cli_main::args::Cli::try_parse_from(["operator", "window", "list", "--app", "TextEdit"])
             .unwrap();
 
     let invocation = cli.into_invocation().unwrap();
@@ -339,18 +339,6 @@ fn capabilities_help_shows_examples() {
 }
 
 #[test]
-fn list_help_lists_query_subcommands_and_examples() {
-    let help = command_help(["operator", "list", "--help"]);
-    assert!(help.contains("List running apps or windows"));
-    assert!(help.contains("apps"));
-    assert!(help.contains("List running applications"));
-    assert!(help.contains("windows"));
-    assert!(help.contains("List windows, optionally filtered by app"));
-    assert!(help.contains("Global Runtime Flags"));
-    assert!(help.contains("Use 'operator list <command> --help' for detailed usage."));
-}
-
-#[test]
 fn show_help_shows_examples() {
     let help = command_help(["operator", "show", "--help"]);
     assert!(help.contains("Show the currently focused app, window, and element"));
@@ -376,8 +364,12 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("show"));
     assert!(help.contains("Show the currently focused app, window, and element"));
+    assert!(help.contains("window"));
+    assert!(help.contains("Manage application windows"));
     assert!(help.contains("click"));
     assert!(help.contains("Click a locator, coordinates, or target"));
+    assert!(!help.contains("operator list windows"));
+    assert!(help.contains("operator window list"));
     assert!(help.contains("mcp"));
     assert!(help.contains("Run the Operator MCP entrypoint"));
     assert!(help.contains("Agent"));
@@ -448,18 +440,22 @@ fn type_help_shows_positional_text_and_after_key() {
 #[test]
 fn app_help_lists_lifecycle_subcommands() {
     let help = command_help(["operator", "app", "--help"]);
-    assert!(help.contains("Launch, switch, hide, quit, and relaunch applications"));
+    assert!(help.contains("Manage application lifecycle"));
+    assert!(help.contains("list"));
+    assert!(help.contains("List all running applications"));
     assert!(help.contains("launch"));
-    assert!(help.contains("Launch an application by bundle identifier or name"));
+    assert!(help.contains("Launch an application"));
     assert!(help.contains("Use 'operator app <command> --help' for detailed usage."));
 }
 
 #[test]
 fn window_help_lists_window_management_subcommands() {
     let help = command_help(["operator", "window", "--help"]);
-    assert!(help.contains("Focus, close, resize, or move application windows"));
+    assert!(help.contains("Manage application windows"));
+    assert!(help.contains("list"));
+    assert!(help.contains("List application windows"));
     assert!(help.contains("set-bounds"));
-    assert!(help.contains("Set the full bounds of a specific window"));
+    assert!(help.contains("Set the full position and size of a window in one operation"));
     assert!(help.contains("Use 'operator window <command> --help' for detailed usage."));
 }
 
@@ -493,6 +489,15 @@ fn window_resize_help_shows_focus_and_verify_flags() {
     assert!(help.contains("--focus <FOCUS>"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
     assert!(help.contains("Examples\n  operator window resize --window-id 42"));
+}
+
+#[test]
+fn app_list_help_snapshot_is_stable() {
+    let help = command_help(["operator", "app", "list", "--help"]);
+    assert!(help.contains("List all running applications"));
+    assert!(help.contains("Select the named runtime target"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples\n  operator app list"));
 }
 
 #[test]
@@ -538,10 +543,10 @@ fn click_help_snapshot_is_stable() {
 #[test]
 fn app_launch_help_snapshot_is_stable() {
     let help = command_help(["operator", "app", "launch", "--help"]);
-    assert!(help.contains("Launch an application by bundle identifier or name"));
+    assert!(help.contains("Launch an application by name or bundle identifier"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator app launch Calculator"));
+    assert!(help.contains("Examples\n  operator app launch Notes"));
 }
 
 #[test]
@@ -556,7 +561,7 @@ fn app_switch_help_snapshot_is_stable() {
 #[test]
 fn window_focus_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "focus", "--help"]);
-    assert!(help.contains("Focus a specific window"));
+    assert!(help.contains("Bring a specific window to the foreground"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
@@ -565,11 +570,20 @@ fn window_focus_help_snapshot_is_stable() {
 #[test]
 fn window_resize_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "resize", "--help"]);
-    assert!(help.contains("Resize a specific window"));
+    assert!(help.contains("Resize a window"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--focus <FOCUS>"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
+}
+
+#[test]
+fn window_list_help_snapshot_is_stable() {
+    let help = command_help(["operator", "window", "list", "--help"]);
+    assert!(help.contains("List application windows"));
+    assert!(help.contains("Select the named runtime target"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples\n  operator window list"));
 }
 
 #[test]
@@ -633,7 +647,7 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
 
 #[test]
 fn legacy_flat_commands_show_grouped_replacement_hints() {
-    let cases: [(&[&str], &str, &str); 35] = [
+    let cases: [(&[&str], &str, &str); 38] = [
         (
             &["operator", "snapshot-get", "s_123"],
             "snapshot-get",
@@ -698,16 +712,11 @@ fn legacy_flat_commands_show_grouped_replacement_hints() {
         ),
         (&["operator", "get-focus"], "get-focus", "operator show"),
         (&["operator", "focus"], "focus", "operator show"),
-        (
-            &["operator", "list-apps"],
-            "list-apps",
-            "operator list apps",
-        ),
-        (
-            &["operator", "list-windows"],
-            "list-windows",
-            "operator list windows",
-        ),
+        (&["operator", "list"], "list", "operator app list or operator window list"),
+        (&["operator", "list", "apps"], "list apps", "operator app list"),
+        (&["operator", "list", "windows"], "list windows", "operator window list"),
+        (&["operator", "list-apps"], "list-apps", "operator app list"),
+        (&["operator", "list-windows"], "list-windows", "operator window list"),
         (
             &["operator", "permissions-status"],
             "permissions-status",
