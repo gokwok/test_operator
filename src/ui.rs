@@ -1008,20 +1008,15 @@ fn resolve_agent_path(path: Option<PathBuf>) -> Result<PathBuf> {
         )));
     }
 
-    let candidates = [
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("third_party/hmdriver2/hmdriver2/assets/uitest_agent_v1.1.0.so"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("third_party/hmdriver2/hmdriver2/assets/uitest_agent_v1.0.7.so"),
-    ];
-    candidates
-        .into_iter()
-        .find(|path| path.is_file())
-        .ok_or_else(|| {
-            HdcError::protocol(
-                "failed to locate agent.so, pass an explicit path with UiDriverBuilder::agent_path",
-            )
-        })
+    let candidate =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/uitest/uitest_agent_v1.1.0.so");
+    if candidate.is_file() {
+        Ok(candidate)
+    } else {
+        Err(HdcError::protocol(
+            "failed to locate agent.so, pass an explicit path with UiDriverBuilder::agent_path",
+        ))
+    }
 }
 
 fn kill_uitest_daemon(driver: &mut Driver) -> Result<()> {
