@@ -30,8 +30,9 @@ impl MockPlatformDriver {
                 healthy: true,
                 message: None,
                 permissions: PermissionsReport {
-                    screen_recording: PermissionStatus::Granted,
                     accessibility: PermissionStatus::Granted,
+                    system_events: PermissionStatus::Granted,
+                    screen_recording: PermissionStatus::Granted,
                 },
             }),
             observe_results: Mutex::new(VecDeque::new()),

@@ -256,8 +256,9 @@ async fn read_only_query_tools_forward_runtime_results() {
         is_minimized: false,
     }])));
     driver.push_query_result(Ok(QueryResult::Permissions(PermissionsReport {
-        screen_recording: PermissionStatus::Granted,
         accessibility: PermissionStatus::Denied,
+        system_events: PermissionStatus::Granted,
+        screen_recording: PermissionStatus::Granted,
     })));
 
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
@@ -294,6 +295,10 @@ async fn read_only_query_tools_forward_runtime_results() {
     assert_eq!(apps["apps"][0]["name"], json!("Calculator"));
     assert_eq!(windows["windows"][0]["id"], json!(7));
     assert_eq!(permissions["permissions"]["accessibility"], json!("Denied"));
+    assert_eq!(
+        permissions["permissions"]["system_events"],
+        json!("Granted")
+    );
     assert_eq!(
         capabilities["capabilities"],
         json!(["AppLifecycle", "Capture", "Permissions", "WindowManagement"])

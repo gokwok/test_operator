@@ -103,10 +103,21 @@ fn render_windows(output: &Value) -> String {
 fn render_permissions(output: &Value) -> String {
     let permissions = &output["permissions"];
     let accessibility = permissions["accessibility"].as_str().unwrap_or("Unknown");
+    let system_events = permissions["system_events"].as_str().unwrap_or("Unknown");
     let screen_recording = permissions["screen_recording"]
         .as_str()
         .unwrap_or("Unknown");
-    format!("accessibility: {accessibility}\nscreen_recording: {screen_recording}")
+    let mut rendered = format!(
+        "accessibility: {accessibility}\nsystem_events: {system_events}\nscreen_recording: {screen_recording}"
+    );
+
+    if accessibility == "Granted" && system_events != "Granted" {
+        rendered.push_str(
+            "\nnote: System Events access is unavailable; app and window queries may still fail.",
+        );
+    }
+
+    rendered
 }
 
 fn render_capabilities(output: &Value) -> String {
@@ -223,5 +234,44 @@ fn render_number(value: f64) -> String {
         format!("{value:.0}")
     } else {
         value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::render_permissions;
+
+    #[test]
+    fn render_permissions_includes_system_events_status() {
+        let output = json!({
+            "permissions": {
+                "accessibility": "Granted",
+                "system_events": "Granted",
+                "screen_recording": "Denied"
+            }
+        });
+
+        assert_eq!(
+            render_permissions(&output),
+            "accessibility: Granted\nsystem_events: Granted\nscreen_recording: Denied"
+        );
+    }
+
+    #[test]
+    fn render_permissions_adds_note_when_system_events_diverges() {
+        let output = json!({
+            "permissions": {
+                "accessibility": "Granted",
+                "system_events": "Denied",
+                "screen_recording": "Granted"
+            }
+        });
+
+        assert_eq!(
+            render_permissions(&output),
+            "accessibility: Granted\nsystem_events: Denied\nscreen_recording: Granted\nnote: System Events access is unavailable; app and window queries may still fail."
+        );
     }
 }

@@ -161,10 +161,13 @@ where
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
         let permissions = self.permission_reader.current_permissions()?;
         let accessibility_granted = permissions.accessibility == PermissionStatus::Granted;
+        let system_events_granted = permissions.system_events == PermissionStatus::Granted;
         let screen_recording_granted = permissions.screen_recording == PermissionStatus::Granted;
-        let healthy = accessibility_granted && screen_recording_granted;
+        let healthy = accessibility_granted && system_events_granted && screen_recording_granted;
         let message = if !accessibility_granted {
             Some("Accessibility permission is required for macOS automation.".into())
+        } else if !system_events_granted {
+            Some("System Events access is required for macOS app and window queries.".into())
         } else if !screen_recording_granted {
             Some("Screen Recording permission is required for macOS capture.".into())
         } else {
@@ -239,15 +242,25 @@ where
         _ctx: &ExecContext,
     ) -> Result<QueryResult, OperatorError> {
         match req {
-            QueryRequest::ListApps => Ok(QueryResult::Apps(self.app_service.list_apps()?)),
-            QueryRequest::ListWindows { app } => Ok(QueryResult::Windows(
-                self.app_service.list_windows(app.as_deref())?,
-            )),
+            QueryRequest::ListApps => {
+                let permissions = self.permission_reader.current_permissions()?;
+                require_system_events_permission(&permissions)?;
+                Ok(QueryResult::Apps(self.app_service.list_apps()?))
+            }
+            QueryRequest::ListWindows { app } => Ok(QueryResult::Windows({
+                let permissions = self.permission_reader.current_permissions()?;
+                require_system_events_permission(&permissions)?;
+                self.app_service.list_windows(app.as_deref())?
+            })),
             QueryRequest::PermissionsStatus => Ok(QueryResult::Permissions(
                 self.permission_reader.current_permissions()?,
             )),
             QueryRequest::Capabilities => Ok(QueryResult::Capabilities(self.capabilities())),
-            QueryRequest::GetFocus => Ok(QueryResult::Focus(self.app_service.get_focus()?)),
+            QueryRequest::GetFocus => {
+                let permissions = self.permission_reader.current_permissions()?;
+                require_system_events_permission(&permissions)?;
+                Ok(QueryResult::Focus(self.app_service.get_focus()?))
+            }
         }
     }
 
@@ -1302,6 +1315,18 @@ fn require_accessibility_permission(
     if permissions.accessibility != PermissionStatus::Granted {
         return Err(OperatorError::PermissionDenied(
             "Accessibility permission is required for macOS input.".into(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn require_system_events_permission(
+    permissions: &operator_core::PermissionsReport,
+) -> Result<(), OperatorError> {
+    if permissions.system_events != PermissionStatus::Granted {
+        return Err(OperatorError::PermissionDenied(
+            "System Events access is required for macOS app and window queries.".into(),
         ));
     }
 

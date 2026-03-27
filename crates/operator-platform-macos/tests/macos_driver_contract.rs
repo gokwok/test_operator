@@ -276,8 +276,9 @@ async fn permissions_query_returns_report() {
     let driver = MacosDriver::new(
         StubAppService::default(),
         StubPermissionReader::with_report(PermissionsReport {
-            screen_recording: PermissionStatus::Denied,
             accessibility: PermissionStatus::Granted,
+            system_events: PermissionStatus::Granted,
+            screen_recording: PermissionStatus::Denied,
         }),
     );
 
@@ -289,8 +290,9 @@ async fn permissions_query_returns_report() {
     assert_eq!(
         result,
         QueryResult::Permissions(PermissionsReport {
-            screen_recording: PermissionStatus::Denied,
             accessibility: PermissionStatus::Granted,
+            system_events: PermissionStatus::Granted,
+            screen_recording: PermissionStatus::Denied,
         })
     );
 }
@@ -2647,8 +2649,9 @@ async fn health_check_requires_accessibility_for_ready_status() {
     let driver = MacosDriver::new(
         StubAppService::default(),
         StubPermissionReader::with_report(PermissionsReport {
-            screen_recording: PermissionStatus::NotDetermined,
             accessibility: PermissionStatus::Denied,
+            system_events: PermissionStatus::NotDetermined,
+            screen_recording: PermissionStatus::NotDetermined,
         }),
     );
 
@@ -2667,8 +2670,9 @@ async fn health_check_requires_screen_recording_for_capture_readiness() {
     let driver = MacosDriver::new(
         StubAppService::default(),
         StubPermissionReader::with_report(PermissionsReport {
-            screen_recording: PermissionStatus::Denied,
             accessibility: PermissionStatus::Granted,
+            system_events: PermissionStatus::Granted,
+            screen_recording: PermissionStatus::Denied,
         }),
     );
 
@@ -2682,6 +2686,49 @@ async fn health_check_requires_screen_recording_for_capture_readiness() {
     assert_eq!(
         health.permissions.screen_recording,
         PermissionStatus::Denied
+    );
+}
+
+#[tokio::test]
+async fn health_check_requires_system_events_for_app_and_window_queries() {
+    let driver = MacosDriver::new(
+        StubAppService::default(),
+        StubPermissionReader::with_report(PermissionsReport {
+            accessibility: PermissionStatus::Granted,
+            system_events: PermissionStatus::Denied,
+            screen_recording: PermissionStatus::Granted,
+        }),
+    );
+
+    let health = driver.health_check().await.unwrap();
+
+    assert!(!health.healthy);
+    assert_eq!(
+        health.message.as_deref(),
+        Some("System Events access is required for macOS app and window queries.")
+    );
+    assert_eq!(health.permissions.system_events, PermissionStatus::Denied);
+}
+
+#[tokio::test]
+async fn list_windows_query_requires_system_events_readiness() {
+    let driver = MacosDriver::new(
+        StubAppService::default(),
+        StubPermissionReader::with_report(PermissionsReport {
+            accessibility: PermissionStatus::Granted,
+            system_events: PermissionStatus::Denied,
+            screen_recording: PermissionStatus::Granted,
+        }),
+    );
+
+    let error = driver
+        .query(QueryRequest::ListWindows { app: None }, &exec_context())
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "permission denied: System Events access is required for macOS app and window queries."
     );
 }
 
@@ -2920,8 +2967,9 @@ struct StubPermissionReader {
 impl StubPermissionReader {
     fn granted() -> Self {
         Self::with_report(PermissionsReport {
-            screen_recording: PermissionStatus::Granted,
             accessibility: PermissionStatus::Granted,
+            system_events: PermissionStatus::Granted,
+            screen_recording: PermissionStatus::Granted,
         })
     }
 

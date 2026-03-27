@@ -50,8 +50,9 @@ pub struct FocusInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PermissionsReport {
-    pub screen_recording: PermissionStatus,
     pub accessibility: PermissionStatus,
+    pub system_events: PermissionStatus,
+    pub screen_recording: PermissionStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
