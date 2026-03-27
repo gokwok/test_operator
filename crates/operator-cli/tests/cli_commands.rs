@@ -214,7 +214,9 @@ fn list_windows_command_moves_under_list_group() {
 #[test]
 fn mcp_help_lists_serve_subcommand() {
     let help = command_help(["operator", "mcp", "--help"]);
-    assert!(help.contains("Run the MCP stdio server"));
+    assert!(help.contains("Run the Operator MCP entrypoint"));
+    assert!(help.contains("serve"));
+    assert!(help.contains("Start the MCP stdio server"));
     assert!(help.contains("Usage operator mcp [OPTIONS] <COMMAND>"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Emit machine-readable JSON output"));
@@ -330,9 +332,9 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("focus   Show the currently focused app, window, and element"));
     assert!(help
         .contains("input    Pointer and keyboard actions against locators or target windows/apps"));
-    assert!(help.contains("mcp   Run the MCP stdio server"));
+    assert!(help.contains("mcp   Run the Operator MCP entrypoint"));
     assert!(help
-        .contains("A2A\n  agent   Execute a single-shot natural-language task against a target"));
+        .contains("Agent\n  agent   Execute a single-shot natural-language task against a target"));
     assert!(!help.contains("Not yet implemented. Reserved for future agent interface commands."));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator observe frontmost"));
@@ -356,23 +358,25 @@ fn observe_help_lists_surface_subcommands() {
 }
 
 #[test]
-fn snapshot_help_lists_get_subcommand() {
+fn snapshot_help_shows_direct_id_usage() {
     let help = command_help(["operator", "snapshot", "--help"]);
+    assert!(help.contains("Usage operator snapshot [OPTIONS] <SNAPSHOT_ID>"));
     assert!(help.contains("Read a stored snapshot by ID"));
-    assert!(help.contains("get"));
-    assert!(help.contains("Read a stored snapshot by ID"));
-    assert!(help.contains("Global Runtime Flags"));
-    assert!(help.contains("Use 'operator snapshot <command> --help' for detailed usage."));
+    assert!(help.contains("<SNAPSHOT_ID>"));
+    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples\n  operator snapshot s_123"));
 }
 
 #[test]
-fn artifact_help_lists_get_subcommand() {
+fn artifact_help_shows_direct_id_usage() {
     let help = command_help(["operator", "artifact", "--help"]);
+    assert!(help.contains("Usage operator artifact [OPTIONS] <ARTIFACT_ID>"));
     assert!(help.contains("Read a stored capture artifact by ID"));
-    assert!(help.contains("get"));
-    assert!(help.contains("Read a stored capture artifact by ID"));
-    assert!(help.contains("Global Runtime Flags"));
-    assert!(help.contains("Use 'operator artifact <command> --help' for detailed usage."));
+    assert!(help.contains("<ARTIFACT_ID>"));
+    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Examples\n  operator artifact capture-1.png"));
 }
 
 #[test]
@@ -446,21 +450,21 @@ fn observe_window_help_snapshot_is_stable() {
 }
 
 #[test]
-fn snapshot_get_help_snapshot_is_stable() {
-    let help = command_help(["operator", "snapshot", "get", "--help"]);
+fn snapshot_help_snapshot_is_stable() {
+    let help = command_help(["operator", "snapshot", "--help"]);
     assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator snapshot get s_123"));
+    assert!(help.contains("Examples\n  operator snapshot s_123"));
 }
 
 #[test]
-fn artifact_get_help_snapshot_is_stable() {
-    let help = command_help(["operator", "artifact", "get", "--help"]);
+fn artifact_help_snapshot_is_stable() {
+    let help = command_help(["operator", "artifact", "--help"]);
     assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator artifact get capture-1.png"));
+    assert!(help.contains("Examples\n  operator artifact capture-1.png"));
 }
 
 #[test]
@@ -516,18 +520,17 @@ fn window_resize_help_snapshot_is_stable() {
 #[test]
 fn mcp_serve_help_snapshot_is_stable() {
     let help = command_help(["operator", "mcp", "serve", "--help"]);
-    assert!(help.contains("Run the MCP stdio server"));
+    assert!(help.contains("Start the MCP stdio server"));
     assert!(help.contains("Select the runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator mcp serve"));
 }
 
 #[test]
-fn snapshot_get_command_maps_positional_snapshot_id_to_tool_input() {
+fn snapshot_command_maps_positional_snapshot_id_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
         "snapshot",
-        "get",
         "--target",
         "local:macos",
         "--timeout-ms",
@@ -553,7 +556,6 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
         "artifact",
-        "get",
         "--target",
         "local:macos",
         "--timeout-ms",
@@ -576,16 +578,26 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
 
 #[test]
 fn legacy_flat_commands_show_grouped_replacement_hints() {
-    let cases: [(&[&str], &str, &str); 27] = [
+    let cases: [(&[&str], &str, &str); 29] = [
         (
             &["operator", "snapshot-get", "s_123"],
             "snapshot-get",
-            "operator snapshot get",
+            "operator snapshot <snapshot-id>",
         ),
         (
             &["operator", "artifact-get", "capture-1.png"],
             "artifact-get",
-            "operator artifact get",
+            "operator artifact <artifact-id>",
+        ),
+        (
+            &["operator", "snapshot", "get", "s_123"],
+            "snapshot get",
+            "operator snapshot <snapshot-id>",
+        ),
+        (
+            &["operator", "artifact", "get", "capture-1.png"],
+            "artifact get",
+            "operator artifact <artifact-id>",
         ),
         (&["operator", "get-focus"], "get-focus", "operator focus"),
         (
@@ -1920,8 +1932,8 @@ async fn cli_run_renders_press_detail_for_non_json_output() {
 
 #[tokio::test]
 async fn cli_run_renders_artifact_path_for_non_json_output() {
-    let cli = cli_main::args::Cli::try_parse_from(["operator", "artifact", "get", "capture-1.png"])
-        .unwrap();
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "artifact", "capture-1.png"]).unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let invoker = RecordingInvoker {

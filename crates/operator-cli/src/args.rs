@@ -66,10 +66,8 @@ const OBSERVE_REGION_ABOUT: &str = "Capture a specific screen region";
 const OBSERVE_FULLSCREEN_ABOUT: &str = "Capture the full display or the active display";
 
 const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
-const SNAPSHOT_GET_ABOUT: &str = "Read a stored snapshot by ID";
 
 const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
-const ARTIFACT_GET_ABOUT: &str = "Read a stored capture artifact by ID";
 
 const LIST_ABOUT: &str = "List running apps or windows";
 const LIST_APPS_ABOUT: &str = "List running applications";
@@ -102,8 +100,8 @@ const WINDOW_MOVE_ABOUT: &str = "Move a specific window";
 const WINDOW_RESIZE_ABOUT: &str = "Resize a specific window";
 const WINDOW_SET_BOUNDS_ABOUT: &str = "Set the full bounds of a specific window";
 
-const MCP_ABOUT: &str = "Run the MCP stdio server";
-const MCP_SERVE_ABOUT: &str = "Run the MCP stdio server";
+const MCP_ABOUT: &str = "Run the Operator MCP entrypoint";
+const MCP_SERVE_ABOUT: &str = "Start the MCP stdio server";
 
 const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
@@ -162,7 +160,7 @@ const ROOT_MCP_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
     about: MCP_ABOUT,
 }];
 
-const ROOT_A2A_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+const ROOT_AGENT_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "agent",
     about: AGENT_ABOUT,
 }];
@@ -189,8 +187,8 @@ const ROOT_HELP_SECTIONS: &[RootHelpSection] = &[
         commands: ROOT_MCP_COMMANDS,
     },
     RootHelpSection {
-        heading: "A2A",
-        commands: ROOT_A2A_COMMANDS,
+        heading: "Agent",
+        commands: ROOT_AGENT_COMMANDS,
     },
 ];
 
@@ -210,28 +208,6 @@ const OBSERVE_GROUP_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "fullscreen",
         about: OBSERVE_FULLSCREEN_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
-];
-
-const SNAPSHOT_GROUP_COMMANDS: &[CommandHelpEntry] = &[
-    CommandHelpEntry {
-        command: "get",
-        about: SNAPSHOT_GET_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
-];
-
-const ARTIFACT_GROUP_COMMANDS: &[CommandHelpEntry] = &[
-    CommandHelpEntry {
-        command: "get",
-        about: ARTIFACT_GET_ABOUT,
     },
     CommandHelpEntry {
         command: "help",
@@ -381,22 +357,6 @@ const OBSERVE_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     footer: "Use 'operator observe <command> --help' for detailed usage.",
 };
 
-const SNAPSHOT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
-    usage: "operator snapshot [OPTIONS] <COMMAND>",
-    about: SNAPSHOT_ABOUT,
-    commands: SNAPSHOT_GROUP_COMMANDS,
-    examples: &["operator snapshot get s_123"],
-    footer: "Use 'operator snapshot <command> --help' for detailed usage.",
-};
-
-const ARTIFACT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
-    usage: "operator artifact [OPTIONS] <COMMAND>",
-    about: ARTIFACT_ABOUT,
-    commands: ARTIFACT_GROUP_COMMANDS,
-    examples: &["operator artifact get capture-1.png"],
-    footer: "Use 'operator artifact <command> --help' for detailed usage.",
-};
-
 const LIST_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator list [OPTIONS] <COMMAND>",
     about: LIST_ABOUT,
@@ -462,13 +422,13 @@ const OBSERVE_WINDOW_AFTER_HELP: &str = "Examples
   operator observe window --window-id 42 --capture elements
   operator observe window --window-id 42 --capture screenshot";
 
-const SNAPSHOT_GET_AFTER_HELP: &str = "Examples
-  operator snapshot get s_123
-  operator --json snapshot get s_123";
+const SNAPSHOT_AFTER_HELP: &str = "Examples
+  operator snapshot s_123
+  operator --json snapshot s_123";
 
-const ARTIFACT_GET_AFTER_HELP: &str = "Examples
-  operator artifact get capture-1.png
-  operator --json artifact get capture-1.png";
+const ARTIFACT_AFTER_HELP: &str = "Examples
+  operator artifact capture-1.png
+  operator --json artifact capture-1.png";
 
 const LIST_WINDOWS_AFTER_HELP: &str = "Examples
   operator list windows
@@ -795,64 +755,48 @@ fn strip_ansi_for_help(input: &str) -> String {
     cleaned
 }
 
-fn legacy_command_replacement(command: &str) -> Option<&'static str> {
-    match command {
-        "snapshot-get" => Some("operator snapshot get"),
-        "artifact-get" => Some("operator artifact get"),
-        "get-focus" => Some("operator focus"),
-        "list-apps" => Some("operator list apps"),
-        "list-windows" => Some("operator list windows"),
-        "permissions-status" => Some("operator permissions"),
-        "click" => Some("operator input click"),
-        "move" => Some("operator input move"),
-        "type" => Some("operator input type"),
-        "press" => Some("operator input press"),
-        "hotkey" => Some("operator input hotkey"),
-        "scroll" => Some("operator input scroll"),
-        "drag" => Some("operator input drag"),
-        "swipe" => Some("operator input swipe"),
-        "launch-app" => Some("operator app launch"),
-        "switch-app" => Some("operator app switch"),
-        "quit-app" => Some("operator app quit"),
-        "relaunch-app" => Some("operator app relaunch"),
-        "hide-app" => Some("operator app hide"),
-        "unhide-app" => Some("operator app unhide"),
-        "focus-window" => Some("operator window focus"),
-        "close-window" => Some("operator window close"),
-        "minimize-window" => Some("operator window minimize"),
-        "maximize-window" => Some("operator window maximize"),
-        "move-window" => Some("operator window move"),
-        "resize-window" => Some("operator window resize"),
-        "set-window-bounds" => Some("operator window set-bounds"),
+fn legacy_command_replacement(path: &[&str]) -> Option<(&'static str, &'static str)> {
+    match path {
+        ["snapshot-get", ..] => Some(("snapshot-get", "operator snapshot <snapshot-id>")),
+        ["artifact-get", ..] => Some(("artifact-get", "operator artifact <artifact-id>")),
+        ["snapshot", "get", ..] => Some(("snapshot get", "operator snapshot <snapshot-id>")),
+        ["artifact", "get", ..] => Some(("artifact get", "operator artifact <artifact-id>")),
+        ["get-focus", ..] => Some(("get-focus", "operator focus")),
+        ["list-apps", ..] => Some(("list-apps", "operator list apps")),
+        ["list-windows", ..] => Some(("list-windows", "operator list windows")),
+        ["permissions-status", ..] => Some(("permissions-status", "operator permissions")),
+        ["click", ..] => Some(("click", "operator input click")),
+        ["move", ..] => Some(("move", "operator input move")),
+        ["type", ..] => Some(("type", "operator input type")),
+        ["press", ..] => Some(("press", "operator input press")),
+        ["hotkey", ..] => Some(("hotkey", "operator input hotkey")),
+        ["scroll", ..] => Some(("scroll", "operator input scroll")),
+        ["drag", ..] => Some(("drag", "operator input drag")),
+        ["swipe", ..] => Some(("swipe", "operator input swipe")),
+        ["launch-app", ..] => Some(("launch-app", "operator app launch")),
+        ["switch-app", ..] => Some(("switch-app", "operator app switch")),
+        ["quit-app", ..] => Some(("quit-app", "operator app quit")),
+        ["relaunch-app", ..] => Some(("relaunch-app", "operator app relaunch")),
+        ["hide-app", ..] => Some(("hide-app", "operator app hide")),
+        ["unhide-app", ..] => Some(("unhide-app", "operator app unhide")),
+        ["focus-window", ..] => Some(("focus-window", "operator window focus")),
+        ["close-window", ..] => Some(("close-window", "operator window close")),
+        ["minimize-window", ..] => Some(("minimize-window", "operator window minimize")),
+        ["maximize-window", ..] => Some(("maximize-window", "operator window maximize")),
+        ["move-window", ..] => Some(("move-window", "operator window move")),
+        ["resize-window", ..] => Some(("resize-window", "operator window resize")),
+        ["set-window-bounds", ..] => Some(("set-window-bounds", "operator window set-bounds")),
         _ => None,
     }
 }
 
 fn legacy_command_error(args: &[OsString]) -> Option<clap::Error> {
-    let command = root_command_token(args)?;
-    let replacement = legacy_command_replacement(command)?;
+    let path = command_path(args);
+    let (legacy, replacement) = legacy_command_replacement(&path)?;
     Some(clap::Error::raw(
         clap::error::ErrorKind::InvalidSubcommand,
-        format!("legacy flat command `{command}` has been removed; use `{replacement}` instead"),
+        format!("legacy command path `{legacy}` has been removed; use `{replacement}` instead"),
     ))
-}
-
-fn root_command_token(args: &[OsString]) -> Option<&str> {
-    let mut iter = args.iter().skip(1);
-    while let Some(arg) = iter.next() {
-        let arg = arg.to_str()?;
-        match arg {
-            "--json" => continue,
-            "--target" | "--timeout-ms" => {
-                let _ = iter.next();
-            }
-            "-h" | "--help" | "--" => return None,
-            _ if arg.starts_with("--target=") || arg.starts_with("--timeout-ms=") => continue,
-            _ if arg.starts_with('-') => return None,
-            _ => return Some(arg),
-        }
-    }
-    None
 }
 
 #[derive(Debug, Parser)]
@@ -930,8 +874,6 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
     match command_path(args).as_slice() {
         [] => Some(root_help()),
         ["observe"] => Some(styled_group_help(&OBSERVE_GROUP_HELP)),
-        ["snapshot"] => Some(styled_group_help(&SNAPSHOT_GROUP_HELP)),
-        ["artifact"] => Some(styled_group_help(&ARTIFACT_GROUP_HELP)),
         ["list"] => Some(styled_group_help(&LIST_GROUP_HELP)),
         ["input"] => Some(styled_group_help(&INPUT_GROUP_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
@@ -1303,83 +1245,60 @@ fn observe_invocation(
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(about = SNAPSHOT_ABOUT, arg_required_else_help = true)]
+#[command(
+    about = SNAPSHOT_ABOUT,
+    after_help = SNAPSHOT_AFTER_HELP,
+    arg_required_else_help = true
+)]
 struct SnapshotArgs {
     #[command(flatten)]
     common: CommonArgs,
-    #[command(subcommand)]
-    command: SnapshotCommand,
+    snapshot_id: String,
 }
 
 impl SnapshotArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        self.command
-            .into_invocation(merge_common(root_common, self.common))
-    }
-}
-
-#[derive(Debug, Clone, Subcommand)]
-enum SnapshotCommand {
-    #[command(about = SNAPSHOT_GET_ABOUT, after_help = SNAPSHOT_GET_AFTER_HELP)]
-    Get(SnapshotGetArgs),
-}
-
-impl SnapshotCommand {
-    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
-        match self {
-            Self::Get(args) => args.into_invocation(common),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Args)]
-struct SnapshotGetArgs {
-    snapshot_id: String,
-}
-
-impl SnapshotGetArgs {
-    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&common);
-        insert_serialized(
-            &mut input,
-            "snapshot_id",
-            SnapshotId::from(self.snapshot_id),
-        )?;
+        let Self {
+            common,
+            snapshot_id,
+        } = self;
+        let merged_common = merge_common(root_common, common);
+        let mut input = common_input(&merged_common);
+        insert_serialized(&mut input, "snapshot_id", SnapshotId::from(snapshot_id))?;
         Ok(ToolInvocation {
             tool: "snapshot-get",
             input: Value::Object(input),
-            json_output: common.json_output,
+            json_output: merged_common.json_output,
         })
     }
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(about = ARTIFACT_ABOUT, arg_required_else_help = true)]
+#[command(
+    about = ARTIFACT_ABOUT,
+    after_help = ARTIFACT_AFTER_HELP,
+    arg_required_else_help = true
+)]
 struct ArtifactArgs {
     #[command(flatten)]
     common: CommonArgs,
-    #[command(subcommand)]
-    command: ArtifactCommand,
+    artifact_id: String,
 }
 
 impl ArtifactArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        self.command
-            .into_invocation(merge_common(root_common, self.common))
-    }
-}
-
-#[derive(Debug, Clone, Subcommand)]
-enum ArtifactCommand {
-    #[command(about = ARTIFACT_GET_ABOUT, after_help = ARTIFACT_GET_AFTER_HELP)]
-    Get(ArtifactGetArgs),
-}
-
-impl ArtifactCommand {
-    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
-        match self {
-            Self::Get(args) => args.into_invocation(common),
-        }
+        let Self {
+            common,
+            artifact_id,
+        } = self;
+        let merged_common = merge_common(root_common, common);
+        let mut input = common_input(&merged_common);
+        insert_serialized(&mut input, "artifact_id", ArtifactId::from(artifact_id))?;
+        Ok(ToolInvocation {
+            tool: "artifact-get",
+            input: Value::Object(input),
+            json_output: merged_common.json_output,
+        })
     }
 }
 
@@ -2056,27 +1975,6 @@ impl AppCommand {
             Self::Hide(args) => args.into_invocation("hide-app", common),
             Self::Unhide(args) => args.into_invocation("unhide-app", common),
         }
-    }
-}
-
-#[derive(Debug, Clone, Args)]
-struct ArtifactGetArgs {
-    artifact_id: String,
-}
-
-impl ArtifactGetArgs {
-    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
-        let mut input = common_input(&common);
-        insert_serialized(
-            &mut input,
-            "artifact_id",
-            ArtifactId::from(self.artifact_id),
-        )?;
-        Ok(ToolInvocation {
-            tool: "artifact-get",
-            input: Value::Object(input),
-            json_output: common.json_output,
-        })
     }
 }
 

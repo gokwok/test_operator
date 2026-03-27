@@ -12,7 +12,7 @@
 - 把用户面参数映射到现有 typed runtime/tool contract
 - 用一致的 help 和 example 降低 agent 的探索成本
 
-本文档不改变 `operator-core` / `operator-runtime` / `operator-platform-*` 的分层，也不把 `Core / Observe / Query / Action / MCP / A2A` 变成真正的一级命令。这些词只用于 help 展示分组。
+本文档不改变 `operator-core` / `operator-runtime` / `operator-platform-*` 的分层，也不把 `Core / Observe / Query / Action / MCP / Agent` 变成真正的一级命令。这些词只用于 help 展示分组。
 
 ## 设计目标
 
@@ -21,20 +21,20 @@
 - 帮助信息按执行模型分组，但真实命令按对象域和任务域组织
 - 最终统一为 `operator` 一个主二进制
 - `operator-mcp` 入口并入 `operator mcp serve`
-- 当前未实现的 A2A 只在 help 中保留标题，不伪造空能力
+- 当前未实现的多-agent / A2A 能力不单独暴露为命令树，只保留 `agent` 这一期已交付入口
 
 ## 非目标
 
 - 不追求兼容现有平铺命令
 - 不把 tool registry 暴露为用户入口
 - 不在本次重设计里实现新的平台能力或新的 runtime 能力
-- 不在本次重设计里实现 A2A
+- 不在本次重设计里实现新的 A2A 命令面
 
 ## 核心原则
 
 ### 1. help 分组只承担导航作用
 
-`Core / Observe / Query / Action / MCP / A2A` 只出现在 help 里，用于指导用户和 agent 发现命令；它们不是 shell contract 的一部分。
+`Core / Observe / Query / Action / MCP / Agent` 只出现在 help 里，用于指导用户和 agent 发现命令；它们不是 shell contract 的一部分。
 
 ### 2. 真实命令保持少而稳
 
@@ -55,7 +55,7 @@ CLI 真实暴露的顶层命令应只有：
 
 ### 3. snapshot 是一等原语
 
-`observe` 负责创建 snapshot；`snapshot get` / `artifact get` 负责取回持久化产物。`observe` 不再和 `snapshot-get` / `artifact-get` 并列成三个平铺命令。
+`observe` 负责创建 snapshot；`snapshot <snapshot-id>` / `artifact <artifact-id>` 负责取回持久化产物。`observe` 不再和 `snapshot-get` / `artifact-get` 并列成三个平铺命令。
 
 ### 4. 内部抽象不直接泄露到用户面
 
@@ -81,11 +81,9 @@ operator
     region
     fullscreen
 
-  snapshot
-    get
+  snapshot <snapshot-id>
 
-  artifact
-    get
+  artifact <artifact-id>
 
   list
     apps
@@ -126,7 +124,7 @@ operator
   agent
 ```
 
-`A2A` 不作为真实命令分组出现；它只在根 help 中作为导航标题存在。`agent` 是真实一级命令，并归属于 `A2A` 展示分组。
+`Agent` 不作为额外命令前缀出现；它只是根 help 中承载 `agent` 命令的导航分组标题。
 
 ## help 分组
 
@@ -148,10 +146,10 @@ operator
   - `window`
 - `MCP`
   - `mcp`
-- `A2A`
+- `Agent`
   - `agent`
 
-根 help 不直接列出 `click`、`launch-app`、`snapshot-get` 这种叶子命令，但会直接列出 `agent`，因为它本身就是自然语言入口而不是对象域分组。
+根 help 不直接列出 `click`、`launch-app`、`snapshot-get` 这种叶子命令，但会直接列出 `agent`，因为它本身就是自然语言入口而不是对象域分组；`snapshot` / `artifact` 本身已经是直接读取命令，不再额外嵌套 `get`。
 
 ## 当前 help 版式契约
 
@@ -160,7 +158,7 @@ operator
 - `Usage` 始终位于最上方
 - 根 help 的 `Usage` 下方只保留一句 slogan：
   - `Operator - Turn any desktop app into an API, from CLI to AI`
-- 根 help 使用 `Core / Observe / Query / Action / MCP / A2A` 作为导航分组标题
+- 根 help 使用 `Core / Observe / Query / Action / MCP / Agent` 作为导航分组标题
 - 标题不带冒号
 - 标题使用橙色高亮
 - 命令名使用白色加粗
@@ -251,8 +249,8 @@ operator
 
 对象 id 改为位置参数：
 
-- `snapshot get <snapshot-id>`
-- `artifact get <artifact-id>`
+- `snapshot <snapshot-id>`
+- `artifact <artifact-id>`
 
 不再继续使用：
 
@@ -366,8 +364,8 @@ operator observe frontmost --capture all
 operator observe window --window-id 42 --capture elements
 operator observe region --x 0 --y 44 --width 1280 --height 720
 
-operator snapshot get s_123
-operator artifact get capture-1.png
+operator snapshot s_123
+operator artifact capture-1.png
 
 operator list apps
 operator list windows --app TextEdit
@@ -402,7 +400,7 @@ operator mcp serve
 - 以 `Usage` 开头
 - 在 `Usage` 下方显示 slogan
 - 只展示域命令
-- 按 `Core / Observe / Query / Action / MCP / A2A` 分组
+- 按 `Core / Observe / Query / Action / MCP / Agent` 分组
 - 列出全局运行时参数
 - 不展示内部 tool 名
 - 不展示旧平铺命令
@@ -455,6 +453,8 @@ MCP 已并入：
 - `observe --surface ...`
 - `snapshot-get`
 - `artifact-get`
+- `snapshot get`
+- `artifact get`
 - `list-apps`
 - `list-windows`
 - `get-focus`
@@ -473,6 +473,7 @@ MCP 已并入：
 截至 2026-03-24，这份命令面已经实际落地：
 
 - `OPE-54` 到 `OPE-61` 完成了新的分组命令树、统一的 help 分组、`observe/snapshot/artifact/list/focus/input/app/window/mcp` 命令面，以及 `operator mcp serve`
+- `OPE-108` 进一步把 `snapshot` / `artifact` 收敛为直接位置参数读取，并把根 help 的 `A2A` 分组更名为 `Agent`
 - `OPE-64` 退役了 legacy `operator-mcp` 二进制，只保留统一的 `operator` 用户入口
 - `OPE-66` / `OPE-67` 完成了 root/group/leaf help 的配色、slogan、无冒号标题和版式统一
 
@@ -489,6 +490,6 @@ MCP 已并入：
 最终完成态应满足：
 
 - 根 help 只展示新的命令树
-- `Core / Observe / Query / Action / MCP / A2A` 只作为 help 分组标题存在
+- `Core / Observe / Query / Action / MCP / Agent` 只作为 help 分组标题存在
 - tool registry 对 shell 用户完全不可见
 - 用户通过 `operator --help` 可以逐层探索全部已实现能力
