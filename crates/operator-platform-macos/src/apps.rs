@@ -59,78 +59,7 @@ JSON.stringify(apps);
         let app_literal = serde_json::to_string(&app).map_err(|error| {
             OperatorError::Platform(format!("failed to encode app filter: {error}"))
         })?;
-        let script = format!(
-            r#"
-const filter = {app_literal};
-const systemEvents = Application("System Events");
-function safeString(value) {{
-  return value == null ? null : String(value);
-}}
-function safeAttr(target, name) {{
-  try {{
-    return target.attributes.byName(name).value();
-  }} catch (error) {{
-    return null;
-  }}
-}}
-function safeStringAttr(target, name) {{
-  return safeString(safeAttr(target, name));
-}}
-function safeWindowId(window) {{
-  try {{
-    const value = typeof window.id === "function" ? window.id() : null;
-    if (value == null) {{
-      return null;
-    }}
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-  }} catch (error) {{
-    return null;
-  }}
-}}
-function rectForElement(element) {{
-  try {{
-    const position = element.position();
-    const size = element.size();
-    return {{
-      x: Number(position[0]),
-      y: Number(position[1]),
-      width: Number(size[0]),
-      height: Number(size[1])
-    }};
-  }} catch (error) {{
-    return null;
-  }}
-}}
-const processes = filter
-  ? systemEvents.applicationProcesses.whose({{name: filter}})()
-  : systemEvents.applicationProcesses();
-let windows = [];
-for (const process of processes) {{
-  const appName = process.name();
-  const pid = Number(process.unixId());
-  const isFrontmost = process.frontmost();
-  const processWindows = process.windows();
-  for (let index = 0; index < processWindows.length; index += 1) {{
-    const window = processWindows[index];
-    const isMain = safeAttr(window, "AXMain");
-    const isFocused = safeAttr(window, "AXFocused");
-    windows.push({{
-      id: safeWindowId(window),
-      pid: Number.isFinite(pid) ? pid : null,
-      window_index: index,
-      ax_identifier: safeStringAttr(window, "AXIdentifier"),
-      title: safeString(window.name()),
-      app_name: appName,
-      bounds: rectForElement(window),
-      is_focused: Boolean(isFrontmost && (isMain || isFocused)),
-      is_minimized: Boolean(safeAttr(window, "AXMinimized"))
-    }});
-  }}
-}}
-JSON.stringify(windows);
-"#
-        );
+        let script = list_windows_script(&app_literal);
 
         let windows: Vec<WindowRecord> = parse_jxa_json(run_jxa(&script)?)?;
         Ok(windows.into_iter().map(WindowInfo::from).collect())
@@ -271,6 +200,102 @@ if (processes.length === 0) {
     fn focus_window(&self, id: WindowId) -> Result<(), OperatorError> {
         focus_window_with_osascript(id)
     }
+}
+
+fn list_windows_script(app_literal: &str) -> String {
+    format!(
+        r#"
+const filter = {app_literal};
+const systemEvents = Application("System Events");
+function safeString(value) {{
+  return value == null ? null : String(value);
+}}
+function safeCall(target, method) {{
+  try {{
+    return typeof target[method] === "function" ? target[method]() : null;
+  }} catch (error) {{
+    return null;
+  }}
+}}
+function safeAttr(target, name) {{
+  try {{
+    return target.attributes.byName(name).value();
+  }} catch (error) {{
+    return null;
+  }}
+}}
+function safeStringAttr(target, name) {{
+  return safeString(safeAttr(target, name));
+}}
+function safeWindowId(window) {{
+  try {{
+    const value = safeCall(window, "id");
+    if (value == null) {{
+      return null;
+    }}
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }} catch (error) {{
+    return null;
+  }}
+}}
+function rectForElement(element) {{
+  try {{
+    const position = element.position();
+    const size = element.size();
+    return {{
+      x: Number(position[0]),
+      y: Number(position[1]),
+      width: Number(size[0]),
+      height: Number(size[1])
+    }};
+  }} catch (error) {{
+    return null;
+  }}
+}}
+function safeProcessName(process) {{
+  return safeString(safeCall(process, "name"));
+}}
+function safeProcessPid(process) {{
+  const value = Number(safeCall(process, "unixId"));
+  return Number.isFinite(value) ? value : null;
+}}
+function safeProcessFrontmost(process) {{
+  return Boolean(safeCall(process, "frontmost"));
+}}
+function safeProcessWindows(process) {{
+  const windows = safeCall(process, "windows");
+  return windows == null ? [] : windows;
+}}
+const processes = filter
+  ? systemEvents.applicationProcesses.whose({{name: filter}})()
+  : systemEvents.applicationProcesses();
+let windows = [];
+for (const process of processes) {{
+  const appName = safeProcessName(process);
+  const pid = safeProcessPid(process);
+  const isFrontmost = safeProcessFrontmost(process);
+  const processWindows = safeProcessWindows(process);
+  for (let index = 0; index < processWindows.length; index += 1) {{
+    const window = processWindows[index];
+    const isMain = safeAttr(window, "AXMain");
+    const isFocused = safeAttr(window, "AXFocused");
+    windows.push({{
+      id: safeWindowId(window),
+      pid: pid,
+      window_index: index,
+      ax_identifier: safeStringAttr(window, "AXIdentifier"),
+      title: safeString(safeCall(window, "name")),
+      app_name: appName,
+      bounds: rectForElement(window),
+      is_focused: Boolean(isFrontmost && (isMain || isFocused)),
+      is_minimized: Boolean(safeAttr(window, "AXMinimized"))
+    }});
+  }}
+}}
+JSON.stringify(windows);
+"#
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -708,7 +733,7 @@ fn command_output(command: &str, output: std::process::Output) -> Result<String,
 mod tests {
     use operator_core::WindowInfo;
 
-    use super::{WindowRecord, SYNTHETIC_WINDOW_ID_MASK};
+    use super::{list_windows_script, WindowRecord, SYNTHETIC_WINDOW_ID_MASK};
 
     #[test]
     fn missing_native_window_id_uses_stable_synthetic_id() {
@@ -757,5 +782,24 @@ mod tests {
         });
 
         assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn list_windows_script_skips_processes_with_inaccessible_window_lists() {
+        let script = list_windows_script("null");
+
+        assert!(script.contains("function safeProcessWindows(process)"));
+        assert!(script.contains("const processWindows = safeProcessWindows(process);"));
+        assert!(!script.contains("const processWindows = process.windows();"));
+    }
+
+    #[test]
+    fn list_windows_script_wraps_process_metadata_accesses() {
+        let script = list_windows_script("null");
+
+        assert!(script.contains("const appName = safeProcessName(process);"));
+        assert!(script.contains("const pid = safeProcessPid(process);"));
+        assert!(script.contains("const isFrontmost = safeProcessFrontmost(process);"));
+        assert!(script.contains("title: safeString(safeCall(window, \"name\"))"));
     }
 }
