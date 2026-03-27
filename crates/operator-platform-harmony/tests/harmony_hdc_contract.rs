@@ -261,6 +261,40 @@ impl HarmonyHdcShellSession for FakeShellSession {
             total_window_count: Some(0),
         })
     }
+
+    fn click(
+        &mut self,
+        _point: operator_core::Point,
+        _mode: operator_core::ClickMode,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn input_text(&mut self, _text: &str) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn press_keys(&mut self, _keys: &[u32]) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn drag(
+        &mut self,
+        _from: operator_core::Point,
+        _to: operator_core::Point,
+        _speed: Option<u32>,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn swipe(
+        &mut self,
+        _from: operator_core::Point,
+        _to: operator_core::Point,
+        _speed: Option<u32>,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
 }
 
 struct FakeUiSession {
@@ -272,5 +306,12 @@ impl HarmonyHdcUiSession for FakeUiSession {
     fn check_ready(&self) -> Result<(), operator_core::OperatorError> {
         self.counts.ui_probes.fetch_add(1, Ordering::SeqCst);
         self.probe.into_result()
+    }
+
+    fn resolve_locator(
+        &mut self,
+        _locator: &operator_core::Locator,
+    ) -> Result<Option<operator_core::Point>, operator_core::OperatorError> {
+        Ok(None)
     }
 }

@@ -1,5 +1,6 @@
 //! Harmony platform driver foundations for Operator.
 
+mod action;
 mod config;
 mod driver;
 mod errors;

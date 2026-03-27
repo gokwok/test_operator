@@ -562,6 +562,274 @@ async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tre
 }
 
 #[tokio::test]
+async fn action_tools_support_harmony_pointer_and_keyboard_surface_without_inspect_tree() {
+    let mut config = RuntimeConfig {
+        default_timeout_ms: 250,
+        default_target: "harmony-pc".into(),
+        ..RuntimeConfig::default()
+    };
+    config.targets.insert(
+        "harmony-pc".into(),
+        NamedTargetConfig {
+            platform: "harmony".into(),
+            driver: "harmony.hdc".into(),
+            driver_config: Default::default(),
+        },
+    );
+
+    let driver = Arc::new(MockPlatformDriver::with_driver_id(
+        "harmony",
+        "harmony.hdc",
+        CapabilitySet::new([
+            Capability::Capture,
+            Capability::PointerInput,
+            Capability::KeyboardInput,
+            Capability::AppLifecycle,
+            Capability::WindowQuery,
+            Capability::Permissions,
+        ]),
+    ));
+    driver.push_action_result(Ok(successful_action_outcome("clicked", 12)));
+    driver.push_action_result(Ok(successful_action_outcome("typed", 18)));
+    driver.push_action_result(Ok(successful_action_outcome("pressed down 2 times", 7)));
+    driver.push_action_result(Ok(successful_action_outcome("sent hotkey", 11)));
+    driver.push_action_result(Ok(successful_action_outcome("dragged", 16)));
+    driver.push_action_result(Ok(successful_action_outcome("swiped", 15)));
+
+    let runtime = RuntimeBuilder::new(config)
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let click = runtime
+        .tools()
+        .invoke(
+            "click",
+            json!({
+                "locator": {
+                    "Coords": {
+                        "x": 320.0,
+                        "y": 240.0
+                    }
+                },
+                "mode": "Right"
+            }),
+        )
+        .await
+        .unwrap();
+    let typed = runtime
+        .tools()
+        .invoke(
+            "type",
+            json!({
+                "text": "hello harmony",
+                "clear_before": true,
+                "trailing_keys": ["Return", "Escape"],
+                "locator": {
+                    "Coords": {
+                        "x": 410.0,
+                        "y": 280.0
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let pressed = runtime
+        .tools()
+        .invoke(
+            "press",
+            json!({
+                "key": "down",
+                "count": 2
+            }),
+        )
+        .await
+        .unwrap();
+    let hotkey = runtime
+        .tools()
+        .invoke(
+            "hotkey",
+            json!({
+                "keys": ["command", "shift", "p"]
+            }),
+        )
+        .await
+        .unwrap();
+    let dragged = runtime
+        .tools()
+        .invoke(
+            "drag",
+            json!({
+                "from": {
+                    "Coords": {
+                        "x": 10.0,
+                        "y": 20.0
+                    }
+                },
+                "to": {
+                    "Coords": {
+                        "x": 110.0,
+                        "y": 20.0
+                    }
+                },
+                "duration_ms": 250,
+                "steps": 6,
+                "modifiers": ["Command", "Shift"]
+            }),
+        )
+        .await
+        .unwrap();
+    let swiped = runtime
+        .tools()
+        .invoke(
+            "swipe",
+            json!({
+                "from": {
+                    "Coords": {
+                        "x": 12.0,
+                        "y": 24.0
+                    }
+                },
+                "to": {
+                    "Coords": {
+                        "x": 212.0,
+                        "y": 24.0
+                    }
+                },
+                "duration_ms": 500,
+                "steps": 3
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(click["outcome"]["detail"], json!("clicked"));
+    assert_eq!(typed["outcome"]["detail"], json!("typed"));
+    assert_eq!(pressed["outcome"]["detail"], json!("pressed down 2 times"));
+    assert_eq!(hotkey["outcome"]["detail"], json!("sent hotkey"));
+    assert_eq!(dragged["outcome"]["detail"], json!("dragged"));
+    assert_eq!(swiped["outcome"]["detail"], json!("swiped"));
+
+    assert_eq!(
+        driver.action_calls().await,
+        vec![
+            (
+                ActionRequest {
+                    action: Action::Click {
+                        mode: ClickMode::Right
+                    },
+                    locator: Some(Locator::Coords(operator_core::Point { x: 320.0, y: 240.0 })),
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Type {
+                        text: "hello harmony".into(),
+                        clear_before: true,
+                        delay_ms: None,
+                        trailing_keys: vec![TypeTrailingKey::Return, TypeTrailingKey::Escape],
+                    },
+                    locator: Some(Locator::Coords(operator_core::Point { x: 410.0, y: 280.0 })),
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Press {
+                        key: "down".into(),
+                        count: 2.try_into().unwrap(),
+                    },
+                    locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Hotkey {
+                        keys: vec!["command".into(), "shift".into(), "p".into()],
+                    },
+                    locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Drag {
+                        from: Locator::Coords(operator_core::Point { x: 10.0, y: 20.0 }),
+                        to: Locator::Coords(operator_core::Point { x: 110.0, y: 20.0 }),
+                        motion: DragMotion {
+                            duration_ms: Some(250),
+                            steps: Some(6.try_into().unwrap()),
+                            modifiers: vec![DragModifier::Command, DragModifier::Shift],
+                        },
+                    },
+                    locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::Swipe {
+                        from: Locator::Coords(operator_core::Point { x: 12.0, y: 24.0 }),
+                        to: Locator::Coords(operator_core::Point { x: 212.0, y: 24.0 }),
+                        duration_ms: Some(500),
+                        steps: Some(3.try_into().unwrap()),
+                    },
+                    locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn get_focus_query_tool_forwards_runtime_results() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",

@@ -25,6 +25,8 @@ fn harmony_driver_declares_query_capabilities() {
     let capabilities = driver.capabilities();
 
     assert!(capabilities.supports(&operator_core::Capability::Capture));
+    assert!(capabilities.supports(&operator_core::Capability::PointerInput));
+    assert!(capabilities.supports(&operator_core::Capability::KeyboardInput));
     assert!(capabilities.supports(&operator_core::Capability::AppLifecycle));
     assert!(capabilities.supports(&operator_core::Capability::WindowQuery));
     assert!(capabilities.supports(&operator_core::Capability::Permissions));
@@ -378,6 +380,40 @@ impl HarmonyHdcShellSession for FakeShellSession {
             .fetch_add(1, Ordering::SeqCst);
         Ok(self.windows.clone())
     }
+
+    fn click(
+        &mut self,
+        _point: operator_core::Point,
+        _mode: operator_core::ClickMode,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn input_text(&mut self, _text: &str) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn press_keys(&mut self, _keys: &[u32]) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn drag(
+        &mut self,
+        _from: operator_core::Point,
+        _to: operator_core::Point,
+        _speed: Option<u32>,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn swipe(
+        &mut self,
+        _from: operator_core::Point,
+        _to: operator_core::Point,
+        _speed: Option<u32>,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
 }
 
 struct FakeUiSession {
@@ -387,5 +423,12 @@ struct FakeUiSession {
 impl HarmonyHdcUiSession for FakeUiSession {
     fn check_ready(&self) -> Result<(), operator_core::OperatorError> {
         self.probe.into_result()
+    }
+
+    fn resolve_locator(
+        &mut self,
+        _locator: &operator_core::Locator,
+    ) -> Result<Option<operator_core::Point>, operator_core::OperatorError> {
+        Ok(None)
     }
 }

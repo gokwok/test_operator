@@ -96,22 +96,18 @@ impl PlatformDriver for HarmonyHdcDriver {
 
     async fn act(
         &self,
-        _req: ActionRequest,
+        req: ActionRequest,
         _ctx: &ExecContext,
     ) -> Result<ActionOutcome, OperatorError> {
-        Err(unimplemented_surface_error("act"))
+        self.worker.act(req).await
     }
-}
-
-fn unimplemented_surface_error(surface: &str) -> OperatorError {
-    OperatorError::Platform(format!(
-        "driver {DRIVER_ID} scaffold does not implement {surface} yet"
-    ))
 }
 
 fn harmony_capabilities() -> CapabilitySet {
     CapabilitySet::new([
         Capability::Capture,
+        Capability::PointerInput,
+        Capability::KeyboardInput,
         Capability::AppLifecycle,
         Capability::WindowQuery,
         Capability::Permissions,

@@ -2,15 +2,27 @@ use std::{
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
     thread,
+    time::Instant,
 };
 
 use hmdriver_rs::{CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
-use operator_core::{ImageSizePx, OperatorError, PermissionStatus, PermissionsReport, Rect};
+use operator_core::{
+    Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
+    ActionTargetSelector, ClickMode, DragMotion, ImageSizePx, Locator, OperatorError,
+    PermissionStatus, PermissionsReport, Point, Rect, TypeTrailingKey,
+};
 use tempfile::NamedTempFile;
 use tokio::sync::oneshot;
 
 use crate::{
+    action::{
+        clear_before_key_codes, click_detail, drag_warnings, parse_hotkey_keys, parse_key_code,
+        point_coordinates, press_detail, range_coordinates, successful_action_outcome,
+        swipe_warnings, trailing_key_code, type_side_effect, unsupported_action_error,
+        velocity_from_duration,
+    },
     errors::hdc_platform_error,
+    normalize::{resolve_action_target, target_anchor_point, ResolvedActionTarget},
     permissions::{HarmonyPermissionSnapshot, ProbeStatus},
     HarmonyHdcConfig,
 };
@@ -26,10 +38,16 @@ pub trait HarmonyHdcShellSession {
     fn list_apps(&mut self) -> Result<Vec<String>, OperatorError>;
     fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError>;
     fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList, OperatorError>;
+    fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError>;
+    fn input_text(&mut self, text: &str) -> Result<(), OperatorError>;
+    fn press_keys(&mut self, keys: &[u32]) -> Result<(), OperatorError>;
+    fn drag(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError>;
+    fn swipe(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError>;
 }
 
 pub trait HarmonyHdcUiSession {
     fn check_ready(&self) -> Result<(), OperatorError>;
+    fn resolve_locator(&mut self, locator: &Locator) -> Result<Option<Point>, OperatorError>;
 }
 
 pub trait HarmonyHdcSessionFactory: Send + Sync + 'static {
@@ -144,6 +162,18 @@ impl HarmonyHdcWorker {
         response_rx.await.map_err(|_| worker_stopped_error())?
     }
 
+    pub(crate) async fn act(&self, request: ActionRequest) -> Result<ActionOutcome, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::Act {
+                request: Box::new(request),
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
     pub(crate) fn new_with_session_factory(
         config: HarmonyHdcConfig,
         session_factory: Arc<dyn HarmonyHdcSessionFactory>,
@@ -170,6 +200,10 @@ enum WorkerCommand {
     },
     QueryWindows {
         response: oneshot::Sender<Result<CorrelatedWindowList, OperatorError>>,
+    },
+    Act {
+        request: Box<ActionRequest>,
+        response: oneshot::Sender<Result<ActionOutcome, OperatorError>>,
     },
 }
 
@@ -291,6 +325,13 @@ impl WorkerState {
         result
     }
 
+    fn ensure_ui_session(&mut self) -> Result<(), OperatorError> {
+        if self.ui_session.is_none() {
+            self.ui_session = Some(self.session_factory.connect_ui(&self.config)?);
+        }
+        Ok(())
+    }
+
     fn capture_observe(
         &mut self,
         artifact_path: Option<&Path>,
@@ -326,6 +367,56 @@ impl WorkerState {
         }
 
         result
+    }
+
+    fn act(&mut self, request: ActionRequest) -> Result<ActionOutcome, OperatorError> {
+        let ActionRequest {
+            action,
+            locator,
+            target_selector,
+            focus_policy,
+            verifications: _,
+        } = request;
+        let started = Instant::now();
+        let resolved_target = target_selector
+            .as_ref()
+            .map(|selector| self.resolve_target(selector))
+            .transpose()?;
+
+        let mut outcome = match action {
+            Action::Click { mode } => self.click(locator, resolved_target.as_ref(), mode)?,
+            Action::Type {
+                text,
+                clear_before,
+                delay_ms: _,
+                trailing_keys,
+            } => self.type_text(
+                locator,
+                resolved_target.as_ref(),
+                focus_policy,
+                &text,
+                clear_before,
+                &trailing_keys,
+            )?,
+            Action::Press { key, count } => {
+                self.press(resolved_target.as_ref(), focus_policy, &key, count.get())?
+            }
+            Action::Hotkey { keys } => {
+                self.hotkey(resolved_target.as_ref(), focus_policy, &keys)?
+            }
+            Action::Drag { from, to, motion } => self.drag(from, to, motion)?,
+            Action::Swipe {
+                from,
+                to,
+                duration_ms,
+                steps,
+            } => self.swipe(from, to, duration_ms, steps)?,
+            other => return Err(unsupported_action_error(&other)),
+        };
+
+        apply_target(&mut outcome, resolved_target.as_ref());
+        outcome.duration_ms = started.elapsed().as_millis() as u64;
+        Ok(outcome)
     }
 
     fn query_apps(&mut self) -> Result<HarmonyAppQueryReport, OperatorError> {
@@ -365,6 +456,245 @@ impl WorkerState {
             self.shell_session = None;
         }
 
+        result
+    }
+
+    fn click(
+        &mut self,
+        locator: Option<Locator>,
+        target: Option<&ResolvedActionTarget>,
+        mode: ClickMode,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let point = if let Some(locator) = locator.as_ref() {
+            self.resolve_locator_point(locator)?
+        } else {
+            target.map(target_anchor).transpose()?.ok_or_else(|| {
+                OperatorError::Platform(
+                    "harmony.hdc click requires a locator or target selector".into(),
+                )
+            })?
+        };
+        self.with_shell_session(|session| session.click(point, mode))?;
+
+        let mut outcome = successful_action_outcome(click_detail(mode));
+        outcome.coordinates = Some(point_coordinates(point));
+        outcome.side_effects = vec![ActionSideEffect::Click { mode }];
+        Ok(outcome)
+    }
+
+    fn type_text(
+        &mut self,
+        locator: Option<Locator>,
+        target: Option<&ResolvedActionTarget>,
+        focus_policy: ActionFocusPolicy,
+        text: &str,
+        clear_before: bool,
+        trailing_keys: &[TypeTrailingKey],
+    ) -> Result<ActionOutcome, OperatorError> {
+        let focus_point = if let Some(locator) = locator.as_ref() {
+            Some(self.resolve_locator_point(locator)?)
+        } else if matches!(focus_policy, ActionFocusPolicy::Auto) {
+            target.map(target_anchor).transpose()?
+        } else {
+            None
+        };
+
+        let mut side_effects = Vec::new();
+        if let Some(point) = focus_point {
+            self.with_shell_session(|session| session.click(point, ClickMode::Left))?;
+            side_effects.push(ActionSideEffect::Click {
+                mode: ClickMode::Left,
+            });
+        }
+
+        if clear_before {
+            let clear_keys = clear_before_key_codes();
+            self.with_shell_session(|session| session.press_keys(&clear_keys))?;
+            self.with_shell_session(|session| {
+                session.press_keys(&[trailing_key_code(TypeTrailingKey::Delete)])
+            })?;
+        }
+
+        self.with_shell_session(|session| session.input_text(text))?;
+        for key in trailing_keys {
+            self.with_shell_session(|session| session.press_keys(&[trailing_key_code(*key)]))?;
+        }
+
+        let mut outcome = successful_action_outcome("typed");
+        outcome.coordinates = Some(ActionCoordinates {
+            point: focus_point,
+            from: None,
+            to: None,
+        });
+        outcome.side_effects = side_effects;
+        outcome
+            .side_effects
+            .push(type_side_effect(clear_before, trailing_keys));
+        Ok(outcome)
+    }
+
+    fn press(
+        &mut self,
+        target: Option<&ResolvedActionTarget>,
+        focus_policy: ActionFocusPolicy,
+        key: &str,
+        count: u32,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let mut side_effects = Vec::new();
+        if matches!(focus_policy, ActionFocusPolicy::Auto) {
+            if let Some(point) = target.map(target_anchor).transpose()? {
+                self.with_shell_session(|session| session.click(point, ClickMode::Left))?;
+                side_effects.push(ActionSideEffect::Click {
+                    mode: ClickMode::Left,
+                });
+            }
+        }
+
+        let key_code = parse_key_code(key)?;
+        for _ in 0..count {
+            self.with_shell_session(|session| session.press_keys(&[key_code]))?;
+        }
+
+        let mut outcome = successful_action_outcome(press_detail(key, count));
+        outcome.side_effects = side_effects;
+        outcome.side_effects.push(ActionSideEffect::Press {
+            key: key.to_string(),
+            count,
+        });
+        Ok(outcome)
+    }
+
+    fn hotkey(
+        &mut self,
+        target: Option<&ResolvedActionTarget>,
+        focus_policy: ActionFocusPolicy,
+        keys: &[String],
+    ) -> Result<ActionOutcome, OperatorError> {
+        let mut side_effects = Vec::new();
+        if matches!(focus_policy, ActionFocusPolicy::Auto) {
+            if let Some(point) = target.map(target_anchor).transpose()? {
+                self.with_shell_session(|session| session.click(point, ClickMode::Left))?;
+                side_effects.push(ActionSideEffect::Click {
+                    mode: ClickMode::Left,
+                });
+            }
+        }
+
+        let key_codes = parse_hotkey_keys(keys)?;
+        self.with_shell_session(|session| session.press_keys(&key_codes))?;
+
+        let mut outcome = successful_action_outcome("sent hotkey");
+        outcome.side_effects = side_effects;
+        outcome.side_effects.push(ActionSideEffect::Hotkey {
+            keys: keys.to_vec(),
+        });
+        Ok(outcome)
+    }
+
+    fn drag(
+        &mut self,
+        from: Locator,
+        to: Locator,
+        motion: DragMotion,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let from_point = self.resolve_locator_point(&from)?;
+        let to_point = self.resolve_locator_point(&to)?;
+        let speed = velocity_from_duration(from_point, to_point, motion.duration_ms);
+        self.with_shell_session(|session| session.drag(from_point, to_point, speed))?;
+
+        let mut outcome = successful_action_outcome("dragged");
+        outcome.coordinates = Some(range_coordinates(from_point, to_point));
+        outcome.side_effects = vec![ActionSideEffect::Drag {
+            motion: motion.clone(),
+        }];
+        outcome.warnings.extend(drag_warnings(&motion));
+        Ok(outcome)
+    }
+
+    fn swipe(
+        &mut self,
+        from: Locator,
+        to: Locator,
+        duration_ms: Option<u64>,
+        steps: Option<std::num::NonZeroU32>,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let from_point = self.resolve_locator_point(&from)?;
+        let to_point = self.resolve_locator_point(&to)?;
+        let speed = velocity_from_duration(from_point, to_point, duration_ms);
+        self.with_shell_session(|session| session.swipe(from_point, to_point, speed))?;
+
+        let mut outcome = successful_action_outcome("swiped");
+        outcome.coordinates = Some(range_coordinates(from_point, to_point));
+        outcome.side_effects = vec![ActionSideEffect::Swipe { duration_ms, steps }];
+        outcome.warnings.extend(swipe_warnings(steps));
+        Ok(outcome)
+    }
+
+    fn resolve_target(
+        &mut self,
+        selector: &ActionTargetSelector,
+    ) -> Result<ResolvedActionTarget, OperatorError> {
+        let windows = self.query_windows()?;
+        let current_app = self.current_app()?;
+        resolve_action_target(windows, current_app, selector)
+    }
+
+    fn resolve_locator_point(&mut self, locator: &Locator) -> Result<Point, OperatorError> {
+        match locator {
+            Locator::Coords(point) => Ok(*point),
+            Locator::Text(_) | Locator::Role { .. } => self
+                .with_ui_session(|session| session.resolve_locator(locator))?
+                .ok_or_else(|| {
+                    OperatorError::Platform(format!(
+                        "harmony.hdc could not resolve locator `{locator:?}`"
+                    ))
+                }),
+            Locator::SnapshotElement { .. }
+            | Locator::SnapshotPixelCoords { .. }
+            | Locator::SnapshotCoords { .. }
+            | Locator::SnapshotNormalizedCoords { .. } => Err(OperatorError::Platform(
+                "harmony.hdc received an unresolved snapshot locator".into(),
+            )),
+        }
+    }
+
+    fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError> {
+        self.with_shell_session(|session| session.current_app())
+    }
+
+    fn with_shell_session<T>(
+        &mut self,
+        op: impl FnOnce(&mut dyn HarmonyHdcShellSession) -> Result<T, OperatorError>,
+    ) -> Result<T, OperatorError> {
+        self.ensure_shell_session()?;
+        let result = {
+            let session = self
+                .shell_session
+                .as_mut()
+                .expect("shell session should be initialized");
+            op(session.as_mut())
+        };
+        if result.is_err() {
+            self.shell_session = None;
+        }
+        result
+    }
+
+    fn with_ui_session<T>(
+        &mut self,
+        op: impl FnOnce(&mut dyn HarmonyHdcUiSession) -> Result<T, OperatorError>,
+    ) -> Result<T, OperatorError> {
+        self.ensure_ui_session()?;
+        let result = {
+            let session = self
+                .ui_session
+                .as_mut()
+                .expect("ui session should be initialized");
+            op(session.as_mut())
+        };
+        if result.is_err() {
+            self.ui_session = None;
+        }
         result
     }
 }
@@ -448,6 +778,55 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
             .list_windows_with_missions()
             .map_err(|error| hdc_platform_error("failed to list Harmony windows", error))
     }
+
+    fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError> {
+        let (x, y) = screen_point(point)?;
+        match mode {
+            ClickMode::Left => self
+                .driver
+                .click(x, y)
+                .map_err(|error| hdc_platform_error("failed to click over hdc", error)),
+            ClickMode::Right => self
+                .driver
+                .right_click(x, y)
+                .map_err(|error| hdc_platform_error("failed to right click over hdc", error)),
+            ClickMode::Double => self
+                .driver
+                .double_click(x, y)
+                .map_err(|error| hdc_platform_error("failed to double click over hdc", error)),
+            ClickMode::Middle => Err(OperatorError::Platform(
+                "harmony.hdc does not support middle click in the first phase".into(),
+            )),
+        }
+    }
+
+    fn input_text(&mut self, text: &str) -> Result<(), OperatorError> {
+        self.driver
+            .input_text(text)
+            .map_err(|error| hdc_platform_error("failed to type text over hdc", error))
+    }
+
+    fn press_keys(&mut self, keys: &[u32]) -> Result<(), OperatorError> {
+        self.driver
+            .press_keys(keys.iter().copied())
+            .map_err(|error| hdc_platform_error("failed to press keys over hdc", error))
+    }
+
+    fn drag(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError> {
+        let (from_x, from_y) = screen_point(from)?;
+        let (to_x, to_y) = screen_point(to)?;
+        self.driver
+            .drag(from_x, from_y, to_x, to_y, speed)
+            .map_err(|error| hdc_platform_error("failed to drag over hdc", error))
+    }
+
+    fn swipe(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError> {
+        let (from_x, from_y) = screen_point(from)?;
+        let (to_x, to_y) = screen_point(to)?;
+        self.driver
+            .swipe(from_x, from_y, to_x, to_y, speed)
+            .map_err(|error| hdc_platform_error("failed to swipe over hdc", error))
+    }
 }
 
 struct RealHarmonyHdcUiSession {
@@ -459,6 +838,55 @@ impl HarmonyHdcUiSession for RealHarmonyHdcUiSession {
         self.ui.display_size().map(|_| ()).map_err(|error| {
             hdc_platform_error("failed to verify harmony ui bridge readiness", error)
         })
+    }
+
+    fn resolve_locator(&mut self, locator: &Locator) -> Result<Option<Point>, OperatorError> {
+        match locator {
+            Locator::Coords(point) => Ok(Some(*point)),
+            Locator::Text(text) => self
+                .ui
+                .query()
+                .text(text.clone())
+                .find_component()
+                .and_then(|component| {
+                    component
+                        .map(|component| {
+                            component.center().map(|point| Point {
+                                x: f64::from(point.x),
+                                y: f64::from(point.y),
+                            })
+                        })
+                        .transpose()
+                })
+                .map_err(|error| {
+                    hdc_platform_error("failed to resolve Harmony text locator", error)
+                }),
+            Locator::Role { role, index } => self
+                .ui
+                .query()
+                .kind(role.clone())
+                .index(*index)
+                .find_component()
+                .and_then(|component| {
+                    component
+                        .map(|component| {
+                            component.center().map(|point| Point {
+                                x: f64::from(point.x),
+                                y: f64::from(point.y),
+                            })
+                        })
+                        .transpose()
+                })
+                .map_err(|error| {
+                    hdc_platform_error("failed to resolve Harmony role locator", error)
+                }),
+            Locator::SnapshotElement { .. }
+            | Locator::SnapshotPixelCoords { .. }
+            | Locator::SnapshotCoords { .. }
+            | Locator::SnapshotNormalizedCoords { .. } => Err(OperatorError::Platform(
+                "harmony.hdc cannot resolve snapshot locators through the ui bridge".into(),
+            )),
+        }
     }
 }
 
@@ -487,6 +915,9 @@ fn worker_loop(
             }
             WorkerCommand::QueryWindows { response } => {
                 let _ = response.send(state.query_windows());
+            }
+            WorkerCommand::Act { request, response } => {
+                let _ = response.send(state.act(*request));
             }
         }
     }
@@ -535,4 +966,39 @@ fn image_size_from_point(width: i32, height: i32) -> Result<ImageSizePx, Operato
         width: width as u32,
         height: height as u32,
     })
+}
+
+fn apply_target(outcome: &mut ActionOutcome, target: Option<&ResolvedActionTarget>) {
+    if let Some(target) = target {
+        outcome.target_app = target.app.clone();
+        outcome.target_window = target.window.clone();
+    }
+}
+
+fn target_anchor(target: &ResolvedActionTarget) -> Result<Point, OperatorError> {
+    target_anchor_point(target).ok_or_else(|| {
+        OperatorError::Platform(
+            "harmony.hdc cannot derive a target anchor because the resolved window has no bounds"
+                .into(),
+        )
+    })
+}
+
+fn screen_point(point: Point) -> Result<(i32, i32), OperatorError> {
+    if !point.x.is_finite() || !point.y.is_finite() {
+        return Err(OperatorError::Platform(
+            "harmony.hdc received a non-finite coordinate".into(),
+        ));
+    }
+    if point.x < f64::from(i32::MIN)
+        || point.x > f64::from(i32::MAX)
+        || point.y < f64::from(i32::MIN)
+        || point.y > f64::from(i32::MAX)
+    {
+        return Err(OperatorError::Platform(
+            "harmony.hdc received an out-of-range coordinate".into(),
+        ));
+    }
+
+    Ok((point.x.round() as i32, point.y.round() as i32))
 }
