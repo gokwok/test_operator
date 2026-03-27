@@ -278,6 +278,18 @@ impl HarmonyHdcShellSession for FakeShellSession {
         Ok(())
     }
 
+    fn start_app(
+        &mut self,
+        _bundle: &str,
+        _ability: Option<&str>,
+    ) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
+    fn stop_app(&mut self, _bundle: &str) -> Result<(), operator_core::OperatorError> {
+        Ok(())
+    }
+
     fn drag(
         &mut self,
         _from: operator_core::Point,

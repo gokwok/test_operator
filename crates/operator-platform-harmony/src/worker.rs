@@ -16,10 +16,10 @@ use tokio::sync::oneshot;
 
 use crate::{
     action::{
-        clear_before_key_codes, click_detail, drag_warnings, parse_hotkey_keys, parse_key_code,
-        point_coordinates, press_detail, range_coordinates, successful_action_outcome,
-        swipe_warnings, trailing_key_code, type_side_effect, unsupported_action_error,
-        velocity_from_duration,
+        action_name, clear_before_key_codes, click_detail, drag_warnings, parse_hotkey_keys,
+        parse_key_code, point_coordinates, press_detail, range_coordinates,
+        successful_action_outcome, swipe_warnings, trailing_key_code, type_side_effect,
+        unsupported_action_error, velocity_from_duration,
     },
     errors::hdc_platform_error,
     normalize::{resolve_action_target, target_anchor_point, ResolvedActionTarget},
@@ -41,6 +41,8 @@ pub trait HarmonyHdcShellSession {
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError>;
     fn input_text(&mut self, text: &str) -> Result<(), OperatorError>;
     fn press_keys(&mut self, keys: &[u32]) -> Result<(), OperatorError>;
+    fn start_app(&mut self, bundle: &str, ability: Option<&str>) -> Result<(), OperatorError>;
+    fn stop_app(&mut self, bundle: &str) -> Result<(), OperatorError>;
     fn drag(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError>;
     fn swipe(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError>;
 }
@@ -384,6 +386,7 @@ impl WorkerState {
             .transpose()?;
 
         let mut outcome = match action {
+            Action::LaunchApp { bundle_id_or_name } => self.launch_app(&bundle_id_or_name)?,
             Action::Click { mode } => self.click(locator, resolved_target.as_ref(), mode)?,
             Action::Type {
                 text,
@@ -404,6 +407,18 @@ impl WorkerState {
             Action::Hotkey { keys } => {
                 self.hotkey(resolved_target.as_ref(), focus_policy, &keys)?
             }
+            Action::SwitchApp => {
+                let target = required_target_selector("switch-app", resolved_target.as_ref())?;
+                self.switch_app(target)?
+            }
+            Action::QuitApp => {
+                let target = required_target_selector("quit-app", resolved_target.as_ref())?;
+                self.quit_app(target)?
+            }
+            Action::RelaunchApp => {
+                let target = required_target_selector("relaunch-app", resolved_target.as_ref())?;
+                self.relaunch_app(target)?
+            }
             Action::Drag { from, to, motion } => self.drag(from, to, motion)?,
             Action::Swipe {
                 from,
@@ -416,6 +431,15 @@ impl WorkerState {
 
         apply_target(&mut outcome, resolved_target.as_ref());
         outcome.duration_ms = started.elapsed().as_millis() as u64;
+        Ok(outcome)
+    }
+
+    fn launch_app(&mut self, bundle_id_or_name: &str) -> Result<ActionOutcome, OperatorError> {
+        let bundle = self.resolve_launch_bundle(bundle_id_or_name)?;
+        self.with_shell_session(|session| session.start_app(&bundle, None))?;
+
+        let mut outcome = successful_action_outcome(format!("launched {bundle}"));
+        outcome.side_effects = vec![ActionSideEffect::LaunchApp];
         Ok(outcome)
     }
 
@@ -591,6 +615,43 @@ impl WorkerState {
         Ok(outcome)
     }
 
+    fn switch_app(
+        &mut self,
+        target: &ResolvedActionTarget,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let bundle = lifecycle_target_bundle(target, "switch-app")?;
+        self.with_shell_session(|session| session.start_app(&bundle, None))?;
+
+        let mut outcome = successful_action_outcome("switched app");
+        outcome.side_effects = vec![ActionSideEffect::SwitchApp];
+        apply_target(&mut outcome, Some(target));
+        Ok(outcome)
+    }
+
+    fn quit_app(&mut self, target: &ResolvedActionTarget) -> Result<ActionOutcome, OperatorError> {
+        let bundle = lifecycle_target_bundle(target, "quit-app")?;
+        self.with_shell_session(|session| session.stop_app(&bundle))?;
+
+        let mut outcome = successful_action_outcome("quit app");
+        outcome.side_effects = vec![ActionSideEffect::QuitApp];
+        apply_target(&mut outcome, Some(target));
+        Ok(outcome)
+    }
+
+    fn relaunch_app(
+        &mut self,
+        target: &ResolvedActionTarget,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let bundle = lifecycle_target_bundle(target, "relaunch-app")?;
+        self.with_shell_session(|session| session.stop_app(&bundle))?;
+        self.with_shell_session(|session| session.start_app(&bundle, None))?;
+
+        let mut outcome = successful_action_outcome("relaunched app");
+        outcome.side_effects = vec![ActionSideEffect::RelaunchApp];
+        apply_target(&mut outcome, Some(target));
+        Ok(outcome)
+    }
+
     fn drag(
         &mut self,
         from: Locator,
@@ -660,6 +721,48 @@ impl WorkerState {
 
     fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError> {
         self.with_shell_session(|session| session.current_app())
+    }
+
+    fn resolve_launch_bundle(&mut self, bundle_id_or_name: &str) -> Result<String, OperatorError> {
+        let bundle_id_or_name = bundle_id_or_name.trim();
+        if bundle_id_or_name.is_empty() {
+            return Err(OperatorError::Platform(
+                "harmony.hdc launch-app requires a non-empty bundle id or app name".into(),
+            ));
+        }
+
+        let requested = normalize_match_text(bundle_id_or_name);
+        let installed = self.with_shell_session(|session| session.list_apps())?;
+        if let Some(bundle) = installed
+            .into_iter()
+            .find(|bundle| normalize_match_text(bundle) == requested)
+        {
+            return Ok(bundle);
+        }
+
+        let current_app = self.current_app()?;
+        if let Some(bundle) = current_app
+            .as_ref()
+            .filter(|app| normalize_match_text(&app.bundle_name) == requested)
+            .map(|app| app.bundle_name.clone())
+        {
+            return Ok(bundle);
+        }
+
+        let windows = self.query_windows()?;
+        let selector = ActionTargetSelector::App(bundle_id_or_name.to_string());
+        let target = resolve_action_target(windows, current_app, &selector).map_err(|_| {
+            OperatorError::Platform(format!(
+                "harmony.hdc could not resolve `{bundle_id_or_name}` to an installed bundle id or running app"
+            ))
+        })?;
+
+        lifecycle_target_bundle(
+            &target,
+            action_name(&Action::LaunchApp {
+                bundle_id_or_name: bundle_id_or_name.to_string(),
+            }),
+        )
     }
 
     fn with_shell_session<T>(
@@ -810,6 +913,18 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
         self.driver
             .press_keys(keys.iter().copied())
             .map_err(|error| hdc_platform_error("failed to press keys over hdc", error))
+    }
+
+    fn start_app(&mut self, bundle: &str, ability: Option<&str>) -> Result<(), OperatorError> {
+        self.driver
+            .start_app(bundle, ability)
+            .map_err(|error| hdc_platform_error("failed to start Harmony app over hdc", error))
+    }
+
+    fn stop_app(&mut self, bundle: &str) -> Result<(), OperatorError> {
+        self.driver
+            .stop_app(bundle)
+            .map_err(|error| hdc_platform_error("failed to stop Harmony app over hdc", error))
     }
 
     fn drag(&mut self, from: Point, to: Point, speed: Option<u32>) -> Result<(), OperatorError> {
@@ -982,6 +1097,39 @@ fn target_anchor(target: &ResolvedActionTarget) -> Result<Point, OperatorError> 
                 .into(),
         )
     })
+}
+
+fn required_target_selector<'a>(
+    action_name: &str,
+    target: Option<&'a ResolvedActionTarget>,
+) -> Result<&'a ResolvedActionTarget, OperatorError> {
+    target.ok_or_else(|| {
+        OperatorError::Platform(format!(
+            "harmony.hdc {action_name} requires a target selector"
+        ))
+    })
+}
+
+fn lifecycle_target_bundle(
+    target: &ResolvedActionTarget,
+    action_name: &str,
+) -> Result<String, OperatorError> {
+    target
+        .app
+        .as_ref()
+        .and_then(|app| app.bundle_id.as_deref())
+        .map(str::trim)
+        .filter(|bundle| !bundle.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "harmony.hdc {action_name} requires a resolved target with a bundle id"
+            ))
+        })
+}
+
+fn normalize_match_text(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
 }
 
 fn screen_point(point: Point) -> Result<(i32, i32), OperatorError> {

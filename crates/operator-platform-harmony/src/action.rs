@@ -226,7 +226,7 @@ fn canonical_key_name(key: &str) -> String {
     key.trim().to_ascii_lowercase()
 }
 
-fn action_name(action: &Action) -> &'static str {
+pub(crate) fn action_name(action: &Action) -> &'static str {
     match action {
         Action::Click { .. } => "click",
         Action::Move => "move",

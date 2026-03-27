@@ -830,6 +830,159 @@ async fn action_tools_support_harmony_pointer_and_keyboard_surface_without_inspe
 }
 
 #[tokio::test]
+async fn action_tools_support_harmony_app_lifecycle_surface_without_inspect_tree() {
+    let mut config = RuntimeConfig {
+        default_timeout_ms: 250,
+        default_target: "harmony-pc".into(),
+        ..RuntimeConfig::default()
+    };
+    config.targets.insert(
+        "harmony-pc".into(),
+        NamedTargetConfig {
+            platform: "harmony".into(),
+            driver: "harmony.hdc".into(),
+            driver_config: Default::default(),
+        },
+    );
+
+    let driver = Arc::new(MockPlatformDriver::with_driver_id(
+        "harmony",
+        "harmony.hdc",
+        CapabilitySet::new([Capability::AppLifecycle]),
+    ));
+    driver.push_action_result(Ok(successful_action_outcome("launched com.demo.notes", 12)));
+    driver.push_action_result(Ok(successful_action_outcome("switched app", 10)));
+    driver.push_action_result(Ok(successful_action_outcome("quit app", 8)));
+    driver.push_action_result(Ok(successful_action_outcome("relaunched app", 13)));
+
+    let runtime = RuntimeBuilder::new(config)
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let launched = runtime
+        .tools()
+        .invoke(
+            "launch-app",
+            json!({
+                "bundle_id_or_name": "Notes"
+            }),
+        )
+        .await
+        .unwrap();
+    let switched = runtime
+        .tools()
+        .invoke(
+            "switch-app",
+            json!({
+                "target_selector": {
+                    "App": "Notes"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let quit = runtime
+        .tools()
+        .invoke(
+            "quit-app",
+            json!({
+                "target_selector": {
+                    "Pid": 101
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let relaunched = runtime
+        .tools()
+        .invoke(
+            "relaunch-app",
+            json!({
+                "target_selector": {
+                    "WindowTitle": "Draft"
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        launched["outcome"]["detail"],
+        json!("launched com.demo.notes")
+    );
+    assert_eq!(switched["outcome"]["detail"], json!("switched app"));
+    assert_eq!(quit["outcome"]["detail"], json!("quit app"));
+    assert_eq!(relaunched["outcome"]["detail"], json!("relaunched app"));
+
+    assert_eq!(
+        driver.action_calls().await,
+        vec![
+            (
+                ActionRequest {
+                    action: Action::LaunchApp {
+                        bundle_id_or_name: "Notes".into(),
+                    },
+                    locator: None,
+                    target_selector: None,
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::SwitchApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::App("Notes".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::QuitApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::Pid(101)),
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                ActionRequest {
+                    action: Action::RelaunchApp,
+                    locator: None,
+                    target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                    focus_policy: ActionFocusPolicy::Auto,
+                    verifications: Vec::new(),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn get_focus_query_tool_forwards_runtime_results() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
