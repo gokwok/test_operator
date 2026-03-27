@@ -7,6 +7,7 @@ version.workspace = true
 [dependencies]
 async-trait.workspace = true
 hmdriver_rs = { path = "hdc_driver/base" }
+image = { version = "0.25.6", default-features = false, features = ["jpeg"] }
 operator-core = { path = "../operator-core" }
 operator-runtime = { path = "../operator-runtime" }
 tempfile.workspace = true

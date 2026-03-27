@@ -5,7 +5,7 @@ use std::sync::{
 };
 
 use operator_core::{
-    DriverConfig, ImageSizePx, PermissionStatus, PlatformDriver, TargetDescriptor, TargetId,
+    DriverConfig, ImageSizePx, PermissionStatus, PlatformDriver, Rect, TargetDescriptor, TargetId,
 };
 use operator_platform_harmony::{
     HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory, HarmonyHdcShellSession,
@@ -236,6 +236,10 @@ impl HarmonyHdcShellSession for FakeShellSession {
             width: 1920,
             height: 1080,
         })
+    }
+
+    fn focused_window_bounds(&mut self) -> Result<Option<Rect>, operator_core::OperatorError> {
+        Ok(None)
     }
 }
 

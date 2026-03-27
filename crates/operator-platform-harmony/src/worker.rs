@@ -5,7 +5,7 @@ use std::{
 };
 
 use hmdriver_rs::{Driver, ShellResult, UiDriver};
-use operator_core::{ImageSizePx, OperatorError, PermissionStatus, PermissionsReport};
+use operator_core::{ImageSizePx, OperatorError, PermissionStatus, PermissionsReport, Rect};
 use tempfile::NamedTempFile;
 use tokio::sync::oneshot;
 
@@ -22,6 +22,7 @@ pub trait HarmonyHdcShellSession {
     fn screenshot_probe(&mut self) -> Result<(), OperatorError>;
     fn capture_screenshot(&mut self, path: &Path) -> Result<(), OperatorError>;
     fn display_size(&mut self) -> Result<ImageSizePx, OperatorError>;
+    fn focused_window_bounds(&mut self) -> Result<Option<Rect>, OperatorError>;
 }
 
 pub trait HarmonyHdcUiSession {
@@ -104,11 +105,13 @@ impl HarmonyHdcWorker {
     pub(crate) async fn capture_observe(
         &self,
         artifact_path: Option<PathBuf>,
+        resolve_frontmost_bounds: bool,
     ) -> Result<HarmonyCaptureReport, OperatorError> {
         let (response_tx, response_rx) = oneshot::channel();
         self.sender
             .send(WorkerCommand::CaptureObserve {
                 artifact_path,
+                resolve_frontmost_bounds,
                 response: response_tx,
             })
             .map_err(|_| worker_stopped_error())?;
@@ -134,13 +137,15 @@ enum WorkerCommand {
     },
     CaptureObserve {
         artifact_path: Option<PathBuf>,
+        resolve_frontmost_bounds: bool,
         response: oneshot::Sender<Result<HarmonyCaptureReport, OperatorError>>,
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct HarmonyCaptureReport {
     pub(crate) image_size_px: ImageSizePx,
+    pub(crate) focused_window_bounds: Option<Rect>,
 }
 
 struct WorkerState {
@@ -252,6 +257,7 @@ impl WorkerState {
     fn capture_observe(
         &mut self,
         artifact_path: Option<&Path>,
+        resolve_frontmost_bounds: bool,
     ) -> Result<HarmonyCaptureReport, OperatorError> {
         self.ensure_shell_session()?;
 
@@ -265,9 +271,17 @@ impl WorkerState {
                 session.capture_screenshot(path)?;
             }
 
-            session
-                .display_size()
-                .map(|image_size_px| HarmonyCaptureReport { image_size_px })
+            let image_size_px = session.display_size()?;
+            let focused_window_bounds = if resolve_frontmost_bounds {
+                session.focused_window_bounds().ok().flatten()
+            } else {
+                None
+            };
+
+            Ok(HarmonyCaptureReport {
+                image_size_px,
+                focused_window_bounds,
+            })
         };
 
         if result.is_err() {
@@ -313,6 +327,32 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
             .map_err(|error| hdc_platform_error("failed to read harmony display size", error))?;
         image_size_from_point(point.x, point.y)
     }
+
+    fn focused_window_bounds(&mut self) -> Result<Option<Rect>, OperatorError> {
+        let windows = self.driver.list_windows().map_err(|error| {
+            hdc_platform_error(
+                "failed to read Harmony focused window bounds for frontmost observe",
+                error,
+            )
+        })?;
+        let Some(focused_window_id) = windows.focused_window_id else {
+            return Ok(None);
+        };
+        let Some(window) = windows
+            .windows
+            .into_iter()
+            .find(|window| window.window_id == focused_window_id)
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(Rect {
+            x: f64::from(window.rect.x),
+            y: f64::from(window.rect.y),
+            width: f64::from(window.rect.width),
+            height: f64::from(window.rect.height),
+        }))
+    }
 }
 
 struct RealHarmonyHdcUiSession {
@@ -340,9 +380,12 @@ fn worker_loop(
             }
             WorkerCommand::CaptureObserve {
                 artifact_path,
+                resolve_frontmost_bounds,
                 response,
             } => {
-                let _ = response.send(state.capture_observe(artifact_path.as_deref()));
+                let _ = response.send(
+                    state.capture_observe(artifact_path.as_deref(), resolve_frontmost_bounds),
+                );
             }
         }
     }
