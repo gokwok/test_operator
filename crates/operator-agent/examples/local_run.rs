@@ -1,11 +1,16 @@
-use std::{collections::HashSet, env, path::PathBuf, process::ExitCode, sync::Arc};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    process::ExitCode,
+    sync::Arc,
+};
 
 use clap::Parser;
 use operator_agent::{
     load_persisted_session, model::ModelRegistry, render_harness_report, AgentConfig,
     AgentRunRequest, AgentRunner, HarnessReport,
 };
-use operator_bootstrap::system_platform_registry;
+use operator_bootstrap::{load_runtime_config_from, operator_home_dir, system_platform_registry};
 use operator_core::TargetId;
 use operator_runtime::{
     FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
@@ -22,16 +27,12 @@ Provider credentials:\n\
   gpt-5.4      -> OPENAI_API_KEY (optional OPENAI_BASE_URL)\n\
   doubao-seed  -> ARK_API_KEY or DOUBAO_API_KEY (optional ARK_BASE_URL or DOUBAO_BASE_URL)"
 )]
-struct Cli {
+pub(crate) struct Cli {
     #[arg(long, help = "Task prompt to send into the phase-1 agent loop")]
     task: String,
 
-    #[arg(
-        long,
-        default_value = "macos",
-        help = "Target id to run against, for example macos"
-    )]
-    target: String,
+    #[arg(long, help = "Target id to run against, for example macos")]
+    target: Option<String>,
 
     #[arg(
         long,
@@ -71,17 +72,16 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<HarnessReport, String> {
-    let state_root = cli.state_root.unwrap_or_else(default_state_root);
-    let target = TargetId(cli.target.clone());
+    let operator_home = operator_home_dir();
+    let runtime_config = runtime_config_for_home(&cli, &operator_home)?;
+    let state_root = cli
+        .state_root
+        .clone()
+        .unwrap_or_else(|| default_state_root(&operator_home));
     let request = AgentRunRequest {
-        task: cli.task,
-        target: target.clone(),
+        task: cli.task.clone(),
+        target: runtime_config.default_target.clone(),
         model: Some(cli.model.clone()),
-    };
-
-    let runtime_config = RuntimeConfig {
-        default_target: target,
-        ..RuntimeConfig::default()
     };
 
     let session_store = Arc::new(FileSessionStore::new(&state_root));
@@ -114,6 +114,17 @@ async fn run(cli: Cli) -> Result<HarnessReport, String> {
     Ok(HarnessReport::new(
         request, state_root, result, failure, transcript,
     ))
+}
+
+pub(crate) fn runtime_config_for_home(
+    cli: &Cli,
+    operator_home: impl AsRef<Path>,
+) -> Result<RuntimeConfig, String> {
+    let mut config = load_runtime_config_from(operator_home).map_err(|error| error.to_string())?;
+    if let Some(target) = &cli.target {
+        config.default_target = TargetId(target.clone());
+    }
+    Ok(config)
 }
 
 async fn build_runtime(
@@ -171,14 +182,6 @@ fn augment_failure(model: &str, error: impl std::fmt::Display) -> String {
     }
 }
 
-fn default_state_root() -> PathBuf {
-    if let Some(path) = env::var_os("OPERATOR_HOME") {
-        return PathBuf::from(path).join("agent-harness");
-    }
-
-    if let Some(home) = env::var_os("HOME") {
-        return PathBuf::from(home).join(".operator").join("agent-harness");
-    }
-
-    PathBuf::from(".operator").join("agent-harness")
+fn default_state_root(operator_home: &Path) -> PathBuf {
+    operator_home.join("agent-harness")
 }

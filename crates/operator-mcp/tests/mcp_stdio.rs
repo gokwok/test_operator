@@ -1,10 +1,12 @@
 use std::{
+    fs,
     io::Cursor,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
+use operator_bootstrap::{load_runtime_config_from, runtime_config_path};
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
     ActionTargetSelector, ActionVerification, Capability, CapabilitySet, ExecContext, HealthStatus,
@@ -17,6 +19,7 @@ use operator_runtime::SnapshotStore;
 use operator_runtime::{FileArtifactStore, RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::{json, Value};
+use tempfile::tempdir;
 use tokio::sync::Notify;
 
 fn default_action_request() -> ActionRequest {
@@ -984,6 +987,79 @@ async fn tools_call_executes_press_and_returns_structured_content() {
                 target: "local:macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_entrypoint_defaults_can_be_loaded_from_operator_home_config() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+default_timeout_ms = 250
+"#,
+    )
+    .expect("write config");
+
+    let config = load_runtime_config_from(temp.path()).expect("load config");
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::KeyboardInput]),
+    ));
+    driver.push_action_result(Ok(successful_action_outcome("pressed down once", 5)));
+
+    let runtime = RuntimeBuilder::new(config.clone())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let server = McpServer::new(runtime.tools().clone())
+        .with_allow_side_effects(config.allow_side_effects)
+        .with_default_target(config.default_target.clone())
+        .with_default_timeout_ms(config.default_timeout_ms);
+    initialize_server(&server);
+
+    let response = server
+        .handle_message(json!({
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "press",
+                "arguments": {
+                    "key": "down",
+                    "count": 1
+                }
+            }
+        }))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        response["result"]["structuredContent"]["outcome"]["detail"],
+        json!("pressed down once")
+    );
+    assert_eq!(
+        driver.action_calls().await,
+        vec![(
+            ActionRequest {
+                action: Action::Press {
+                    key: "down".into(),
+                    count: 1.try_into().unwrap(),
+                },
+                locator: None,
+                ..default_action_request()
+            },
+            ExecContext {
+                target: "macos".into(),
+                session: None,
+                timeout_ms: Some(250),
             },
         )]
     );

@@ -3,12 +3,12 @@
 pub(crate) mod args;
 mod output;
 
-use std::{env, future::Future, path::PathBuf, pin::Pin, sync::Arc};
+use std::{future::Future, path::Path, pin::Pin, sync::Arc};
 
 use operator_agent::{
     model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
 };
-use operator_bootstrap::system_platform_registry;
+use operator_bootstrap::{load_runtime_config, operator_home_dir, system_platform_registry};
 use operator_core::OperatorError;
 #[cfg(not(test))]
 use operator_mcp::run_stdio_server;
@@ -37,7 +37,7 @@ struct RuntimeToolInvoker {
 
 impl RuntimeToolInvoker {
     async fn build() -> Result<Self, OperatorError> {
-        let runtime = build_runtime(RuntimeConfig::default()).await?;
+        let runtime = build_runtime(load_runtime_config()?).await?;
 
         Ok(Self {
             tools: runtime.tools().clone(),
@@ -56,7 +56,7 @@ struct RuntimeAgentExecutor;
 impl AgentExecutor for RuntimeAgentExecutor {
     fn run<'a>(&'a self, command: &'a AgentCommand) -> AgentFuture<'a> {
         Box::pin(async move {
-            let runtime_config = runtime_config_for(command);
+            let runtime_config = runtime_config_for(command).map_err(|error| error.to_string())?;
             let request = AgentRunRequest {
                 task: command.task.clone(),
                 target: runtime_config.default_target.clone(),
@@ -172,15 +172,22 @@ async fn build_runtime(config: RuntimeConfig) -> Result<operator_runtime::Runtim
         .await
 }
 
-fn runtime_config_for(command: &AgentCommand) -> RuntimeConfig {
-    let mut config = RuntimeConfig::default();
+fn runtime_config_for(command: &AgentCommand) -> Result<RuntimeConfig, OperatorError> {
+    runtime_config_for_home(command, operator_home_dir())
+}
+
+pub(crate) fn runtime_config_for_home(
+    command: &AgentCommand,
+    operator_home: impl AsRef<Path>,
+) -> Result<RuntimeConfig, OperatorError> {
+    let mut config = operator_bootstrap::load_runtime_config_from(operator_home)?;
     if let Some(target) = &command.target {
         config.default_target = target.clone().into();
     }
     if let Some(timeout_ms) = command.timeout_ms {
         config.default_timeout_ms = timeout_ms;
     }
-    config
+    Ok(config)
 }
 
 fn agent_config_for(command: &AgentCommand) -> AgentConfig {
@@ -192,18 +199,6 @@ fn agent_config_for(command: &AgentCommand) -> AgentConfig {
         config.step_timeout_ms = timeout_ms;
     }
     config
-}
-
-fn operator_home_dir() -> PathBuf {
-    if let Some(path) = env::var_os("OPERATOR_HOME") {
-        return PathBuf::from(path);
-    }
-
-    if let Some(home) = env::var_os("HOME") {
-        return PathBuf::from(home).join(".operator");
-    }
-
-    PathBuf::from(".operator")
 }
 
 #[cfg(test)]
