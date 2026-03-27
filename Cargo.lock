@@ -822,7 +822,9 @@ dependencies = [
  "operator-core",
  "operator-runtime",
  "serde_json",
+ "tempfile",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

@@ -30,3 +30,10 @@ impl HarmonyConfigError {
         }
     }
 }
+
+pub(crate) fn hdc_platform_error(
+    context: &str,
+    error: impl std::fmt::Display,
+) -> operator_core::OperatorError {
+    operator_core::OperatorError::Platform(format!("{context}: {error}"))
+}

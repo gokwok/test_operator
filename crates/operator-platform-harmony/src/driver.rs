@@ -3,33 +3,33 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use operator_core::{
     ActionOutcome, ActionRequest, CapabilitySet, ExecContext, HealthStatus, ObserveRequest,
-    ObserveResult, OperatorError, PermissionsReport, PlatformDriver, QueryRequest, QueryResult,
-    TargetId,
+    ObserveResult, OperatorError, PlatformDriver, QueryRequest, QueryResult, TargetId,
 };
 
-use crate::{HarmonyHdcConfig, HarmonyHdcWorker};
+use crate::{
+    permissions::{health_message, health_ready},
+    HarmonyHdcConfig, HarmonyHdcWorker,
+};
 
 const DRIVER_ID: &str = "harmony.hdc";
 
 #[derive(Debug)]
 pub struct HarmonyHdcDriver {
     target_id: TargetId,
-    config: HarmonyHdcConfig,
     worker: Arc<HarmonyHdcWorker>,
 }
 
 impl HarmonyHdcDriver {
     pub fn new(target_id: TargetId, config: HarmonyHdcConfig) -> Self {
-        let worker = Arc::new(HarmonyHdcWorker::new(config.clone()));
-        Self {
-            target_id,
-            config,
-            worker,
-        }
+        Self::new_with_worker(target_id, Arc::new(HarmonyHdcWorker::new(config)))
+    }
+
+    pub(crate) fn new_with_worker(target_id: TargetId, worker: Arc<HarmonyHdcWorker>) -> Self {
+        Self { target_id, worker }
     }
 
     pub fn config(&self) -> &HarmonyHdcConfig {
-        &self.config
+        self.worker.config()
     }
 
     pub fn worker(&self) -> &Arc<HarmonyHdcWorker> {
@@ -52,13 +52,18 @@ impl PlatformDriver for HarmonyHdcDriver {
     }
 
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
+        let permissions = self.worker.permissions_report().await?;
+        let healthy = health_ready(&permissions);
+
         Ok(HealthStatus {
-            healthy: false,
-            message: Some(format!(
-                "target {} is wired to {}, but the concrete harmony action/query surface is not implemented yet",
-                self.target_id, DRIVER_ID
-            )),
-            permissions: PermissionsReport { checks: Vec::new() },
+            healthy,
+            message: health_message(&permissions).or_else(|| {
+                Some(format!(
+                    "target {} is wired to {}, but observe/query/action are not implemented yet",
+                    self.target_id, DRIVER_ID
+                ))
+            }),
+            permissions,
         })
     }
 

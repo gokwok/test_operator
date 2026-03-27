@@ -3,14 +3,34 @@ use std::sync::Arc;
 use operator_core::{OperatorError, PlatformDriver, TargetDescriptor};
 use operator_runtime::PlatformDriverFactory;
 
-use crate::{HarmonyHdcConfig, HarmonyHdcDriver};
+use crate::{HarmonyHdcConfig, HarmonyHdcDriver, HarmonyHdcSessionFactory, HarmonyHdcWorker};
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct HarmonyHdcDriverFactory;
+#[derive(Clone)]
+pub struct HarmonyHdcDriverFactory {
+    session_factory: Arc<dyn HarmonyHdcSessionFactory>,
+}
 
 impl HarmonyHdcDriverFactory {
     pub fn new() -> Self {
-        Self
+        Self {
+            session_factory: Arc::new(crate::worker::RealHarmonyHdcSessionFactory),
+        }
+    }
+
+    pub fn new_with_session_factory(session_factory: Arc<dyn HarmonyHdcSessionFactory>) -> Self {
+        Self { session_factory }
+    }
+}
+
+impl Default for HarmonyHdcDriverFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for HarmonyHdcDriverFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HarmonyHdcDriverFactory")
     }
 }
 
@@ -43,7 +63,14 @@ impl PlatformDriverFactory for HarmonyHdcDriverFactory {
                 target.id
             ))
         })?;
+        let worker = Arc::new(HarmonyHdcWorker::new_with_session_factory(
+            config,
+            Arc::clone(&self.session_factory),
+        ));
 
-        Ok(Arc::new(HarmonyHdcDriver::new(target.id.clone(), config)))
+        Ok(Arc::new(HarmonyHdcDriver::new_with_worker(
+            target.id.clone(),
+            worker,
+        )))
     }
 }

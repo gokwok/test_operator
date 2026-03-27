@@ -1,4 +1,7 @@
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use operator_core::DriverConfig;
 use serde_json::Value;
@@ -7,16 +10,17 @@ use crate::HarmonyConfigError;
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const DEFAULT_STARTUP_DELAY_MS: u64 = 500;
+const DEFAULT_REMOTE_AGENT_PATH: &str = "/data/local/tmp/agent.so";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HarmonyHdcConfig {
     addr: String,
-    connect_key: Option<String>,
+    connect_key: String,
     key_dir: Option<PathBuf>,
-    timeout_ms: Option<u64>,
+    timeout: Duration,
     agent_path: Option<PathBuf>,
-    remote_agent_path: Option<String>,
-    startup_delay_ms: Option<u64>,
+    remote_agent_path: String,
+    startup_delay: Duration,
 }
 
 impl HarmonyHdcConfig {
@@ -24,28 +28,28 @@ impl HarmonyHdcConfig {
         &self.addr
     }
 
-    pub fn connect_key(&self) -> Option<&str> {
-        self.connect_key.as_deref()
+    pub fn connect_key(&self) -> &str {
+        &self.connect_key
     }
 
-    pub fn key_dir(&self) -> Option<&PathBuf> {
-        self.key_dir.as_ref()
+    pub fn key_dir(&self) -> Option<&Path> {
+        self.key_dir.as_deref()
     }
 
-    pub fn agent_path(&self) -> Option<&PathBuf> {
-        self.agent_path.as_ref()
+    pub fn agent_path(&self) -> Option<&Path> {
+        self.agent_path.as_deref()
     }
 
-    pub fn remote_agent_path(&self) -> Option<&str> {
-        self.remote_agent_path.as_deref()
+    pub fn remote_agent_path(&self) -> &str {
+        &self.remote_agent_path
     }
 
     pub fn timeout(&self) -> Duration {
-        Duration::from_millis(self.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))
+        self.timeout
     }
 
     pub fn startup_delay(&self) -> Duration {
-        Duration::from_millis(self.startup_delay_ms.unwrap_or(DEFAULT_STARTUP_DELAY_MS))
+        self.startup_delay
     }
 }
 
@@ -61,14 +65,20 @@ impl TryFrom<&DriverConfig> for HarmonyHdcConfig {
             }
         }
 
+        let addr = required_string(config, "addr")?;
         Ok(Self {
-            addr: required_string(config, "addr")?,
-            connect_key: optional_string(config, "connect_key")?,
+            connect_key: optional_string(config, "connect_key")?.unwrap_or_else(|| addr.clone()),
+            addr,
             key_dir: optional_path(config, "key_dir")?,
-            timeout_ms: optional_u64(config, "timeout_ms")?,
+            timeout: Duration::from_millis(
+                optional_u64(config, "timeout_ms")?.unwrap_or(DEFAULT_TIMEOUT_MS),
+            ),
             agent_path: optional_path(config, "agent_path")?,
-            remote_agent_path: optional_string(config, "remote_agent_path")?,
-            startup_delay_ms: optional_u64(config, "startup_delay_ms")?,
+            remote_agent_path: optional_string(config, "remote_agent_path")?
+                .unwrap_or_else(|| DEFAULT_REMOTE_AGENT_PATH.to_string()),
+            startup_delay: Duration::from_millis(
+                optional_u64(config, "startup_delay_ms")?.unwrap_or(DEFAULT_STARTUP_DELAY_MS),
+            ),
         })
     }
 }
@@ -86,8 +96,13 @@ fn optional_string(
 ) -> Result<Option<String>, HarmonyConfigError> {
     match config.get(field) {
         None => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(HarmonyConfigError::invalid(field, "string")),
+        Some(Value::String(value)) => {
+            if value.trim().is_empty() {
+                return Err(HarmonyConfigError::invalid(field, "non-empty string"));
+            }
+            Ok(Some(value.clone()))
+        }
+        Some(_) => Err(HarmonyConfigError::invalid(field, "non-empty string")),
     }
 }
 
@@ -138,7 +153,7 @@ mod tests {
         let parsed = HarmonyHdcConfig::try_from(&config).expect("config should parse");
 
         assert_eq!(parsed.addr(), "192.168.8.43:35319");
-        assert_eq!(parsed.connect_key(), Some("pc-01"));
+        assert_eq!(parsed.connect_key(), "pc-01");
         assert_eq!(
             parsed
                 .key_dir()
@@ -151,7 +166,7 @@ mod tests {
                 .map(|path| path.to_string_lossy().into_owned()),
             Some("/tmp/agent.so".into())
         );
-        assert_eq!(parsed.remote_agent_path(), Some("/data/local/tmp/agent.so"));
+        assert_eq!(parsed.remote_agent_path(), "/data/local/tmp/agent.so");
         assert_eq!(parsed.timeout().as_millis(), 45_000);
         assert_eq!(parsed.startup_delay().as_millis(), 800);
     }
@@ -171,5 +186,17 @@ mod tests {
                 field: "endpoint".into()
             }
         );
+    }
+
+    #[test]
+    fn normalizes_defaulted_harmony_hdc_driver_config_fields() {
+        let config = DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))]);
+
+        let parsed = HarmonyHdcConfig::try_from(&config).expect("config should parse");
+
+        assert_eq!(parsed.connect_key(), "192.168.8.43:35319");
+        assert_eq!(parsed.remote_agent_path(), "/data/local/tmp/agent.so");
+        assert_eq!(parsed.timeout().as_millis(), 60_000);
+        assert_eq!(parsed.startup_delay().as_millis(), 500);
     }
 }

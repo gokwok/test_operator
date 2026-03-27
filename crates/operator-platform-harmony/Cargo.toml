@@ -9,7 +9,9 @@ async-trait.workspace = true
 hmdriver_rs = { path = "hdc_driver/base" }
 operator-core = { path = "../operator-core" }
 operator-runtime = { path = "../operator-runtime" }
+tempfile.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dependencies.serde_json]
 workspace = true
