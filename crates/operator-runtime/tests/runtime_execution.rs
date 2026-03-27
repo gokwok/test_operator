@@ -153,6 +153,137 @@ async fn runtime_persists_snapshot_after_observe() {
 }
 
 #[tokio::test]
+async fn runtime_allows_screenshot_only_observe_on_capture_only_driver() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let mut snapshot = test_snapshot("snap-capture-only");
+    snapshot.elements.clear();
+    snapshot.root_ids.clear();
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture]),
+    ));
+    driver.push_observe_result(Ok(ObserveResult {
+        snapshot: snapshot.clone(),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store.clone())
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let result = runtime
+        .core()
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: false,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.snapshot, snapshot);
+    assert_eq!(store.get(&snapshot.id).await.unwrap(), Some(snapshot));
+    assert_eq!(driver.observe_calls().await.len(), 1);
+}
+
+#[tokio::test]
+async fn runtime_allows_tree_only_observe_on_inspect_tree_only_driver() {
+    let store = Arc::new(InMemorySnapshotStore::new());
+    let snapshot = test_snapshot("snap-tree-only");
+
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::InspectTree]),
+    ));
+    driver.push_observe_result(Ok(ObserveResult {
+        snapshot: snapshot.clone(),
+    }));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(store.clone())
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let result = runtime
+        .core()
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: false,
+                include_elements: true,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.snapshot, snapshot);
+    assert_eq!(store.get(&snapshot.id).await.unwrap(), Some(snapshot));
+    assert_eq!(driver.observe_calls().await.len(), 1);
+}
+
+#[tokio::test]
+async fn runtime_rejects_mixed_observe_when_driver_lacks_tree_inspection() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture]),
+    ));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: true,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    match error {
+        OperatorError::CapabilityNotSupported(Capability::InspectTree) => {}
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    assert!(driver.observe_calls().await.is_empty());
+}
+
+#[tokio::test]
 async fn runtime_times_out_slow_driver_calls() {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use operator_core::{Capability, ObserveRequest, OperatorError, Snapshot, Surface};
+use operator_core::{ObserveRequest, OperatorError, Snapshot, Surface};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,8 +10,6 @@ use crate::{
     RuntimeCore, ToolRegistration, ToolSpec,
 };
 
-const OBSERVE_CAPABILITIES: &[Capability] = &[Capability::Capture, Capability::InspectTree];
-
 pub(crate) fn registration() -> ToolRegistration {
     ToolRegistration {
         spec: ToolSpec {
@@ -19,7 +17,7 @@ pub(crate) fn registration() -> ToolRegistration {
             description: "Capture a surface and persist the resulting snapshot.",
             input_schema: json_schema_for::<ObserveToolInput>(),
             output_schema: json_schema_for::<ObserveToolOutput>(),
-            capabilities_required: OBSERVE_CAPABILITIES,
+            capabilities_required: &[],
             has_side_effects: false,
         },
         handler: Arc::new(|input, core, ctx| {

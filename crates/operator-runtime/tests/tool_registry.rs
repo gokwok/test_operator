@@ -1808,7 +1808,10 @@ async fn action_tools_export_stable_specs() {
 
     let observe = specs.iter().find(|spec| spec.name == "observe").unwrap();
     assert!(!observe.has_side_effects);
+    assert_eq!(observe.capabilities_required.len(), 0);
     assert!(observe.input_schema["properties"]["surface"].is_object());
+    assert!(observe.input_schema["properties"]["include_screenshot"].is_object());
+    assert!(observe.input_schema["properties"]["include_elements"].is_object());
 
     let get_focus = specs.iter().find(|spec| spec.name == "get-focus").unwrap();
     assert!(!get_focus.has_side_effects);
