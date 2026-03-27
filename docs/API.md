@@ -160,6 +160,10 @@ let ui = UiDriver::builder("192.168.8.43:35319")
 - `startup_delay(Duration) -> Self`
 - `connect() -> Result<UiDriver>`
 
+默认情况下，`UiDriverBuilder` 会在仓库内查找：
+
+- `assets/uitest/uitest_agent_v1.1.0.so`
+
 ### UiDriver 方法
 
 #### 显示与窗口
