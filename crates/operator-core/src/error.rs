@@ -8,6 +8,11 @@ pub enum OperatorError {
     #[error("target not found: {0}")]
     TargetNotFound(String),
 
+    #[error(
+        "target {target} requires driver {driver}, but that driver is not registered in this build"
+    )]
+    DriverUnavailable { target: String, driver: String },
+
     #[error("target is busy (queue timeout)")]
     TargetBusy,
 

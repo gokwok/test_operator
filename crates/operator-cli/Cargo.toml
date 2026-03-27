@@ -20,4 +20,5 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+operator-testkit = { path = "../operator-testkit" }
 tempfile.workspace = true

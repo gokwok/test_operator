@@ -129,6 +129,7 @@ fn error_kind(error: &OperatorError) -> &'static str {
     match error {
         OperatorError::CapabilityNotSupported(_) => "capability_not_supported",
         OperatorError::TargetNotFound(_) => "target_not_found",
+        OperatorError::DriverUnavailable { .. } => "driver_unavailable",
         OperatorError::TargetBusy => "target_busy",
         OperatorError::Timeout { .. } => "timeout",
         OperatorError::ElementNotFound(_) => "element_not_found",

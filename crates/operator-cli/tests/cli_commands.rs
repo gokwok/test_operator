@@ -2,6 +2,7 @@
 mod cli_main;
 
 use std::{
+    collections::BTreeMap,
     fs,
     future::Future,
     num::NonZeroU32,
@@ -11,7 +12,9 @@ use std::{
 
 use operator_agent::AgentRunResult;
 use operator_bootstrap::runtime_config_path;
-use operator_core::{SessionId, TargetId};
+use operator_core::{DriverConfig, OperatorError, SessionId, TargetId};
+use operator_runtime::{NamedTargetConfig, RuntimeBuilder, RuntimeConfig, ToolRegistry};
+use operator_testkit::InMemorySnapshotStore;
 use serde_json::{json, Value};
 use tempfile::tempdir;
 
@@ -2048,6 +2051,49 @@ async fn cli_run_renders_swipe_detail_for_non_json_output() {
     assert_eq!(recorded[0].0, "swipe");
 }
 
+#[tokio::test]
+async fn cli_run_distinguishes_known_target_with_missing_driver() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "capabilities",
+        "--target",
+        "windows-lab",
+    ])
+    .unwrap();
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig {
+        default_target: TargetId("windows-lab".into()),
+        targets: BTreeMap::from([(
+            "windows-lab".into(),
+            NamedTargetConfig {
+                platform: "windows".into(),
+                driver: "windows.remote".into(),
+                driver_config: DriverConfig::new(),
+            },
+        )]),
+        ..RuntimeConfig::default()
+    })
+    .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+    .build()
+    .await
+    .unwrap();
+    let invoker = RuntimeBackedInvoker {
+        tools: runtime.tools().clone(),
+    };
+
+    let error = cli_main::run_with_invoker(cli, &invoker)
+        .await
+        .expect_err("missing driver should surface as an operator error");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::DriverUnavailable { target, driver }) => {
+            assert_eq!(target, "windows-lab");
+            assert_eq!(driver, "windows.remote");
+        }
+        other => panic!("expected driver unavailable, got {other:?}"),
+    }
+}
+
 struct RecordingInvoker {
     calls: Arc<Mutex<Vec<(String, Value)>>>,
     response: Value,
@@ -2066,6 +2112,21 @@ impl cli_main::ToolInvoker for RecordingInvoker {
             .push((tool.to_string(), input.clone()));
         let response = self.response.clone();
         Box::pin(async move { Ok(response) })
+    }
+}
+
+struct RuntimeBackedInvoker {
+    tools: ToolRegistry,
+}
+
+impl cli_main::ToolInvoker for RuntimeBackedInvoker {
+    fn invoke<'a>(
+        &'a self,
+        tool: &'a str,
+        input: Value,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, operator_core::OperatorError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.tools.invoke(tool, input).await })
     }
 }
 

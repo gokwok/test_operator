@@ -80,6 +80,62 @@ async fn runtime_builder_registers_multiple_drivers() {
     assert_eq!(device_driver.driver_id(), "harmony.bridge");
 }
 
+#[tokio::test]
+async fn resolve_driver_keeps_target_not_found_for_undefined_named_target() {
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .build()
+        .await
+        .unwrap();
+
+    let error = runtime
+        .core()
+        .resolve_driver(&TargetId("missing-target".into()));
+
+    match error {
+        Err(error) => match error {
+            OperatorError::TargetNotFound(target) => assert_eq!(target, "missing-target"),
+            other => panic!("expected target not found, got {other:?}"),
+        },
+        Ok(_) => panic!("unknown target should fail before driver lookup"),
+    }
+}
+
+#[tokio::test]
+async fn resolve_driver_reports_driver_unavailable_for_known_target() {
+    let runtime = RuntimeBuilder::new(RuntimeConfig {
+        default_target: TargetId("windows-lab".into()),
+        targets: BTreeMap::from([(
+            "windows-lab".into(),
+            NamedTargetConfig {
+                platform: "windows".into(),
+                driver: "windows.remote".into(),
+                driver_config: DriverConfig::new(),
+            },
+        )]),
+        ..RuntimeConfig::default()
+    })
+    .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+    .build()
+    .await
+    .unwrap();
+
+    let error = runtime
+        .core()
+        .resolve_driver(&TargetId("windows-lab".into()));
+
+    match error {
+        Err(error) => match error {
+            OperatorError::DriverUnavailable { target, driver } => {
+                assert_eq!(target, "windows-lab");
+                assert_eq!(driver, "windows.remote");
+            }
+            other => panic!("expected driver unavailable, got {other:?}"),
+        },
+        Ok(_) => panic!("missing driver registry entry should fail"),
+    }
+}
+
 #[test]
 fn target_resolver_prefers_named_targets_and_falls_back_to_legacy_syntax() {
     let resolver = TargetResolver::new(
@@ -231,6 +287,49 @@ async fn runtime_builder_passes_driver_config_through_factory_initialization() {
         "factory should only run once per target"
     );
     assert_eq!(seen_targets[0], first_target);
+}
+
+#[tokio::test]
+async fn resolve_driver_preserves_driver_config_validation_errors() {
+    let runtime = RuntimeBuilder::new(RuntimeConfig {
+        default_target: TargetId("windows-lab".into()),
+        targets: BTreeMap::from([(
+            "windows-lab".into(),
+            NamedTargetConfig {
+                platform: "windows".into(),
+                driver: "windows.remote".into(),
+                driver_config: DriverConfig::from([(
+                    "endpoint".into(),
+                    json!("wss://windows-lab.internal"),
+                )]),
+            },
+        )]),
+        ..RuntimeConfig::default()
+    })
+    .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+    .register_driver(Arc::new(MockPlatformDriver::with_driver_id(
+        "windows",
+        "windows.remote",
+        CapabilitySet::new([Capability::Capture]),
+    )))
+    .build()
+    .await
+    .unwrap();
+
+    let error = runtime
+        .core()
+        .resolve_driver(&TargetId("windows-lab".into()));
+
+    match error {
+        Err(error) => match error {
+            OperatorError::Platform(message) => {
+                assert!(message.contains("windows.remote"));
+                assert!(message.contains("does not accept target-level driver_config"));
+            }
+            other => panic!("expected platform validation error, got {other:?}"),
+        },
+        Ok(_) => panic!("static driver should reject unexpected driver_config"),
+    }
 }
 
 struct RecordingFactory {

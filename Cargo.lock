@@ -717,6 +717,7 @@ dependencies = [
  "operator-core",
  "operator-mcp",
  "operator-runtime",
+ "operator-testkit",
  "serde",
  "serde_json",
  "tempfile",

@@ -16,6 +16,14 @@ fn ids_round_trip_through_display() {
 fn operator_error_messages_are_stable() {
     let err = OperatorError::TargetNotFound("missing".into());
     assert!(err.to_string().contains("missing"));
+
+    let err = OperatorError::DriverUnavailable {
+        target: "windows-lab".into(),
+        driver: "windows.remote".into(),
+    };
+    let rendered = err.to_string();
+    assert!(rendered.contains("windows-lab"));
+    assert!(rendered.contains("windows.remote"));
 }
 
 #[test]

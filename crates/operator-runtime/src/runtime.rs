@@ -74,7 +74,10 @@ impl RuntimeCore {
         let factory = self
             .platform_registry
             .factory(&descriptor.driver)
-            .ok_or_else(|| OperatorError::TargetNotFound(target.to_string()))?;
+            .ok_or_else(|| OperatorError::DriverUnavailable {
+                target: descriptor.id.to_string(),
+                driver: descriptor.driver.clone(),
+            })?;
         let driver = factory.build(&descriptor)?;
 
         self.driver_cache
