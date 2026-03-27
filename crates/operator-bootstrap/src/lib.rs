@@ -47,7 +47,9 @@ pub fn load_runtime_config_from(
 
 pub fn system_platform_registry(artifacts_dir: impl AsRef<Path>) -> PlatformRegistry {
     let mut registry = PlatformRegistry::new();
-    registry.register_factory(Arc::new(HarmonyHdcDriverFactory::new()));
+    registry.register_factory(Arc::new(HarmonyHdcDriverFactory::new_with_artifacts_dir(
+        artifacts_dir.as_ref(),
+    )));
     registry.register_factory(Arc::new(MacosSystemDriverFactory::new(artifacts_dir)));
     registry
 }

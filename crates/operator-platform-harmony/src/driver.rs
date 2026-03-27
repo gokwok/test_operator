@@ -1,12 +1,14 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use operator_core::{
-    ActionOutcome, ActionRequest, CapabilitySet, ExecContext, HealthStatus, ObserveRequest,
-    ObserveResult, OperatorError, PlatformDriver, QueryRequest, QueryResult, TargetId,
+    ActionOutcome, ActionRequest, Capability, CapabilitySet, ExecContext, HealthStatus,
+    ObserveRequest, ObserveResult, OperatorError, PlatformDriver, QueryRequest, QueryResult,
+    TargetId,
 };
 
 use crate::{
+    observe::observe as observe_with_screenshot,
     permissions::{health_message, health_ready},
     HarmonyHdcConfig, HarmonyHdcWorker,
 };
@@ -15,17 +17,26 @@ const DRIVER_ID: &str = "harmony.hdc";
 
 #[derive(Debug)]
 pub struct HarmonyHdcDriver {
-    target_id: TargetId,
     worker: Arc<HarmonyHdcWorker>,
+    artifacts_dir: PathBuf,
 }
 
 impl HarmonyHdcDriver {
-    pub fn new(target_id: TargetId, config: HarmonyHdcConfig) -> Self {
-        Self::new_with_worker(target_id, Arc::new(HarmonyHdcWorker::new(config)))
+    pub fn new(_target_id: TargetId, config: HarmonyHdcConfig) -> Self {
+        Self {
+            worker: Arc::new(HarmonyHdcWorker::new(config)),
+            artifacts_dir: default_artifacts_dir(),
+        }
     }
 
-    pub(crate) fn new_with_worker(target_id: TargetId, worker: Arc<HarmonyHdcWorker>) -> Self {
-        Self { target_id, worker }
+    pub(crate) fn new_with_worker_and_artifacts_dir(
+        worker: Arc<HarmonyHdcWorker>,
+        artifacts_dir: PathBuf,
+    ) -> Self {
+        Self {
+            worker,
+            artifacts_dir,
+        }
     }
 
     pub fn config(&self) -> &HarmonyHdcConfig {
@@ -34,6 +45,10 @@ impl HarmonyHdcDriver {
 
     pub fn worker(&self) -> &Arc<HarmonyHdcWorker> {
         &self.worker
+    }
+
+    pub fn artifacts_dir(&self) -> &std::path::Path {
+        &self.artifacts_dir
     }
 }
 
@@ -48,7 +63,7 @@ impl PlatformDriver for HarmonyHdcDriver {
     }
 
     fn capabilities(&self) -> CapabilitySet {
-        CapabilitySet::default()
+        CapabilitySet::new([Capability::Capture])
     }
 
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
@@ -57,22 +72,17 @@ impl PlatformDriver for HarmonyHdcDriver {
 
         Ok(HealthStatus {
             healthy,
-            message: health_message(&permissions).or_else(|| {
-                Some(format!(
-                    "target {} is wired to {}, but observe/query/action are not implemented yet",
-                    self.target_id, DRIVER_ID
-                ))
-            }),
+            message: health_message(&permissions),
             permissions,
         })
     }
 
     async fn observe(
         &self,
-        _req: ObserveRequest,
-        _ctx: &ExecContext,
+        req: ObserveRequest,
+        ctx: &ExecContext,
     ) -> Result<ObserveResult, OperatorError> {
-        Err(unimplemented_surface_error("observe"))
+        observe_with_screenshot(self.worker.as_ref(), &self.artifacts_dir, req, ctx).await
     }
 
     async fn query(
@@ -96,4 +106,16 @@ fn unimplemented_surface_error(surface: &str) -> OperatorError {
     OperatorError::Platform(format!(
         "driver {DRIVER_ID} scaffold does not implement {surface} yet"
     ))
+}
+
+fn default_artifacts_dir() -> PathBuf {
+    if let Some(path) = std::env::var_os("OPERATOR_HOME") {
+        return PathBuf::from(path).join("artifacts");
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join(".operator").join("artifacts");
+    }
+
+    PathBuf::from(".operator").join("artifacts")
 }

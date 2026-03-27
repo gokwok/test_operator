@@ -4,6 +4,7 @@ mod config;
 mod driver;
 mod errors;
 mod factory;
+mod observe;
 mod permissions;
 mod worker;
 

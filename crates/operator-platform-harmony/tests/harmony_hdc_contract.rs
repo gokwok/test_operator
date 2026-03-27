@@ -1,9 +1,12 @@
+use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
 
-use operator_core::{DriverConfig, PermissionStatus, PlatformDriver, TargetDescriptor, TargetId};
+use operator_core::{
+    DriverConfig, ImageSizePx, PermissionStatus, PlatformDriver, TargetDescriptor, TargetId,
+};
 use operator_platform_harmony::{
     HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory, HarmonyHdcShellSession,
     HarmonyHdcUiSession, HDC_CAPTURE_CHECK_ID, HDC_CONNECT_CHECK_ID, HDC_SHELL_CHECK_ID,
@@ -221,6 +224,18 @@ impl HarmonyHdcShellSession for FakeShellSession {
     fn screenshot_probe(&mut self) -> Result<(), operator_core::OperatorError> {
         self.counts.capture_probes.fetch_add(1, Ordering::SeqCst);
         self.capture_probe.into_result()
+    }
+
+    fn capture_screenshot(&mut self, _path: &Path) -> Result<(), operator_core::OperatorError> {
+        self.counts.capture_probes.fetch_add(1, Ordering::SeqCst);
+        self.capture_probe.into_result()
+    }
+
+    fn display_size(&mut self) -> Result<ImageSizePx, operator_core::OperatorError> {
+        Ok(ImageSizePx {
+            width: 1920,
+            height: 1080,
+        })
     }
 }
 

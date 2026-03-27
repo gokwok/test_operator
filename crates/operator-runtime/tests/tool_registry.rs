@@ -9,8 +9,8 @@ use operator_core::{
     QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 use operator_runtime::{
-    AuditEvent, AuditEventKind, EventSink, FileArtifactStore, RuntimeBuilder, RuntimeConfig,
-    SnapshotStore,
+    AuditEvent, AuditEventKind, EventSink, FileArtifactStore, NamedTargetConfig, RuntimeBuilder,
+    RuntimeConfig, SnapshotStore,
 };
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::{json, Value};
@@ -223,6 +223,80 @@ async fn observe_tool_extracts_exec_context_from_json() {
             },
             ExecContext {
                 target: "macos".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )
+    );
+}
+
+#[tokio::test]
+async fn observe_tool_allows_capture_only_driver_when_elements_are_disabled() {
+    let mut config = RuntimeConfig {
+        default_timeout_ms: 250,
+        default_target: "harmony-pc".into(),
+        ..RuntimeConfig::default()
+    };
+    config.targets.insert(
+        "harmony-pc".into(),
+        NamedTargetConfig {
+            platform: "harmony".into(),
+            driver: "harmony.hdc".into(),
+            driver_config: Default::default(),
+        },
+    );
+
+    let mut snapshot = test_snapshot("snap-harmony");
+    snapshot.target = "harmony-pc".into();
+    snapshot.metadata.platform = "harmony".into();
+    snapshot.elements.clear();
+    snapshot.root_ids.clear();
+
+    let driver = Arc::new(MockPlatformDriver::with_driver_id(
+        "harmony",
+        "harmony.hdc",
+        CapabilitySet::new([Capability::Capture]),
+    ));
+    driver.push_observe_result(Ok(ObserveResult {
+        snapshot: snapshot.clone(),
+    }));
+
+    let runtime = RuntimeBuilder::new(config)
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let output = runtime
+        .tools()
+        .invoke(
+            "observe",
+            json!({
+                "surface": { "kind": "Frontmost" },
+                "include_screenshot": true,
+                "include_elements": false
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(output["snapshot"]["id"], json!("snap-harmony"));
+
+    let calls = driver.observe_calls().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0],
+        (
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: false,
+            },
+            ExecContext {
+                target: "harmony-pc".into(),
                 session: None,
                 timeout_ms: Some(250),
             },

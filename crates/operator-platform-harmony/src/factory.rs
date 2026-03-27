@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use operator_core::{OperatorError, PlatformDriver, TargetDescriptor};
 use operator_runtime::PlatformDriverFactory;
@@ -8,17 +11,33 @@ use crate::{HarmonyHdcConfig, HarmonyHdcDriver, HarmonyHdcSessionFactory, Harmon
 #[derive(Clone)]
 pub struct HarmonyHdcDriverFactory {
     session_factory: Arc<dyn HarmonyHdcSessionFactory>,
+    artifacts_dir: PathBuf,
 }
 
 impl HarmonyHdcDriverFactory {
     pub fn new() -> Self {
-        Self {
-            session_factory: Arc::new(crate::worker::RealHarmonyHdcSessionFactory),
-        }
+        Self::new_with_artifacts_dir(default_artifacts_dir())
+    }
+
+    pub fn new_with_artifacts_dir(artifacts_dir: impl AsRef<Path>) -> Self {
+        Self::new_with_session_factory_and_artifacts_dir(
+            Arc::new(crate::worker::RealHarmonyHdcSessionFactory),
+            artifacts_dir,
+        )
     }
 
     pub fn new_with_session_factory(session_factory: Arc<dyn HarmonyHdcSessionFactory>) -> Self {
-        Self { session_factory }
+        Self::new_with_session_factory_and_artifacts_dir(session_factory, default_artifacts_dir())
+    }
+
+    pub fn new_with_session_factory_and_artifacts_dir(
+        session_factory: Arc<dyn HarmonyHdcSessionFactory>,
+        artifacts_dir: impl AsRef<Path>,
+    ) -> Self {
+        Self {
+            session_factory,
+            artifacts_dir: artifacts_dir.as_ref().to_path_buf(),
+        }
     }
 }
 
@@ -68,9 +87,20 @@ impl PlatformDriverFactory for HarmonyHdcDriverFactory {
             Arc::clone(&self.session_factory),
         ));
 
-        Ok(Arc::new(HarmonyHdcDriver::new_with_worker(
-            target.id.clone(),
-            worker,
-        )))
+        Ok(Arc::new(
+            HarmonyHdcDriver::new_with_worker_and_artifacts_dir(worker, self.artifacts_dir.clone()),
+        ))
     }
+}
+
+fn default_artifacts_dir() -> PathBuf {
+    if let Some(path) = std::env::var_os("OPERATOR_HOME") {
+        return PathBuf::from(path).join("artifacts");
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join(".operator").join("artifacts");
+    }
+
+    PathBuf::from(".operator").join("artifacts")
 }
