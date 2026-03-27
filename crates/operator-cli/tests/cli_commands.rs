@@ -376,8 +376,8 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("show"));
     assert!(help.contains("Show the currently focused app, window, and element"));
-    assert!(help.contains("input"));
-    assert!(help.contains("Pointer and keyboard actions against locators or target windows/apps"));
+    assert!(help.contains("click"));
+    assert!(help.contains("Click a locator, coordinates, or target"));
     assert!(help.contains("mcp"));
     assert!(help.contains("Run the Operator MCP entrypoint"));
     assert!(help.contains("Agent"));
@@ -386,7 +386,7 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator capture frontmost"));
     assert!(help.contains(
-        "Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage."
+        "Use 'operator <command> --help' or 'operator <group> <command> --help' for detailed usage."
     ));
 }
 
@@ -437,25 +437,12 @@ fn artifact_help_shows_direct_id_usage() {
 }
 
 #[test]
-fn input_help_lists_pointer_and_keyboard_subcommands() {
-    let help = command_help(["operator", "input", "--help"]);
-    assert!(help.starts_with(
-        "Usage operator input [OPTIONS] <COMMAND>\n\nPointer and keyboard actions against locators or target windows/apps"
-    ));
-    assert!(help.contains("Pointer and keyboard actions against locators or target windows/apps"));
-    assert!(help.contains("click"));
-    assert!(help.contains("Click a locator, coordinates, or target"));
-    assert!(help.contains("Press a single key"));
-    assert!(help.contains("Use 'operator input <command> --help' for detailed usage."));
-}
-
-#[test]
-fn input_type_help_shows_positional_text_and_after_key() {
-    let help = command_help(["operator", "input", "type", "--help"]);
-    assert!(help.contains("Usage operator input type [OPTIONS] <TEXT>"));
+fn type_help_shows_positional_text_and_after_key() {
+    let help = command_help(["operator", "type", "--help"]);
+    assert!(help.contains("Usage operator type [OPTIONS] <TEXT>"));
     assert!(help.contains("--after-key <AFTER_KEYS>"));
     assert!(help.contains("--focus <FOCUS>"));
-    assert!(help.contains("Examples\n  operator input type \"hello operator\""));
+    assert!(help.contains("Examples\n  operator type \"hello operator\""));
 }
 
 #[test]
@@ -482,7 +469,7 @@ fn root_help_uses_highlight_and_muted_tip_styles() {
 
     assert!(help.contains("\u{1b}[1;38;5;214mUsage\u{1b}[0m"));
     assert!(help.contains("\u{1b}[1;38;5;255moperator [OPTIONS] [COMMAND]\u{1b}[0m"));
-    assert!(help.contains("\u{1b}[38;5;245mUse 'operator <group> --help'"));
+    assert!(help.contains("\u{1b}[38;5;245mUse 'operator <command> --help'"));
     assert!(!help.contains("\u{1b}[38;5;245mTip"));
 }
 
@@ -536,12 +523,12 @@ fn artifact_help_snapshot_is_stable() {
 }
 
 #[test]
-fn input_click_help_snapshot_is_stable() {
-    let help = command_help(["operator", "input", "click", "--help"]);
-    assert!(help.starts_with("Usage operator input click"));
-    assert!(help.contains(
-        "Usage operator input click [OPTIONS]\n\nClick a locator, coordinates, or target"
-    ));
+fn click_help_snapshot_is_stable() {
+    let help = command_help(["operator", "click", "--help"]);
+    assert!(help.starts_with("Usage operator click"));
+    assert!(
+        help.contains("Usage operator click [OPTIONS]\n\nClick a locator, coordinates, or target")
+    );
     assert!(help.contains("Click a locator, coordinates, or target"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
@@ -646,7 +633,7 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
 
 #[test]
 fn legacy_flat_commands_show_grouped_replacement_hints() {
-    let cases: [(&[&str], &str, &str); 34] = [
+    let cases: [(&[&str], &str, &str); 35] = [
         (
             &["operator", "snapshot-get", "s_123"],
             "snapshot-get",
@@ -726,14 +713,31 @@ fn legacy_flat_commands_show_grouped_replacement_hints() {
             "permissions-status",
             "operator permissions",
         ),
-        (&["operator", "click"], "click", "operator input click"),
-        (&["operator", "move"], "move", "operator input move"),
-        (&["operator", "type"], "type", "operator input type"),
-        (&["operator", "press"], "press", "operator input press"),
-        (&["operator", "hotkey"], "hotkey", "operator input hotkey"),
-        (&["operator", "scroll"], "scroll", "operator input scroll"),
-        (&["operator", "drag"], "drag", "operator input drag"),
-        (&["operator", "swipe"], "swipe", "operator input swipe"),
+        (
+            &["operator", "input"],
+            "input",
+            "operator click, operator type, operator press, operator hotkey, operator scroll, operator drag, operator swipe, or operator move",
+        ),
+        (&["operator", "input", "click"], "input click", "operator click"),
+        (&["operator", "input", "move"], "input move", "operator move"),
+        (&["operator", "input", "type"], "input type", "operator type"),
+        (&["operator", "input", "press"], "input press", "operator press"),
+        (
+            &["operator", "input", "hotkey"],
+            "input hotkey",
+            "operator hotkey",
+        ),
+        (
+            &["operator", "input", "scroll"],
+            "input scroll",
+            "operator scroll",
+        ),
+        (&["operator", "input", "drag"], "input drag", "operator drag"),
+        (
+            &["operator", "input", "swipe"],
+            "input swipe",
+            "operator swipe",
+        ),
         (
             &["operator", "launch-app"],
             "launch-app",
@@ -801,17 +805,23 @@ fn legacy_flat_commands_show_grouped_replacement_hints() {
 #[test]
 fn legacy_flat_command_detection_skips_root_global_flags() {
     assert_legacy_command_migration(
-        &["operator", "--json", "--target", "local:macos", "click"],
-        "click",
-        "operator input click",
+        &[
+            "operator",
+            "--json",
+            "--target",
+            "local:macos",
+            "input",
+            "click",
+        ],
+        "input click",
+        "operator click",
     );
 }
 
 #[tokio::test]
-async fn input_click_command_maps_locator_target_focus_and_verification() {
+async fn click_command_maps_locator_target_focus_and_verification() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "click",
         "--target",
         "local:macos",
@@ -856,9 +866,9 @@ async fn input_click_command_maps_locator_target_focus_and_verification() {
 }
 
 #[test]
-fn input_click_command_rejects_conflicting_locator_variants() {
+fn click_command_rejects_conflicting_locator_variants() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator", "input", "click", "--text", "Save", "--x", "24", "--y", "48",
+        "operator", "click", "--text", "Save", "--x", "24", "--y", "48",
     ])
     .unwrap();
 
@@ -1281,10 +1291,9 @@ async fn app_unhide_command_maps_window_id_target_selector_to_tool_input() {
 }
 
 #[tokio::test]
-async fn input_type_command_maps_app_target_selector_with_default_focus_policy() {
+async fn type_command_maps_app_target_selector_with_default_focus_policy() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "type",
         "--target",
         "local:macos",
@@ -1311,10 +1320,9 @@ async fn input_type_command_maps_app_target_selector_with_default_focus_policy()
 }
 
 #[tokio::test]
-async fn input_scroll_command_maps_locator_and_deltas_to_tool_input() {
+async fn scroll_command_maps_locator_and_deltas_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "scroll",
         "--target",
         "local:macos",
@@ -1351,10 +1359,9 @@ async fn input_scroll_command_maps_locator_and_deltas_to_tool_input() {
 }
 
 #[test]
-fn input_scroll_command_rejects_incomplete_snapshot_locator() {
+fn scroll_command_rejects_incomplete_snapshot_locator() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "scroll",
         "--delta-x",
         "0",
@@ -1370,10 +1377,9 @@ fn input_scroll_command_rejects_incomplete_snapshot_locator() {
 }
 
 #[tokio::test]
-async fn input_move_command_maps_coordinate_locator_and_verification() {
+async fn move_command_maps_coordinate_locator_and_verification() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "move",
         "--target",
         "local:macos",
@@ -1407,10 +1413,9 @@ async fn input_move_command_maps_coordinate_locator_and_verification() {
 }
 
 #[tokio::test]
-async fn input_drag_command_maps_motion_options_to_tool_input() {
+async fn drag_command_maps_motion_options_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "drag",
         "--target",
         "local:macos",
@@ -1462,10 +1467,9 @@ async fn input_drag_command_maps_motion_options_to_tool_input() {
 }
 
 #[tokio::test]
-async fn input_swipe_command_maps_motion_options_to_tool_input() {
+async fn swipe_command_maps_motion_options_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "swipe",
         "--target",
         "local:macos",
@@ -1512,10 +1516,9 @@ async fn input_swipe_command_maps_motion_options_to_tool_input() {
 }
 
 #[tokio::test]
-async fn input_hotkey_command_maps_positional_keys_to_tool_input() {
+async fn hotkey_command_maps_positional_keys_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "hotkey",
         "--target",
         "local:macos",
@@ -1540,10 +1543,9 @@ async fn input_hotkey_command_maps_positional_keys_to_tool_input() {
 }
 
 #[tokio::test]
-async fn input_press_command_maps_positional_key_to_tool_input() {
+async fn press_command_maps_positional_key_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "press",
         "--target",
         "local:macos",
@@ -1569,10 +1571,9 @@ async fn input_press_command_maps_positional_key_to_tool_input() {
 }
 
 #[test]
-fn input_type_command_rejects_legacy_trailing_key_flag() {
+fn type_command_rejects_legacy_trailing_key_flag() {
     let error = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "type",
         "hello world",
         "--trailing-key",
@@ -1586,10 +1587,9 @@ fn input_type_command_rejects_legacy_trailing_key_flag() {
 }
 
 #[tokio::test]
-async fn input_type_command_maps_positional_text_after_keys_and_locator_to_tool_input() {
+async fn type_command_maps_positional_text_after_keys_and_locator_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "type",
         "--target",
         "local:macos",
@@ -1630,7 +1630,6 @@ async fn input_type_command_maps_positional_text_after_keys_and_locator_to_tool_
 async fn cli_run_renders_move_action_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "input",
         "move",
         "--target",
         "local:macos",
@@ -2018,8 +2017,7 @@ async fn cli_run_renders_focus_window_from_structured_outcome_when_detail_is_mis
 #[tokio::test]
 async fn cli_run_renders_press_detail_for_non_json_output() {
     let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "input", "press", "down", "--count", "3"])
-            .unwrap();
+        cli_main::args::Cli::try_parse_from(["operator", "press", "down", "--count", "3"]).unwrap();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let invoker = RecordingInvoker {
@@ -2102,8 +2100,7 @@ async fn cli_run_renders_show_summary_for_non_json_output() {
 #[tokio::test]
 async fn cli_run_renders_swipe_detail_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator", "input", "swipe", "--from-x", "10", "--from-y", "20", "--to-x", "100",
-        "--to-y", "20",
+        "operator", "swipe", "--from-x", "10", "--from-y", "20", "--to-x", "100", "--to-y", "20",
     ])
     .unwrap();
 

@@ -44,12 +44,12 @@ struct RootHelpSection {
 const ROOT_ABOUT: &str = "Operator - Turn any desktop app into an API, from CLI to AI";
 const ROOT_USAGE: &str = "operator [OPTIONS] [COMMAND]";
 const ROOT_FOOTER: &str =
-    "Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage.";
+    "Use 'operator <command> --help' or 'operator <group> <command> --help' for detailed usage.";
 const ROOT_EXAMPLES: &[&str] = &[
     "operator capture frontmost",
     "operator elements window --window-id 42",
     "operator list windows",
-    "operator input click --text Save",
+    "operator click --text Save",
     "operator mcp serve",
 ];
 
@@ -81,7 +81,6 @@ const LIST_ABOUT: &str = "List running apps or windows";
 const LIST_APPS_ABOUT: &str = "List running applications";
 const LIST_WINDOWS_ABOUT: &str = "List windows, optionally filtered by app";
 
-const INPUT_ABOUT: &str = "Pointer and keyboard actions against locators or target windows/apps";
 const INPUT_CLICK_ABOUT: &str = "Click a locator, coordinates, or target";
 const INPUT_MOVE_ABOUT: &str = "Move the pointer to a locator, coordinates, or target";
 const INPUT_TYPE_ABOUT: &str = "Type text into the focused or resolved target";
@@ -152,8 +151,36 @@ const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
 
 const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
-        command: "input",
-        about: INPUT_ABOUT,
+        command: "click",
+        about: INPUT_CLICK_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "type",
+        about: INPUT_TYPE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "press",
+        about: INPUT_PRESS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "hotkey",
+        about: INPUT_HOTKEY_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "scroll",
+        about: INPUT_SCROLL_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "drag",
+        about: INPUT_DRAG_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "swipe",
+        about: INPUT_SWIPE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "move",
+        about: INPUT_MOVE_ABOUT,
     },
     CommandHelpEntry {
         command: "app",
@@ -248,45 +275,6 @@ const LIST_GROUP_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "windows",
         about: LIST_WINDOWS_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
-    },
-];
-
-const INPUT_GROUP_COMMANDS: &[CommandHelpEntry] = &[
-    CommandHelpEntry {
-        command: "click",
-        about: INPUT_CLICK_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "move",
-        about: INPUT_MOVE_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "type",
-        about: INPUT_TYPE_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "press",
-        about: INPUT_PRESS_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "hotkey",
-        about: INPUT_HOTKEY_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "scroll",
-        about: INPUT_SCROLL_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "drag",
-        about: INPUT_DRAG_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "swipe",
-        about: INPUT_SWIPE_ABOUT,
     },
     CommandHelpEntry {
         command: "help",
@@ -404,18 +392,6 @@ const LIST_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     footer: "Use 'operator list <command> --help' for detailed usage.",
 };
 
-const INPUT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
-    usage: "operator input [OPTIONS] <COMMAND>",
-    about: INPUT_ABOUT,
-    entries_heading: "Commands",
-    commands: INPUT_GROUP_COMMANDS,
-    examples: &[
-        "operator input click --text Save --app Notes --focus auto --verify focus",
-        "operator input type \"hello operator\" --window-title Draft --after-key return",
-    ],
-    footer: "Use 'operator input <command> --help' for detailed usage.",
-};
-
 const APP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator app [OPTIONS] <COMMAND>",
     about: APP_ABOUT,
@@ -482,12 +458,12 @@ const LIST_WINDOWS_AFTER_HELP: &str = "Examples
   operator list windows --app TextEdit";
 
 const INPUT_CLICK_AFTER_HELP: &str = "Examples
-  operator input click --text Save --app Notes --focus auto --verify focus
-  operator input click --snapshot s_123 --element e_45 --mode double";
+  operator click --text Save --app Notes --focus auto --verify focus
+  operator click --snapshot s_123 --element e_45 --mode double";
 
 const INPUT_TYPE_AFTER_HELP: &str = "Examples
-  operator input type \"hello operator\" --window-title Draft --after-key return
-  operator input type \"search\" --text Search --clear-before";
+  operator type \"hello operator\" --window-title Draft --after-key return
+  operator type \"search\" --text Search --clear-before";
 
 const APP_LAUNCH_AFTER_HELP: &str = "Examples
   operator app launch Calculator
@@ -857,14 +833,18 @@ fn legacy_command_replacement(args: &[OsString]) -> Option<(String, String)> {
         ["permissions-status", ..] => {
             Some(("permissions-status".into(), "operator permissions".into()))
         }
-        ["click", ..] => Some(("click".into(), "operator input click".into())),
-        ["move", ..] => Some(("move".into(), "operator input move".into())),
-        ["type", ..] => Some(("type".into(), "operator input type".into())),
-        ["press", ..] => Some(("press".into(), "operator input press".into())),
-        ["hotkey", ..] => Some(("hotkey".into(), "operator input hotkey".into())),
-        ["scroll", ..] => Some(("scroll".into(), "operator input scroll".into())),
-        ["drag", ..] => Some(("drag".into(), "operator input drag".into())),
-        ["swipe", ..] => Some(("swipe".into(), "operator input swipe".into())),
+        ["input"] => Some((
+            "input".into(),
+            "operator click, operator type, operator press, operator hotkey, operator scroll, operator drag, operator swipe, or operator move".into(),
+        )),
+        ["input", "click", ..] => Some(("input click".into(), "operator click".into())),
+        ["input", "move", ..] => Some(("input move".into(), "operator move".into())),
+        ["input", "type", ..] => Some(("input type".into(), "operator type".into())),
+        ["input", "press", ..] => Some(("input press".into(), "operator press".into())),
+        ["input", "hotkey", ..] => Some(("input hotkey".into(), "operator hotkey".into())),
+        ["input", "scroll", ..] => Some(("input scroll".into(), "operator scroll".into())),
+        ["input", "drag", ..] => Some(("input drag".into(), "operator drag".into())),
+        ["input", "swipe", ..] => Some(("input swipe".into(), "operator swipe".into())),
         ["launch-app", ..] => Some(("launch-app".into(), "operator app launch".into())),
         ["switch-app", ..] => Some(("switch-app".into(), "operator app switch".into())),
         ["quit-app", ..] => Some(("quit-app".into(), "operator app quit".into())),
@@ -1010,7 +990,6 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["capture"] => Some(styled_group_help(&CAPTURE_GROUP_HELP)),
         ["elements"] => Some(styled_group_help(&ELEMENTS_GROUP_HELP)),
         ["list"] => Some(styled_group_help(&LIST_GROUP_HELP)),
-        ["input"] => Some(styled_group_help(&INPUT_GROUP_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
         ["window"] => Some(styled_group_help(&WINDOW_GROUP_HELP)),
         ["mcp"] => Some(styled_group_help(&MCP_GROUP_HELP)),
@@ -1095,7 +1074,22 @@ enum Command {
     List(ListArgs),
     #[command(about = SHOW_ABOUT, after_help = SHOW_AFTER_HELP)]
     Show(CommonArgs),
-    Input(InputArgs),
+    #[command(about = INPUT_CLICK_ABOUT, after_help = INPUT_CLICK_AFTER_HELP)]
+    Click(InputClickArgs),
+    #[command(about = INPUT_TYPE_ABOUT, after_help = INPUT_TYPE_AFTER_HELP)]
+    Type(InputTypeArgs),
+    #[command(about = INPUT_PRESS_ABOUT)]
+    Press(InputPressArgs),
+    #[command(about = INPUT_HOTKEY_ABOUT)]
+    Hotkey(InputHotkeyArgs),
+    #[command(about = INPUT_SCROLL_ABOUT)]
+    Scroll(InputScrollArgs),
+    #[command(about = INPUT_DRAG_ABOUT)]
+    Drag(InputDragArgs),
+    #[command(about = INPUT_SWIPE_ABOUT)]
+    Swipe(InputSwipeArgs),
+    #[command(about = INPUT_MOVE_ABOUT)]
+    Move(InputMoveArgs),
     App(AppArgs),
     Window(WindowArgs),
     Mcp(McpArgs),
@@ -1114,7 +1108,14 @@ impl Command {
             Self::Artifact(args) => Some(&args.common),
             Self::List(args) => args.common(),
             Self::Show(args) => Some(args),
-            Self::Input(args) => args.common(),
+            Self::Click(args) => Some(&args.common),
+            Self::Type(args) => Some(&args.common),
+            Self::Press(args) => Some(&args.common),
+            Self::Hotkey(args) => Some(&args.common),
+            Self::Scroll(args) => Some(&args.common),
+            Self::Drag(args) => Some(&args.common),
+            Self::Swipe(args) => Some(&args.common),
+            Self::Move(args) => Some(&args.common),
             Self::App(args) => Some(&args.common),
             Self::Window(args) => Some(&args.common),
             Self::Mcp(args) => Some(&args.common),
@@ -1139,7 +1140,14 @@ impl Command {
             Self::Show(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
-            Self::Input(args) => args.into_invocation(root_common),
+            Self::Click(args) => args.into_invocation(root_common),
+            Self::Type(args) => args.into_invocation(root_common),
+            Self::Press(args) => args.into_invocation(root_common),
+            Self::Hotkey(args) => args.into_invocation(root_common),
+            Self::Scroll(args) => args.into_invocation(root_common),
+            Self::Drag(args) => args.into_invocation(root_common),
+            Self::Swipe(args) => args.into_invocation(root_common),
+            Self::Move(args) => args.into_invocation(root_common),
             Self::App(args) => args.into_invocation(root_common),
             Self::Window(args) => args.into_invocation(root_common),
             Self::Mcp(args) => args.into_invocation(root_common),
@@ -1512,71 +1520,6 @@ impl ArtifactArgs {
             input: Value::Object(input),
             json_output: merged_common.json_output,
         })
-    }
-}
-
-#[derive(Debug, Clone, Args)]
-#[command(about = INPUT_ABOUT, arg_required_else_help = true)]
-struct InputArgs {
-    #[command(subcommand)]
-    command: InputCommand,
-}
-
-impl InputArgs {
-    fn common(&self) -> Option<&CommonArgs> {
-        self.command.common()
-    }
-
-    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        self.command.into_invocation(root_common)
-    }
-}
-
-#[derive(Debug, Clone, Subcommand)]
-enum InputCommand {
-    #[command(about = INPUT_CLICK_ABOUT, after_help = INPUT_CLICK_AFTER_HELP)]
-    Click(InputClickArgs),
-    #[command(about = INPUT_MOVE_ABOUT)]
-    Move(InputMoveArgs),
-    #[command(about = INPUT_TYPE_ABOUT, after_help = INPUT_TYPE_AFTER_HELP)]
-    Type(InputTypeArgs),
-    #[command(about = INPUT_PRESS_ABOUT)]
-    Press(InputPressArgs),
-    #[command(about = INPUT_HOTKEY_ABOUT)]
-    Hotkey(InputHotkeyArgs),
-    #[command(about = INPUT_SCROLL_ABOUT)]
-    Scroll(InputScrollArgs),
-    #[command(about = INPUT_DRAG_ABOUT)]
-    Drag(InputDragArgs),
-    #[command(about = INPUT_SWIPE_ABOUT)]
-    Swipe(InputSwipeArgs),
-}
-
-impl InputCommand {
-    fn common(&self) -> Option<&CommonArgs> {
-        match self {
-            Self::Click(args) => Some(&args.common),
-            Self::Move(args) => Some(&args.common),
-            Self::Type(args) => Some(&args.common),
-            Self::Press(args) => Some(&args.common),
-            Self::Hotkey(args) => Some(&args.common),
-            Self::Scroll(args) => Some(&args.common),
-            Self::Drag(args) => Some(&args.common),
-            Self::Swipe(args) => Some(&args.common),
-        }
-    }
-
-    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
-        match self {
-            Self::Click(args) => args.into_invocation(root_common),
-            Self::Move(args) => args.into_invocation(root_common),
-            Self::Type(args) => args.into_invocation(root_common),
-            Self::Press(args) => args.into_invocation(root_common),
-            Self::Hotkey(args) => args.into_invocation(root_common),
-            Self::Scroll(args) => args.into_invocation(root_common),
-            Self::Drag(args) => args.into_invocation(root_common),
-            Self::Swipe(args) => args.into_invocation(root_common),
-        }
     }
 }
 

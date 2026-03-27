@@ -1047,16 +1047,16 @@ CLI 偏工程化、可脚本化，是 `ToolRegistry` 的一个薄包装；但当
 
 ```bash
 # 观察
-operator observe frontmost --capture all
-operator snapshot get s_123
+operator capture frontmost
+operator snapshot s_123
 
 # 查询
 operator list windows --app TextEdit
-operator focus
+operator show
 
 # 输入 / 应用 / 窗口
-operator input click --text "Submit"
-operator input type "hello world" --after-key return
+operator click --text "Submit"
+operator type "hello world" --after-key return
 operator app launch Calculator
 operator window resize --window-id 42 --width 900 --height 700 --verify geometry
 
