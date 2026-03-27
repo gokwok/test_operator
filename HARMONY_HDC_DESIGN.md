@@ -705,3 +705,26 @@ git subtree pull --prefix=crates/operator-platform-harmony/hdc_driver/base hmdri
 - 通过保留历史的导入方式，把 `hmdriver_rs` 正式落入 `operator-platform-harmony/hdc_driver/base`
 
 如果遵守上述边界，`harmony.hdc` 可以成为 Operator 第一条真正可用的非 macOS driver。
+
+---
+
+## 16. 2026-03-27 首轮实机验证回写
+
+`OPE-132` 已在真实 Harmony PC target 上完成第一轮人工辅助验证，详细记录见：
+
+- [`docs/platforms/harmony-hdc-validation.md`](./docs/platforms/harmony-hdc-validation.md)
+- [`docs/platforms/harmony-hdc-support-matrix.md`](./docs/platforms/harmony-hdc-support-matrix.md)
+
+本轮验证结论：
+
+- `permissions`、`capabilities`、`list-apps`、`list-windows`、`app launch`、`input click`、`input type`、`input hotkey` 已在实机上跑通。
+- screenshot-first `observe` 已可用；在本轮实测里，`observe frontmost --capture screenshot` 能够返回裁剪到前台窗口 bounds 的截图 snapshot。
+- 当前 northbound shell surface 仍存在一个明确漂移：
+  - 直接执行 `operator --target harmony-pc observe frontmost` 仍会因为默认 `capture=all` 请求 `InspectTree` 而失败
+  - 因此在该漂移被修正前，Harmony 第一阶段 runbook 必须显式使用 `--capture screenshot`
+- `focus` 与任何 tree-backed hot-path observe 仍不应视为 Harmony 第一阶段稳定能力。
+
+额外注意：
+
+- 本轮 `driver_config.addr` 使用的是 TCP 形式的 `192.168.8.43:35319`
+- `harmony.hdc` 当前不能直接把 `hdc list targets` 返回的设备序列号当作 `addr`

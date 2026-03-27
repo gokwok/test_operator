@@ -20,7 +20,7 @@ use operator_runtime::{FileArtifactStore, RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::{json, Value};
 use tempfile::tempdir;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
 
 fn default_action_request() -> ActionRequest {
     ActionRequest {
@@ -1524,10 +1524,18 @@ fn unique_artifact_id(prefix: &str) -> String {
     format!("{prefix}-{nanos}.png")
 }
 
-#[derive(Default)]
 struct BlockingQueryDriver {
     started: Notify,
-    release: Notify,
+    release: Semaphore,
+}
+
+impl Default for BlockingQueryDriver {
+    fn default() -> Self {
+        Self {
+            started: Notify::new(),
+            release: Semaphore::new(0),
+        }
+    }
 }
 
 impl BlockingQueryDriver {
@@ -1536,7 +1544,7 @@ impl BlockingQueryDriver {
     }
 
     fn release_query(&self) {
-        self.release.notify_waiters();
+        self.release.add_permits(1);
     }
 }
 
@@ -1551,7 +1559,7 @@ impl PlatformDriver for BlockingQueryDriver {
     }
 
     fn capabilities(&self) -> CapabilitySet {
-        CapabilitySet::new([Capability::WindowManagement])
+        CapabilitySet::new([Capability::WindowQuery])
     }
 
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
@@ -1580,7 +1588,7 @@ impl PlatformDriver for BlockingQueryDriver {
 
     async fn query(&self, _: QueryRequest, _: &ExecContext) -> Result<QueryResult, OperatorError> {
         self.started.notify_one();
-        self.release.notified().await;
+        let _permit = self.release.acquire().await.unwrap();
         Ok(QueryResult::Windows(Vec::new()))
     }
 
