@@ -188,7 +188,7 @@ operator
 - `--model <gpt-5.4|doubao-seed>`
 - `--max-steps <n>`
 - `--json`
-- `--target <target>`
+- `--target <target-name>`
 - `--timeout-ms <ms>`
 
 第一期明确不暴露：
@@ -211,8 +211,29 @@ operator
 所有命令共享，并且应作为真正的 global flags 工作：
 
 - `--json`
-- `--target <target>`
+- `--target <target-name>`
 - `--timeout-ms <ms>`
+
+#### `--target` 语义
+
+`--target` 只负责选择一个**命名 target**，该名称来自用户配置，例如：
+
+- `macos`
+- `windows-lab`
+- `harmony-phone`
+
+它不是 transport / protocol / driver routing 语法，也不要求 shell 用户理解 target 背后的执行路径。
+
+因此 northbound shell surface 不暴露，也不鼓励示例出现以下内部实现细节：
+
+- `local:macos`
+- `device:ios:123`
+- `bridge:harmony`
+- `windows.remote`
+
+这些概念只属于 driver 选择和配置层；CLI / MCP / Agent 的 `--target` 只选择名字，实际由本地 driver、远端 driver、bridge driver 还是 node driver 执行，属于 runtime 配置与解析职责。
+
+未显式传入 `--target` 时，默认读取配置中的 `default_target`。
 
 ### Observe 参数
 
@@ -358,9 +379,9 @@ operator
 
 ```bash
 operator permissions
-operator capabilities --json
+operator capabilities --target macos --json
 
-operator observe frontmost --capture all
+operator observe frontmost --target macos --capture all
 operator observe window --window-id 42 --capture elements
 operator observe region --x 0 --y 44 --width 1280 --height 720
 
@@ -368,7 +389,7 @@ operator snapshot s_123
 operator artifact capture-1.png
 
 operator list apps
-operator list windows --app TextEdit
+operator list windows --target macos --app TextEdit
 operator focus
 
 operator input click --text Save --app Notes --focus auto --verify focus
@@ -389,6 +410,7 @@ operator window minimize --window-id 42 --verify window-state
 operator window resize --window-id 42 --width 900 --height 700 --verify geometry
 
 operator mcp serve
+operator agent "capture the frontmost window" --target macos
 ```
 
 ## help 契约
