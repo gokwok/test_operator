@@ -51,6 +51,10 @@ fn local_run_help_describes_the_developer_harness_surface() {
         "help output should expose --target: {stdout}"
     );
     assert!(
+        stdout.contains("for example macos"),
+        "help output should describe named targets: {stdout}"
+    );
+    assert!(
         stdout.contains("--model"),
         "help output should expose --model: {stdout}"
     );

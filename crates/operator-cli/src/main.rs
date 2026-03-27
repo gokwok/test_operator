@@ -11,10 +11,7 @@ use operator_agent::{
 use operator_core::OperatorError;
 #[cfg(not(test))]
 use operator_mcp::run_stdio_server;
-use operator_platform_macos::{
-    MacosDriver, SystemAppService, SystemCaptureProvider, SystemPermissionReader,
-    SystemTreeInspector,
-};
+use operator_platform_macos::system_runtime_drivers;
 use operator_runtime::{
     FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
     ToolRegistry,
@@ -170,12 +167,7 @@ async fn build_runtime(config: RuntimeConfig) -> Result<operator_runtime::Runtim
         .artifact_store(artifacts.clone())
         .snapshot_store(snapshots)
         .session_store(sessions)
-        .register_driver(Arc::new(MacosDriver::with_observe(
-            SystemAppService,
-            SystemPermissionReader,
-            SystemCaptureProvider::new(artifacts.artifacts_dir()),
-            SystemTreeInspector,
-        )))
+        .register_drivers(system_runtime_drivers(artifacts.artifacts_dir()))
         .build()
         .await
 }

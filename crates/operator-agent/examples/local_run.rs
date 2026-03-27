@@ -6,10 +6,7 @@ use operator_agent::{
     AgentRunRequest, AgentRunner, HarnessReport,
 };
 use operator_core::TargetId;
-use operator_platform_macos::{
-    MacosDriver, SystemAppService, SystemCaptureProvider, SystemPermissionReader,
-    SystemTreeInspector,
-};
+use operator_platform_macos::system_runtime_drivers;
 use operator_runtime::{
     FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
     SessionStore,
@@ -31,8 +28,8 @@ struct Cli {
 
     #[arg(
         long,
-        default_value = "local:macos",
-        help = "Target id to run against, for example local:macos"
+        default_value = "macos",
+        help = "Target id to run against, for example macos"
     )]
     target: String,
 
@@ -126,18 +123,12 @@ async fn build_runtime(
 ) -> Result<operator_runtime::Runtime, String> {
     let artifacts = Arc::new(FileArtifactStore::new(state_root));
     let snapshots = Arc::new(FileSnapshotStore::new(state_root, config.clone()));
-    let capture_provider = SystemCaptureProvider::new(artifacts.artifacts_dir());
 
     RuntimeBuilder::new(config)
         .artifact_store(artifacts)
         .snapshot_store(snapshots)
         .session_store(session_store)
-        .register_driver(Arc::new(MacosDriver::with_observe(
-            SystemAppService,
-            SystemPermissionReader,
-            capture_provider,
-            SystemTreeInspector,
-        )))
+        .register_drivers(system_runtime_drivers(state_root.join("artifacts")))
         .build()
         .await
         .map_err(|error| error.to_string())

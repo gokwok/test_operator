@@ -8,15 +8,17 @@ use operator_testkit::{InMemorySnapshotStore, MockPlatformDriver};
 async fn runtime_builder_registers_multiple_drivers() {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
-        .register_driver(Arc::new(MockPlatformDriver::new(
-            "macos",
-            CapabilitySet::new([Capability::Capture]),
-        )))
-        .register_driver(Arc::new(MockPlatformDriver::with_driver_id(
-            "harmony",
-            "harmony.bridge",
-            CapabilitySet::new([Capability::Capture]),
-        )))
+        .register_drivers(vec![
+            Arc::new(MockPlatformDriver::new(
+                "macos",
+                CapabilitySet::new([Capability::Capture]),
+            )) as Arc<dyn operator_core::PlatformDriver>,
+            Arc::new(MockPlatformDriver::with_driver_id(
+                "harmony",
+                "harmony.bridge",
+                CapabilitySet::new([Capability::Capture]),
+            )) as Arc<dyn operator_core::PlatformDriver>,
+        ])
         .build()
         .await
         .unwrap();

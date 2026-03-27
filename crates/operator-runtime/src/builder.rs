@@ -54,6 +54,17 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn register_drivers<I>(mut self, drivers: I) -> Self
+    where
+        I: IntoIterator<Item = Arc<dyn PlatformDriver>>,
+    {
+        for driver in drivers {
+            self = self.register_driver(driver);
+        }
+
+        self
+    }
+
     pub async fn build(self) -> Result<Runtime, OperatorError> {
         let snapshots = self.snapshots.ok_or_else(|| {
             OperatorError::Platform("runtime builder requires a snapshot store".into())
