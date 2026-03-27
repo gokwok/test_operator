@@ -30,4 +30,4 @@ pub use query::{
 };
 pub use snapshot::{ElementSource, ImageSizePx, Snapshot, SnapshotMetadata, UiElement};
 pub use surface::{Surface, SurfaceKind};
-pub use target::{TargetConnection, TargetDescriptor};
+pub use target::TargetDescriptor;

@@ -61,7 +61,7 @@ impl RuntimeCore {
         let descriptor = self.resolve_target(Some(target))?;
         let driver = self
             .drivers
-            .get(&descriptor.platform)
+            .get(&descriptor.driver)
             .cloned()
             .ok_or_else(|| OperatorError::TargetNotFound(target.to_string()))?;
 

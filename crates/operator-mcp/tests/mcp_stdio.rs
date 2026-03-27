@@ -1469,6 +1469,10 @@ impl PlatformDriver for BlockingQueryDriver {
         "slow"
     }
 
+    fn driver_id(&self) -> &str {
+        "slow.system"
+    }
+
     fn capabilities(&self) -> CapabilitySet {
         CapabilitySet::new([Capability::WindowManagement])
     }

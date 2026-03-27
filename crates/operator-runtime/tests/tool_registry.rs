@@ -222,7 +222,7 @@ async fn observe_tool_extracts_exec_context_from_json() {
                 include_elements: true,
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },

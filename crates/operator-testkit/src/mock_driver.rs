@@ -11,6 +11,7 @@ use operator_core::{
 // forward before the runtime builder/execution issues land.
 pub struct MockPlatformDriver {
     platform_id: &'static str,
+    driver_id: String,
     capabilities: CapabilitySet,
     health_status: Mutex<HealthStatus>,
     observe_results: Mutex<VecDeque<Result<ObserveResult, OperatorError>>>,
@@ -23,8 +24,17 @@ pub struct MockPlatformDriver {
 
 impl MockPlatformDriver {
     pub fn new(platform_id: &'static str, capabilities: CapabilitySet) -> Self {
+        Self::with_driver_id(platform_id, format!("{platform_id}.system"), capabilities)
+    }
+
+    pub fn with_driver_id(
+        platform_id: &'static str,
+        driver_id: impl Into<String>,
+        capabilities: CapabilitySet,
+    ) -> Self {
         Self {
             platform_id,
+            driver_id: driver_id.into(),
             capabilities,
             health_status: Mutex::new(HealthStatus {
                 healthy: true,
@@ -50,6 +60,10 @@ impl MockPlatformDriver {
 
     pub fn capabilities(&self) -> CapabilitySet {
         self.capabilities.clone()
+    }
+
+    pub fn driver_id(&self) -> &str {
+        &self.driver_id
     }
 
     pub fn set_health_status(&self, status: HealthStatus) {
@@ -146,6 +160,10 @@ impl MockPlatformDriver {
 impl PlatformDriver for MockPlatformDriver {
     fn platform_id(&self) -> &'static str {
         self.platform_id()
+    }
+
+    fn driver_id(&self) -> &str {
+        self.driver_id()
     }
 
     fn capabilities(&self) -> CapabilitySet {

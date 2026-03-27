@@ -50,8 +50,7 @@ impl RuntimeBuilder {
     }
 
     pub fn register_driver(mut self, driver: Arc<dyn PlatformDriver>) -> Self {
-        self.drivers
-            .insert(driver.platform_id().to_string(), driver);
+        self.drivers.insert(driver.driver_id().to_string(), driver);
         self
     }
 
@@ -65,8 +64,9 @@ impl RuntimeBuilder {
         });
 
         let default_target = self.config.default_target.clone();
+        let named_targets = self.config.targets.clone();
         let core = RuntimeCore {
-            resolver: TargetResolver::new(default_target),
+            resolver: TargetResolver::new(default_target, named_targets),
             drivers: self.drivers,
             artifacts,
             snapshots,

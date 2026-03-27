@@ -10,7 +10,7 @@ mod tool_registry;
 pub mod tools;
 
 pub use builder::RuntimeBuilder;
-pub use config::RuntimeConfig;
+pub use config::{NamedTargetConfig, RuntimeConfig};
 pub use events::{
     AuditEvent, AuditEventKind, EventSink, NullEventSink, Session, SessionEvent, SessionStatus,
 };

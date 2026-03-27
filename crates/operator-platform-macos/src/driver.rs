@@ -154,6 +154,10 @@ where
         "macos"
     }
 
+    fn driver_id(&self) -> &str {
+        "macos.system"
+    }
+
     fn capabilities(&self) -> CapabilitySet {
         macos_capabilities()
     }

@@ -16,6 +16,7 @@ pub struct HealthStatus {
 #[async_trait]
 pub trait PlatformDriver: Send + Sync {
     fn platform_id(&self) -> &'static str;
+    fn driver_id(&self) -> &str;
     fn capabilities(&self) -> CapabilitySet;
     async fn health_check(&self) -> Result<HealthStatus, OperatorError>;
     async fn observe(

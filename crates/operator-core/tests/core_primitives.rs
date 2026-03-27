@@ -1,12 +1,11 @@
 use operator_core::{
-    ArtifactId, OperatorError, Point, Rect, SnapshotId, TargetConnection, TargetDescriptor,
-    TargetId, WindowId,
+    ArtifactId, OperatorError, Point, Rect, SnapshotId, TargetDescriptor, TargetId, WindowId,
 };
 
 #[test]
 fn ids_round_trip_through_display() {
     assert_eq!(SnapshotId("snap-1".into()).to_string(), "snap-1");
-    assert_eq!(TargetId("local:macos".into()).to_string(), "local:macos");
+    assert_eq!(TargetId("macos".into()).to_string(), "macos");
     assert_eq!(ArtifactId("artifact-1".into()).to_string(), "artifact-1");
     assert_eq!(WindowId(42).to_string(), "42");
 }
@@ -32,18 +31,12 @@ fn geometry_types_hold_coordinates() {
 }
 
 #[test]
-fn target_descriptor_keeps_connection_details() {
+fn target_descriptor_keeps_driver_details() {
     let descriptor = TargetDescriptor {
-        id: TargetId("device:harmony:abc123".into()),
+        id: TargetId("harmony-phone".into()),
         platform: "harmony".into(),
-        device_id: Some("abc123".into()),
-        connection: TargetConnection::Bridge {
-            endpoint: Some("ws://127.0.0.1:9000".into()),
-        },
+        driver: "harmony.node".into(),
     };
 
-    assert!(matches!(
-        descriptor.connection,
-        TargetConnection::Bridge { endpoint: Some(_) }
-    ));
+    assert_eq!(descriptor.driver, "harmony.node");
 }

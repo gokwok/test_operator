@@ -952,6 +952,10 @@ impl PlatformDriver for SlowQueryDriver {
         "slow"
     }
 
+    fn driver_id(&self) -> &str {
+        "slow.system"
+    }
+
     fn capabilities(&self) -> CapabilitySet {
         CapabilitySet::new([Capability::WindowManagement])
     }
