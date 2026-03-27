@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use hmdriver_rs::{Driver, ShellResult, UiDriver};
+use hmdriver_rs::{CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
 use operator_core::{ImageSizePx, OperatorError, PermissionStatus, PermissionsReport, Rect};
 use tempfile::NamedTempFile;
 use tokio::sync::oneshot;
@@ -23,6 +23,9 @@ pub trait HarmonyHdcShellSession {
     fn capture_screenshot(&mut self, path: &Path) -> Result<(), OperatorError>;
     fn display_size(&mut self) -> Result<ImageSizePx, OperatorError>;
     fn focused_window_bounds(&mut self) -> Result<Option<Rect>, OperatorError>;
+    fn list_apps(&mut self) -> Result<Vec<String>, OperatorError>;
+    fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError>;
+    fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList, OperatorError>;
 }
 
 pub trait HarmonyHdcUiSession {
@@ -119,6 +122,28 @@ impl HarmonyHdcWorker {
         response_rx.await.map_err(|_| worker_stopped_error())?
     }
 
+    pub(crate) async fn query_apps(&self) -> Result<HarmonyAppQueryReport, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::QueryApps {
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
+    pub(crate) async fn query_windows(&self) -> Result<CorrelatedWindowList, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::QueryWindows {
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
     pub(crate) fn new_with_session_factory(
         config: HarmonyHdcConfig,
         session_factory: Arc<dyn HarmonyHdcSessionFactory>,
@@ -140,12 +165,24 @@ enum WorkerCommand {
         resolve_frontmost_bounds: bool,
         response: oneshot::Sender<Result<HarmonyCaptureReport, OperatorError>>,
     },
+    QueryApps {
+        response: oneshot::Sender<Result<HarmonyAppQueryReport, OperatorError>>,
+    },
+    QueryWindows {
+        response: oneshot::Sender<Result<CorrelatedWindowList, OperatorError>>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct HarmonyCaptureReport {
     pub(crate) image_size_px: ImageSizePx,
     pub(crate) focused_window_bounds: Option<Rect>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HarmonyAppQueryReport {
+    pub(crate) bundles: Vec<String>,
+    pub(crate) current_app: Option<CurrentApp>,
 }
 
 struct WorkerState {
@@ -290,6 +327,46 @@ impl WorkerState {
 
         result
     }
+
+    fn query_apps(&mut self) -> Result<HarmonyAppQueryReport, OperatorError> {
+        self.ensure_shell_session()?;
+
+        let result = {
+            let session = self
+                .shell_session
+                .as_mut()
+                .expect("shell session should be initialized");
+            let bundles = session.list_apps()?;
+            let current_app = session.current_app()?;
+
+            Ok(HarmonyAppQueryReport {
+                bundles,
+                current_app,
+            })
+        };
+
+        if result.is_err() {
+            self.shell_session = None;
+        }
+
+        result
+    }
+
+    fn query_windows(&mut self) -> Result<CorrelatedWindowList, OperatorError> {
+        self.ensure_shell_session()?;
+
+        let result = self
+            .shell_session
+            .as_mut()
+            .expect("shell session should be initialized")
+            .list_windows_with_missions();
+
+        if result.is_err() {
+            self.shell_session = None;
+        }
+
+        result
+    }
 }
 
 struct RealHarmonyHdcShellSession {
@@ -353,6 +430,24 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
             height: f64::from(window.rect.height),
         }))
     }
+
+    fn list_apps(&mut self) -> Result<Vec<String>, OperatorError> {
+        self.driver
+            .list_apps(true)
+            .map_err(|error| hdc_platform_error("failed to list Harmony apps", error))
+    }
+
+    fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError> {
+        self.driver
+            .current_app()
+            .map_err(|error| hdc_platform_error("failed to read Harmony foreground app", error))
+    }
+
+    fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList, OperatorError> {
+        self.driver
+            .list_windows_with_missions()
+            .map_err(|error| hdc_platform_error("failed to list Harmony windows", error))
+    }
 }
 
 struct RealHarmonyHdcUiSession {
@@ -386,6 +481,12 @@ fn worker_loop(
                 let _ = response.send(
                     state.capture_observe(artifact_path.as_deref(), resolve_frontmost_bounds),
                 );
+            }
+            WorkerCommand::QueryApps { response } => {
+                let _ = response.send(state.query_apps());
+            }
+            WorkerCommand::QueryWindows { response } => {
+                let _ = response.send(state.query_windows());
             }
         }
     }

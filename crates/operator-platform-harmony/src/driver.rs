@@ -10,6 +10,7 @@ use operator_core::{
 use crate::{
     observe::observe as observe_with_screenshot,
     permissions::{health_message, health_ready},
+    query::query as query_surface,
     HarmonyHdcConfig, HarmonyHdcWorker,
 };
 
@@ -63,7 +64,7 @@ impl PlatformDriver for HarmonyHdcDriver {
     }
 
     fn capabilities(&self) -> CapabilitySet {
-        CapabilitySet::new([Capability::Capture])
+        harmony_capabilities()
     }
 
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
@@ -87,10 +88,10 @@ impl PlatformDriver for HarmonyHdcDriver {
 
     async fn query(
         &self,
-        _req: QueryRequest,
+        req: QueryRequest,
         _ctx: &ExecContext,
     ) -> Result<QueryResult, OperatorError> {
-        Err(unimplemented_surface_error("query"))
+        query_surface(self.worker.as_ref(), req, self.capabilities()).await
     }
 
     async fn act(
@@ -106,6 +107,15 @@ fn unimplemented_surface_error(surface: &str) -> OperatorError {
     OperatorError::Platform(format!(
         "driver {DRIVER_ID} scaffold does not implement {surface} yet"
     ))
+}
+
+fn harmony_capabilities() -> CapabilitySet {
+    CapabilitySet::new([
+        Capability::Capture,
+        Capability::AppLifecycle,
+        Capability::WindowQuery,
+        Capability::Permissions,
+    ])
 }
 
 fn default_artifacts_dir() -> PathBuf {

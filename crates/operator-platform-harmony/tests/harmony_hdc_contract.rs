@@ -4,6 +4,7 @@ use std::sync::{
     Arc,
 };
 
+use hmdriver_rs::{CorrelatedWindowList, CurrentApp};
 use operator_core::{
     DriverConfig, ImageSizePx, PermissionStatus, PlatformDriver, Rect, TargetDescriptor, TargetId,
 };
@@ -240,6 +241,25 @@ impl HarmonyHdcShellSession for FakeShellSession {
 
     fn focused_window_bounds(&mut self) -> Result<Option<Rect>, operator_core::OperatorError> {
         Ok(None)
+    }
+
+    fn list_apps(&mut self) -> Result<Vec<String>, operator_core::OperatorError> {
+        Ok(Vec::new())
+    }
+
+    fn current_app(&mut self) -> Result<Option<CurrentApp>, operator_core::OperatorError> {
+        Ok(None)
+    }
+
+    fn list_windows_with_missions(
+        &mut self,
+    ) -> Result<CorrelatedWindowList, operator_core::OperatorError> {
+        Ok(CorrelatedWindowList {
+            windows: Vec::new(),
+            focused_window_id: None,
+            highlighted_window_ids: Vec::new(),
+            total_window_count: Some(0),
+        })
     }
 }
 

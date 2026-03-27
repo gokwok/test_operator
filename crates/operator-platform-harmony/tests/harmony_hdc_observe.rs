@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use hmdriver_rs::{CorrelatedWindowList, CurrentApp};
 use image::{GenericImageView, ImageBuffer, Rgb};
 use operator_core::{
     DriverConfig, ExecContext, ImageSizePx, ObserveRequest, PlatformDriver, Rect, Surface,
@@ -331,6 +332,25 @@ impl HarmonyHdcShellSession for FakeShellSession {
             .focused_window_calls
             .fetch_add(1, Ordering::SeqCst);
         Ok(self.focused_window_bounds)
+    }
+
+    fn list_apps(&mut self) -> Result<Vec<String>, operator_core::OperatorError> {
+        Ok(Vec::new())
+    }
+
+    fn current_app(&mut self) -> Result<Option<CurrentApp>, operator_core::OperatorError> {
+        Ok(None)
+    }
+
+    fn list_windows_with_missions(
+        &mut self,
+    ) -> Result<CorrelatedWindowList, operator_core::OperatorError> {
+        Ok(CorrelatedWindowList {
+            windows: Vec::new(),
+            focused_window_id: None,
+            highlighted_window_ids: Vec::new(),
+            total_window_count: Some(0),
+        })
     }
 }
 

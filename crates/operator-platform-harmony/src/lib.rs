@@ -4,8 +4,10 @@ mod config;
 mod driver;
 mod errors;
 mod factory;
+mod normalize;
 mod observe;
 mod permissions;
+mod query;
 mod worker;
 
 pub use config::HarmonyHdcConfig;

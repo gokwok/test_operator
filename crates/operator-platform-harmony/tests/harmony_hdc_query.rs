@@ -1,0 +1,391 @@
+use std::path::Path;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+
+use hmdriver_rs::{
+    CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry, WindowRect,
+};
+use operator_core::{
+    DriverConfig, ExecContext, ImageSizePx, PermissionStatus, PlatformDriver, QueryRequest,
+    QueryResult, Rect, TargetDescriptor, TargetId,
+};
+use operator_platform_harmony::{
+    HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory, HarmonyHdcShellSession,
+    HarmonyHdcUiSession, HDC_CAPTURE_CHECK_ID, HDC_CONNECT_CHECK_ID, HDC_SHELL_CHECK_ID,
+    HDC_UI_BRIDGE_CHECK_ID,
+};
+use operator_runtime::PlatformDriverFactory;
+use serde_json::json;
+
+#[test]
+fn harmony_driver_declares_query_capabilities() {
+    let driver = build_driver(FakeSessionFactory::default());
+    let capabilities = driver.capabilities();
+
+    assert!(capabilities.supports(&operator_core::Capability::Capture));
+    assert!(capabilities.supports(&operator_core::Capability::AppLifecycle));
+    assert!(capabilities.supports(&operator_core::Capability::WindowQuery));
+    assert!(capabilities.supports(&operator_core::Capability::Permissions));
+    assert!(!capabilities.supports(&operator_core::Capability::InspectTree));
+}
+
+#[tokio::test]
+async fn permissions_query_returns_driver_scoped_checks() {
+    let driver = build_driver(FakeSessionFactory {
+        ui_connect: ProbeOutcome::Err("ui bridge unavailable"),
+        ..Default::default()
+    });
+
+    let result = driver
+        .query(QueryRequest::PermissionsStatus, &exec_context())
+        .await
+        .expect("permissions query should succeed");
+
+    let QueryResult::Permissions(report) = result else {
+        panic!("expected permissions result");
+    };
+
+    assert_eq!(
+        report.status(HDC_CONNECT_CHECK_ID),
+        Some(PermissionStatus::Granted)
+    );
+    assert_eq!(
+        report.status(HDC_SHELL_CHECK_ID),
+        Some(PermissionStatus::Granted)
+    );
+    assert_eq!(
+        report.status(HDC_CAPTURE_CHECK_ID),
+        Some(PermissionStatus::Granted)
+    );
+    assert_eq!(
+        report.status(HDC_UI_BRIDGE_CHECK_ID),
+        Some(PermissionStatus::Denied)
+    );
+}
+
+#[tokio::test]
+async fn list_apps_and_windows_queries_normalize_results_and_reuse_shell_session() {
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        apps: vec![
+            "com.demo.notes".into(),
+            "com.demo.calculator".into(),
+            "com.demo.notes".into(),
+        ],
+        current_app: Some(CurrentApp {
+            bundle_name: "com.demo.notes".into(),
+            ability_name: "EntryAbility".into(),
+        }),
+        windows: CorrelatedWindowList {
+            windows: vec![
+                CorrelatedWindow {
+                    window: window(7, "Draft.txt", 101, 40, 50, 600, 400),
+                    mission: Some(mission(7, "Notes", "com.demo.notes")),
+                },
+                CorrelatedWindow {
+                    window: window(9, "Calculator", 102, 680, 50, 320, 480),
+                    mission: Some(mission(9, "Calculator", "com.demo.calculator")),
+                },
+            ],
+            focused_window_id: Some(7),
+            highlighted_window_ids: vec![7],
+            total_window_count: Some(2),
+        },
+        ..Default::default()
+    });
+
+    let apps = driver
+        .query(QueryRequest::ListApps, &exec_context())
+        .await
+        .expect("list apps should succeed");
+    let windows = driver
+        .query(
+            QueryRequest::ListWindows {
+                app: Some("notes".into()),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("list windows should succeed");
+
+    assert_eq!(
+        apps,
+        QueryResult::Apps(vec![
+            operator_core::AppInfo {
+                bundle_id: Some("com.demo.calculator".into()),
+                name: "com.demo.calculator".into(),
+                pid: None,
+                is_running: true,
+            },
+            operator_core::AppInfo {
+                bundle_id: Some("com.demo.notes".into()),
+                name: "com.demo.notes".into(),
+                pid: None,
+                is_running: true,
+            },
+        ])
+    );
+    assert_eq!(
+        windows,
+        QueryResult::Windows(vec![operator_core::WindowInfo {
+            id: 7.into(),
+            title: Some("Draft.txt".into()),
+            app_name: Some("Notes".into()),
+            bounds: Some(Rect {
+                x: 40.0,
+                y: 50.0,
+                width: 600.0,
+                height: 400.0,
+            }),
+            is_focused: true,
+            is_minimized: false,
+        }])
+    );
+    assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn capabilities_query_returns_declared_capability_set() {
+    let driver = build_driver(FakeSessionFactory::default());
+
+    let result = driver
+        .query(QueryRequest::Capabilities, &exec_context())
+        .await
+        .expect("capabilities query should succeed");
+
+    let QueryResult::Capabilities(capabilities) = result else {
+        panic!("expected capabilities result");
+    };
+
+    assert!(capabilities.supports(&operator_core::Capability::Capture));
+    assert!(capabilities.supports(&operator_core::Capability::AppLifecycle));
+    assert!(capabilities.supports(&operator_core::Capability::WindowQuery));
+    assert!(capabilities.supports(&operator_core::Capability::Permissions));
+}
+
+fn build_driver(factory: FakeSessionFactory) -> Arc<dyn PlatformDriver> {
+    HarmonyHdcDriverFactory::new_with_session_factory(Arc::new(factory))
+        .build(&TargetDescriptor {
+            id: TargetId("harmony-pc".into()),
+            platform: "harmony".into(),
+            driver: "harmony.hdc".into(),
+            driver_config: DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))]),
+        })
+        .expect("factory should build harmony driver")
+}
+
+fn exec_context() -> ExecContext {
+    ExecContext {
+        target: "harmony-pc".into(),
+        session: None,
+        timeout_ms: Some(1_000),
+    }
+}
+
+fn window(
+    window_id: u32,
+    name: &str,
+    pid: i32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> WindowEntry {
+    WindowEntry {
+        name: name.into(),
+        display_id: 0,
+        pid,
+        window_id,
+        window_type: 0,
+        mode: 0,
+        flag: 0,
+        z_order: 0,
+        orientation: 0,
+        rect: WindowRect {
+            x,
+            y,
+            width,
+            height,
+        },
+    }
+}
+
+fn mission(mission_id: u32, app_name: &str, bundle_name: &str) -> MissionEntry {
+    MissionEntry {
+        mission_id,
+        mission_name: app_name.into(),
+        locked_state: 0,
+        mission_affinity: bundle_name.into(),
+        ability_record_id: None,
+        app_name: Some(app_name.into()),
+        main_name: Some("EntryAbility".into()),
+        bundle_name: Some(bundle_name.into()),
+        ability_type: Some("page".into()),
+        state: Some("FOREGROUND".into()),
+        app_state: Some("RUNNING".into()),
+        ready: Some(true),
+        window_attached: Some(true),
+        launcher: Some(false),
+        is_keep_alive: Some(false),
+    }
+}
+
+#[derive(Default)]
+struct CallCounts {
+    shell_connects: AtomicUsize,
+    list_apps_calls: AtomicUsize,
+    current_app_calls: AtomicUsize,
+    list_windows_calls: AtomicUsize,
+}
+
+#[derive(Clone, Copy)]
+enum ProbeOutcome {
+    Ok,
+    Err(&'static str),
+}
+
+impl Default for ProbeOutcome {
+    fn default() -> Self {
+        Self::Ok
+    }
+}
+
+impl ProbeOutcome {
+    fn into_result(self) -> Result<(), operator_core::OperatorError> {
+        match self {
+            Self::Ok => Ok(()),
+            Self::Err(message) => Err(operator_core::OperatorError::Platform(message.into())),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct FakeSessionFactory {
+    counts: Arc<CallCounts>,
+    apps: Vec<String>,
+    current_app: Option<CurrentApp>,
+    windows: CorrelatedWindowList,
+    shell_connect: ProbeOutcome,
+    shell_probe: ProbeOutcome,
+    capture_probe: ProbeOutcome,
+    ui_connect: ProbeOutcome,
+    ui_probe: ProbeOutcome,
+}
+
+impl Default for FakeSessionFactory {
+    fn default() -> Self {
+        Self {
+            counts: Arc::new(CallCounts::default()),
+            apps: Vec::new(),
+            current_app: None,
+            windows: CorrelatedWindowList {
+                windows: Vec::new(),
+                focused_window_id: None,
+                highlighted_window_ids: Vec::new(),
+                total_window_count: Some(0),
+            },
+            shell_connect: ProbeOutcome::Ok,
+            shell_probe: ProbeOutcome::Ok,
+            capture_probe: ProbeOutcome::Ok,
+            ui_connect: ProbeOutcome::Ok,
+            ui_probe: ProbeOutcome::Ok,
+        }
+    }
+}
+
+impl HarmonyHdcSessionFactory for FakeSessionFactory {
+    fn connect_shell(
+        &self,
+        _config: &HarmonyHdcConfig,
+    ) -> Result<Box<dyn HarmonyHdcShellSession>, operator_core::OperatorError> {
+        self.counts.shell_connects.fetch_add(1, Ordering::SeqCst);
+        self.shell_connect.into_result()?;
+        Ok(Box::new(FakeShellSession {
+            counts: Arc::clone(&self.counts),
+            apps: self.apps.clone(),
+            current_app: self.current_app.clone(),
+            windows: self.windows.clone(),
+            shell_probe: self.shell_probe,
+            capture_probe: self.capture_probe,
+        }))
+    }
+
+    fn connect_ui(
+        &self,
+        _config: &HarmonyHdcConfig,
+    ) -> Result<Box<dyn HarmonyHdcUiSession>, operator_core::OperatorError> {
+        self.ui_connect.into_result()?;
+        Ok(Box::new(FakeUiSession {
+            probe: self.ui_probe,
+        }))
+    }
+}
+
+struct FakeShellSession {
+    counts: Arc<CallCounts>,
+    apps: Vec<String>,
+    current_app: Option<CurrentApp>,
+    windows: CorrelatedWindowList,
+    shell_probe: ProbeOutcome,
+    capture_probe: ProbeOutcome,
+}
+
+impl HarmonyHdcShellSession for FakeShellSession {
+    fn exec_checked(&mut self, _command: &str) -> Result<(), operator_core::OperatorError> {
+        self.shell_probe.into_result()
+    }
+
+    fn screenshot_probe(&mut self) -> Result<(), operator_core::OperatorError> {
+        self.capture_probe.into_result()
+    }
+
+    fn capture_screenshot(&mut self, _path: &Path) -> Result<(), operator_core::OperatorError> {
+        self.capture_probe.into_result()
+    }
+
+    fn display_size(&mut self) -> Result<ImageSizePx, operator_core::OperatorError> {
+        Ok(ImageSizePx {
+            width: 1920,
+            height: 1080,
+        })
+    }
+
+    fn focused_window_bounds(&mut self) -> Result<Option<Rect>, operator_core::OperatorError> {
+        Ok(None)
+    }
+
+    fn list_apps(&mut self) -> Result<Vec<String>, operator_core::OperatorError> {
+        self.counts.list_apps_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.apps.clone())
+    }
+
+    fn current_app(&mut self) -> Result<Option<CurrentApp>, operator_core::OperatorError> {
+        self.counts.current_app_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.current_app.clone())
+    }
+
+    fn list_windows_with_missions(
+        &mut self,
+    ) -> Result<CorrelatedWindowList, operator_core::OperatorError> {
+        self.counts
+            .list_windows_calls
+            .fetch_add(1, Ordering::SeqCst);
+        Ok(self.windows.clone())
+    }
+}
+
+struct FakeUiSession {
+    probe: ProbeOutcome,
+}
+
+impl HarmonyHdcUiSession for FakeUiSession {
+    fn check_ready(&self) -> Result<(), operator_core::OperatorError> {
+        self.probe.into_result()
+    }
+}

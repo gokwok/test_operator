@@ -427,6 +427,141 @@ async fn read_only_query_tools_forward_runtime_results() {
 }
 
 #[tokio::test]
+async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tree() {
+    let mut config = RuntimeConfig {
+        default_timeout_ms: 250,
+        default_target: "harmony-pc".into(),
+        ..RuntimeConfig::default()
+    };
+    config.targets.insert(
+        "harmony-pc".into(),
+        NamedTargetConfig {
+            platform: "harmony".into(),
+            driver: "harmony.hdc".into(),
+            driver_config: Default::default(),
+        },
+    );
+
+    let driver = Arc::new(MockPlatformDriver::with_driver_id(
+        "harmony",
+        "harmony.hdc",
+        CapabilitySet::new([
+            Capability::Capture,
+            Capability::AppLifecycle,
+            Capability::WindowQuery,
+            Capability::Permissions,
+        ]),
+    ));
+    driver.push_query_result(Ok(QueryResult::Apps(vec![AppInfo {
+        bundle_id: Some("com.demo.notes".into()),
+        name: "com.demo.notes".into(),
+        pid: None,
+        is_running: true,
+    }])));
+    driver.push_query_result(Ok(QueryResult::Windows(vec![WindowInfo {
+        id: 7.into(),
+        title: Some("Draft.txt".into()),
+        app_name: Some("Notes".into()),
+        bounds: Some(Rect {
+            x: 40.0,
+            y: 50.0,
+            width: 600.0,
+            height: 400.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    }])));
+    driver.push_query_result(Ok(QueryResult::Permissions(PermissionsReport::new([
+        PermissionCheck::new("hdc.connect", "HDC Connect", PermissionStatus::Granted),
+        PermissionCheck::new("hdc.shell", "HDC Shell", PermissionStatus::Granted),
+        PermissionCheck::new("hdc.capture", "HDC Capture", PermissionStatus::Granted),
+        PermissionCheck::new("hdc.ui_bridge", "HDC UI Bridge", PermissionStatus::Denied)
+            .with_message("ui bridge unavailable"),
+    ]))));
+
+    let runtime = RuntimeBuilder::new(config)
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let apps = runtime
+        .tools()
+        .invoke("list-apps", json!({}))
+        .await
+        .unwrap();
+    let windows = runtime
+        .tools()
+        .invoke("list-windows", json!({ "app": "Notes" }))
+        .await
+        .unwrap();
+    let permissions = runtime
+        .tools()
+        .invoke("permissions-status", json!({}))
+        .await
+        .unwrap();
+    let capabilities = runtime
+        .tools()
+        .invoke("capabilities", json!({}))
+        .await
+        .unwrap();
+    let focus_error = runtime
+        .tools()
+        .invoke("get-focus", json!({}))
+        .await
+        .unwrap_err();
+
+    assert_eq!(apps["apps"][0]["bundle_id"], json!("com.demo.notes"));
+    assert_eq!(windows["windows"][0]["app_name"], json!("Notes"));
+    assert_eq!(
+        permissions["permissions"]["checks"][3]["status"],
+        json!("Denied")
+    );
+    assert_eq!(
+        capabilities["capabilities"],
+        json!(["AppLifecycle", "Capture", "Permissions", "WindowQuery"])
+    );
+    assert!(matches!(
+        focus_error,
+        OperatorError::CapabilityNotSupported(Capability::InspectTree)
+    ));
+
+    let calls = driver.query_calls().await;
+    assert_eq!(
+        calls,
+        vec![
+            (
+                QueryRequest::ListApps,
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                QueryRequest::ListWindows {
+                    app: Some("Notes".into()),
+                },
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+            (
+                QueryRequest::PermissionsStatus,
+                ExecContext {
+                    target: "harmony-pc".into(),
+                    session: None,
+                    timeout_ms: Some(250),
+                },
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn get_focus_query_tool_forwards_runtime_results() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
