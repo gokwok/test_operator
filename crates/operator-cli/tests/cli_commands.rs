@@ -430,6 +430,17 @@ fn root_help_uses_highlight_and_muted_tip_styles() {
 }
 
 #[test]
+fn root_help_keeps_global_runtime_flag_descriptions_on_the_same_line() {
+    let help = command_help(["operator", "--help"]);
+    let timeout_line = help
+        .lines()
+        .find(|line| line.contains("--timeout-ms <TIMEOUT_MS>"))
+        .expect("timeout flag line");
+
+    assert!(timeout_line.contains("Override the runtime timeout for this command"));
+}
+
+#[test]
 fn window_resize_help_shows_focus_and_verify_flags() {
     let help = command_help(["operator", "window", "resize", "--help"]);
     assert!(

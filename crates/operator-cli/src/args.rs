@@ -466,18 +466,38 @@ const AGENT_AFTER_HELP: &str = "Examples
   operator agent --model doubao-seed --max-steps 8 \"Summarize the frontmost window\"";
 
 fn styled_global_runtime_flags() -> String {
-    format!(
-        "{header}Global Runtime Flags{reset}\n\
-      {command}--json{reset}                   {body}Emit machine-readable JSON output{reset}\n\
-      {command}--target <TARGET>{reset}        {body}Select the runtime target{reset}\n\
-      {command}--timeout-ms <TIMEOUT_MS>{reset}\n\
-                               {body}Override the runtime timeout for this command{reset}\n\
-  {command}-h, --help{reset}                   {body}Print help{reset}\n",
+    let flags = [
+        ("--json", "Emit machine-readable JSON output"),
+        ("--target <TARGET>", "Select the runtime target"),
+        (
+            "--timeout-ms <TIMEOUT_MS>",
+            "Override the runtime timeout for this command",
+        ),
+        ("-h, --help", "Print help"),
+    ];
+    let width = flags.iter().map(|(flag, _)| flag.len()).max().unwrap_or(0) + 2;
+
+    let mut help = format!(
+        "{header}Global Runtime Flags{reset}\n",
         header = HEADER_STYLE,
-        command = COMMAND_STYLE,
-        body = BODY_STYLE,
         reset = RESET_STYLE,
-    )
+    );
+
+    for (flag, description) in flags {
+        writeln!(
+            &mut help,
+            "  {command}{flag:<width$}{reset} {body}{description}{reset}",
+            command = COMMAND_STYLE,
+            flag = flag,
+            body = BODY_STYLE,
+            description = description,
+            reset = RESET_STYLE,
+            width = width,
+        )
+        .expect("write global runtime flag row");
+    }
+
+    help
 }
 
 fn command_column_width(commands: &[CommandHelpEntry]) -> usize {
