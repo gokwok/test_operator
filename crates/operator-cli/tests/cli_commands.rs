@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 use tempfile::tempdir;
 
 #[test]
-fn observe_frontmost_command_defaults_capture_to_all() {
-    let cli = cli_main::args::Cli::try_parse_from(["operator", "observe", "frontmost", "--json"])
+fn capture_frontmost_command_defaults_to_screenshot_only() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "capture", "frontmost", "--json"])
         .unwrap();
 
     assert!(cli.prefers_json());
@@ -34,21 +34,19 @@ fn observe_frontmost_command_defaults_capture_to_all() {
                 "kind": "Frontmost"
             },
             "include_screenshot": true,
-            "include_elements": true
+            "include_elements": false
         })
     );
 }
 
 #[test]
-fn observe_window_command_maps_surface_and_capture_profile() {
+fn elements_window_command_maps_surface_and_tree_only_profile() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "observe",
+        "elements",
         "window",
         "--window-id",
         "42",
-        "--capture",
-        "elements",
     ])
     .unwrap();
 
@@ -71,15 +69,13 @@ fn observe_window_command_maps_surface_and_capture_profile() {
 }
 
 #[test]
-fn observe_fullscreen_command_maps_display_id_and_capture_profile() {
+fn capture_fullscreen_command_maps_display_id_and_screenshot_only_profile() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "observe",
+        "capture",
         "fullscreen",
         "--display-id",
         "2",
-        "--capture",
-        "screenshot",
     ])
     .unwrap();
 
@@ -102,21 +98,10 @@ fn observe_fullscreen_command_maps_display_id_and_capture_profile() {
 }
 
 #[test]
-fn observe_region_command_maps_rect_and_capture_profile() {
+fn elements_region_command_maps_rect_and_tree_only_profile() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "observe",
-        "region",
-        "--x",
-        "10",
-        "--y",
-        "20",
-        "--width",
-        "300",
-        "--height",
+        "operator", "elements", "region", "--x", "10", "--y", "20", "--width", "300", "--height",
         "200",
-        "--capture",
-        "none",
     ])
     .unwrap();
 
@@ -138,7 +123,7 @@ fn observe_region_command_maps_rect_and_capture_profile() {
                 }
             },
             "include_screenshot": false,
-            "include_elements": false
+            "include_elements": true
         })
     );
 }
@@ -170,10 +155,10 @@ fn permissions_command_uses_root_global_runtime_flags() {
 }
 
 #[test]
-fn focus_command_maps_common_flags_to_internal_tool() {
+fn show_command_maps_common_flags_to_internal_tool() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
-        "focus",
+        "show",
         "--target",
         "local:macos",
         "--timeout-ms",
@@ -366,11 +351,11 @@ fn list_help_lists_query_subcommands_and_examples() {
 }
 
 #[test]
-fn focus_help_shows_examples() {
-    let help = command_help(["operator", "focus", "--help"]);
+fn show_help_shows_examples() {
+    let help = command_help(["operator", "show", "--help"]);
     assert!(help.contains("Show the currently focused app, window, and element"));
     assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Examples\n  operator focus\n  operator --json focus"));
+    assert!(help.contains("Examples\n  operator show\n  operator --json show"));
 }
 
 #[test]
@@ -379,46 +364,62 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Usage operator [OPTIONS] [COMMAND]"));
     assert!(help.contains("Operator - Turn any desktop app into an API, from CLI to AI"));
     assert!(!help.contains("Tip:\n  Start with operator observe --help"));
-    assert!(help.contains("permissions    Check automation permissions and runtime readiness"));
-    assert!(help.contains(
-        "observe    Capture snapshots from frontmost, window, region, or fullscreen surfaces"
-    ));
-    assert!(help.contains("snapshot   Read a stored snapshot by ID"));
-    assert!(help.contains("artifact   Read a stored capture artifact by ID"));
-    assert!(help.contains("focus   Show the currently focused app, window, and element"));
-    assert!(help
-        .contains("input    Pointer and keyboard actions against locators or target windows/apps"));
-    assert!(help.contains("mcp   Run the Operator MCP entrypoint"));
-    assert!(help
-        .contains("Agent\n  agent   Execute a single-shot natural-language task against a target"));
+    assert!(help.contains("permissions"));
+    assert!(help.contains("Check automation permissions and runtime readiness"));
+    assert!(help.contains("capture"));
+    assert!(help.contains("Take a screenshot of a surface"));
+    assert!(help.contains("elements"));
+    assert!(help.contains("Query the accessibility element tree for a surface"));
+    assert!(help.contains("snapshot"));
+    assert!(help.contains("Read a stored snapshot by ID"));
+    assert!(help.contains("artifact"));
+    assert!(help.contains("Read a stored capture artifact by ID"));
+    assert!(help.contains("show"));
+    assert!(help.contains("Show the currently focused app, window, and element"));
+    assert!(help.contains("input"));
+    assert!(help.contains("Pointer and keyboard actions against locators or target windows/apps"));
+    assert!(help.contains("mcp"));
+    assert!(help.contains("Run the Operator MCP entrypoint"));
+    assert!(help.contains("Agent"));
+    assert!(help.contains("Execute a single-shot natural-language task against a target"));
     assert!(!help.contains("Not yet implemented. Reserved for future agent interface commands."));
     assert!(help.contains("Global Runtime Flags"));
-    assert!(help.contains("Examples\n  operator observe frontmost"));
+    assert!(help.contains("Examples\n  operator capture frontmost"));
     assert!(help.contains(
         "Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage."
     ));
 }
 
 #[test]
-fn observe_help_lists_surface_subcommands() {
-    let help = command_help(["operator", "observe", "--help"]);
-    assert!(
-        help.contains("Capture snapshots from frontmost, window, region, or fullscreen surfaces")
-    );
+fn capture_help_lists_surface_subcommands() {
+    let help = command_help(["operator", "capture", "--help"]);
+    assert!(help.contains("Take a screenshot of a surface"));
     assert!(help.contains("frontmost"));
-    assert!(help.contains("Capture the frontmost surface"));
+    assert!(help.contains("Take a screenshot of the frontmost app surface"));
     assert!(help.contains("window"));
-    assert!(help.contains("Capture a specific window"));
+    assert!(help.contains("Take a screenshot of a specific window"));
     assert!(help.contains("Global Runtime Flags"));
-    assert!(help.contains("Use 'operator observe <command> --help' for detailed usage."));
+    assert!(help.contains("Use 'operator capture <surface> --help' for detailed usage."));
+}
+
+#[test]
+fn elements_help_lists_surface_subcommands() {
+    let help = command_help(["operator", "elements", "--help"]);
+    assert!(help.contains("Query the accessibility element tree for a surface"));
+    assert!(help.contains("frontmost"));
+    assert!(help.contains("Query the accessibility element tree for the frontmost app surface"));
+    assert!(help.contains("window"));
+    assert!(help.contains("Query the accessibility element tree for a specific window"));
+    assert!(help.contains("Global Runtime Flags"));
+    assert!(help.contains("Use 'operator elements <surface> --help' for detailed usage."));
 }
 
 #[test]
 fn snapshot_help_shows_direct_id_usage() {
     let help = command_help(["operator", "snapshot", "--help"]);
-    assert!(help.contains("Usage operator snapshot [OPTIONS] <SNAPSHOT_ID>"));
+    assert!(help.contains("Usage operator snapshot [OPTIONS] <SNAPSHOT-ID>"));
     assert!(help.contains("Read a stored snapshot by ID"));
-    assert!(help.contains("<SNAPSHOT_ID>"));
+    assert!(help.contains("<SNAPSHOT-ID>"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator snapshot s_123"));
@@ -427,9 +428,9 @@ fn snapshot_help_shows_direct_id_usage() {
 #[test]
 fn artifact_help_shows_direct_id_usage() {
     let help = command_help(["operator", "artifact", "--help"]);
-    assert!(help.contains("Usage operator artifact [OPTIONS] <ARTIFACT_ID>"));
+    assert!(help.contains("Usage operator artifact [OPTIONS] <ARTIFACT-ID>"));
     assert!(help.contains("Read a stored capture artifact by ID"));
-    assert!(help.contains("<ARTIFACT_ID>"));
+    assert!(help.contains("<ARTIFACT-ID>"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator artifact capture-1.png"));
@@ -508,9 +509,9 @@ fn window_resize_help_shows_focus_and_verify_flags() {
 }
 
 #[test]
-fn observe_window_help_snapshot_is_stable() {
-    let help = command_help(["operator", "observe", "window", "--help"]);
-    assert!(help.contains("Capture a specific window"));
+fn capture_window_help_snapshot_is_stable() {
+    let help = command_help(["operator", "capture", "window", "--help"]);
+    assert!(help.contains("Take a screenshot of a specific window"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Override the runtime timeout for this command"));
@@ -645,7 +646,7 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
 
 #[test]
 fn legacy_flat_commands_show_grouped_replacement_hints() {
-    let cases: [(&[&str], &str, &str); 29] = [
+    let cases: [(&[&str], &str, &str); 34] = [
         (
             &["operator", "snapshot-get", "s_123"],
             "snapshot-get",
@@ -666,7 +667,50 @@ fn legacy_flat_commands_show_grouped_replacement_hints() {
             "artifact get",
             "operator artifact <artifact-id>",
         ),
-        (&["operator", "get-focus"], "get-focus", "operator focus"),
+        (
+            &["operator", "observe", "frontmost"],
+            "observe frontmost",
+            "operator capture frontmost",
+        ),
+        (
+            &[
+                "operator",
+                "observe",
+                "window",
+                "--window-id",
+                "42",
+                "--capture",
+                "elements",
+            ],
+            "observe window",
+            "operator elements window",
+        ),
+        (
+            &[
+                "operator",
+                "observe",
+                "region",
+                "--x",
+                "0",
+                "--y",
+                "0",
+                "--width",
+                "10",
+                "--height",
+                "10",
+                "--capture",
+                "all",
+            ],
+            "observe region",
+            "operator capture region or operator elements region",
+        ),
+        (
+            &["operator", "observe"],
+            "observe",
+            "operator capture <surface> or operator elements <surface>",
+        ),
+        (&["operator", "get-focus"], "get-focus", "operator show"),
+        (&["operator", "focus"], "focus", "operator show"),
         (
             &["operator", "list-apps"],
             "list-apps",
@@ -2022,6 +2066,37 @@ async fn cli_run_renders_artifact_path_for_non_json_output() {
     let recorded = calls.lock().unwrap();
     assert_eq!(recorded[0].0, "artifact-get");
     assert_eq!(recorded[0].1, json!({ "artifact_id": "capture-1.png" }));
+}
+
+#[tokio::test]
+async fn cli_run_renders_show_summary_for_non_json_output() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "show"]).unwrap();
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let invoker = RecordingInvoker {
+        calls: Arc::clone(&calls),
+        response: json!({
+            "focus": {
+                "role": "AXTextField",
+                "label": "Search",
+                "bundle_id": "com.apple.Safari",
+                "app_name": "Safari",
+                "bounds": {
+                    "x": 40.0,
+                    "y": 60.0,
+                    "width": 280.0,
+                    "height": 32.0
+                }
+            }
+        }),
+    };
+
+    let rendered = cli_main::run_with_invoker(cli, &invoker).await.unwrap();
+    assert_eq!(rendered, "Safari\tAXTextField\tSearch");
+
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded[0].0, "get-focus");
+    assert_eq!(recorded[0].1, json!({}));
 }
 
 #[tokio::test]

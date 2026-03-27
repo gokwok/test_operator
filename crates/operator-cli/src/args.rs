@@ -29,6 +29,7 @@ struct CommandHelpEntry {
 struct CommandHelpGroup {
     usage: &'static str,
     about: &'static str,
+    entries_heading: &'static str,
     commands: &'static [CommandHelpEntry],
     examples: &'static [&'static str],
     footer: &'static str,
@@ -45,7 +46,8 @@ const ROOT_USAGE: &str = "operator [OPTIONS] [COMMAND]";
 const ROOT_FOOTER: &str =
     "Use 'operator <group> --help' or 'operator <group> <command> --help' for detailed usage.";
 const ROOT_EXAMPLES: &[&str] = &[
-    "operator observe frontmost",
+    "operator capture frontmost",
+    "operator elements window --window-id 42",
     "operator list windows",
     "operator input click --text Save",
     "operator mcp serve",
@@ -55,15 +57,21 @@ const PRINT_HELP_ABOUT: &str = "Print this message or the help of the given subc
 const PERMISSIONS_ABOUT: &str = "Check automation permissions and runtime readiness";
 const CAPABILITIES_ABOUT: &str =
     "Show supported surfaces, queries, and actions for the active target";
-const FOCUS_ABOUT: &str = "Show the currently focused app, window, and element";
+const SHOW_ABOUT: &str = "Show the currently focused app, window, and element";
 const AGENT_ABOUT: &str = "Execute a single-shot natural-language task against a target";
 
-const OBSERVE_ABOUT: &str =
-    "Capture snapshots from frontmost, window, region, or fullscreen surfaces";
-const OBSERVE_FRONTMOST_ABOUT: &str = "Capture the frontmost surface";
-const OBSERVE_WINDOW_ABOUT: &str = "Capture a specific window";
-const OBSERVE_REGION_ABOUT: &str = "Capture a specific screen region";
-const OBSERVE_FULLSCREEN_ABOUT: &str = "Capture the full display or the active display";
+const CAPTURE_ABOUT: &str = "Take a screenshot of a surface";
+const CAPTURE_FRONTMOST_ABOUT: &str = "Take a screenshot of the frontmost app surface";
+const CAPTURE_WINDOW_ABOUT: &str = "Take a screenshot of a specific window";
+const CAPTURE_REGION_ABOUT: &str = "Take a screenshot of a screen region defined by coordinates";
+const CAPTURE_FULLSCREEN_ABOUT: &str = "Take a screenshot of the full display";
+
+const ELEMENTS_ABOUT: &str = "Query the accessibility element tree for a surface";
+const ELEMENTS_FRONTMOST_ABOUT: &str =
+    "Query the accessibility element tree for the frontmost app surface";
+const ELEMENTS_WINDOW_ABOUT: &str = "Query the accessibility element tree for a specific window";
+const ELEMENTS_REGION_ABOUT: &str = "Query accessibility elements within a screen region";
+const ELEMENTS_FULLSCREEN_ABOUT: &str = "Query the accessibility element tree for the full display";
 
 const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
@@ -116,8 +124,16 @@ const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
 
 const ROOT_OBSERVE_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
-        command: "observe",
-        about: OBSERVE_ABOUT,
+        command: "capture",
+        about: CAPTURE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "elements",
+        about: ELEMENTS_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "show",
+        about: SHOW_ABOUT,
     },
     CommandHelpEntry {
         command: "snapshot",
@@ -129,16 +145,10 @@ const ROOT_OBSERVE_COMMANDS: &[CommandHelpEntry] = &[
     },
 ];
 
-const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[
-    CommandHelpEntry {
-        command: "list",
-        about: LIST_ABOUT,
-    },
-    CommandHelpEntry {
-        command: "focus",
-        about: FOCUS_ABOUT,
-    },
-];
+const ROOT_QUERY_COMMANDS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "list",
+    about: LIST_ABOUT,
+}];
 
 const ROOT_ACTION_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
@@ -192,26 +202,41 @@ const ROOT_HELP_SECTIONS: &[RootHelpSection] = &[
     },
 ];
 
-const OBSERVE_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+const CAPTURE_GROUP_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "frontmost",
-        about: OBSERVE_FRONTMOST_ABOUT,
+        about: CAPTURE_FRONTMOST_ABOUT,
     },
     CommandHelpEntry {
         command: "window",
-        about: OBSERVE_WINDOW_ABOUT,
+        about: CAPTURE_WINDOW_ABOUT,
     },
     CommandHelpEntry {
         command: "region",
-        about: OBSERVE_REGION_ABOUT,
+        about: CAPTURE_REGION_ABOUT,
     },
     CommandHelpEntry {
         command: "fullscreen",
-        about: OBSERVE_FULLSCREEN_ABOUT,
+        about: CAPTURE_FULLSCREEN_ABOUT,
+    },
+];
+
+const ELEMENTS_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "frontmost",
+        about: ELEMENTS_FRONTMOST_ABOUT,
     },
     CommandHelpEntry {
-        command: "help",
-        about: PRINT_HELP_ABOUT,
+        command: "window",
+        about: ELEMENTS_WINDOW_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "region",
+        about: ELEMENTS_REGION_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "fullscreen",
+        about: ELEMENTS_FULLSCREEN_ABOUT,
     },
 ];
 
@@ -346,20 +371,34 @@ const MCP_GROUP_COMMANDS: &[CommandHelpEntry] = &[
     },
 ];
 
-const OBSERVE_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
-    usage: "operator observe [OPTIONS] <COMMAND>",
-    about: OBSERVE_ABOUT,
-    commands: OBSERVE_GROUP_COMMANDS,
+const CAPTURE_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator capture [OPTIONS] <SURFACE>",
+    about: CAPTURE_ABOUT,
+    entries_heading: "Surfaces",
+    commands: CAPTURE_GROUP_COMMANDS,
     examples: &[
-        "operator observe frontmost --capture all",
-        "operator observe window --window-id 42 --capture elements",
+        "operator capture frontmost",
+        "operator capture window --window-id 42",
     ],
-    footer: "Use 'operator observe <command> --help' for detailed usage.",
+    footer: "Use 'operator capture <surface> --help' for detailed usage.",
+};
+
+const ELEMENTS_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator elements [OPTIONS] <SURFACE>",
+    about: ELEMENTS_ABOUT,
+    entries_heading: "Surfaces",
+    commands: ELEMENTS_GROUP_COMMANDS,
+    examples: &[
+        "operator elements frontmost",
+        "operator elements window --window-id 42",
+    ],
+    footer: "Use 'operator elements <surface> --help' for detailed usage.",
 };
 
 const LIST_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator list [OPTIONS] <COMMAND>",
     about: LIST_ABOUT,
+    entries_heading: "Commands",
     commands: LIST_GROUP_COMMANDS,
     examples: &["operator list apps", "operator list windows --app TextEdit"],
     footer: "Use 'operator list <command> --help' for detailed usage.",
@@ -368,6 +407,7 @@ const LIST_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
 const INPUT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator input [OPTIONS] <COMMAND>",
     about: INPUT_ABOUT,
+    entries_heading: "Commands",
     commands: INPUT_GROUP_COMMANDS,
     examples: &[
         "operator input click --text Save --app Notes --focus auto --verify focus",
@@ -379,6 +419,7 @@ const INPUT_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
 const APP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator app [OPTIONS] <COMMAND>",
     about: APP_ABOUT,
+    entries_heading: "Commands",
     commands: APP_GROUP_COMMANDS,
     examples: &[
         "operator app launch Calculator",
@@ -390,6 +431,7 @@ const APP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
 const WINDOW_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator window [OPTIONS] <COMMAND>",
     about: WINDOW_ABOUT,
+    entries_heading: "Commands",
     commands: WINDOW_GROUP_COMMANDS,
     examples: &[
         "operator window focus --window-id 42 --verify focus",
@@ -401,6 +443,7 @@ const WINDOW_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
 const MCP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator mcp [OPTIONS] <COMMAND>",
     about: MCP_ABOUT,
+    entries_heading: "Commands",
     commands: MCP_GROUP_COMMANDS,
     examples: &["operator mcp serve"],
     footer: "Use 'operator mcp <command> --help' for detailed usage.",
@@ -414,13 +457,17 @@ const CAPABILITIES_AFTER_HELP: &str = "Examples
   operator capabilities
   operator capabilities --json";
 
-const FOCUS_AFTER_HELP: &str = "Examples
-  operator focus
-  operator --json focus";
+const SHOW_AFTER_HELP: &str = "Examples
+  operator show
+  operator --json show";
 
-const OBSERVE_WINDOW_AFTER_HELP: &str = "Examples
-  operator observe window --window-id 42 --capture elements
-  operator observe window --window-id 42 --capture screenshot";
+const CAPTURE_WINDOW_AFTER_HELP: &str = "Examples
+  operator capture window --window-id 42
+  operator --json capture window --window-id 42";
+
+const ELEMENTS_WINDOW_AFTER_HELP: &str = "Examples
+  operator elements window --window-id 42
+  operator --json elements window --window-id 42";
 
 const SNAPSHOT_AFTER_HELP: &str = "Examples
   operator snapshot s_123
@@ -549,8 +596,9 @@ fn styled_group_help(group: &CommandHelpGroup) -> String {
     help.push('\n');
     writeln!(
         &mut help,
-        "{header}Commands{reset}",
+        "{header}{entries_heading}{reset}",
         header = HEADER_STYLE,
+        entries_heading = group.entries_heading,
         reset = RESET_STYLE,
     )
     .expect("write commands header");
@@ -775,44 +823,110 @@ fn strip_ansi_for_help(input: &str) -> String {
     cleaned
 }
 
-fn legacy_command_replacement(path: &[&str]) -> Option<(&'static str, &'static str)> {
-    match path {
-        ["snapshot-get", ..] => Some(("snapshot-get", "operator snapshot <snapshot-id>")),
-        ["artifact-get", ..] => Some(("artifact-get", "operator artifact <artifact-id>")),
-        ["snapshot", "get", ..] => Some(("snapshot get", "operator snapshot <snapshot-id>")),
-        ["artifact", "get", ..] => Some(("artifact get", "operator artifact <artifact-id>")),
-        ["get-focus", ..] => Some(("get-focus", "operator focus")),
-        ["list-apps", ..] => Some(("list-apps", "operator list apps")),
-        ["list-windows", ..] => Some(("list-windows", "operator list windows")),
-        ["permissions-status", ..] => Some(("permissions-status", "operator permissions")),
-        ["click", ..] => Some(("click", "operator input click")),
-        ["move", ..] => Some(("move", "operator input move")),
-        ["type", ..] => Some(("type", "operator input type")),
-        ["press", ..] => Some(("press", "operator input press")),
-        ["hotkey", ..] => Some(("hotkey", "operator input hotkey")),
-        ["scroll", ..] => Some(("scroll", "operator input scroll")),
-        ["drag", ..] => Some(("drag", "operator input drag")),
-        ["swipe", ..] => Some(("swipe", "operator input swipe")),
-        ["launch-app", ..] => Some(("launch-app", "operator app launch")),
-        ["switch-app", ..] => Some(("switch-app", "operator app switch")),
-        ["quit-app", ..] => Some(("quit-app", "operator app quit")),
-        ["relaunch-app", ..] => Some(("relaunch-app", "operator app relaunch")),
-        ["hide-app", ..] => Some(("hide-app", "operator app hide")),
-        ["unhide-app", ..] => Some(("unhide-app", "operator app unhide")),
-        ["focus-window", ..] => Some(("focus-window", "operator window focus")),
-        ["close-window", ..] => Some(("close-window", "operator window close")),
-        ["minimize-window", ..] => Some(("minimize-window", "operator window minimize")),
-        ["maximize-window", ..] => Some(("maximize-window", "operator window maximize")),
-        ["move-window", ..] => Some(("move-window", "operator window move")),
-        ["resize-window", ..] => Some(("resize-window", "operator window resize")),
-        ["set-window-bounds", ..] => Some(("set-window-bounds", "operator window set-bounds")),
+fn legacy_command_replacement(args: &[OsString]) -> Option<(String, String)> {
+    let path = command_path(args);
+    match path.as_slice() {
+        ["snapshot-get", ..] => Some((
+            "snapshot-get".into(),
+            "operator snapshot <snapshot-id>".into(),
+        )),
+        ["artifact-get", ..] => Some((
+            "artifact-get".into(),
+            "operator artifact <artifact-id>".into(),
+        )),
+        ["snapshot", "get", ..] => Some((
+            "snapshot get".into(),
+            "operator snapshot <snapshot-id>".into(),
+        )),
+        ["artifact", "get", ..] => Some((
+            "artifact get".into(),
+            "operator artifact <artifact-id>".into(),
+        )),
+        ["observe", surface, ..] => Some((
+            format!("observe {surface}"),
+            observe_replacement(surface, args),
+        )),
+        ["observe"] => Some((
+            "observe".into(),
+            "operator capture <surface> or operator elements <surface>".into(),
+        )),
+        ["get-focus", ..] => Some(("get-focus".into(), "operator show".into())),
+        ["focus", ..] => Some(("focus".into(), "operator show".into())),
+        ["list-apps", ..] => Some(("list-apps".into(), "operator list apps".into())),
+        ["list-windows", ..] => Some(("list-windows".into(), "operator list windows".into())),
+        ["permissions-status", ..] => {
+            Some(("permissions-status".into(), "operator permissions".into()))
+        }
+        ["click", ..] => Some(("click".into(), "operator input click".into())),
+        ["move", ..] => Some(("move".into(), "operator input move".into())),
+        ["type", ..] => Some(("type".into(), "operator input type".into())),
+        ["press", ..] => Some(("press".into(), "operator input press".into())),
+        ["hotkey", ..] => Some(("hotkey".into(), "operator input hotkey".into())),
+        ["scroll", ..] => Some(("scroll".into(), "operator input scroll".into())),
+        ["drag", ..] => Some(("drag".into(), "operator input drag".into())),
+        ["swipe", ..] => Some(("swipe".into(), "operator input swipe".into())),
+        ["launch-app", ..] => Some(("launch-app".into(), "operator app launch".into())),
+        ["switch-app", ..] => Some(("switch-app".into(), "operator app switch".into())),
+        ["quit-app", ..] => Some(("quit-app".into(), "operator app quit".into())),
+        ["relaunch-app", ..] => Some(("relaunch-app".into(), "operator app relaunch".into())),
+        ["hide-app", ..] => Some(("hide-app".into(), "operator app hide".into())),
+        ["unhide-app", ..] => Some(("unhide-app".into(), "operator app unhide".into())),
+        ["focus-window", ..] => Some(("focus-window".into(), "operator window focus".into())),
+        ["close-window", ..] => Some(("close-window".into(), "operator window close".into())),
+        ["minimize-window", ..] => {
+            Some(("minimize-window".into(), "operator window minimize".into()))
+        }
+        ["maximize-window", ..] => {
+            Some(("maximize-window".into(), "operator window maximize".into()))
+        }
+        ["move-window", ..] => Some(("move-window".into(), "operator window move".into())),
+        ["resize-window", ..] => Some(("resize-window".into(), "operator window resize".into())),
+        ["set-window-bounds", ..] => Some((
+            "set-window-bounds".into(),
+            "operator window set-bounds".into(),
+        )),
         _ => None,
     }
 }
 
+fn observe_replacement(surface: &str, args: &[OsString]) -> String {
+    match observe_capture_mode(args).as_deref() {
+        Some("elements") => format!("operator elements {surface}"),
+        Some("screenshot") | None => format!("operator capture {surface}"),
+        Some("all") | Some("none") => {
+            format!("operator capture {surface} or operator elements {surface}")
+        }
+        Some(other) => format!(
+            "operator capture {surface} or operator elements {surface} (legacy --capture {other} is no longer supported)"
+        ),
+    }
+}
+
+fn observe_capture_mode(args: &[OsString]) -> Option<String> {
+    let mut iter = args.iter().skip(1);
+
+    while let Some(arg) = iter.next() {
+        let Some(arg) = arg.to_str() else {
+            continue;
+        };
+
+        if let Some(value) = arg.strip_prefix("--capture=") {
+            return Some(value.to_string());
+        }
+
+        if arg == "--capture" {
+            return iter
+                .next()
+                .and_then(|value| value.to_str())
+                .map(str::to_string);
+        }
+    }
+
+    None
+}
+
 fn legacy_command_error(args: &[OsString]) -> Option<clap::Error> {
-    let path = command_path(args);
-    let (legacy, replacement) = legacy_command_replacement(&path)?;
+    let (legacy, replacement) = legacy_command_replacement(args)?;
     Some(clap::Error::raw(
         clap::error::ErrorKind::InvalidSubcommand,
         format!("legacy command path `{legacy}` has been removed; use `{replacement}` instead"),
@@ -893,7 +1007,8 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
 
     match command_path(args).as_slice() {
         [] => Some(root_help()),
-        ["observe"] => Some(styled_group_help(&OBSERVE_GROUP_HELP)),
+        ["capture"] => Some(styled_group_help(&CAPTURE_GROUP_HELP)),
+        ["elements"] => Some(styled_group_help(&ELEMENTS_GROUP_HELP)),
         ["list"] => Some(styled_group_help(&LIST_GROUP_HELP)),
         ["input"] => Some(styled_group_help(&INPUT_GROUP_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
@@ -973,12 +1088,13 @@ enum Command {
     Permissions(CommonArgs),
     #[command(about = CAPABILITIES_ABOUT, after_help = CAPABILITIES_AFTER_HELP)]
     Capabilities(CommonArgs),
-    Observe(ObserveArgs),
+    Capture(CaptureArgs),
+    Elements(ElementsArgs),
     Snapshot(SnapshotArgs),
     Artifact(ArtifactArgs),
     List(ListArgs),
-    #[command(about = FOCUS_ABOUT, after_help = FOCUS_AFTER_HELP)]
-    Focus(CommonArgs),
+    #[command(about = SHOW_ABOUT, after_help = SHOW_AFTER_HELP)]
+    Show(CommonArgs),
     Input(InputArgs),
     App(AppArgs),
     Window(WindowArgs),
@@ -992,11 +1108,12 @@ impl Command {
         match self {
             Self::Permissions(args) => Some(args),
             Self::Capabilities(args) => Some(args),
-            Self::Observe(args) => Some(&args.common),
+            Self::Capture(args) => Some(&args.common),
+            Self::Elements(args) => Some(&args.common),
             Self::Snapshot(args) => Some(&args.common),
             Self::Artifact(args) => Some(&args.common),
             Self::List(args) => args.common(),
-            Self::Focus(args) => Some(args),
+            Self::Show(args) => Some(args),
             Self::Input(args) => args.common(),
             Self::App(args) => Some(&args.common),
             Self::Window(args) => Some(&args.common),
@@ -1014,11 +1131,12 @@ impl Command {
             Self::Capabilities(common) => {
                 invoke_without_specific_input("capabilities", merge_common(root_common, common))
             }
-            Self::Observe(args) => args.into_invocation(root_common),
+            Self::Capture(args) => args.into_invocation(root_common),
+            Self::Elements(args) => args.into_invocation(root_common),
             Self::Snapshot(args) => args.into_invocation(root_common),
             Self::Artifact(args) => args.into_invocation(root_common),
             Self::List(args) => args.into_invocation(root_common),
-            Self::Focus(common) => {
+            Self::Show(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
             Self::Input(args) => args.into_invocation(root_common),
@@ -1142,15 +1260,31 @@ impl ListCommand {
 }
 
 #[derive(Debug, Clone, Args)]
-#[command(about = OBSERVE_ABOUT, arg_required_else_help = true)]
-struct ObserveArgs {
+#[command(about = CAPTURE_ABOUT, arg_required_else_help = true)]
+struct CaptureArgs {
     #[command(flatten)]
     common: CommonArgs,
     #[command(subcommand)]
-    command: ObserveCommand,
+    command: CaptureCommand,
 }
 
-impl ObserveArgs {
+impl CaptureArgs {
+    fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
+        self.command
+            .into_invocation(merge_common(root_common, self.common))
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(about = ELEMENTS_ABOUT, arg_required_else_help = true)]
+struct ElementsArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: ElementsCommand,
+}
+
+impl ElementsArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
         self.command
             .into_invocation(merge_common(root_common, self.common))
@@ -1158,31 +1292,30 @@ impl ObserveArgs {
 }
 
 #[derive(Debug, Clone, Subcommand)]
-enum ObserveCommand {
-    #[command(about = OBSERVE_FRONTMOST_ABOUT)]
-    Frontmost(ObserveFrontmostArgs),
-    #[command(about = OBSERVE_WINDOW_ABOUT, after_help = OBSERVE_WINDOW_AFTER_HELP)]
-    Window(ObserveWindowArgs),
-    #[command(about = OBSERVE_REGION_ABOUT)]
-    Region(ObserveRegionArgs),
-    #[command(about = OBSERVE_FULLSCREEN_ABOUT)]
-    Fullscreen(ObserveFullscreenArgs),
+enum CaptureCommand {
+    #[command(about = CAPTURE_FRONTMOST_ABOUT)]
+    Frontmost(SurfaceFrontmostArgs),
+    #[command(about = CAPTURE_WINDOW_ABOUT, after_help = CAPTURE_WINDOW_AFTER_HELP)]
+    Window(SurfaceWindowArgs),
+    #[command(about = CAPTURE_REGION_ABOUT)]
+    Region(SurfaceRegionArgs),
+    #[command(about = CAPTURE_FULLSCREEN_ABOUT)]
+    Fullscreen(SurfaceFullscreenArgs),
 }
 
-impl ObserveCommand {
+impl CaptureCommand {
     fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         match self {
-            Self::Frontmost(args) => {
-                observe_invocation(common, SurfaceKind::Frontmost, args.capture.capture)
-            }
-            Self::Window(args) => observe_invocation(
+            Self::Frontmost(_) => surface_invocation(common, SurfaceKind::Frontmost, true, false),
+            Self::Window(args) => surface_invocation(
                 common,
                 SurfaceKind::Window {
                     id: WindowId::from(args.window_id),
                 },
-                args.capture.capture,
+                true,
+                false,
             ),
-            Self::Region(args) => observe_invocation(
+            Self::Region(args) => surface_invocation(
                 common,
                 SurfaceKind::Region {
                     rect: operator_core::Rect {
@@ -1192,69 +1325,121 @@ impl ObserveCommand {
                         height: args.height,
                     },
                 },
-                args.capture.capture,
+                true,
+                false,
             ),
-            Self::Fullscreen(args) => observe_invocation(
+            Self::Fullscreen(args) => surface_invocation(
                 common,
                 SurfaceKind::Fullscreen {
                     display_id: args.display_id,
                 },
-                args.capture.capture,
+                true,
+                false,
             ),
         }
     }
 }
 
-#[derive(Debug, Clone, Args)]
-struct ObserveFrontmostArgs {
-    #[command(flatten)]
-    capture: CaptureArgs,
+#[derive(Debug, Clone, Subcommand)]
+enum ElementsCommand {
+    #[command(about = ELEMENTS_FRONTMOST_ABOUT)]
+    Frontmost(SurfaceFrontmostArgs),
+    #[command(about = ELEMENTS_WINDOW_ABOUT, after_help = ELEMENTS_WINDOW_AFTER_HELP)]
+    Window(SurfaceWindowArgs),
+    #[command(about = ELEMENTS_REGION_ABOUT)]
+    Region(SurfaceRegionArgs),
+    #[command(about = ELEMENTS_FULLSCREEN_ABOUT)]
+    Fullscreen(SurfaceFullscreenArgs),
 }
 
+impl ElementsCommand {
+    fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        match self {
+            Self::Frontmost(_) => surface_invocation(common, SurfaceKind::Frontmost, false, true),
+            Self::Window(args) => surface_invocation(
+                common,
+                SurfaceKind::Window {
+                    id: WindowId::from(args.window_id),
+                },
+                false,
+                true,
+            ),
+            Self::Region(args) => surface_invocation(
+                common,
+                SurfaceKind::Region {
+                    rect: operator_core::Rect {
+                        x: args.x,
+                        y: args.y,
+                        width: args.width,
+                        height: args.height,
+                    },
+                },
+                false,
+                true,
+            ),
+            Self::Fullscreen(args) => surface_invocation(
+                common,
+                SurfaceKind::Fullscreen {
+                    display_id: args.display_id,
+                },
+                false,
+                true,
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct SurfaceFrontmostArgs {}
+
 #[derive(Debug, Clone, Args)]
-struct ObserveWindowArgs {
-    #[arg(long)]
+struct SurfaceWindowArgs {
+    #[arg(
+        long = "window-id",
+        value_name = "ID",
+        help = "ID of the target window (from 'operator window list')"
+    )]
     window_id: u64,
-    #[command(flatten)]
-    capture: CaptureArgs,
 }
 
 #[derive(Debug, Clone, Args)]
-struct ObserveRegionArgs {
-    #[arg(long)]
+struct SurfaceRegionArgs {
+    #[arg(
+        long,
+        value_name = "X",
+        help = "Left edge of the region in screen points"
+    )]
     x: f64,
-    #[arg(long)]
+    #[arg(
+        long,
+        value_name = "Y",
+        help = "Top edge of the region in screen points"
+    )]
     y: f64,
-    #[arg(long)]
+    #[arg(long, value_name = "W", help = "Width of the region in screen points")]
     width: f64,
-    #[arg(long)]
+    #[arg(long, value_name = "H", help = "Height of the region in screen points")]
     height: f64,
-    #[command(flatten)]
-    capture: CaptureArgs,
 }
 
 #[derive(Debug, Clone, Args)]
-struct ObserveFullscreenArgs {
-    #[arg(long)]
+struct SurfaceFullscreenArgs {
+    #[arg(
+        long = "display-id",
+        value_name = "ID",
+        help = "Display to target (optional, defaults to the active display)"
+    )]
     display_id: Option<u32>,
-    #[command(flatten)]
-    capture: CaptureArgs,
 }
 
-#[derive(Debug, Clone, Args)]
-struct CaptureArgs {
-    #[arg(long, value_enum, default_value_t = CaptureProfileArg::All)]
-    capture: CaptureProfileArg,
-}
-
-fn observe_invocation(
+fn surface_invocation(
     common: CommonArgs,
     surface_kind: SurfaceKind,
-    capture: CaptureProfileArg,
+    include_screenshot: bool,
+    include_elements: bool,
 ) -> Result<ToolInvocation, String> {
     let mut input = common_input(&common);
     insert_serialized(&mut input, "surface", Surface { kind: surface_kind })?;
-    let (include_screenshot, include_elements) = capture.flags();
     input.insert("include_screenshot".into(), Value::Bool(include_screenshot));
     input.insert("include_elements".into(), Value::Bool(include_elements));
     Ok(ToolInvocation {
@@ -1273,6 +1458,10 @@ fn observe_invocation(
 struct SnapshotArgs {
     #[command(flatten)]
     common: CommonArgs,
+    #[arg(
+        value_name = "SNAPSHOT-ID",
+        help = "Snapshot identifier returned by a previous capture or elements command"
+    )]
     snapshot_id: String,
 }
 
@@ -1302,6 +1491,10 @@ impl SnapshotArgs {
 struct ArtifactArgs {
     #[command(flatten)]
     common: CommonArgs,
+    #[arg(
+        value_name = "ARTIFACT-ID",
+        help = "Artifact identifier returned by a previous capture command"
+    )]
     artifact_id: String,
 }
 
@@ -2047,25 +2240,6 @@ impl AppLifecycleArgs {
         common: CommonArgs,
     ) -> Result<ToolInvocation, String> {
         lifecycle_action_invocation(tool, common, self.target, self.verification)
-    }
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum CaptureProfileArg {
-    All,
-    Elements,
-    Screenshot,
-    None,
-}
-
-impl CaptureProfileArg {
-    fn flags(self) -> (bool, bool) {
-        match self {
-            Self::All => (true, true),
-            Self::Elements => (false, true),
-            Self::Screenshot => (true, false),
-            Self::None => (false, false),
-        }
     }
 }
 

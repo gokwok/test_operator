@@ -11,6 +11,7 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
     match tool {
         "observe" | "snapshot-get" => render_snapshot(output),
         "artifact-get" => render_artifact(output),
+        "get-focus" => render_focus(output),
         "list-apps" => render_apps(output),
         "list-windows" => render_windows(output),
         "permissions-status" => render_permissions(output),
@@ -62,6 +63,25 @@ fn render_artifact(output: &Value) -> String {
     let id = artifact["id"].as_str().unwrap_or("<unknown>");
     let path = artifact["path"].as_str().unwrap_or("<unknown>");
     format!("artifact {id} ({path})")
+}
+
+fn render_focus(output: &Value) -> String {
+    let focus = &output["focus"];
+    if focus.is_null() {
+        return "no focused element".into();
+    }
+
+    let role = focus["role"].as_str().unwrap_or("<unknown>");
+    let label = focus["label"].as_str();
+    let app = focus["app_name"]
+        .as_str()
+        .or_else(|| focus["bundle_id"].as_str())
+        .unwrap_or("<unknown>");
+
+    match label {
+        Some(label) if !label.is_empty() => format!("{app}\t{role}\t{label}"),
+        _ => format!("{app}\t{role}"),
+    }
 }
 
 fn render_apps(output: &Value) -> String {
