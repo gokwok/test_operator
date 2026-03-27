@@ -551,6 +551,150 @@ const AGENT_HELP: LeafHelp = LeafHelp {
     footer: "",
 };
 
+const SURFACE_WINDOW_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--window-id <ID>",
+    about: "ID of the target window (from 'operator window list')",
+}];
+
+const SURFACE_REGION_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--x <X>",
+        about: "Left edge of the region in screen points",
+    },
+    CommandHelpEntry {
+        command: "--y <Y>",
+        about: "Top edge of the region in screen points",
+    },
+    CommandHelpEntry {
+        command: "--width <W>",
+        about: "Width of the region in screen points",
+    },
+    CommandHelpEntry {
+        command: "--height <H>",
+        about: "Height of the region in screen points",
+    },
+];
+
+const CAPTURE_FULLSCREEN_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--display-id <ID>",
+    about: "Display to capture (optional, defaults to the active display)",
+}];
+
+const ELEMENTS_FULLSCREEN_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--display-id <ID>",
+    about: "Display to query (optional, defaults to the active display)",
+}];
+
+const SURFACE_WINDOW_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Options",
+    rows: SURFACE_WINDOW_OPTION_ROWS,
+}];
+
+const SURFACE_REGION_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Options",
+    rows: SURFACE_REGION_OPTION_ROWS,
+}];
+
+const CAPTURE_FULLSCREEN_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Options",
+    rows: CAPTURE_FULLSCREEN_OPTION_ROWS,
+}];
+
+const ELEMENTS_FULLSCREEN_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Options",
+    rows: ELEMENTS_FULLSCREEN_OPTION_ROWS,
+}];
+
+const CAPTURE_FRONTMOST_HELP: LeafHelp = LeafHelp {
+    usage: "operator capture frontmost [OPTIONS]",
+    about: CAPTURE_FRONTMOST_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator capture frontmost",
+        "operator --json capture frontmost",
+    ],
+    footer: "",
+};
+
+const CAPTURE_WINDOW_HELP: LeafHelp = LeafHelp {
+    usage: "operator capture window [OPTIONS] --window-id <ID>",
+    about: CAPTURE_WINDOW_ABOUT,
+    sections: SURFACE_WINDOW_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator capture window --window-id 42",
+        "operator --json capture window --window-id 42",
+    ],
+    footer: "",
+};
+
+const CAPTURE_REGION_HELP: LeafHelp = LeafHelp {
+    usage: "operator capture region [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
+    about: CAPTURE_REGION_ABOUT,
+    sections: SURFACE_REGION_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator capture region --x 0 --y 0 --width 800 --height 600",
+        "operator capture region --x 100 --y 200 --width 400 --height 300",
+    ],
+    footer: "",
+};
+
+const CAPTURE_FULLSCREEN_HELP: LeafHelp = LeafHelp {
+    usage: "operator capture fullscreen [OPTIONS]",
+    about: CAPTURE_FULLSCREEN_ABOUT,
+    sections: CAPTURE_FULLSCREEN_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator capture fullscreen",
+        "operator capture fullscreen --display-id 2",
+    ],
+    footer: "",
+};
+
+const ELEMENTS_FRONTMOST_HELP: LeafHelp = LeafHelp {
+    usage: "operator elements frontmost [OPTIONS]",
+    about: ELEMENTS_FRONTMOST_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator elements frontmost",
+        "operator --json elements frontmost",
+    ],
+    footer: "",
+};
+
+const ELEMENTS_WINDOW_HELP: LeafHelp = LeafHelp {
+    usage: "operator elements window [OPTIONS] --window-id <ID>",
+    about: ELEMENTS_WINDOW_ABOUT,
+    sections: SURFACE_WINDOW_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator elements window --window-id 42",
+        "operator --json elements window --window-id 42",
+    ],
+    footer: "",
+};
+
+const ELEMENTS_REGION_HELP: LeafHelp = LeafHelp {
+    usage: "operator elements region [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
+    about: ELEMENTS_REGION_ABOUT,
+    sections: SURFACE_REGION_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &["operator elements region --x 0 --y 0 --width 800 --height 600"],
+    footer: "",
+};
+
+const ELEMENTS_FULLSCREEN_HELP: LeafHelp = LeafHelp {
+    usage: "operator elements fullscreen [OPTIONS]",
+    about: ELEMENTS_FULLSCREEN_ABOUT,
+    sections: ELEMENTS_FULLSCREEN_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &["operator elements fullscreen"],
+    footer: "",
+};
+
 fn styled_global_runtime_flags() -> String {
     let flags = [
         ("--json", "Emit machine-readable JSON output"),
@@ -1137,7 +1281,15 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
     match command_path(args).as_slice() {
         [] => Some(root_help()),
         ["capture"] => Some(styled_group_help(&CAPTURE_GROUP_HELP)),
+        ["capture", "frontmost", ..] => Some(styled_leaf_help(&CAPTURE_FRONTMOST_HELP)),
+        ["capture", "window", ..] => Some(styled_leaf_help(&CAPTURE_WINDOW_HELP)),
+        ["capture", "region", ..] => Some(styled_leaf_help(&CAPTURE_REGION_HELP)),
+        ["capture", "fullscreen", ..] => Some(styled_leaf_help(&CAPTURE_FULLSCREEN_HELP)),
         ["elements"] => Some(styled_group_help(&ELEMENTS_GROUP_HELP)),
+        ["elements", "frontmost", ..] => Some(styled_leaf_help(&ELEMENTS_FRONTMOST_HELP)),
+        ["elements", "window", ..] => Some(styled_leaf_help(&ELEMENTS_WINDOW_HELP)),
+        ["elements", "region", ..] => Some(styled_leaf_help(&ELEMENTS_REGION_HELP)),
+        ["elements", "fullscreen", ..] => Some(styled_leaf_help(&ELEMENTS_FULLSCREEN_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
         ["window"] => Some(styled_group_help(&WINDOW_GROUP_HELP)),
         ["mcp", "serve", ..] => Some(styled_leaf_help(&MCP_SERVE_HELP)),

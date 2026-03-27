@@ -40,6 +40,24 @@ fn capture_frontmost_command_defaults_to_screenshot_only() {
 }
 
 #[test]
+fn elements_frontmost_command_defaults_to_tree_only() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "elements", "frontmost"]).unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": "Frontmost"
+            },
+            "include_screenshot": false,
+            "include_elements": true
+        })
+    );
+}
+
+#[test]
 fn elements_window_command_maps_surface_and_tree_only_profile() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -64,6 +82,37 @@ fn elements_window_command_maps_surface_and_tree_only_profile() {
             },
             "include_screenshot": false,
             "include_elements": true
+        })
+    );
+}
+
+#[test]
+fn capture_region_command_maps_rect_and_screenshot_only_profile() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator", "capture", "region", "--x", "10", "--y", "20", "--width", "300", "--height",
+        "200",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Region": {
+                        "rect": {
+                            "x": 10.0,
+                            "y": 20.0,
+                            "width": 300.0,
+                            "height": 200.0
+                        }
+                    }
+                }
+            },
+            "include_screenshot": true,
+            "include_elements": false
         })
     );
 }
@@ -119,6 +168,35 @@ fn elements_region_command_maps_rect_and_tree_only_profile() {
                             "width": 300.0,
                             "height": 200.0
                         }
+                    }
+                }
+            },
+            "include_screenshot": false,
+            "include_elements": true
+        })
+    );
+}
+
+#[test]
+fn elements_fullscreen_command_maps_display_id_and_tree_only_profile() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "elements",
+        "fullscreen",
+        "--display-id",
+        "2",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Fullscreen": {
+                        "display_id": 2
                     }
                 }
             },
@@ -522,10 +600,129 @@ fn app_list_help_snapshot_is_stable() {
 #[test]
 fn capture_window_help_snapshot_is_stable() {
     let help = command_help(["operator", "capture", "window", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator capture window [OPTIONS] --window-id <ID>",
+        "Take a screenshot of a specific window",
+        &[
+            "operator capture window --window-id 42",
+            "operator --json capture window --window-id 42",
+        ],
+    );
     assert!(help.contains("Take a screenshot of a specific window"));
+    assert!(help.contains("Options"));
+    assert!(help.contains("--window-id <ID>"));
     assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Override the runtime timeout for this command"));
+}
+
+#[test]
+fn capture_frontmost_help_snapshot_is_stable() {
+    let help = command_help(["operator", "capture", "frontmost", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator capture frontmost [OPTIONS]",
+        "Take a screenshot of the frontmost app surface",
+        &[
+            "operator capture frontmost",
+            "operator --json capture frontmost",
+        ],
+    );
+    assert!(!help.contains("\nOptions\n"));
+}
+
+#[test]
+fn capture_region_help_snapshot_is_stable() {
+    let help = command_help(["operator", "capture", "region", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator capture region [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
+        "Take a screenshot of a screen region defined by coordinates",
+        &[
+            "operator capture region --x 0 --y 0 --width 800 --height 600",
+            "operator capture region --x 100 --y 200 --width 400 --height 300",
+        ],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("--x <X>"));
+    assert!(help.contains("--height <H>"));
+}
+
+#[test]
+fn capture_fullscreen_help_snapshot_is_stable() {
+    let help = command_help(["operator", "capture", "fullscreen", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator capture fullscreen [OPTIONS]",
+        "Take a screenshot of the full display",
+        &[
+            "operator capture fullscreen",
+            "operator capture fullscreen --display-id 2",
+        ],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("--display-id <ID>"));
+    assert!(help.contains("Display to capture (optional, defaults to the active display)"));
+}
+
+#[test]
+fn elements_frontmost_help_snapshot_is_stable() {
+    let help = command_help(["operator", "elements", "frontmost", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator elements frontmost [OPTIONS]",
+        "Query the accessibility element tree for the frontmost app surface",
+        &[
+            "operator elements frontmost",
+            "operator --json elements frontmost",
+        ],
+    );
+    assert!(!help.contains("\nOptions\n"));
+}
+
+#[test]
+fn elements_window_help_snapshot_is_stable() {
+    let help = command_help(["operator", "elements", "window", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator elements window [OPTIONS] --window-id <ID>",
+        "Query the accessibility element tree for a specific window",
+        &[
+            "operator elements window --window-id 42",
+            "operator --json elements window --window-id 42",
+        ],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("--window-id <ID>"));
+}
+
+#[test]
+fn elements_region_help_snapshot_is_stable() {
+    let help = command_help(["operator", "elements", "region", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator elements region [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
+        "Query accessibility elements within a screen region",
+        &["operator elements region --x 0 --y 0 --width 800 --height 600"],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("--x <X>"));
+    assert!(help.contains("--height <H>"));
+}
+
+#[test]
+fn elements_fullscreen_help_snapshot_is_stable() {
+    let help = command_help(["operator", "elements", "fullscreen", "--help"]);
+    assert_surface_leaf_help_shape(
+        &help,
+        "Usage operator elements fullscreen [OPTIONS]",
+        "Query the accessibility element tree for the full display",
+        &["operator elements fullscreen"],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("--display-id <ID>"));
+    assert!(help.contains("Display to query (optional, defaults to the active display)"));
 }
 
 #[test]
@@ -2285,6 +2482,20 @@ fn strip_ansi(input: &str) -> String {
     }
 
     stripped
+}
+
+fn assert_surface_leaf_help_shape(help: &str, usage: &str, about: &str, examples: &[&str]) {
+    assert!(help.contains(usage));
+    assert!(help.contains(about));
+    assert!(help.contains("Global Runtime Flags"));
+    assert!(help.contains("Select the named runtime target"));
+    assert!(help.contains("Emit machine-readable JSON output"));
+    assert!(help.contains("Override the runtime timeout for this command"));
+    assert!(help.contains("Print help"));
+    assert!(help.contains("Examples"));
+    for example in examples {
+        assert!(help.contains(example), "missing example: {example}");
+    }
 }
 
 fn assert_legacy_command_migration(args: &[&str], legacy: &str, replacement: &str) {
