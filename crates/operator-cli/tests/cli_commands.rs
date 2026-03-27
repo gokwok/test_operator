@@ -247,6 +247,9 @@ fn agent_help_shows_first_phase_flags_and_examples() {
     assert!(help.contains("--timeout-ms <TIMEOUT_MS>"));
     assert!(help.contains("--json"));
     assert!(help.contains("Examples\n  operator agent \"Open Notes and type hello\""));
+    assert!(help.contains(
+        "operator agent --target macos --model doubao-seed --max-steps 8 \"Summarize the frontmost window\""
+    ));
 }
 
 #[test]
@@ -333,7 +336,7 @@ endpoint = "wss://windows-lab.internal"
 fn permissions_help_shows_examples() {
     let help = command_help(["operator", "permissions", "--help"]);
     assert!(help.contains("Check automation permissions and runtime readiness"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Override the runtime timeout for this command"));
     assert!(help.contains("Examples\n  operator permissions\n  operator --json permissions"));
@@ -363,7 +366,7 @@ fn list_help_lists_query_subcommands_and_examples() {
 fn focus_help_shows_examples() {
     let help = command_help(["operator", "focus", "--help"]);
     assert!(help.contains("Show the currently focused app, window, and element"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Examples\n  operator focus\n  operator --json focus"));
 }
 
@@ -413,7 +416,7 @@ fn snapshot_help_shows_direct_id_usage() {
     assert!(help.contains("Usage operator snapshot [OPTIONS] <SNAPSHOT_ID>"));
     assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("<SNAPSHOT_ID>"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator snapshot s_123"));
 }
@@ -424,7 +427,7 @@ fn artifact_help_shows_direct_id_usage() {
     assert!(help.contains("Usage operator artifact [OPTIONS] <ARTIFACT_ID>"));
     assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("<ARTIFACT_ID>"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator artifact capture-1.png"));
 }
@@ -505,7 +508,7 @@ fn window_resize_help_shows_focus_and_verify_flags() {
 fn observe_window_help_snapshot_is_stable() {
     let help = command_help(["operator", "observe", "window", "--help"]);
     assert!(help.contains("Capture a specific window"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Override the runtime timeout for this command"));
 }
@@ -514,7 +517,7 @@ fn observe_window_help_snapshot_is_stable() {
 fn snapshot_help_snapshot_is_stable() {
     let help = command_help(["operator", "snapshot", "--help"]);
     assert!(help.contains("Read a stored snapshot by ID"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator snapshot s_123"));
 }
@@ -523,7 +526,7 @@ fn snapshot_help_snapshot_is_stable() {
 fn artifact_help_snapshot_is_stable() {
     let help = command_help(["operator", "artifact", "--help"]);
     assert!(help.contains("Read a stored capture artifact by ID"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator artifact capture-1.png"));
 }
@@ -536,7 +539,7 @@ fn input_click_help_snapshot_is_stable() {
         "Usage operator input click [OPTIONS]\n\nClick a locator, coordinates, or target"
     ));
     assert!(help.contains("Click a locator, coordinates, or target"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--mode <MODE>"));
 }
@@ -545,7 +548,7 @@ fn input_click_help_snapshot_is_stable() {
 fn app_launch_help_snapshot_is_stable() {
     let help = command_help(["operator", "app", "launch", "--help"]);
     assert!(help.contains("Launch an application by bundle identifier or name"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator app launch Calculator"));
 }
@@ -554,7 +557,7 @@ fn app_launch_help_snapshot_is_stable() {
 fn app_switch_help_snapshot_is_stable() {
     let help = command_help(["operator", "app", "switch", "--help"]);
     assert!(help.contains("Bring an application to the foreground"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
 }
@@ -563,7 +566,7 @@ fn app_switch_help_snapshot_is_stable() {
 fn window_focus_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "focus", "--help"]);
     assert!(help.contains("Focus a specific window"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
 }
@@ -572,7 +575,7 @@ fn window_focus_help_snapshot_is_stable() {
 fn window_resize_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "resize", "--help"]);
     assert!(help.contains("Resize a specific window"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("--focus <FOCUS>"));
     assert!(help.contains("--verify <VERIFICATIONS>"));
@@ -582,7 +585,7 @@ fn window_resize_help_snapshot_is_stable() {
 fn mcp_serve_help_snapshot_is_stable() {
     let help = command_help(["operator", "mcp", "serve", "--help"]);
     assert!(help.contains("Start the MCP stdio server"));
-    assert!(help.contains("Select the runtime target"));
+    assert!(help.contains("Select the named runtime target"));
     assert!(help.contains("Emit machine-readable JSON output"));
     assert!(help.contains("Examples\n  operator mcp serve"));
 }

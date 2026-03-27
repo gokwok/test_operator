@@ -463,12 +463,12 @@ const MCP_SERVE_AFTER_HELP: &str = "Examples
 
 const AGENT_AFTER_HELP: &str = "Examples
   operator agent \"Open Notes and type hello\"
-  operator agent --model doubao-seed --max-steps 8 \"Summarize the frontmost window\"";
+  operator agent --target macos --model doubao-seed --max-steps 8 \"Summarize the frontmost window\"";
 
 fn styled_global_runtime_flags() -> String {
     let flags = [
         ("--json", "Emit machine-readable JSON output"),
-        ("--target <TARGET>", "Select the runtime target"),
+        ("--target <TARGET>", "Select the named runtime target"),
         (
             "--timeout-ms <TIMEOUT_MS>",
             "Override the runtime timeout for this command",
@@ -1042,7 +1042,7 @@ impl Command {
 
 #[derive(Debug, Clone, Default, Args)]
 struct CommonArgs {
-    #[arg(long, global = true, help = "Select the runtime target")]
+    #[arg(long, global = true, help = "Select the named runtime target")]
     target: Option<String>,
     #[arg(
         long = "json",

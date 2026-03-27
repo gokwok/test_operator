@@ -235,6 +235,33 @@ operator
 
 未显式传入 `--target` 时，默认读取配置中的 `default_target`。
 
+命名 target 在 `~/.operator/config.toml` 中定义，例如：
+
+```toml
+[runtime]
+default_target = "windows-lab"
+
+[targets.macos]
+platform = "macos"
+driver = "macos.system"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+
+[targets.windows-lab.driver_config]
+endpoint = "wss://lab.example"
+
+[targets.harmony-phone]
+platform = "harmony"
+driver = "harmony.node"
+
+[targets.harmony-phone.driver_config]
+node = "phone-01"
+```
+
+像 `endpoint`、`node` 这样的 target-specific 参数必须进入 `driver_config`；把它们写成 target 表顶层字段会被当前实现拒绝。
+
 ### Observe 参数
 
 #### `observe frontmost`
