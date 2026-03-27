@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[features]
+default = []
+action-effects = []
+
 [dependencies]
 async-trait.workspace = true
 operator-core = { path = "../operator-core" }

@@ -14,10 +14,10 @@ use operator_core::{
 };
 
 use crate::{
-    apps::is_synthetic_window_id, locator::resolve_locator, AppService, CaptureProvider,
-    InputSynthesizer, InspectResult, PermissionReader, SystemAppService, SystemCaptureProvider,
-    SystemInputSynthesizer, SystemPermissionReader, SystemTreeInspector, TreeInspector,
-    ACCESSIBILITY_CHECK_ID, SCREEN_RECORDING_CHECK_ID, SYSTEM_EVENTS_CHECK_ID,
+    apps::is_synthetic_window_id, effects::ActionEffects, locator::resolve_locator, AppService,
+    CaptureProvider, InputSynthesizer, InspectResult, PermissionReader, SystemAppService,
+    SystemCaptureProvider, SystemInputSynthesizer, SystemPermissionReader, SystemTreeInspector,
+    TreeInspector, ACCESSIBILITY_CHECK_ID, SCREEN_RECORDING_CHECK_ID, SYSTEM_EVENTS_CHECK_ID,
 };
 
 static SNAPSHOT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -34,6 +34,7 @@ pub struct MacosDriver<
     capture_provider: C,
     tree_inspector: I,
     input_synthesizer: S,
+    effects: ActionEffects,
 }
 
 impl
@@ -92,6 +93,7 @@ impl<A, P, C, I, S> MacosDriver<A, P, C, I, S> {
             capture_provider,
             tree_inspector,
             input_synthesizer,
+            effects: ActionEffects::new(),
         }
     }
 
@@ -478,6 +480,7 @@ where
             (None, None)
         };
         self.input_synthesizer.click(point, mode)?;
+        let _ = self.effects.on_click(point, mode);
         let mut outcome =
             successful_action_outcome(action_detail(click_detail(mode), warning.as_deref()));
         outcome.coordinates = Some(ActionCoordinates {
@@ -523,6 +526,8 @@ where
             self.input_synthesizer
                 .press(type_trailing_key_name(*key), 1, input.delay_ms)?;
         }
+        let keyboard_label = type_effect_label(input.text, input.trailing_keys);
+        let _ = self.effects.on_keyboard(&keyboard_label);
         let mut outcome = successful_action_outcome(action_detail(
             &type_detail(input.clear_before, input.trailing_keys),
             warning.as_deref(),
@@ -568,6 +573,7 @@ where
             ));
         };
         self.input_synthesizer.move_pointer(point)?;
+        let _ = self.effects.on_move(point);
         let mut outcome = successful_action_outcome(action_detail("moved", warning.as_deref()));
         outcome.coordinates = Some(ActionCoordinates {
             point: Some(point),
@@ -607,6 +613,7 @@ where
             (None, None)
         };
         self.input_synthesizer.scroll(point, delta_x, delta_y)?;
+        let _ = self.effects.on_scroll(point, delta_x, delta_y);
         let mut outcome = successful_action_outcome(action_detail("scrolled", warning.as_deref()));
         outcome.coordinates = Some(ActionCoordinates {
             point,
@@ -636,6 +643,7 @@ where
         let from = resolve_locator(&from, &self.tree_inspector)?;
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer.drag(from.point, to.point, &motion)?;
+        let _ = self.effects.on_drag(from.point, to.point);
         let mut outcome = successful_action_outcome("dragged");
         outcome.coordinates = Some(ActionCoordinates {
             point: None,
@@ -668,6 +676,7 @@ where
         let to = resolve_locator(&to, &self.tree_inspector)?;
         self.input_synthesizer
             .swipe(from.point, to.point, duration_ms, steps)?;
+        let _ = self.effects.on_drag(from.point, to.point);
         let mut outcome = successful_action_outcome("swiped");
         outcome.coordinates = Some(ActionCoordinates {
             point: None,
@@ -694,6 +703,8 @@ where
             AnchorWindowResolution::Optional,
         )?;
         self.input_synthesizer.hotkey(keys)?;
+        let keyboard_label = hotkey_effect_label(keys);
+        let _ = self.effects.on_keyboard(&keyboard_label);
         let mut outcome = successful_action_outcome("sent hotkey");
         apply_prepared_target(&mut outcome, prepared.as_ref());
         outcome.side_effects = vec![ActionSideEffect::Hotkey {
@@ -717,6 +728,8 @@ where
             AnchorWindowResolution::Optional,
         )?;
         self.input_synthesizer.press(key, count, delay_ms)?;
+        let keyboard_label = press_effect_label(key, count);
+        let _ = self.effects.on_keyboard(&keyboard_label);
         let mut outcome = successful_action_outcome(press_detail(key, count));
         apply_prepared_target(&mut outcome, prepared.as_ref());
         outcome.side_effects = vec![ActionSideEffect::Press {
@@ -1364,6 +1377,14 @@ fn press_detail(key: &str, count: u32) -> String {
     }
 }
 
+fn press_effect_label(key: &str, count: u32) -> String {
+    if count == 1 {
+        key.to_string()
+    } else {
+        format!("{key} x{count}")
+    }
+}
+
 fn window_geometry_detail(action: &str, id: operator_core::WindowId, bounds: Rect) -> String {
     match action {
         "set" => format!(
@@ -1409,6 +1430,38 @@ fn type_detail(clear_before: bool, trailing_keys: &[TypeTrailingKey]) -> String 
     }
 
     detail
+}
+
+fn type_effect_label(text: &str, trailing_keys: &[TypeTrailingKey]) -> String {
+    let mut parts = Vec::new();
+
+    if !text.is_empty() {
+        parts.push(text.to_string());
+    }
+
+    if !trailing_keys.is_empty() {
+        parts.push(
+            trailing_keys
+                .iter()
+                .map(|key| type_trailing_key_name(*key).to_string())
+                .collect::<Vec<_>>()
+                .join("+"),
+        );
+    }
+
+    if parts.is_empty() {
+        "type".to_string()
+    } else {
+        parts.join(" + ")
+    }
+}
+
+fn hotkey_effect_label(keys: &[String]) -> String {
+    if keys.is_empty() {
+        "hotkey".to_string()
+    } else {
+        keys.join("+")
+    }
 }
 
 fn type_trailing_key_name(key: TypeTrailingKey) -> &'static str {

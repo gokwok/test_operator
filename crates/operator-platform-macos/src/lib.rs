@@ -3,6 +3,7 @@
 mod apps;
 mod capture;
 mod driver;
+mod effects;
 mod input;
 mod inspect;
 mod locator;

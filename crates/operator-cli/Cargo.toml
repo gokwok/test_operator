@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[features]
+default = []
+macos-action-effects = ["operator-bootstrap/macos-action-effects"]
+
 [[bin]]
 name = "operator"
 path = "src/main.rs"

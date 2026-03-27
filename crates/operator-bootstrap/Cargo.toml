@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[features]
+default = []
+macos-action-effects = ["operator-platform-macos/action-effects"]
+
 [dependencies]
 operator-core = { path = "../operator-core" }
 operator-platform-harmony = { path = "../operator-platform-harmony" }
