@@ -1088,7 +1088,7 @@ impl PlatformDriver for SlowQueryDriver {
     }
 
     fn capabilities(&self) -> CapabilitySet {
-        CapabilitySet::new([Capability::WindowManagement])
+        CapabilitySet::new([Capability::WindowQuery])
     }
 
     async fn health_check(&self) -> Result<HealthStatus, OperatorError> {
