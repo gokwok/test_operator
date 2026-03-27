@@ -20,7 +20,7 @@ Harmony 侧已有独立仓库 [`hmdriver_rs`](/Users/gokwok/code/work/hmdriver_r
 - 截图
 - 窗口 / mission 查询
 - UI 查询、组件操作、XPath
-- 点击、长按、双击、滑动、拖拽、文本输入、按键
+- 点击、右键、长按、双击、滑动、拖拽、文本输入、按键
 - UI 事件监听（toast / recent event）
 
 基于以上能力，结论是：
@@ -49,6 +49,7 @@ Harmony 侧已有独立仓库 [`hmdriver_rs`](/Users/gokwok/code/work/hmdriver_r
 ### 2.1 第一阶段目标
 
 - 在 Operator 中落地 `harmony.hdc` driver
+- 以 **Harmony PC** 作为第一阶段目标设备，而非 Harmony phone
 - 使用 named target + `driver_config` 装配 Harmony 设备
 - 默认提供 screenshot-first `observe`
 - 提供足够支撑 CLI / MCP / Agent 的基础查询与动作
@@ -78,7 +79,7 @@ Harmony 侧已有独立仓库 [`hmdriver_rs`](/Users/gokwok/code/work/hmdriver_r
 | 结构树 | `dump_hierarchy()` |
 | 应用 | `list_apps()` / `start_app()` / `stop_app()` / `current_app()` |
 | 窗口 | `list_windows()` / `get_window()` / `list_missions()` / `find_active_window()` |
-| 输入 | `click()` / `double_click()` / `long_click()` / `swipe()` / `drag()` / `input_text()` / `press_key()` / `press_keys()` |
+| 输入 | `click()` / `right_click()` / `double_click()` / `long_click()` / `swipe()` / `drag()` / `input_text()` / `press_key()` / `press_keys()` |
 | UI 查询 | `UiDriver` / `UiQuery` / `UiComponent` / `XPathNode` |
 | UI 事件 | `watch_toast_once()` / `recent_ui_event()` |
 
@@ -91,7 +92,7 @@ Harmony 侧已有独立仓库 [`hmdriver_rs`](/Users/gokwok/code/work/hmdriver_r
 | `list-apps` | `list_apps()` | 直接可做 |
 | `list-windows` | `list_windows()` / `get_window()` | 可做 |
 | `get-focus` | `current_app()` + `find_active_window()` + `UiDriver` | 第一阶段不强承诺 |
-| `click` | `click()` / `UiComponent.click()` | 直接可做 |
+| `click` | `click()` / `right_click()` / `double_click()` / `long_click()` / `UiComponent.click()` | 直接可做 |
 | `type` | `input_text()` / `UiComponent.input_text()` | 直接可做 |
 | `press` | `press_key()` | 直接可做 |
 | `hotkey` | `press_keys()` | 直接可做 |
@@ -101,8 +102,8 @@ Harmony 侧已有独立仓库 [`hmdriver_rs`](/Users/gokwok/code/work/hmdriver_r
 | `switch-app` | `start_app()` / `current_app()` | 可做，语义上视为 bring-to-foreground |
 | `quit-app` | `stop_app()` | 直接可做 |
 | `relaunch-app` | `stop_app()` + `start_app()` | 直接可做 |
-| `move` | 无 hover / cursor move 语义 | 第一阶段不支持 |
-| `scroll` | 仅有 touch `swipe` | 第一阶段不直接承诺 |
+| `move` | 当前库无稳定 cursor move API | 第一阶段不支持 |
+| `scroll` | 当前库没有滚轮 / wheel API | 第一阶段不直接承诺 |
 | `hide/unhide-app` | 无等价能力 | 第一阶段不支持 |
 | `close/minimize/maximize-window` | 无稳定等价能力 | 第一阶段不支持 |
 | `move/resize/set-window-bounds` | 无稳定等价能力 | 第一阶段不支持 |
@@ -171,15 +172,15 @@ Harmony 接入后，对用户仍然保持统一命令面，不新增 Harmony 特
 
 ```toml
 [runtime]
-default_target = "harmony-phone"
+default_target = "harmony-pc"
 
-[targets.harmony-phone]
+[targets.harmony-pc]
 platform = "harmony"
 driver = "harmony.hdc"
 
-[targets.harmony-phone.driver_config]
+[targets.harmony-pc.driver_config]
 addr = "192.168.8.43:35319"
-connect_key = "phone-01"
+connect_key = "pc-01"
 key_dir = "/Users/gokwok/.hdc"
 timeout_ms = 60000
 agent_path = "/absolute/path/to/uitest_agent_v1.1.0.so"
@@ -190,7 +191,7 @@ startup_delay_ms = 500
 CLI / MCP / Agent 仍只通过：
 
 ```bash
-operator --target harmony-phone ...
+operator --target harmony-pc ...
 ```
 
 不会暴露：
@@ -392,7 +393,7 @@ flowchart LR
 - `is_focused = focused_window_id == id`
 - `is_minimized = false`
 
-> 注意：这是一种“移动设备窗口 / mission”语义，不应误写成桌面窗口管理等价物。
+> 注意：这是一种 Harmony PC 的窗口 / mission 查询语义，但仍不应误写成通用桌面窗口管理等价物。
 
 ### 9.3 `get-focus`
 
@@ -442,7 +443,7 @@ flowchart LR
 
 | Action | 实现方式 |
 |---|---|
-| `click` | 坐标点击；或先查询组件再点中心点 |
+| `click` | `ClickMode::Left` / `Right` / `Double` / `Long`；坐标点击，或先查询组件再点中心点 |
 | `type` | 点击目标后 `input_text()` |
 | `press` | `press_key()` |
 | `hotkey` | `press_keys()` |
@@ -457,14 +458,14 @@ flowchart LR
 
 | Action | 原因 |
 |---|---|
-| `move` | Harmony 触控语义没有稳定 hover / cursor move |
+| `move` | 当前库没有独立 pointer move / hover API；对于 Harmony PC 这是一个真实缺口 |
 | `hide-app` / `unhide-app` | 无稳定等价系统能力 |
 | `close-window` / `minimize-window` / `maximize-window` | 无稳定等价窗口系统能力 |
 | `move-window` / `resize-window` / `set-window-bounds` | 无稳定窗口几何控制能力 |
 
 ### 10.3 `scroll` 的处理
 
-`hmdriver_rs` 没有鼠标滚轮，只有 touch swipe。
+`hmdriver_rs` 当前没有鼠标滚轮 / wheel API，只有 `swipe` 一类触控滑动能力。
 
 第一阶段有两种可选策略：
 
@@ -477,7 +478,7 @@ flowchart LR
   - 把 `scroll` 近似映射为竖向 / 横向 `swipe`
   - 语义上不是滚轮，而是“触控滚动”
 
-推荐文档和实现都先按**保守策略**处理，避免假装支持桌面滚轮语义。
+考虑到第一阶段目标是 Harmony PC，而非手机，推荐文档和实现都先按**保守策略**处理，避免假装支持真实桌面滚轮语义。
 
 ### 10.4 locator 支持
 
