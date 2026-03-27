@@ -1,107 +1,133 @@
 # Operator Command Surface
 
-日期：2026-03-24
+日期：2026-03-27
 
 ## 目的
 
-本文档定义 Operator 的新 CLI 命令面。
+本文件定义 Operator CLI 的命令面规范摘要。
 
-目标不是继续暴露 runtime 的 tool registry，而是提供一个面向 agent/script 的稳定 shell interface。CLI 只负责：
+自 `OPE-135` 起，仓库根目录的 [`CLI_DESIGN.md`](../CLI_DESIGN.md) 成为当前 CLI redesign 链的**详细 shell contract**：它负责定义根 help、域 help、叶子 help、示例、迁移映射和 `[planned]` 标记的完整文案。本文件负责：
 
-- 以可探索的命令树承载能力
-- 把用户面参数映射到现有 typed runtime/tool contract
-- 用一致的 help 和 example 降低 agent 的探索成本
+- 用中文总结当前稳定命令树与分组语义
+- 约束哪些命令属于本轮 redesign 链的实现范围
+- 记录全局参数、共享参数组和旧命令迁移方向
 
-本文档不改变 `operator-core` / `operator-runtime` / `operator-platform-*` 的分层，也不把 `Core / Observe / Query / Action / MCP / Agent` 变成真正的一级命令。这些词只用于 help 展示分组。
+两份文档必须同步维护；如果二者发生冲突，以 `CLI_DESIGN.md` 的命令树与 help 文案为准，并在同一 issue 中回写本文件，避免 authority drift。
 
 ## 设计目标
 
-- 面向 agent/script，而不是人工记忆内部 tool 名
-- 一级命令数量有限，支持渐进式揭露
-- 帮助信息按执行模型分组，但真实命令按对象域和任务域组织
-- 最终统一为 `operator` 一个主二进制
-- `operator-mcp` 入口并入 `operator mcp serve`
-- 当前未实现的多-agent / A2A 能力不单独暴露为命令树，只保留 `agent` 这一期已交付入口
+- 提供面向 agent / script 的稳定 northbound shell interface
+- 把帮助导航统一收敛到 `Core / Observe / Interact / System / Integration / AI`
+- 用少量、可探索的一级命令承载能力，而不是泄露内部 tool 名
+- 将 `capture / elements / show`、扁平交互命令和 `app / window` 家族作为下一条实现链的目标命令面
+- 明确标记尚未实现、但已进入设计保留的命令
 
 ## 非目标
 
-- 不追求兼容现有平铺命令
-- 不把 tool registry 暴露为用户入口
-- 不在本次重设计里实现新的平台能力或新的 runtime 能力
-- 不在本次重设计里实现新的 A2A 命令面
+- 不保留旧的 `observe / list / focus / input` 命令路径作为长期 shell contract
+- 不在本轮 redesign 文档同步中引入新的 runtime 或平台能力
+- 不把 `paste`、`clipboard`、`open` 视为当前实现链必须落地的范围
+- 不把内部类型名、tool registry 或 driver 路由语法暴露给 shell 用户
 
-## 核心原则
+## 权威关系
 
-### 1. help 分组只承担导航作用
+- `CLI_DESIGN.md`
+  - 当前 redesign 链的详细命令契约
+  - 权威定义根 help、域 help、叶子 help、示例与迁移表
+- `docs/COMMAND.md`
+  - 中文规范摘要
+  - 权威定义文档层面的范围边界、稳定分组语义与共享参数约束
 
-`Core / Observe / Query / Action / MCP / Agent` 只出现在 help 里，用于指导用户和 agent 发现命令；它们不是 shell contract 的一部分。
+当前链路上如果要调整 CLI 命令面，应先修改 `CLI_DESIGN.md`，再同步本文件；不要只改其中之一。
 
-### 2. 真实命令保持少而稳
+## 根 help 分组
 
-CLI 真实暴露的顶层命令应只有：
+根 help 必须按以下顺序展示分组：
+
+- `Core`
+- `Observe`
+- `Interact`
+- `System`
+- `Integration`
+- `AI`
+
+这些分组只承担导航职责，不是额外的一级命令前缀。
+
+### Core
 
 - `permissions`
 - `capabilities`
-- `observe`
-- `snapshot`
-- `artifact`
-- `list`
-- `focus`
-- `input`
-- `app`
-- `window`
-- `mcp`
-- `agent`
+- `snapshot <snapshot-id>`
+- `artifact <artifact-id>`
 
-### 3. snapshot 是一等原语
+### Observe
 
-`observe` 负责创建 snapshot；`snapshot <snapshot-id>` / `artifact <artifact-id>` 负责取回持久化产物。`observe` 不再和 `snapshot-get` / `artifact-get` 并列成三个平铺命令。
+- `capture <surface>`
+- `elements <surface>`
+- `show`
 
-### 4. 内部抽象不直接泄露到用户面
+### Interact
 
-用户不会看到：
+- `click`
+- `type <text>`
+- `press <key>`
+- `hotkey <key>...`
+- `scroll`
+- `drag`
+- `swipe`
+- `move`
+- `paste <text>` `[planned]`
 
-- tool 名
-- `ToolRegistry`
-- `ActionTargetSelector`
-- `ActionFocusPolicy`
+### System
 
-但这些 typed 抽象继续保留在 runtime 和 driver 内部。
+- `app <subcommand>`
+- `window <subcommand>`
+- `clipboard <subcommand>` `[planned]`
+- `open <path-or-url>` `[planned]`
 
-## 最终命令树
+### Integration
+
+- `mcp serve`
+
+### AI
+
+- `agent <task>`
+
+## 稳定命令树
 
 ```text
 operator
   permissions
   capabilities
+  snapshot <snapshot-id>
+  artifact <artifact-id>
 
-  observe
+  capture
     frontmost
     window
     region
     fullscreen
 
-  snapshot <snapshot-id>
+  elements
+    frontmost
+    window
+    region
+    fullscreen
 
-  artifact <artifact-id>
+  show
 
-  list
-    apps
-    windows
-
-  focus
-
-  input
-    click
-    move
-    type
-    press
-    hotkey
-    scroll
-    drag
-    swipe
+  click
+  type
+  press
+  hotkey
+  scroll
+  drag
+  swipe
+  move
+  paste              [planned]
 
   app
+    list
     launch
     switch
     quit
@@ -110,6 +136,7 @@ operator
     unhide
 
   window
+    list
     focus
     close
     minimize
@@ -118,204 +145,95 @@ operator
     resize
     set-bounds
 
+  clipboard          [planned]
+    get
+    set
+
+  open <path-or-url> [planned]
+
   mcp
     serve
 
-  agent
+  agent <task>
 ```
 
-`Agent` 不作为额外命令前缀出现；它只是根 help 中承载 `agent` 命令的导航分组标题。
+## 全局运行时参数
 
-## help 分组
-
-根 help 按以下分组展示：
-
-- `Core`
-  - `permissions`
-  - `capabilities`
-- `Observe`
-  - `observe`
-  - `snapshot`
-  - `artifact`
-- `Query`
-  - `list`
-  - `focus`
-- `Action`
-  - `input`
-  - `app`
-  - `window`
-- `MCP`
-  - `mcp`
-- `Agent`
-  - `agent`
-
-根 help 不直接列出 `click`、`launch-app`、`snapshot-get` 这种叶子命令，但会直接列出 `agent`，因为它本身就是自然语言入口而不是对象域分组；`snapshot` / `artifact` 本身已经是直接读取命令，不再额外嵌套 `get`。
-
-## 当前 help 版式契约
-
-根 help、域 help、叶子命令 help 当前统一遵守以下展示规则：
-
-- `Usage` 始终位于最上方
-- 根 help 的 `Usage` 下方只保留一句 slogan：
-  - `Operator - Turn any desktop app into an API, from CLI to AI`
-- 根 help 使用 `Core / Observe / Query / Action / MCP / Agent` 作为导航分组标题
-- 标题不带冒号
-- 标题使用橙色高亮
-- 命令名使用白色加粗
-- 命令右侧说明文本使用普通白色
-- 只有底部导航提示使用灰色
-- 叶子命令 help 也遵守同一套无冒号标题规则，并将命令用途说明放在 `Usage` 之后
-
-## 参数体系
-
-### Agent 参数
-
-正式入口：
-
-- `operator agent <task>`
-
-第一期能力边界：
-
-- 单 session
-- 单 target
-- 单 agent loop
-- 直接调用 `operator-agent` 的 `AgentRunner`
-- 不通过 CLI 再转一层工具调用
-
-第一期参数：
-
-- 位置参数：`<task>`
-- `--model <gpt-5.4|doubao-seed>`
-- `--max-steps <n>`
-- `--json`
-- `--target <target-name>`
-- `--timeout-ms <ms>`
-
-第一期明确不暴露：
-
-- `--resume`
-- `--resume-session`
-- `--list-sessions`
-- `--chat`
-- `--dry-run`
-- `--state-root`
-
-原因：
-
-- 这些模式尚未被定义成稳定 shell contract
-- 当前 `operator-agent` 已具备本地单次执行能力，但尚未承诺完整会话管理用户面
-- 先把自然语言任务入口稳定下来，再逐步扩 chat / resume / replay
-
-### 全局运行时参数
-
-所有命令共享，并且应作为真正的 global flags 工作：
+所有已交付或规划中的命令共享以下全局参数：
 
 - `--json`
 - `--target <target-name>`
 - `--timeout-ms <ms>`
 
-#### `--target` 语义
+### `--target` 语义
 
-`--target` 只负责选择一个**命名 target**，该名称来自用户配置，例如：
-
-- `macos`
-- `windows-lab`
-- `harmony-phone`
-
-它不是 transport / protocol / driver routing 语法，也不要求 shell 用户理解 target 背后的执行路径。
-
-因此 northbound shell surface 不暴露，也不鼓励示例出现以下内部实现细节：
+`--target` 只选择一个**命名 target**。northbound shell surface 不暴露 transport、bridge、driver routing 或协议形态。以下字符串不属于用户面契约：
 
 - `local:macos`
 - `device:ios:123`
 - `bridge:harmony`
 - `windows.remote`
 
-这些概念只属于 driver 选择和配置层；CLI / MCP / Agent 的 `--target` 只选择名字，实际由本地 driver、远端 driver、bridge driver 还是 node driver 执行，属于 runtime 配置与解析职责。
+用户只传 target 名称，实际解析到哪个 platform / driver / driver_config，由 runtime 配置负责。
 
-未显式传入 `--target` 时，默认读取配置中的 `default_target`。
+## Observe / Read 契约
 
-命名 target 在 `~/.operator/config.toml` 中定义，例如：
+### `capture`
 
-```toml
-[runtime]
-default_target = "windows-lab"
+- 负责截图导向的观察路径
+- 支持 `frontmost` / `window` / `region` / `fullscreen`
+- `window` 需要 `--window-id <id>`
+- `region` 需要 `--x --y --width --height`
+- `fullscreen` 可选 `--display-id <id>`
 
-[targets.macos]
-platform = "macos"
-driver = "macos.system"
+### `elements`
 
-[targets.windows-lab]
-platform = "windows"
-driver = "windows.remote"
+- 负责无障碍元素树查询
+- 支持与 `capture` 相同的 surface 子命令
+- surface 参数规则与 `capture` 保持一致
 
-[targets.windows-lab.driver_config]
-endpoint = "wss://lab.example"
+### `show`
 
-[targets.harmony-phone]
-platform = "harmony"
-driver = "harmony.node"
+- 负责显示当前聚焦的 app / window / element 摘要
+- 取代旧的 `focus` 读命令
 
-[targets.harmony-phone.driver_config]
-node = "phone-01"
-```
-
-像 `endpoint`、`node` 这样的 target-specific 参数必须进入 `driver_config`；把它们写成 target 表顶层字段会被当前实现拒绝。
-
-### Observe 参数
-
-#### `observe frontmost`
-
-- 不再需要 `--surface frontmost`
-- 支持 `--capture <all|elements|screenshot|none>`
-
-#### `observe window`
-
-- 必需：`--window-id <id>`
-- 支持 `--capture <all|elements|screenshot|none>`
-
-#### `observe fullscreen`
-
-- 可选：`--display-id <id>`
-- 支持 `--capture <all|elements|screenshot|none>`
-
-#### `observe region`
-
-- 必需：`--x --y --width --height`
-- 支持 `--capture <all|elements|screenshot|none>`
-
-`--capture` 是用户面概念，内部继续映射为 runtime 现有的 `include_screenshot` / `include_elements`。
-
-默认值：`all`
-
-理由：
-
-- `observe` 默认就应该产出有价值的 snapshot
-- agent/script 在第一次探索时不应拿到“既没有 screenshot 也没有 elements”的弱结果
-
-### 持久化对象读取参数
-
-对象 id 改为位置参数：
+### `snapshot` / `artifact`
 
 - `snapshot <snapshot-id>`
 - `artifact <artifact-id>`
 
-不再继续使用：
+对象 id 一律使用位置参数，不再保留 `snapshot-get` / `artifact-get` 一类旧路径。
 
-- `snapshot-get --snapshot-id ...`
-- `artifact-get --artifact-id ...`
+## Interact 契约
 
-### Query 参数
+交互动作从旧的 `input <subcommand>` 收敛为根级命令：
 
-- `list apps`
-- `list windows [--app <name>]`
-- `focus`
+- `click`
+- `type`
+- `press`
+- `hotkey`
+- `scroll`
+- `drag`
+- `swipe`
+- `move`
 
-`focus` 直接是叶子命令，不再使用 `get-focus` 或 `focus get`。
+### 共享 locator 参数组
 
-### Action target selector 参数
+单 locator 命令共享以下互斥定位方式：
 
-这些参数只在需要指向 app/window 的 action 命令里出现：
+- `--text <text>`
+- `--role <role> [--index <n>]`
+- `--snapshot <id> --element <id>`
+- `--x <x> --y <y>`
+
+双 locator 命令继续使用：
+
+- `--from-*`
+- `--to-*`
+
+### 共享 target 参数组
+
+当命令需要指向 app / window 时，使用以下 selector flags：
 
 - `--app <name-or-bundle-id>`
 - `--pid <pid>`
@@ -323,122 +241,104 @@ node = "phone-01"
 - `--window-title <title>`
 - `--window-index <index>`
 
-约束：
+这些 selector 继续互斥，不暴露 runtime 内部类型名。
 
-- 这些 selector 继续互斥
-- 用户面只说“target flags”或“selector flags”，不暴露 runtime 内部类型名
-
-### focus policy 参数
-
-用户面从：
-
-- `--focus-policy <auto|never>`
-
-收敛为：
+### 共享行为参数
 
 - `--focus <auto|never>`
-
-内部继续映射到 `ActionFocusPolicy`。
-
-### locator 参数
-
-#### 单 locator 参数组
-
-供以下命令共享：
-
-- `input click`
-- `input move`
-- `input type`
-- `input scroll`
-
-支持以下几种互斥定位方式：
-
-- `--snapshot <id> --element <id>`
-- `--text <text>`
-- `--role <role> [--index <n>]`
-- `--x <x> --y <y>`
-
-#### 双 locator 参数组
-
-供以下命令共享：
-
-- `input drag`
-- `input swipe`
-
-继续使用：
-
-- `--from-*`
-- `--to-*`
-
-这部分当前设计已经契合 runtime 的 locator 模型，不需要改成别的抽象。
-
-### verification 参数
-
-继续统一使用：
-
 - `--verify <focus|geometry|window-state>`
 
-但只在 runtime 真实支持的命令上暴露：
+`type`、`press`、`hotkey` 的主载荷使用位置参数：
 
-- `app launch`：不暴露
-- `window close`：不暴露
-- `window maximize`：不暴露
-- `window minimize`：仅暴露 `window-state`
+- `type <text>`
+- `press <key>`
+- `hotkey <key>...`
 
-这与 `OPE-53` 后的 runtime 契约保持一致。
-
-### 动作主载荷位置参数
-
-以下命令改为位置参数输入，而不是长 flag：
-
-- `input type <text>`
-- `input press <key>`
-- `input hotkey <key>...`
-- `app launch <bundle-id-or-name>`
-
-`type` 的尾随按键建议改名为：
+`type` 的尾随按键使用：
 
 - `--after-key <key>`
 
-以取代当前的 `--trailing-key`。
+### Planned 交互命令
 
-## 代表性命令
+- `paste <text>` 处于 `[planned]`
+- 当前 redesign 链不会在 `OPE-135` 中实现该命令
+- 后续是否实现，取决于单独 issue 是否接入 clipboard runtime 能力
 
-```bash
-operator permissions
-operator capabilities --target macos --json
+## System 契约
 
-operator observe frontmost --target macos --capture all
-operator observe window --window-id 42 --capture elements
-operator observe region --x 0 --y 44 --width 1280 --height 720
+### `app`
 
-operator snapshot s_123
-operator artifact capture-1.png
+应用相关命令统一收敛到 `app` 家族：
 
-operator list apps
-operator list windows --target macos --app TextEdit
-operator focus
+- `app list`
+- `app launch`
+- `app switch`
+- `app quit`
+- `app relaunch`
+- `app hide`
+- `app unhide`
 
-operator input click --text Save --app Notes --focus auto --verify focus
-operator input move --x 240 --y 320
-operator input type "hello operator" --window-title Draft --after-key return
-operator input press tab --count 2
-operator input hotkey command shift p
-operator input scroll --delta-y -3 --window-id 42
-operator input drag --from-x 100 --from-y 100 --to-x 400 --to-y 220
-operator input swipe --from-x 900 --from-y 400 --to-x 200 --to-y 400 --duration-ms 300
+`app launch` 的主载荷采用位置参数形式：
 
-operator app launch Calculator
-operator app switch --app TextEdit
-operator app quit --pid 101
+- `app launch <bundle-id-or-name>`
 
-operator window focus --window-id 42 --verify focus
-operator window minimize --window-id 42 --verify window-state
-operator window resize --window-id 42 --width 900 --height 700 --verify geometry
+### `window`
 
-operator mcp serve
-operator agent "capture the frontmost window" --target macos
-```
+窗口相关命令统一收敛到 `window` 家族：
+
+- `window list`
+- `window focus`
+- `window close`
+- `window minimize`
+- `window maximize`
+- `window move`
+- `window resize`
+- `window set-bounds`
+
+### Planned 系统命令
+
+以下命令已进入设计稿，但明确不属于当前实现链：
+
+- `clipboard get|set` `[planned]`
+- `open <path-or-url>` `[planned]`
+
+文档必须继续保留这些命令的 `[planned]` 标记，避免调用方误判为当前可用能力。
+
+## Integration / AI 契约
+
+- `mcp serve` 是唯一稳定的 MCP shell 入口
+- `agent <task>` 是唯一稳定的自然语言任务入口
+
+根 help 中这两类命令分别归入：
+
+- `Integration`
+- `AI`
+
+不再使用旧的 `MCP` / `Agent` 分组命名。
+
+## 迁移映射
+
+旧命令路径与新命令路径的稳定迁移关系如下：
+
+| 旧路径 | 新路径 |
+| --- | --- |
+| `operator observe frontmost` | `operator capture frontmost` |
+| `operator observe window` | `operator capture window` |
+| `operator observe region` | `operator capture region` |
+| `operator observe fullscreen` | `operator capture fullscreen` |
+| `operator observe frontmost --capture elements` | `operator elements frontmost` |
+| `operator observe window --capture elements` | `operator elements window` |
+| `operator list apps` | `operator app list` |
+| `operator list windows` | `operator window list` |
+| `operator focus` | `operator show` |
+| `operator input click` | `operator click` |
+| `operator input type` | `operator type` |
+| `operator input press` | `operator press` |
+| `operator input hotkey` | `operator hotkey` |
+| `operator input scroll` | `operator scroll` |
+| `operator input drag` | `operator drag` |
+| `operator input swipe` | `operator swipe` |
+| `operator input move` | `operator move` |
 
 ## help 契约
 
@@ -447,98 +347,30 @@ operator agent "capture the frontmost window" --target macos
 根 help 必须：
 
 - 以 `Usage` 开头
-- 在 `Usage` 下方显示 slogan
-- 只展示域命令
-- 按 `Core / Observe / Query / Action / MCP / Agent` 分组
+- 在 `Usage` 后展示 slogan
+- 只展示域命令与根级叶子命令
+- 按 `Core / Observe / Interact / System / Integration / AI` 分组
 - 列出全局运行时参数
-- 不展示内部 tool 名
-- 不展示旧平铺命令
+- 对 `paste`、`clipboard`、`open` 保留 `[planned]` 标记
+- 不展示内部 tool 名，也不展示旧命令路径
 
-### 域 help
+### 域 help 与叶子 help
 
-例如 `operator input --help`、`operator app --help`、`operator window --help`，必须展示：
+域 help、叶子 help 的详细文案、参数块顺序、示例数量和迁移提示，以 `CLI_DESIGN.md` 为准。实现侧的 help snapshot tests 应直接围绕该设计稿收敛，而不是重新发明另一套文案。
 
-- 该域下的子命令
-- 该域共享的参数组
-- 1-2 条示例
+## 当前实现链状态
 
-### 叶子命令 help
+截至 2026-03-27：
 
-例如 `operator input click --help`、`operator window resize --help`，必须展示：
-
-- `Usage`
-- 一行用途说明
-- 命令特有参数
-- 共享参数组
-- verification 约束
-- 2-4 条 example
-
-### 稳定性要求
-
-help 输出要进入 snapshot tests，保证：
-
-- 分组标题顺序稳定
-- 命令顺序稳定
-- 关键 example 稳定
-
-## 二进制形态
-
-当前最终用户面只保留一个主二进制：
-
-- `operator`
-
-MCP 已并入：
-
-- `operator mcp serve`
-
-`operator-cli` crate 继续承载壳层，`operator-mcp` crate 只保留库代码供 `operator mcp serve` 复用，独立的 `operator-mcp` 可执行入口已经退役。
-
-## 兼容性策略
-
-当前交付不保留旧平铺命令。
-
-会被移除的典型命令包括：
-
-- `observe --surface ...`
-- `snapshot-get`
-- `artifact-get`
-- `snapshot get`
-- `artifact get`
-- `list-apps`
-- `list-windows`
-- `get-focus`
-- `click`
-- `move`
-- `type`
-- `launch-app`
-- `focus-window`
-
-如果实现过程中需要短期 hidden alias 作为迁移手段，可以在中间提交存在；但最终 help 和最终交付不得保留双轨命令面。
-
-当前实现会对这些旧命令给出显式迁移提示，指向对应的新分组命令。
-
-## 当前实现状态
-
-截至 2026-03-24，这份命令面已经实际落地：
-
-- `OPE-54` 到 `OPE-61` 完成了新的分组命令树、统一的 help 分组、`observe/snapshot/artifact/list/focus/input/app/window/mcp` 命令面，以及 `operator mcp serve`
-- `OPE-108` 进一步把 `snapshot` / `artifact` 收敛为直接位置参数读取，并把根 help 的 `A2A` 分组更名为 `Agent`
-- `OPE-64` 退役了 legacy `operator-mcp` 二进制，只保留统一的 `operator` 用户入口
-- `OPE-66` / `OPE-67` 完成了 root/group/leaf help 的配色、slogan、无冒号标题和版式统一
+- `OPE-135` 只同步命令规范文档，不修改 Rust 代码
+- 当前代码实现仍停留在旧命令面，后续由 `OPE-136` 到 `OPE-140` 逐步完成真实 CLI 迁移
+- `paste`、`clipboard`、`open` 在本链条内持续保持 `[planned]`，不应被提前视为已交付能力
 
 ## 验收准则
 
-每张 CLI 重设计 issue 至少要满足：
+本轮 CLI redesign 文档链至少要满足：
 
-- 新命令 parse 测试通过
-- 旧命令拒绝测试在需要移除的阶段通过
-- help snapshot tests 通过
-- `cargo test --workspace`
-- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-
-最终完成态应满足：
-
-- 根 help 只展示新的命令树
-- `Core / Observe / Query / Action / MCP / Agent` 只作为 help 分组标题存在
-- tool registry 对 shell 用户完全不可见
-- 用户通过 `operator --help` 可以逐层探索全部已实现能力
+- `docs/COMMAND.md` 与 `CLI_DESIGN.md` 中的命令树、分组命名、planned 标记保持一致
+- `capture`、`elements`、`show`、`app list`、`window list`、扁平交互命令的迁移方向清晰可查
+- `paste`、`clipboard`、`open` 被明确标注为 `[planned]`
+- 任何后续实现 issue 都可以直接把 `CLI_DESIGN.md` 作为 help / parse 契约来源，而不会再与 `docs/COMMAND.md` 冲突
