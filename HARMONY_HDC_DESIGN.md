@@ -38,9 +38,20 @@ Harmony 侧已有独立仓库 [`hmdriver_rs`](/Users/gokwok/code/work/hmdriver_r
 因此，本设计将 Harmony 接入定义为：
 
 - **平台**：`harmony`
-- **具体 driver**：`harmony.hdc`
+- **第一阶段 driver**：`harmony.hdc`
+- **后续可扩展 driver**：例如 `harmony.vts`
 - **实现载体**：`crates/operator-platform-harmony`
 - **上游能力来源**：迁移并保留历史的 `hmdriver_rs`
+
+这里需要明确区分两层：
+
+- `harmony` 是平台语义归属
+- `harmony.hdc`、`harmony.vts` 等是 Harmony 平台内部的具体 driver 实现
+
+后续即使新增 `harmony.vts`，也不应改 northbound target 模型；仍然是命名 target 解析到：
+
+- `platform = "harmony"`
+- `driver = "harmony.hdc"` 或 `driver = "harmony.vts"`
 
 ---
 
@@ -204,6 +215,18 @@ operator --target harmony-pc ...
 
 这些细节全部属于 `driver_config` 和内部 driver 装配层。
 
+未来若新增虚拟屏实现，也应保持同一 northbound 约束，只在 target 配置里切换 driver：
+
+```toml
+[targets.harmony-vm]
+platform = "harmony"
+driver = "harmony.vts"
+
+[targets.harmony-vm.driver_config]
+display = "virtual-1"
+endpoint = "ws://127.0.0.1:9001"
+```
+
 ---
 
 ## 6. crate 设计
@@ -233,16 +256,24 @@ crates/
         src/
         docs/
         assets/
+    vts_driver/
+      base/
+        # future
 ```
 
 职责：
 
 - `hdc_driver/base/`
   - 从 `hmdriver_rs` 迁移进来的基础实现，尽量保持原始结构与历史可追溯性
+- `vts_driver/base/`
+  - 未来基于虚拟屏或其他执行链的 Harmony 基础实现目录
+  - 第一阶段只做架构预留，不提前实现
 - `operator-platform-harmony/src/*`
   - Operator 适配层
-  - 把 `hdc_driver/base` 的同步 API 转成 `PlatformDriver`
+  - 把 `hdc_driver/base`、未来的 `vts_driver/base` 等具体实现适配成 `PlatformDriver`
   - 做 capability、错误、类型和 northbound 语义映射
+
+> **边界约束：** `operator-platform-harmony` 是平台 crate；`hdc_driver` / `vts_driver` 是平台内部的具体 driver family 目录，不单独提升为 workspace 顶层 crate。
 
 ### 6.2 为什么不直接把 `hmdriver_rs` 当最终 `PlatformDriver`
 
@@ -271,6 +302,17 @@ flowchart LR
     C --> D["hmdriver_rs::Driver"]
     C --> E["lazy UiDriver session"]
 ```
+
+未来若接入 `harmony.vts`，建议并列采用同样的 worker 形态：
+
+```mermaid
+flowchart LR
+    A["RuntimeCore"] --> B["HarmonyVtsDriver"]
+    B --> C["HarmonyVtsWorker"]
+    C --> D["virtual screen / transport backend"]
+```
+
+也就是说，worker / actor 形态应复用于 Harmony 平台下的多个具体 driver，而不是只绑定 HDC。
 
 ### 7.1 `HarmonyHdcDriver`
 
