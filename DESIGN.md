@@ -49,7 +49,7 @@
 
 本文档描述 Operator 的总体架构、抽象边界和实现路径。
 
-> **实现状态说明（2026-03-24）：** 本文档中的核心分层、typed runtime、snapshot/capability 模型仍然有效；其中 macOS 平台、统一 `operator` CLI、`operator mcp serve` 已经实现，Agent / A2A 与 Windows / Harmony 仍处于未来阶段。
+> **实现状态说明（2026-03-27）：** 本文档中的核心分层、typed runtime、snapshot/capability 模型仍然有效；其中 macOS 平台、统一 `operator` CLI、`operator mcp serve`、`operator agent <task>` 已经实现。多平台接入的核心内核已具备雏形，但入口层装配仍然以 macOS 为主，Windows / Harmony driver 仍未落地。
 
 ---
 
@@ -84,6 +84,7 @@
 | 显式依赖注入 | 不依赖全局单例 |
 | 状态文件化 | 先避免引入重型持久化 |
 | 只抽象共性 | 不强行统一平台特有能力，用 capability 驱动 |
+| northbound 稳定 | CLI / MCP / Agent 只暴露命名 target，不暴露 local / remote / bridge 等连接细节 |
 
 ---
 
@@ -218,8 +219,10 @@ pub enum OperatorError {
 - 当前已实现：
   - `operator-cli` — 统一用户入口，暴露 `operator` 二进制
   - `operator-mcp` — MCP 协议适配库，由 `operator mcp serve` 复用
+- 当前已实现：
+  - `operator-agent` — 本地单 session agent runner（独立 crate，可选依赖）
 - 未来扩展：
-  - `operator-agent` — Agent runner / A2A surface（独立 crate，可选依赖）
+  - A2A surface — 复用 `operator-agent` 能力向外提供 agent 协议入口
 
 > **说明：** Agent 单独成 crate 而非内嵌于 runtime，原因是 Agent 需要 `ModelClient`（外部 LLM 依赖）。核心 runtime 不应反向依赖任何 LLM/provider 抽象，使得只需要 CLI / MCP 能力的用户无需引入该依赖。
 
@@ -227,7 +230,7 @@ pub enum OperatorError {
 
 ## 6. Workspace 结构
 
-长期控制在少量清晰的 crate 内；当前 workspace 已经包含 macOS、CLI、MCP 和测试支撑，其他平台与 Agent 仍保持规划态。
+长期控制在少量清晰的 crate 内；当前 workspace 已经包含 macOS、CLI、MCP、Agent 和测试支撑，其他平台仍保持规划态。
 
 ```
 operator/
@@ -238,6 +241,7 @@ operator/
     operator-platform-macos/    # 当前唯一平台实现
     operator-cli/               # 当前唯一用户二进制：operator
     operator-mcp/               # MCP 协议适配库（无独立 bin target）
+    operator-agent/             # 单 session 本地 agent runner
     operator-testkit/           # 测试工具：MockPlatformDriver、fixture 等
 ```
 
@@ -246,19 +250,19 @@ operator/
 当前 workspace members 为：
 
 - `operator-cli`
+- `operator-agent`
 - `operator-core`
 - `operator-mcp`
 - `operator-platform-macos`
 - `operator-runtime`
 - `operator-testkit`
 
-未来若接入 Agent / A2A 或其他平台，可在 workspace 中新增：
+未来若接入其他平台，可在 workspace 中新增：
 
-- `operator-agent`
 - `operator-platform-windows`
 - `operator-platform-harmony`
 
-当前 `operator-cli` 直接依赖 `operator-platform-macos` 和 `operator-mcp`，未使用平台 feature 矩阵；未来若 workspace 引入多个平台实现，再根据实际构建和发布需求决定是否恢复 Cargo feature 分发。
+当前 `operator-cli` 与 `operator-agent` 仍直接依赖 `operator-platform-macos` 完成本地 runtime 装配；多平台最终形态需要额外引入“平台/driver 注册层”，把入口层从 macOS 直连装配中解耦出来。
 
 ### 6.2 `operator-testkit` 职责
 
@@ -276,7 +280,7 @@ operator/
 
 | 概念 | 说明 |
 |---|---|
-| `Target` | 当前执行目标，如本机桌面、远程主机、某个 Harmony 设备 |
+| `Target` | 当前执行目标的命名引用，如 `macos`、`windows-lab`、`harmony-phone` |
 | `Surface` | 一次观察的上下文，如整屏、前台应用、某个窗口、某个区域 |
 | `Snapshot` | 一次观察结果，包含图像、元素树、元数据 |
 | `UiElement` | 可交互、可观测或可识别的 UI 元素 |
@@ -383,7 +387,7 @@ pub struct ElementId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub String);
 
-/// 可读字符串，如 "local:macos"、"device:harmony:abc123"
+/// 命名 target，如 "macos"、"windows-lab"、"harmony-phone"
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TargetId(pub String);
 
@@ -445,8 +449,9 @@ pub struct SnapshotMetadata {
 // ── 权限相关 ─────────────────────────────────────────────
 
 pub struct PermissionsReport {
-    pub screen_recording: PermissionStatus,
     pub accessibility: PermissionStatus,
+    pub system_events: PermissionStatus,
+    pub screen_recording: PermissionStatus,
 }
 
 pub enum PermissionStatus {
@@ -490,7 +495,7 @@ pub struct RuntimeConfig {
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            default_target: TargetId("local:macos".into()),
+            default_target: TargetId("macos".into()),
             snapshot_ttl_hours: 24,
             max_snapshots: 200,
             default_timeout_ms: 10_000,
@@ -673,11 +678,12 @@ impl CapabilitySet {
 
 ## 10. 平台抽象
 
-为保持轻量，平台层对上只暴露一个统一 driver trait，但直接提供 typed `observe/query/act` 三个入口，避免把所有行为再包一层动态 `Operation`。
+为保持轻量，平台层对上只暴露一个统一 driver trait，但直接提供 typed `observe/query/act` 三个入口，避免把所有行为再包一层动态 `Operation`。这里的关键区别是：**平台（platform）是能力归属，driver 是具体执行实现**；同一平台允许存在多个 driver。
 
 ```rust
 pub trait PlatformDriver: Send + Sync {
     fn platform_id(&self) -> &'static str;
+    fn driver_id(&self) -> &'static str;
     fn capabilities(&self) -> CapabilitySet;
     async fn health_check(&self) -> Result<HealthStatus, OperatorError>;
     async fn observe(
@@ -710,7 +716,7 @@ pub struct HealthStatus {
 2. 检查 `CapabilitySet`
 3. 调用 typed `observe/query/act`
 
-平台内部可以自行拆分为 capture / inspect / input / app-lifecycle 等子模块，这些实现细节不暴露给 runtime 层。
+平台内部可以自行拆分为 capture / inspect / input / app-lifecycle 等子模块，这些实现细节不暴露给 runtime 层。对于 northbound 入口而言，`--target` 只选择一个**命名 target**；target 内部究竟由本地 driver、远端 driver、bridge driver 还是 node driver 执行，不直接暴露在 CLI / MCP / Agent 命令面里。
 
 > **演进路径：** 若 driver 实现随能力增长变得过于庞大，可在平台 crate 内部引入私有 dispatcher 或子服务进行分发，无需改动 core 层的 trait 签名。
 
@@ -786,27 +792,25 @@ pub trait EventSink: Send + Sync {
 
 ### 11.4 TargetResolver
 
-`TargetResolver` 负责把用户输入的 target 引用解析为结构化描述，再映射到对应的平台 driver：
+`TargetResolver` 负责把用户输入的**命名 target** 解析为结构化描述，再映射到对应的平台 driver：
 
 ```rust
 pub struct TargetDescriptor {
     pub id: TargetId,
     pub platform: String,
-    pub device_id: Option<String>,
-    pub connection: TargetConnection,
-}
-
-pub enum TargetConnection {
-    Local,
-    Bridge { endpoint: Option<String> },
+    pub driver: String,
 }
 ```
 
-| Target 格式 | 对应 driver |
+推荐的长期形态：
+
+| 命名 target | 解析结果示例 |
 |---|---|
-| `local:macos` | macOS driver |
-| `local:windows` | Windows driver |
-| `device:harmony:<device-id>` | Harmony bridge driver |
+| `macos` | `platform = "macos"`, `driver = "macos.system"` |
+| `windows-lab` | `platform = "windows"`, `driver = "windows.remote"` |
+| `harmony-phone` | `platform = "harmony"`, `driver = "harmony.node"` |
+
+这里的 `remote` / `bridge` / `node` 只属于 driver 选择和配置范畴，不进入用户侧 target 语法。
 
 ---
 
@@ -976,18 +980,33 @@ CLI / MCP / Agent
 
 ```toml
 [runtime]
-default_target     = "local:macos"
+default_target     = "macos"
 snapshot_ttl_hours = 24
 max_snapshots      = 200
 default_timeout_ms = 10_000
 
-[model.anthropic]
-# API key 优先读取环境变量 ANTHROPIC_API_KEY
-api_key = ""
-
 [model.openai]
 api_key  = ""
 base_url = "https://api.openai.com/v1"
+
+[model.doubao]
+# API key 优先读取环境变量 ARK_API_KEY 或 DOUBAO_API_KEY
+api_key  = ""
+base_url = ""
+
+[targets.macos]
+platform = "macos"
+driver   = "macos.system"
+
+[targets.windows-lab]
+platform = "windows"
+driver   = "windows.remote"
+endpoint = "wss://lab.example"
+
+[targets.harmony-phone]
+platform = "harmony"
+driver   = "harmony.node"
+node     = "phone-01"
 
 [mcp]
 transport      = "stdio"   # stdio | http
@@ -1003,7 +1022,7 @@ redact_sensitive_fields = true
 artifact_ttl_hours = 24
 
 [agent]
-model           = "claude-opus-4-6"
+model           = "gpt-5.4"
 max_steps       = 50
 step_timeout_ms = 30_000
 ```
@@ -1042,6 +1061,7 @@ operator mcp serve
 **CLI 原则：**
 
 - 所有命令支持 `--target`（默认读取配置中的 `default_target`）
+- `--target` 选择命名 target，不暴露 local / remote / bridge 等连接细节
 - 所有命令支持 `--json`，输出结构与 MCP 工具结果格式兼容
 - 动作命令默认支持 `--timeout-ms` 覆盖超时
 - `Core / Observe / Query / Action / MCP / A2A` 只作为 help 分组标题，不作为真实一级命令
@@ -1301,12 +1321,14 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 - macOS 平台已能完成观察、查询、输入、应用生命周期和窗口管理
 - 统一 `operator` CLI 已完成分组命令面和稳定 help 契约
 - MCP stdio 模式已完成，并复用同一份 tool schema 和执行链
+- `operator agent <task>` 已完成第一阶段接入，并直接调用 runtime 工具而非 CLI
 - `operator-core` 与 `operator-runtime` 在不引入 LLM/provider 依赖时可独立编译
 - 同一 target 的并发操作仍保持串行，优先保证确定性
+- 运行时核心已经支持“同平台多 driver”的方向，但 CLI / Agent 的 runtime 装配仍直接注册 `MacosDriver`
 
 ### 22.5 未来阶段
 
-- Agent / A2A：复用同一组工具完成更高阶自动化任务
+- A2A：在已有 `operator-agent` 之上补齐 northbound agent 协议入口
 - Windows / Harmony：补齐更多平台 driver
 
 ---
@@ -1320,12 +1342,13 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 3. 统一 `operator` CLI
 4. `operator mcp serve`
 5. 分组命令面与稳定 help 契约
+6. `operator agent <task>` 第一阶段本地 runner
 
 **推荐后续顺序：**
 
-1. Agent / A2A runner
-2. Windows driver
-3. HarmonyOS bridge driver
+1. 平台/driver 注册层与命名 target 解析
+2. Windows driver scaffold
+3. Harmony driver scaffold
 4. 更高阶的能力域（如 clipboard / dialog / menu 等）
 
 ---
@@ -1348,7 +1371,7 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 | 平台执行边界 | 多 service + orchestration | 单 `PlatformDriver`，对上暴露 typed `observe/query/act` |
 | 平台装配 | Xcode workspace + submodule | Cargo workspace + runtime 装配 |
 | 配置管理 | Tachikoma | `~/.operator/config.toml` |
-| Agent crate | 与 runtime 合并 | 独立（未来扩展，可选依赖） |
+| Agent crate | 与 runtime 合并 | 独立（已实现 phase-1 runner，可继续扩展） |
 
 ---
 
