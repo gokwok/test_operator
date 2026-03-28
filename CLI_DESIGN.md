@@ -336,7 +336,7 @@ Examples
 ```
 Usage: operator elements region [OPTIONS] --x <X> --y <Y> --width <W> --height <H>
 
-Query accessibility elements within a screen region
+Query accessibility elements whose bounds intersect a screen region
 
 Options
   --x <X>          Left edge of the region in screen points
@@ -354,15 +354,18 @@ Examples
   operator elements region --x 0 --y 0 --width 800 --height 600
 ```
 
+Current macOS note:
+- `region` enumerates visible accessible windows and keeps only the element subtrees whose bounds intersect the requested rect.
+
 #### `operator elements fullscreen`
 
 ```
 Usage: operator elements fullscreen [OPTIONS]
 
-Query the accessibility element tree for the full display
+Query accessibility elements across visible windows on the desktop
 
 Options
-  --display-id <ID>   Display to query (optional, defaults to the active display)
+  --display-id <ID>   Display hint for the query (currently best-effort on macOS)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
@@ -373,6 +376,10 @@ Global Runtime Flags
 Examples
   operator elements fullscreen
 ```
+
+Current macOS note:
+- `fullscreen` enumerates visible accessible windows on the desktop.
+- `--display-id` is accepted for contract parity but does not yet narrow the macOS AX query.
 
 ---
 

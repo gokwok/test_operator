@@ -798,12 +798,13 @@ fn elements_region_help_snapshot_is_stable() {
     assert_surface_leaf_help_shape(
         &help,
         "Usage operator elements region [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
-        "Query accessibility elements within a screen region",
+        "Query accessibility elements whose bounds intersect a screen region",
         &["operator elements region --x 0 --y 0 --width 800 --height 600"],
     );
     assert!(help.contains("Options"));
     assert!(help.contains("--x <X>"));
     assert!(help.contains("--height <H>"));
+    assert!(help.contains("macOS note: region queries enumerate visible accessible windows"));
 }
 
 #[test]
@@ -812,12 +813,13 @@ fn elements_fullscreen_help_snapshot_is_stable() {
     assert_surface_leaf_help_shape(
         &help,
         "Usage operator elements fullscreen [OPTIONS]",
-        "Query the accessibility element tree for the full display",
+        "Query accessibility elements across visible windows on the desktop",
         &["operator elements fullscreen"],
     );
     assert!(help.contains("Options"));
     assert!(help.contains("--display-id <ID>"));
-    assert!(help.contains("Display to query (optional, defaults to the active display)"));
+    assert!(help.contains("Display hint for the query (currently best-effort on macOS)"));
+    assert!(help.contains("does not yet narrow the AX query"));
 }
 
 #[test]

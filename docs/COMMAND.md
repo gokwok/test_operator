@@ -191,6 +191,11 @@ operator
 - 负责无障碍元素树查询
 - 支持与 `capture` 相同的 surface 子命令
 - surface 参数规则与 `capture` 保持一致
+- macOS 当前实现说明：
+  - `elements region` 会枚举桌面上可见窗口的 AX 树，并只保留 `bounds` 与请求 region 相交的元素子树
+  - `elements fullscreen` 会聚合桌面上可见窗口的 AX 树
+  - `elements fullscreen --display-id` 目前仅保留为 best-effort hint，尚不会进一步缩小 macOS AX 查询范围
+- 详细实机记录见 [`docs/platforms/macos-elements-surface-validation.md`](./platforms/macos-elements-surface-validation.md)
 
 ### `show`
 

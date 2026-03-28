@@ -27,8 +27,8 @@
 | `capture fullscreen` | 已实现，未在 OPE-140 live rerun | 与 `capture frontmost` 同属 OPE-136 的新 observe 路径 |
 | `elements frontmost` | 本轮实机验证通过 | 成功返回前台 TextEdit 的 AX 树 snapshot |
 | `elements window` | 已实现，未在 OPE-140 live rerun | 与 `elements frontmost` 同属 OPE-136 的新 observe 路径 |
-| `elements region` | 已实现，未在 OPE-140 live rerun | 与 `elements frontmost` 同属 OPE-136 的新 observe 路径 |
-| `elements fullscreen` | 已实现，未在 OPE-140 live rerun | 与 `elements frontmost` 同属 OPE-136 的新 observe 路径 |
+| `elements region` | 本轮实机验证通过 | `OPE-149` 已确认该命令会枚举桌面上可见窗口，并只保留 `bounds` 与 region 相交的元素子树 |
+| `elements fullscreen` | 本轮实机验证通过 | `OPE-149` 已确认该命令会聚合桌面上可见窗口的 AX 树；`--display-id` 目前仍是 best-effort hint |
 | `show` | 本轮实机验证通过 | 返回当前聚焦 app / window / element 摘要 |
 
 ## Interact

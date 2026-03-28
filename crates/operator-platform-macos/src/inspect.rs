@@ -32,7 +32,12 @@ impl TreeInspector for SystemTreeInspector {
             root_ids.push(id);
         }
 
-        Ok(InspectResult { elements, root_ids })
+        let result = InspectResult { elements, root_ids };
+        if let SurfaceKind::Region { rect } = &surface.kind {
+            return Ok(filter_to_region(result, *rect));
+        }
+
+        Ok(result)
     }
 }
 
@@ -176,8 +181,13 @@ fn root_query(surface: &Surface) -> Result<String, OperatorError> {
 }})()"#,
             window_id = id.0,
         )),
-        SurfaceKind::Frontmost | SurfaceKind::Fullscreen { .. } | SurfaceKind::Region { .. } => {
-            Ok(r#"(() => {
+        SurfaceKind::Frontmost => Ok(frontmost_root_query()),
+        SurfaceKind::Fullscreen { .. } | SurfaceKind::Region { .. } => Ok(all_window_roots_query()),
+    }
+}
+
+fn frontmost_root_query() -> String {
+    r#"(() => {
   const processes = systemEvents.applicationProcesses.whose({frontmost: true})();
   if (!processes.length) {
     throw new Error("no frontmost application process");
@@ -187,9 +197,87 @@ fn root_query(surface: &Surface) -> Result<String, OperatorError> {
   const windows = optional(() => process.windows()) || [];
   return windows.length ? windows.slice(0, 1) : [process];
 })()"#
-                .into())
-        }
+        .into()
+}
+
+fn all_window_roots_query() -> String {
+    r#"(() => {
+  const roots = [];
+  const processes = systemEvents.applicationProcesses();
+
+  for (const process of processes) {
+    const windows = optional(() => process.windows()) || [];
+    for (const window of windows) {
+      if (optional(() => Boolean(window.attributes.byName("AXMinimized").value()))) {
+        continue;
+      }
+      roots.push(window);
     }
+  }
+
+  if (roots.length) {
+    return roots;
+  }
+
+  const frontmost = systemEvents.applicationProcesses.whose({frontmost: true})();
+  if (!frontmost.length) {
+    throw new Error("no application process with inspectable windows");
+  }
+
+  const process = frontmost[0];
+  const windows = optional(() => process.windows()) || [];
+  return windows.length ? windows.slice(0, 1) : [process];
+})()"#
+        .into()
+}
+
+fn filter_to_region(result: InspectResult, region: Rect) -> InspectResult {
+    let mut filtered = HashMap::new();
+    let root_ids = result
+        .root_ids
+        .iter()
+        .filter_map(|id| filter_element_to_region(&result.elements, &mut filtered, id, region))
+        .collect();
+
+    InspectResult {
+        elements: filtered,
+        root_ids,
+    }
+}
+
+fn filter_element_to_region(
+    elements: &HashMap<ElementId, UiElement>,
+    filtered: &mut HashMap<ElementId, UiElement>,
+    id: &ElementId,
+    region: Rect,
+) -> Option<ElementId> {
+    let element = elements.get(id)?;
+    let children = element
+        .children
+        .iter()
+        .filter_map(|child| filter_element_to_region(elements, filtered, child, region))
+        .collect::<Vec<_>>();
+    let keep = element
+        .bounds
+        .is_some_and(|bounds| rects_intersect(bounds, region))
+        || !children.is_empty();
+    if !keep {
+        return None;
+    }
+
+    let mut element = element.clone();
+    element.children = children;
+    filtered.insert(id.clone(), element);
+    Some(id.clone())
+}
+
+fn rects_intersect(lhs: Rect, rhs: Rect) -> bool {
+    let left = lhs.x.max(rhs.x);
+    let top = lhs.y.max(rhs.y);
+    let right = (lhs.x + lhs.width).min(rhs.x + rhs.width);
+    let bottom = (lhs.y + lhs.height).min(rhs.y + rhs.height);
+
+    left < right && top < bottom
 }
 
 fn synthetic_window_root_query(
@@ -301,9 +389,15 @@ fn run_jxa(_script: &str) -> Result<String, OperatorError> {
 
 #[cfg(test)]
 mod tests {
-    use operator_core::WindowId;
+    use std::collections::HashMap;
 
-    use super::{synthetic_window_root_query, WindowRecord};
+    use operator_core::{ElementId, ElementSource, UiElement, WindowId};
+
+    use super::{
+        filter_to_region, root_query, synthetic_window_root_query, InspectResult, Surface,
+        SurfaceKind, WindowRecord,
+    };
+    use operator_core::Rect;
 
     #[test]
     fn synthetic_window_query_matches_pid_identifier_and_index() {
@@ -327,5 +421,138 @@ mod tests {
         assert!(query.contains("const expectedIdentifier = \"workspace.editor\";"));
         assert!(query.contains("const expectedIndex = 3;"));
         assert!(query.contains("window.attributes.byName(\"AXIdentifier\").value()"));
+    }
+
+    #[test]
+    fn fullscreen_query_enumerates_non_minimized_windows() {
+        let query = root_query(&Surface {
+            kind: SurfaceKind::Fullscreen {
+                display_id: Some(2),
+            },
+        })
+        .unwrap();
+
+        assert!(query.contains("const roots = [];"));
+        assert!(query.contains("systemEvents.applicationProcesses();"));
+        assert!(query.contains("AXMinimized"));
+        assert!(query.contains("return roots;"));
+    }
+
+    #[test]
+    fn region_filter_keeps_only_intersecting_subtrees() {
+        let result = filter_to_region(
+            InspectResult {
+                elements: HashMap::from([
+                    (
+                        ElementId("ax-0".into()),
+                        UiElement {
+                            id: ElementId("ax-0".into()),
+                            role: "AXWindow".into(),
+                            label: Some("Editor".into()),
+                            value: None,
+                            bounds: Some(Rect {
+                                x: 0.0,
+                                y: 0.0,
+                                width: 400.0,
+                                height: 300.0,
+                            }),
+                            enabled: Some(true),
+                            children: vec![ElementId("ax-0-0".into()), ElementId("ax-0-1".into())],
+                            confidence: Some(1.0),
+                            source: ElementSource::Native,
+                        },
+                    ),
+                    (
+                        ElementId("ax-0-0".into()),
+                        UiElement {
+                            id: ElementId("ax-0-0".into()),
+                            role: "AXButton".into(),
+                            label: Some("Inside".into()),
+                            value: None,
+                            bounds: Some(Rect {
+                                x: 120.0,
+                                y: 80.0,
+                                width: 40.0,
+                                height: 30.0,
+                            }),
+                            enabled: Some(true),
+                            children: vec![],
+                            confidence: Some(1.0),
+                            source: ElementSource::Native,
+                        },
+                    ),
+                    (
+                        ElementId("ax-0-1".into()),
+                        UiElement {
+                            id: ElementId("ax-0-1".into()),
+                            role: "AXButton".into(),
+                            label: Some("Outside".into()),
+                            value: None,
+                            bounds: Some(Rect {
+                                x: 320.0,
+                                y: 240.0,
+                                width: 40.0,
+                                height: 30.0,
+                            }),
+                            enabled: Some(true),
+                            children: vec![],
+                            confidence: Some(1.0),
+                            source: ElementSource::Native,
+                        },
+                    ),
+                    (
+                        ElementId("ax-1".into()),
+                        UiElement {
+                            id: ElementId("ax-1".into()),
+                            role: "AXWindow".into(),
+                            label: Some("Terminal".into()),
+                            value: None,
+                            bounds: Some(Rect {
+                                x: 600.0,
+                                y: 50.0,
+                                width: 300.0,
+                                height: 200.0,
+                            }),
+                            enabled: Some(true),
+                            children: vec![ElementId("ax-1-0".into())],
+                            confidence: Some(1.0),
+                            source: ElementSource::Native,
+                        },
+                    ),
+                    (
+                        ElementId("ax-1-0".into()),
+                        UiElement {
+                            id: ElementId("ax-1-0".into()),
+                            role: "AXStaticText".into(),
+                            label: Some("Far away".into()),
+                            value: None,
+                            bounds: Some(Rect {
+                                x: 620.0,
+                                y: 70.0,
+                                width: 80.0,
+                                height: 20.0,
+                            }),
+                            enabled: Some(true),
+                            children: vec![],
+                            confidence: Some(1.0),
+                            source: ElementSource::Native,
+                        },
+                    ),
+                ]),
+                root_ids: vec![ElementId("ax-0".into()), ElementId("ax-1".into())],
+            },
+            Rect {
+                x: 100.0,
+                y: 60.0,
+                width: 120.0,
+                height: 80.0,
+            },
+        );
+
+        assert_eq!(result.root_ids, vec![ElementId("ax-0".into())]);
+        assert!(result.elements.contains_key(&ElementId("ax-0".into())));
+        assert!(result.elements.contains_key(&ElementId("ax-0-0".into())));
+        assert!(!result.elements.contains_key(&ElementId("ax-0-1".into())));
+        assert!(!result.elements.contains_key(&ElementId("ax-1".into())));
     }
 }

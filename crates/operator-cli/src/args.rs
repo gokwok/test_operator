@@ -87,8 +87,14 @@ const ELEMENTS_ABOUT: &str = "Query the accessibility element tree for a surface
 const ELEMENTS_FRONTMOST_ABOUT: &str =
     "Query the accessibility element tree for the frontmost app surface";
 const ELEMENTS_WINDOW_ABOUT: &str = "Query the accessibility element tree for a specific window";
-const ELEMENTS_REGION_ABOUT: &str = "Query accessibility elements within a screen region";
-const ELEMENTS_FULLSCREEN_ABOUT: &str = "Query the accessibility element tree for the full display";
+const ELEMENTS_REGION_ABOUT: &str =
+    "Query accessibility elements whose bounds intersect a screen region";
+const ELEMENTS_FULLSCREEN_ABOUT: &str =
+    "Query accessibility elements across visible windows on the desktop";
+const ELEMENTS_REGION_FOOTER: &str =
+    "macOS note: region queries enumerate visible accessible windows and keep only elements whose bounds intersect the requested rect.";
+const ELEMENTS_FULLSCREEN_FOOTER: &str =
+    "macOS note: fullscreen queries enumerate visible accessible windows on the desktop. `--display-id` is accepted for contract parity but does not yet narrow the AX query.";
 
 const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
@@ -675,7 +681,7 @@ const CAPTURE_FULLSCREEN_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
 
 const ELEMENTS_FULLSCREEN_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "--display-id <ID>",
-    about: "Display to query (optional, defaults to the active display)",
+    about: "Display hint for the query (currently best-effort on macOS)",
 }];
 
 const WINDOW_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
@@ -1488,7 +1494,7 @@ const ELEMENTS_REGION_HELP: LeafHelp = LeafHelp {
     sections: SURFACE_REGION_HELP_SECTIONS,
     include_global_runtime_flags: true,
     examples: &["operator elements region --x 0 --y 0 --width 800 --height 600"],
-    footer: "",
+    footer: ELEMENTS_REGION_FOOTER,
 };
 
 const ELEMENTS_FULLSCREEN_HELP: LeafHelp = LeafHelp {
@@ -1497,7 +1503,7 @@ const ELEMENTS_FULLSCREEN_HELP: LeafHelp = LeafHelp {
     sections: ELEMENTS_FULLSCREEN_HELP_SECTIONS,
     include_global_runtime_flags: true,
     examples: &["operator elements fullscreen"],
-    footer: "",
+    footer: ELEMENTS_FULLSCREEN_FOOTER,
 };
 
 const SNAPSHOT_HELP: LeafHelp = LeafHelp {
