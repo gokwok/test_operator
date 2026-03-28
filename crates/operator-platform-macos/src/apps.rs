@@ -10,6 +10,13 @@ use serde::Deserialize;
 pub trait AppService: Send + Sync {
     fn list_apps(&self) -> Result<Vec<AppInfo>, OperatorError>;
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError>;
+    fn list_frontmost_windows(&self) -> Result<Vec<WindowInfo>, OperatorError> {
+        if let Some(app_name) = self.get_focus()?.and_then(|focus| focus.app_name) {
+            return self.list_windows(Some(&app_name));
+        }
+
+        self.list_windows(None)
+    }
     fn get_focus(&self) -> Result<Option<FocusInfo>, OperatorError>;
     fn launch_app(&self, bundle_id_or_name: &str) -> Result<(), OperatorError>;
     fn close_window(&self, id: WindowId) -> Result<(), OperatorError>;
@@ -62,6 +69,11 @@ JSON.stringify(apps);
         let script = list_windows_script(&app_literal);
 
         let windows: Vec<WindowRecord> = parse_jxa_json(run_jxa(&script)?)?;
+        Ok(windows.into_iter().map(WindowInfo::from).collect())
+    }
+
+    fn list_frontmost_windows(&self) -> Result<Vec<WindowInfo>, OperatorError> {
+        let windows: Vec<WindowRecord> = parse_jxa_json(run_jxa(frontmost_windows_script())?)?;
         Ok(windows.into_iter().map(WindowInfo::from).collect())
     }
 
@@ -296,6 +308,100 @@ for (const process of processes) {{
 JSON.stringify(windows);
 "#
     )
+}
+
+fn frontmost_windows_script() -> &'static str {
+    r#"
+const systemEvents = Application("System Events");
+function safeString(value) {
+  return value == null ? null : String(value);
+}
+function safeCall(target, method) {
+  try {
+    return typeof target[method] === "function" ? target[method]() : null;
+  } catch (error) {
+    return null;
+  }
+}
+function safeAttr(target, name) {
+  try {
+    return target.attributes.byName(name).value();
+  } catch (error) {
+    return null;
+  }
+}
+function safeStringAttr(target, name) {
+  return safeString(safeAttr(target, name));
+}
+function safeWindowId(window) {
+  try {
+    const value = safeCall(window, "id");
+    if (value == null) {
+      return null;
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  } catch (error) {
+    return null;
+  }
+}
+function rectForElement(element) {
+  try {
+    const position = element.position();
+    const size = element.size();
+    return {
+      x: Number(position[0]),
+      y: Number(position[1]),
+      width: Number(size[0]),
+      height: Number(size[1])
+    };
+  } catch (error) {
+    return null;
+  }
+}
+function safeProcessName(process) {
+  return safeString(safeCall(process, "name"));
+}
+function safeProcessPid(process) {
+  const value = Number(safeCall(process, "unixId"));
+  return Number.isFinite(value) ? value : null;
+}
+function safeProcessFrontmost(process) {
+  return Boolean(safeCall(process, "frontmost"));
+}
+function safeProcessWindows(process) {
+  const windows = safeCall(process, "windows");
+  return windows == null ? [] : windows;
+}
+const processes = systemEvents.applicationProcesses.whose({frontmost: true})();
+if (!processes.length) {
+  JSON.stringify([]);
+} else {
+  const process = processes[0];
+  const appName = safeProcessName(process);
+  const pid = safeProcessPid(process);
+  const isFrontmost = safeProcessFrontmost(process);
+  const processWindows = safeProcessWindows(process);
+  let windows = [];
+  for (let index = 0; index < processWindows.length; index += 1) {
+    const window = processWindows[index];
+    const isMain = safeAttr(window, "AXMain");
+    const isFocused = safeAttr(window, "AXFocused");
+    windows.push({
+      id: safeWindowId(window),
+      pid: pid,
+      window_index: index,
+      ax_identifier: safeStringAttr(window, "AXIdentifier"),
+      title: safeString(safeCall(window, "name")),
+      app_name: appName,
+      bounds: rectForElement(window),
+      is_focused: Boolean(isFrontmost && (isMain || isFocused)),
+      is_minimized: Boolean(safeAttr(window, "AXMinimized"))
+    });
+  }
+  JSON.stringify(windows);
+}
+"#
 }
 
 #[derive(Debug, Deserialize)]

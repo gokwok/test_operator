@@ -278,6 +278,118 @@ async fn observe_frontmost_uses_frontmost_surface_for_synthetic_window_ids() {
 }
 
 #[tokio::test]
+async fn observe_frontmost_screenshot_only_bypasses_window_queries() {
+    let driver = MacosDriver::with_observe(
+        StubAppService {
+            list_windows_error: Some("full window enumeration should not run".into()),
+            frontmost_windows_error: Some("frontmost window lookup should not run".into()),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("artifact-frontmost.png".into()),
+            display_scale: Some(2.0),
+            capture_bounds: None,
+            image_size_px: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+    );
+
+    let observed = driver
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: false,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        driver.capture_provider().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Frontmost,
+        }]
+    );
+    assert_eq!(driver.app_service().frontmost_window_query_count(), 0);
+    assert_eq!(observed.snapshot.metadata.display_scale, Some(2.0));
+}
+
+#[tokio::test]
+async fn observe_frontmost_with_elements_uses_frontmost_window_lookup() {
+    let frontmost_window = WindowInfo {
+        id: 21.into(),
+        title: Some("Calculator".into()),
+        app_name: Some("Calculator".into()),
+        bounds: Some(Rect {
+            x: 338.0,
+            y: 216.0,
+            width: 230.0,
+            height: 408.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    };
+    let driver = MacosDriver::with_observe(
+        StubAppService {
+            frontmost_windows: Some(vec![frontmost_window.clone()]),
+            list_windows_error: Some("full window enumeration should not run".into()),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+        StubCaptureProvider::with_result(CaptureResult {
+            artifact_id: ArtifactId("artifact-frontmost.png".into()),
+            display_scale: Some(2.0),
+            capture_bounds: None,
+            image_size_px: None,
+        }),
+        StubTreeInspector::with_result(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }),
+    );
+
+    driver
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: true,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(driver.app_service().frontmost_window_query_count(), 1);
+    assert_eq!(
+        driver.capture_provider().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Window {
+                id: frontmost_window.id,
+            },
+        }]
+    );
+    assert_eq!(
+        driver.tree_inspector().requested_surfaces(),
+        vec![Surface {
+            kind: SurfaceKind::Window {
+                id: frontmost_window.id,
+            },
+        }]
+    );
+}
+
+#[tokio::test]
 async fn permissions_query_returns_report() {
     let driver = MacosDriver::new(
         StubAppService::default(),
@@ -1227,7 +1339,7 @@ async fn click_action_with_app_target_refreshes_anchor_window_after_auto_focus()
 }
 
 #[tokio::test]
-async fn click_action_with_app_target_falls_back_to_unfiltered_window_lookup() {
+async fn click_action_with_app_target_falls_back_to_frontmost_window_lookup() {
     let input = StubInputSynthesizer::default();
     let app = AppInfo {
         bundle_id: Some("com.apple.calculator".into()),
@@ -1640,6 +1752,7 @@ async fn click_action_with_app_target_uses_frontmost_window_after_auto_focus_whe
             mode: ClickMode::Left,
         }]
     );
+    assert_eq!(driver.app_service().frontmost_window_query_count(), 1);
 }
 
 #[tokio::test]
@@ -2766,9 +2879,11 @@ fn default_action_request() -> ActionRequest {
 struct StubAppService {
     apps: Vec<AppInfo>,
     windows: Vec<WindowInfo>,
+    frontmost_windows: Option<Vec<WindowInfo>>,
     windows_after_focus: Option<Vec<WindowInfo>>,
     filtered_windows: Option<Vec<WindowInfo>>,
     list_windows_error: Option<String>,
+    frontmost_windows_error: Option<String>,
     focus: Option<FocusInfo>,
     launched: Mutex<Vec<String>>,
     focused_apps: Mutex<Vec<String>>,
@@ -2784,6 +2899,7 @@ struct StubAppService {
     unhidden: Mutex<Vec<String>>,
     focused_windows: Mutex<Vec<WindowId>>,
     last_window_filter: Mutex<Option<String>>,
+    frontmost_window_queries: Mutex<u32>,
     move_window_result: Option<Rect>,
     resize_window_result: Option<Rect>,
     set_window_bounds_result: Option<Rect>,
@@ -2845,6 +2961,10 @@ impl StubAppService {
     fn focused_windows(&self) -> Vec<WindowId> {
         self.focused_windows.lock().unwrap().clone()
     }
+
+    fn frontmost_window_query_count(&self) -> u32 {
+        *self.frontmost_window_queries.lock().unwrap()
+    }
 }
 
 impl AppService for StubAppService {
@@ -2866,6 +2986,22 @@ impl AppService for StubAppService {
             if let Some(windows) = &self.windows_after_focus {
                 return Ok(windows.clone());
             }
+        }
+        Ok(self.windows.clone())
+    }
+
+    fn list_frontmost_windows(&self) -> Result<Vec<WindowInfo>, OperatorError> {
+        *self.frontmost_window_queries.lock().unwrap() += 1;
+        if let Some(message) = &self.frontmost_windows_error {
+            return Err(OperatorError::Platform(message.clone()));
+        }
+        if !self.focused_apps.lock().unwrap().is_empty() {
+            if let Some(windows) = &self.windows_after_focus {
+                return Ok(windows.clone());
+            }
+        }
+        if let Some(windows) = &self.frontmost_windows {
+            return Ok(windows.clone());
         }
         Ok(self.windows.clone())
     }

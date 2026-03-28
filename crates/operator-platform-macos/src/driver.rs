@@ -188,7 +188,14 @@ where
         let permissions = self.permission_reader.current_permissions()?;
         require_observe_permissions(&permissions, &req)?;
         let started = Instant::now();
-        let resolved_surface = self.resolve_observe_surface(&req.surface);
+        let resolved_surface = if matches!(req.surface.kind, SurfaceKind::Frontmost)
+            && req.include_screenshot
+            && !req.include_elements
+        {
+            ResolvedObserveSurface::new(req.surface.clone(), None)
+        } else {
+            self.resolve_observe_surface(&req.surface)
+        };
 
         let capture = if req.include_screenshot {
             Some(self.capture_provider.capture(&resolved_surface.surface)?)
@@ -833,13 +840,12 @@ where
             return Ok(Some(window));
         }
 
-        let windows = self.app_service.list_windows(None)?;
         let focus = self.app_service.get_focus()?;
-        if let Some(window) = select_matching_app_window(&windows, app, focus.as_ref()) {
-            return Ok(Some(window));
-        }
-
         if focus_matches_expected_app(focus.as_ref(), app) {
+            let windows = self.app_service.list_frontmost_windows()?;
+            if let Some(window) = select_matching_app_window(&windows, app, focus.as_ref()) {
+                return Ok(Some(window));
+            }
             if let Some(window) = select_observe_app_window(&windows, app, focus.as_ref()) {
                 return Ok(Some(window));
             }
@@ -856,19 +862,9 @@ where
     }
 
     fn resolve_frontmost_observe_surface(&self) -> ResolvedObserveSurface {
-        if let Ok(windows) = self.app_service.list_windows(None) {
+        if let Ok(windows) = self.app_service.list_frontmost_windows() {
             if let Some(window) = select_observe_window(&windows) {
                 return ResolvedObserveSurface::window(window);
-            }
-        }
-
-        if let Ok(Some(focus)) = self.app_service.get_focus() {
-            if let Some(app_name) = focus.app_name {
-                if let Ok(windows) = self.app_service.list_windows(Some(&app_name)) {
-                    if let Some(window) = select_observe_window(&windows) {
-                        return ResolvedObserveSurface::window(window);
-                    }
-                }
             }
         }
 
@@ -980,7 +976,7 @@ where
 
     fn resolve_frontmost_observe_window(&self) -> Option<WindowInfo> {
         self.app_service
-            .list_windows(None)
+            .list_frontmost_windows()
             .ok()
             .and_then(|windows| select_observe_window(&windows))
     }
