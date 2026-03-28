@@ -15,6 +15,7 @@ struct EffectRequest: Decodable {
     let mode: String?
     let dx: Double?
     let dy: Double?
+    let label: String?
 }
 
 final class OverlayView: NSView {
@@ -75,6 +76,11 @@ final class OverlayView: NSView {
                 dy: request.dy ?? 0
             )
             .forEach(rootLayer.addSublayer)
+        case "keyboard":
+            guard let label = request.label, !label.isEmpty else {
+                return
+            }
+            keyboardLayers(label: label).forEach(rootLayer.addSublayer)
         default:
             return
         }
@@ -204,6 +210,78 @@ final class OverlayView: NSView {
         ]
     }
 
+    private func keyboardLayers(label: String) -> [CALayer] {
+        let title = "KEYBOARD"
+        let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        let bodyFont = NSFont.monospacedSystemFont(ofSize: 24, weight: .semibold)
+        let titleSize = textSize(title, font: titleFont)
+        let bodySize = textSize(label, font: bodyFont)
+        let maxPanelWidth = max(min(bounds.width - 48, 720), 220)
+        let panelWidth = min(max(max(titleSize.width, bodySize.width) + 56, 220), maxPanelWidth)
+        let panelHeight: CGFloat = 96
+        let panelRect = CGRect(
+            x: (bounds.width - panelWidth) / 2,
+            y: max(36, min(72, bounds.height - panelHeight - 24)),
+            width: panelWidth,
+            height: panelHeight
+        )
+
+        let panel = CALayer()
+        panel.frame = panelRect
+        panel.cornerRadius = 18
+        panel.backgroundColor = NSColor(
+            calibratedWhite: 0.06,
+            alpha: 0.88
+        ).cgColor
+        panel.borderWidth = 1
+        panel.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        panel.shadowColor = NSColor.black.cgColor
+        panel.shadowOpacity = 0.28
+        panel.shadowRadius = 22
+        panel.shadowOffset = CGSize(width: 0, height: 10)
+
+        let accent = CALayer()
+        accent.frame = CGRect(
+            x: panelRect.minX + 20,
+            y: panelRect.maxY - 16,
+            width: panelRect.width - 40,
+            height: 4
+        )
+        accent.cornerRadius = 2
+        accent.backgroundColor = NSColor(
+            calibratedRed: 0.29,
+            green: 0.76,
+            blue: 0.99,
+            alpha: 0.98
+        ).cgColor
+
+        let titleLayer = textLayer(
+            text: title,
+            font: titleFont,
+            color: NSColor.white.withAlphaComponent(0.72),
+            frame: CGRect(
+                x: panelRect.minX + 22,
+                y: panelRect.maxY - 38,
+                width: panelRect.width - 44,
+                height: 16
+            )
+        )
+
+        let bodyLayer = textLayer(
+            text: label,
+            font: bodyFont,
+            color: NSColor.white,
+            frame: CGRect(
+                x: panelRect.minX + 22,
+                y: panelRect.minY + 24,
+                width: panelRect.width - 44,
+                height: 34
+            )
+        )
+
+        return [panel, accent, titleLayer, bodyLayer]
+    }
+
     private func clickColor(_ mode: String) -> NSColor {
         switch mode {
         case "right":
@@ -295,6 +373,32 @@ final class OverlayView: NSView {
         layer.fillColor = color.cgColor
         layer.strokeColor = color.cgColor
         return layer
+    }
+
+    private func textLayer(
+        text: String,
+        font: NSFont,
+        color: NSColor,
+        frame: CGRect
+    ) -> CATextLayer {
+        let layer = CATextLayer()
+        layer.frame = frame
+        layer.alignmentMode = .center
+        layer.isWrapped = false
+        layer.truncationMode = .end
+        layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        layer.string = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: color,
+            ]
+        )
+        return layer
+    }
+
+    private func textSize(_ text: String, font: NSFont) -> CGSize {
+        (text as NSString).size(withAttributes: [.font: font])
     }
 }
 
