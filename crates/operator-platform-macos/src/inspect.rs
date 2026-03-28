@@ -5,6 +5,8 @@ use operator_core::{
 };
 use serde::Deserialize;
 
+use crate::apps::{is_synthetic_window_id, resolve_window_record, WindowRecord};
+
 pub trait TreeInspector: Send + Sync {
     fn inspect(&self, surface: &Surface) -> Result<InspectResult, OperatorError>;
 }
@@ -20,7 +22,7 @@ pub struct SystemTreeInspector;
 
 impl TreeInspector for SystemTreeInspector {
     fn inspect(&self, surface: &Surface) -> Result<InspectResult, OperatorError> {
-        let output = run_jxa(&script_for_surface(surface))?;
+        let output = run_jxa(&script_for_surface(surface)?)?;
         let roots = parse_inspection_nodes(&output)?;
 
         let mut elements = HashMap::new();
@@ -91,7 +93,7 @@ fn parse_inspection_nodes(json: &str) -> Result<Vec<InspectNode>, OperatorError>
     })
 }
 
-fn script_for_surface(surface: &Surface) -> String {
+fn script_for_surface(surface: &Surface) -> Result<String, OperatorError> {
     const TEMPLATE: &str = r#"
 const systemEvents = Application("System Events");
 
@@ -145,12 +147,15 @@ const roots = __ROOT_QUERY__;
 JSON.stringify(roots.map((root) => serialize(root, 0)));
 "#;
 
-    TEMPLATE.replace("__ROOT_QUERY__", &root_query(surface))
+    Ok(TEMPLATE.replace("__ROOT_QUERY__", &root_query(surface)?))
 }
 
-fn root_query(surface: &Surface) -> String {
+fn root_query(surface: &Surface) -> Result<String, OperatorError> {
     match &surface.kind {
-        SurfaceKind::Window { id } => format!(
+        SurfaceKind::Window { id } if is_synthetic_window_id(*id) => {
+            synthetic_window_root_query(*id, &resolve_window_record(*id)?)
+        }
+        SurfaceKind::Window { id } => Ok(format!(
             r#"(() => {{
   const matches = [];
   const processes = systemEvents.applicationProcesses();
@@ -170,9 +175,9 @@ fn root_query(surface: &Surface) -> String {
   return matches.slice(0, 1);
 }})()"#,
             window_id = id.0,
-        ),
+        )),
         SurfaceKind::Frontmost | SurfaceKind::Fullscreen { .. } | SurfaceKind::Region { .. } => {
-            r#"(() => {
+            Ok(r#"(() => {
   const processes = systemEvents.applicationProcesses.whose({frontmost: true})();
   if (!processes.length) {
     throw new Error("no frontmost application process");
@@ -182,9 +187,83 @@ fn root_query(surface: &Surface) -> String {
   const windows = optional(() => process.windows()) || [];
   return windows.length ? windows.slice(0, 1) : [process];
 })()"#
-                .into()
+                .into())
         }
     }
+}
+
+fn synthetic_window_root_query(
+    id: operator_core::WindowId,
+    window: &WindowRecord,
+) -> Result<String, OperatorError> {
+    let pid = window
+        .pid
+        .map(|pid| pid.to_string())
+        .unwrap_or_else(|| "null".into());
+    let app_name = serde_json::to_string(&window.app_name).map_err(|error| {
+        OperatorError::Platform(format!("failed to encode macOS app name: {error}"))
+    })?;
+    let title = serde_json::to_string(&window.title).map_err(|error| {
+        OperatorError::Platform(format!("failed to encode macOS window title: {error}"))
+    })?;
+    let ax_identifier = serde_json::to_string(&window.ax_identifier).map_err(|error| {
+        OperatorError::Platform(format!(
+            "failed to encode macOS window AX identifier: {error}"
+        ))
+    })?;
+
+    Ok(format!(
+        r#"(() => {{
+  const expectedPid = {pid};
+  const expectedAppName = {app_name};
+  const expectedTitle = {title};
+  const expectedIdentifier = {ax_identifier};
+  const expectedIndex = {window_index};
+  const processes = systemEvents.applicationProcesses();
+
+  for (const process of processes) {{
+    if (expectedPid !== null && optional(() => Number(process.unixId())) !== expectedPid) {{
+      continue;
+    }}
+    if (
+      expectedPid === null &&
+      expectedAppName !== null &&
+      toText(optional(() => process.name())) !== expectedAppName
+    ) {{
+      continue;
+    }}
+
+    const windows = optional(() => process.windows()) || [];
+    if (expectedIdentifier !== null) {{
+      for (const window of windows) {{
+        if (
+          toText(optional(() => window.attributes.byName("AXIdentifier").value())) ===
+          expectedIdentifier
+        ) {{
+          return [window];
+        }}
+      }}
+    }}
+
+    const window = windows[expectedIndex];
+    if (!window) {{
+      continue;
+    }}
+
+    if (expectedTitle === null || toText(optional(() => window.name())) === expectedTitle) {{
+      return [window];
+    }}
+  }}
+
+  throw new Error("window {window_id} not found");
+}})()"#,
+        pid = pid,
+        app_name = app_name,
+        title = title,
+        ax_identifier = ax_identifier,
+        window_index = window.window_index,
+        window_id = id.0,
+    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -218,4 +297,35 @@ fn run_jxa(_script: &str) -> Result<String, OperatorError> {
     Err(OperatorError::Platform(
         "macOS tree inspection is unavailable on non-macOS hosts".into(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use operator_core::WindowId;
+
+    use super::{synthetic_window_root_query, WindowRecord};
+
+    #[test]
+    fn synthetic_window_query_matches_pid_identifier_and_index() {
+        let query = synthetic_window_root_query(
+            WindowId((1 << 63) | 42),
+            &WindowRecord {
+                id: None,
+                pid: Some(512),
+                window_index: 3,
+                ax_identifier: Some("workspace.editor".into()),
+                title: Some("main.rs".into()),
+                app_name: Some("Codex".into()),
+                bounds: None,
+                is_focused: false,
+                is_minimized: false,
+            },
+        )
+        .unwrap();
+
+        assert!(query.contains("const expectedPid = 512;"));
+        assert!(query.contains("const expectedIdentifier = \"workspace.editor\";"));
+        assert!(query.contains("const expectedIndex = 3;"));
+        assert!(query.contains("window.attributes.byName(\"AXIdentifier\").value()"));
+    }
 }

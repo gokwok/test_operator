@@ -8,6 +8,8 @@ use std::{
 
 use operator_core::{ArtifactId, ImageSizePx, OperatorError, Rect, Surface, SurfaceKind};
 
+use crate::apps::{is_synthetic_window_id, resolve_window_record};
+
 static CAPTURE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub trait CaptureProvider: Send + Sync {
@@ -92,26 +94,7 @@ fn capture_to_path(
     path: &Path,
 ) -> Result<(), OperatorError> {
     let mut command = Command::new("screencapture");
-    command.arg("-x");
-
-    match &surface.kind {
-        SurfaceKind::Fullscreen { display_id } => {
-            if let Some(display_id) = display_id {
-                command.arg("-D").arg(display_id.to_string());
-            }
-        }
-        SurfaceKind::Frontmost => {
-            if let Some(rect) = capture_bounds {
-                command.arg("-R").arg(rect_argument(rect));
-            }
-        }
-        SurfaceKind::Window { id } => {
-            command.arg("-l").arg(id.0.to_string());
-        }
-        SurfaceKind::Region { rect } => {
-            command.arg("-R").arg(rect_argument(rect));
-        }
-    }
+    command.args(capture_command_arguments(surface, capture_bounds)?);
 
     let output = command.arg(path).output().map_err(|error| {
         OperatorError::Platform(format!("failed to invoke screencapture: {error}"))
@@ -136,8 +119,55 @@ fn capture_bounds_for_surface(surface: &Surface) -> Result<Option<Rect>, Operato
     match &surface.kind {
         SurfaceKind::Frontmost => frontmost_window_bounds(),
         SurfaceKind::Region { rect } => Ok(Some(*rect)),
+        SurfaceKind::Window { id } if is_synthetic_window_id(*id) => {
+            let window = resolve_window_record(*id)?;
+            let bounds = window.bounds.ok_or_else(|| {
+                OperatorError::Platform(format!("window {id} has no bounds available on macOS"))
+            })?;
+            Ok(Some(bounds))
+        }
         SurfaceKind::Fullscreen { .. } | SurfaceKind::Window { .. } => Ok(None),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn capture_command_arguments(
+    surface: &Surface,
+    capture_bounds: Option<&Rect>,
+) -> Result<Vec<String>, OperatorError> {
+    let mut args = vec!["-x".to_string()];
+
+    match &surface.kind {
+        SurfaceKind::Fullscreen { display_id } => {
+            if let Some(display_id) = display_id {
+                args.push("-D".into());
+                args.push(display_id.to_string());
+            }
+        }
+        SurfaceKind::Frontmost => {
+            if let Some(rect) = capture_bounds {
+                args.push("-R".into());
+                args.push(rect_argument(rect));
+            }
+        }
+        SurfaceKind::Window { id } if is_synthetic_window_id(*id) => {
+            let rect = capture_bounds.ok_or_else(|| {
+                OperatorError::Platform(format!("window {id} has no bounds available on macOS"))
+            })?;
+            args.push("-R".into());
+            args.push(rect_argument(rect));
+        }
+        SurfaceKind::Window { id } => {
+            args.push("-l".into());
+            args.push(id.0.to_string());
+        }
+        SurfaceKind::Region { rect } => {
+            args.push("-R".into());
+            args.push(rect_argument(rect));
+        }
+    }
+
+    Ok(args)
 }
 
 #[cfg(target_os = "macos")]
@@ -314,7 +344,46 @@ fn parse_sips_value(output: &str, key: &str) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    use operator_core::{Rect, Surface, SurfaceKind, WindowId};
+
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_window_capture_uses_window_selector() {
+        let args = capture_command_arguments(
+            &Surface {
+                kind: SurfaceKind::Window {
+                    id: WindowId::from(42),
+                },
+            },
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(args, vec!["-x", "-l", "42"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn synthetic_window_capture_uses_region_fallback() {
+        let args = capture_command_arguments(
+            &Surface {
+                kind: SurfaceKind::Window {
+                    id: WindowId((1 << 63) | 42),
+                },
+            },
+            Some(&Rect {
+                x: 10.0,
+                y: 20.0,
+                width: 300.0,
+                height: 200.0,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(args, vec!["-x", "-R", "10,20,300,200"]);
+    }
 
     #[test]
     fn parses_retina_display_scale_from_sips_output() {

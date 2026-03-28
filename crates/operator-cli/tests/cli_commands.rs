@@ -87,6 +87,64 @@ fn elements_window_command_maps_surface_and_tree_only_profile() {
 }
 
 #[test]
+fn capture_window_command_accepts_synthetic_window_ids() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "capture",
+        "window",
+        "--window-id",
+        "9223372036854775850",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Window": {
+                        "id": 9_223_372_036_854_775_850u64
+                    }
+                }
+            },
+            "include_screenshot": true,
+            "include_elements": false
+        })
+    );
+}
+
+#[test]
+fn elements_window_command_accepts_synthetic_window_ids() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "elements",
+        "window",
+        "--window-id",
+        "9223372036854775850",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "observe");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "surface": {
+                "kind": {
+                    "Window": {
+                        "id": 9_223_372_036_854_775_850u64
+                    }
+                }
+            },
+            "include_screenshot": false,
+            "include_elements": true
+        })
+    );
+}
+
+#[test]
 fn capture_region_command_maps_rect_and_screenshot_only_profile() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator", "capture", "region", "--x", "10", "--y", "20", "--width", "300", "--height",

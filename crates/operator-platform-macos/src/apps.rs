@@ -63,13 +63,10 @@ JSON.stringify(apps);
     }
 
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError> {
-        let app_literal = serde_json::to_string(&app).map_err(|error| {
-            OperatorError::Platform(format!("failed to encode app filter: {error}"))
-        })?;
-        let script = list_windows_script(&app_literal);
-
-        let windows: Vec<WindowRecord> = parse_jxa_json(run_jxa(&script)?)?;
-        Ok(windows.into_iter().map(WindowInfo::from).collect())
+        Ok(list_window_records(app)?
+            .into_iter()
+            .map(WindowInfo::from)
+            .collect())
     }
 
     fn list_frontmost_windows(&self) -> Result<Vec<WindowInfo>, OperatorError> {
@@ -424,25 +421,30 @@ impl From<AppRecord> for AppInfo {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct WindowRecord {
-    id: Option<u64>,
-    pid: Option<u32>,
-    window_index: usize,
-    ax_identifier: Option<String>,
-    title: Option<String>,
-    app_name: Option<String>,
-    bounds: Option<Rect>,
-    is_focused: bool,
-    is_minimized: bool,
+pub(crate) struct WindowRecord {
+    pub(crate) id: Option<u64>,
+    pub(crate) pid: Option<u32>,
+    pub(crate) window_index: usize,
+    pub(crate) ax_identifier: Option<String>,
+    pub(crate) title: Option<String>,
+    pub(crate) app_name: Option<String>,
+    pub(crate) bounds: Option<Rect>,
+    pub(crate) is_focused: bool,
+    pub(crate) is_minimized: bool,
+}
+
+impl WindowRecord {
+    pub(crate) fn public_id(&self) -> WindowId {
+        self.id
+            .map(WindowId::from)
+            .unwrap_or_else(|| synthetic_window_id(self))
+    }
 }
 
 impl From<WindowRecord> for WindowInfo {
     fn from(value: WindowRecord) -> Self {
         Self {
-            id: value
-                .id
-                .map(WindowId::from)
-                .unwrap_or_else(|| synthetic_window_id(&value)),
+            id: value.public_id(),
             title: value.title,
             app_name: value.app_name,
             bounds: value.bounds,
@@ -502,6 +504,26 @@ fn synthetic_window_id(window: &WindowRecord) -> WindowId {
 
 pub(crate) fn is_synthetic_window_id(id: WindowId) -> bool {
     id.0 & SYNTHETIC_WINDOW_ID_MASK != 0
+}
+
+pub(crate) fn list_window_records(app: Option<&str>) -> Result<Vec<WindowRecord>, OperatorError> {
+    let app_literal = serde_json::to_string(&app).map_err(|error| {
+        OperatorError::Platform(format!("failed to encode app filter: {error}"))
+    })?;
+    let script = list_windows_script(&app_literal);
+
+    parse_jxa_json(run_jxa(&script)?)
+}
+
+pub(crate) fn resolve_window_record(id: WindowId) -> Result<WindowRecord, OperatorError> {
+    let windows = list_window_records(None)?;
+    find_window_record(&windows, id)
+        .cloned()
+        .ok_or_else(|| OperatorError::Platform(format!("window {id} not found")))
+}
+
+fn find_window_record(windows: &[WindowRecord], id: WindowId) -> Option<&WindowRecord> {
+    windows.iter().find(|window| window.public_id() == id)
 }
 
 fn parse_jxa_json<T>(json: String) -> Result<T, OperatorError>
@@ -837,9 +859,9 @@ fn command_output(command: &str, output: std::process::Output) -> Result<String,
 
 #[cfg(test)]
 mod tests {
-    use operator_core::WindowInfo;
+    use operator_core::{WindowId, WindowInfo};
 
-    use super::{list_windows_script, WindowRecord, SYNTHETIC_WINDOW_ID_MASK};
+    use super::{find_window_record, list_windows_script, WindowRecord, SYNTHETIC_WINDOW_ID_MASK};
 
     #[test]
     fn missing_native_window_id_uses_stable_synthetic_id() {
@@ -888,6 +910,46 @@ mod tests {
         });
 
         assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn find_window_record_matches_native_and_synthetic_public_ids() {
+        let native = WindowRecord {
+            id: Some(77),
+            pid: Some(10),
+            window_index: 0,
+            ax_identifier: None,
+            title: Some("Native".into()),
+            app_name: Some("Preview".into()),
+            bounds: None,
+            is_focused: false,
+            is_minimized: false,
+        };
+        let synthetic = WindowRecord {
+            id: None,
+            pid: Some(11),
+            window_index: 1,
+            ax_identifier: Some("editor".into()),
+            title: Some("Scratch".into()),
+            app_name: Some("Codex".into()),
+            bounds: None,
+            is_focused: false,
+            is_minimized: false,
+        };
+        let windows = vec![native.clone(), synthetic.clone()];
+
+        assert_eq!(
+            find_window_record(&windows, WindowId::from(77))
+                .unwrap()
+                .title,
+            native.title
+        );
+        assert_eq!(
+            find_window_record(&windows, synthetic.public_id())
+                .unwrap()
+                .app_name,
+            synthetic.app_name
+        );
     }
 
     #[test]
