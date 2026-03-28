@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, Once},
+};
 
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionRequest, ActionSideEffect,
@@ -11,6 +14,8 @@ use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
     PermissionReader, TreeInspector,
 };
+
+const ACTION_EFFECTS_DRY_RUN_ENV: &str = "OPERATOR_ACTION_EFFECTS_DRY_RUN";
 
 #[test]
 fn macos_driver_declares_expected_capabilities() {
@@ -3099,9 +3104,26 @@ enum RecordedInput {
     },
 }
 
-#[derive(Default, Clone)]
+fn enable_action_effects_test_mode() {
+    static INIT: Once = Once::new();
+
+    INIT.call_once(|| {
+        std::env::set_var(ACTION_EFFECTS_DRY_RUN_ENV, "1");
+    });
+}
+
+#[derive(Clone)]
 struct StubInputSynthesizer {
-    calls: std::sync::Arc<Mutex<Vec<RecordedInput>>>,
+    calls: Arc<Mutex<Vec<RecordedInput>>>,
+}
+
+impl Default for StubInputSynthesizer {
+    fn default() -> Self {
+        enable_action_effects_test_mode();
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
 }
 
 impl StubInputSynthesizer {
