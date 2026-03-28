@@ -6,7 +6,10 @@ version.workspace = true
 
 [features]
 default = []
-macos-action-effects = ["operator-bootstrap/macos-action-effects"]
+macos-action-effects = [
+  "operator-bootstrap/macos-action-effects",
+  "operator-platform-macos/action-effects",
+]
 
 [[bin]]
 name = "operator"
@@ -18,6 +21,7 @@ operator-agent = { path = "../operator-agent" }
 operator-bootstrap = { path = "../operator-bootstrap" }
 operator-core = { path = "../operator-core" }
 operator-mcp = { path = "../operator-mcp" }
+operator-platform-macos = { path = "../operator-platform-macos" }
 operator-runtime = { path = "../operator-runtime" }
 serde = { workspace = true }
 serde_json = { workspace = true }

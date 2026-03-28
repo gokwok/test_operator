@@ -12,6 +12,8 @@ mod permissions;
 pub use apps::{AppService, SystemAppService};
 pub use capture::{CaptureProvider, CaptureResult, SystemCaptureProvider};
 pub use driver::MacosDriver;
+#[cfg(feature = "action-effects")]
+pub use effects::try_run_action_effect_helper;
 pub use input::{InputSynthesizer, SystemInputSynthesizer};
 pub use inspect::{InspectResult, SystemTreeInspector, TreeInspector};
 pub use permissions::{PermissionReader, SystemPermissionReader};

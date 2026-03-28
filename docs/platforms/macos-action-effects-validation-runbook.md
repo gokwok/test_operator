@@ -16,13 +16,13 @@
 
 本 runbook 同时覆盖两层验证：
 
-- effect helper 级视觉验证：直接渲染 overlay 并抓取截图，确认特效样式与可见性
+- effect helper 级视觉验证：通过 `operator` 二进制内置的纯 Rust helper 模式直接渲染 overlay，并抓取截图确认特效样式与可见性
 - `operator` CLI 集成验证：通过真实 action 命令确认 macOS driver 已在成功动作后触发 effect facade
 
 ## 验证环境
 
 - 仓库：`/Users/gokwok/code/work/Operator`
-- 分支：`codex/ope-145-keyboard-hud`
+- 分支：`codex/ope-145-pure-rust-effects`
 - Host platform：macOS
 - 运行 target：默认 `macos`
 - 目标应用：`TextEdit`
@@ -44,8 +44,6 @@ rm -rf /tmp/operator-ope145 /tmp/ope145-effects
 mkdir -p /tmp/operator-ope145 /tmp/ope145-effects
 
 cargo build -p operator-cli --bin operator --features macos-action-effects
-swiftc -O -o /tmp/ope145-effects/action_effect_helper \
-  crates/operator-platform-macos/scripts/action_effect.swift
 
 OPERATOR_HOME=/tmp/operator-ope145 target/debug/operator --json permissions
 
@@ -60,27 +58,27 @@ osascript -e 'tell application "TextEdit" to activate' \
 分别执行以下命令，并在每条命令运行期间抓一张全屏截图：
 
 ```bash
-/tmp/ope145-effects/action_effect_helper \
-  '{"kind":"click","point":{"x":735,"y":320},"mode":"double"}'
+OPERATOR_INTERNAL_ACTION_EFFECT_PAYLOAD='{"kind":"click","point":{"x":735,"y":320},"mode":"double"}' \
+  target/debug/operator __operator-macos-action-effect-helper
 
-/tmp/ope145-effects/action_effect_helper \
-  '{"kind":"move","point":{"x":900,"y":650}}'
+OPERATOR_INTERNAL_ACTION_EFFECT_PAYLOAD='{"kind":"move","point":{"x":900,"y":650}}' \
+  target/debug/operator __operator-macos-action-effect-helper
 
-/tmp/ope145-effects/action_effect_helper \
-  '{"kind":"drag","from":{"x":380,"y":540},"to":{"x":1080,"y":520}}'
+OPERATOR_INTERNAL_ACTION_EFFECT_PAYLOAD='{"kind":"drag","from":{"x":380,"y":540},"to":{"x":1080,"y":520}}' \
+  target/debug/operator __operator-macos-action-effect-helper
 
-/tmp/ope145-effects/action_effect_helper \
-  '{"kind":"scroll","point":{"x":1180,"y":320},"dx":0,"dy":-160}'
+OPERATOR_INTERNAL_ACTION_EFFECT_PAYLOAD='{"kind":"scroll","point":{"x":1180,"y":320},"dx":0,"dy":-160}' \
+  target/debug/operator __operator-macos-action-effect-helper
 
-/tmp/ope145-effects/action_effect_helper \
-  '{"kind":"keyboard","label":"cmd+shift+p"}'
+OPERATOR_INTERNAL_ACTION_EFFECT_PAYLOAD='{"kind":"keyboard","label":"cmd+shift+p"}' \
+  target/debug/operator __operator-macos-action-effect-helper
 ```
 
 记录要求：
 
 - `click` 是否显示 ring / ripple
 - `move` 是否显示 trail / 落点 pulse
-- `drag` 是否显示路径、起点、终点与箭头
+- `drag` 是否显示路径、起点、终点
 - `scroll` 是否显示方向 flash
 - `keyboard` 是否显示带标题和主文本的 HUD
 

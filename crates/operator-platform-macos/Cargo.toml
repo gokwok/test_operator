@@ -14,5 +14,11 @@ operator-core = { path = "../operator-core" }
 serde.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.25"
+core-foundation = "0.9"
+core-graphics = "0.23.2"
+objc = "0.2"
+
 [dev-dependencies]
 tokio.workspace = true

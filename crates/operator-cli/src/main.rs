@@ -73,9 +73,29 @@ impl AgentExecutor for RuntimeAgentExecutor {
 }
 
 #[cfg(not(test))]
+fn main() {
+    std::process::exit(process_entry());
+}
+
+#[cfg(not(test))]
+fn process_entry() -> i32 {
+    #[cfg(feature = "macos-action-effects")]
+    match operator_platform_macos::try_run_action_effect_helper() {
+        Ok(Some(code)) => return code,
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    }
+
+    tokio_main()
+}
+
+#[cfg(not(test))]
 #[tokio::main]
-async fn main() {
-    std::process::exit(main_entry().await);
+async fn tokio_main() -> i32 {
+    main_entry().await
 }
 
 #[cfg(not(test))]
