@@ -280,7 +280,7 @@ mod platform {
 
         fn render_click(&self, point: EffectPoint, mode: &str) -> Result<(), OperatorError> {
             let center = self.local_point(point);
-            let accent = click_accent(mode);
+            let accent = effect_accent();
             let soft = accent.with_alpha(0.28);
 
             let ring = add_circle_layer(
@@ -316,7 +316,7 @@ mod platform {
 
         fn render_move(&self, point: EffectPoint) -> Result<(), OperatorError> {
             let center = self.local_point(point);
-            let accent = Rgba::new(0.33, 0.88, 0.94, 0.95);
+            let accent = effect_accent();
             let start = CGPoint::new(center.x - 68.0, center.y + 42.0);
             let trail = add_line_layer(&self.host_layer, start, center, 10.0, accent);
             animate_scale_x(&trail, 0.18, 1.0, MOVE_DURATION, 0.0);
@@ -350,8 +350,8 @@ mod platform {
         fn render_drag(&self, from: EffectPoint, to: EffectPoint) -> Result<(), OperatorError> {
             let from = self.local_point(from);
             let to = self.local_point(to);
-            let path = Rgba::new(0.32, 0.84, 0.66, 0.92);
-            let drop = Rgba::new(1.0, 0.45, 0.35, 0.98);
+            let path = effect_accent().with_alpha(0.92);
+            let drop = effect_accent();
 
             let line = add_line_layer(&self.host_layer, from, to, 10.0, path);
             animate_scale_x(&line, 0.08, 1.0, 0.34, 0.0);
@@ -388,7 +388,7 @@ mod platform {
 
         fn render_scroll(&self, point: EffectPoint, dx: f64, dy: f64) -> Result<(), OperatorError> {
             let center = self.local_point(point);
-            let accent = Rgba::new(0.97, 0.71, 0.23, 0.96);
+            let accent = effect_accent();
             let (unit_x, unit_y) = normalized_vector(dx, -dy);
             let length = ((dx.abs() + dy.abs()) * 0.35).clamp(42.0, 88.0);
             let half = length * 0.48;
@@ -521,12 +521,8 @@ mod platform {
         alignment: &'a str,
     }
 
-    fn click_accent(mode: &str) -> Rgba {
-        match mode {
-            "right" => Rgba::new(0.36, 0.74, 1.0, 0.98),
-            "middle" => Rgba::new(0.35, 0.86, 0.66, 0.98),
-            _ => Rgba::new(1.0, 0.42, 0.35, 0.98),
-        }
+    fn effect_accent() -> Rgba {
+        Rgba::new(1.0, 0.42, 0.35, 0.98)
     }
 
     fn required_point(

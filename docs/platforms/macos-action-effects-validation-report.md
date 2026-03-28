@@ -40,9 +40,9 @@
 | 效果 | 结果 | 证据 |
 | --- | --- | --- |
 | `click effect` | Passed | `/tmp/ope145-effects/click.png` 中可见双击 ring / ripple |
-| `move trail` | Passed | `/tmp/ope145-effects/move.png` 中可见 cyan trail 与落点 pulse |
-| `drag path` | Passed | `/tmp/ope145-effects/drag.png` 中可见绿色路径、起点与终点 ring |
-| `scroll flash` | Passed | `/tmp/ope145-effects/scroll.png` 中可见 amber flash / arrow |
+| `move trail` | Passed | `/tmp/ope145-effects/move.png` 中可见红色 trail 与落点 pulse |
+| `drag path` | Passed | `/tmp/ope145-effects/drag.png` 中可见红色路径、起点与终点 ring |
+| `scroll flash` | Passed | `/tmp/ope145-effects/scroll.png` 中可见红色 flash / bar |
 | `keyboard HUD` | Passed | `/tmp/ope145-effects/keyboard.png` 中可见底部 HUD，标题为 `KEYBOARD`，正文为 `cmd+shift+p` |
 
 ## `operator` CLI 集成验证
