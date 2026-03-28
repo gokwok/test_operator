@@ -551,6 +551,99 @@ const AGENT_HELP: LeafHelp = LeafHelp {
     footer: "",
 };
 
+const SNAPSHOT_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<SNAPSHOT-ID>",
+    about: "Snapshot identifier returned by a previous capture or elements command",
+}];
+
+const ARTIFACT_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<ARTIFACT-ID>",
+    about:
+        "Artifact identifier (e.g. a screenshot filename) returned by a previous capture command",
+}];
+
+const APP_LAUNCH_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<APP>",
+    about: "Application name (e.g. Notes) or bundle ID (e.g. com.apple.Notes)",
+}];
+
+const TYPE_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<TEXT>",
+    about: "Text to type",
+}];
+
+const PRESS_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<KEY>",
+    about: "Key name (e.g. return, escape, tab, space, f1, a, 0)",
+}];
+
+const HOTKEY_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "<KEY>...",
+    about: "Keys to press simultaneously (e.g. command s, control shift z)",
+}];
+
+const CLICK_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--mode left|right|middle|double",
+    about: "Click mode (default: left)",
+}];
+
+const TYPE_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--clear-before",
+        about: "Clear the target field before typing",
+    },
+    CommandHelpEntry {
+        command: "--delay-ms <MS>",
+        about: "Delay between keystrokes in milliseconds",
+    },
+    CommandHelpEntry {
+        command: "--after-key return|tab|escape|delete",
+        about: "Key to press after typing (repeatable)",
+    },
+];
+
+const PRESS_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--count <N>",
+    about: "Number of times to press the key (default: 1)",
+}];
+
+const SCROLL_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--delta-x <DX>",
+        about: "Horizontal scroll delta (positive = right, negative = left)",
+    },
+    CommandHelpEntry {
+        command: "--delta-y <DY>",
+        about: "Vertical scroll delta (positive = down, negative = up)",
+    },
+];
+
+const DRAG_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--duration-ms <MS>",
+        about: "Duration of the drag gesture in milliseconds",
+    },
+    CommandHelpEntry {
+        command: "--steps <N>",
+        about: "Number of interpolation steps along the drag path",
+    },
+    CommandHelpEntry {
+        command: "--modifier command|control|option|shift|function",
+        about: "Hold modifier key during drag (repeatable)",
+    },
+];
+
+const SWIPE_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--duration-ms <MS>",
+        about: "Duration of the swipe gesture in milliseconds",
+    },
+    CommandHelpEntry {
+        command: "--steps <N>",
+        about: "Number of interpolation steps along the swipe path",
+    },
+];
+
 const SURFACE_WINDOW_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "--window-id <ID>",
     about: "ID of the target window (from 'operator window list')",
@@ -585,6 +678,418 @@ const ELEMENTS_FULLSCREEN_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry 
     about: "Display to query (optional, defaults to the active display)",
 }];
 
+const WINDOW_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--app <NAME>",
+    about: "Filter by application name or bundle ID (optional)",
+}];
+
+const WINDOW_FOCUS_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--window-id <ID>",
+    about: "ID of the window to focus (from 'operator window list')",
+}];
+
+const WINDOW_MOVE_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--x <X>",
+        about: "New left edge position in screen points",
+    },
+    CommandHelpEntry {
+        command: "--y <Y>",
+        about: "New top edge position in screen points",
+    },
+];
+
+const WINDOW_RESIZE_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--width <W>",
+        about: "New width in screen points",
+    },
+    CommandHelpEntry {
+        command: "--height <H>",
+        about: "New height in screen points",
+    },
+];
+
+const WINDOW_SET_BOUNDS_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--x <X>",
+        about: "New left edge position in screen points",
+    },
+    CommandHelpEntry {
+        command: "--y <Y>",
+        about: "New top edge position in screen points",
+    },
+    CommandHelpEntry {
+        command: "--width <W>",
+        about: "New width in screen points",
+    },
+    CommandHelpEntry {
+        command: "--height <H>",
+        about: "New height in screen points",
+    },
+];
+
+const INPUT_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--text <TEXT>",
+        about: "Match element by visible text",
+    },
+    CommandHelpEntry {
+        command: "--role <ROLE> [--index <N>]",
+        about: "Match element by accessibility role",
+    },
+    CommandHelpEntry {
+        command: "--snapshot <ID> --element <ELEM-ID>",
+        about: "Match element by snapshot reference",
+    },
+    CommandHelpEntry {
+        command: "--x <X> --y <Y>",
+        about: "Match by screen coordinates",
+    },
+];
+
+const SCROLL_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--text <TEXT>",
+        about: "Scroll near element with this text",
+    },
+    CommandHelpEntry {
+        command: "--role <ROLE> [--index <N>]",
+        about: "Scroll near element with this role",
+    },
+    CommandHelpEntry {
+        command: "--snapshot <ID> --element <ELEM-ID>",
+        about: "Scroll near element from snapshot",
+    },
+    CommandHelpEntry {
+        command: "--x <X> --y <Y>",
+        about: "Scroll at screen coordinates",
+    },
+];
+
+const MOVE_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--text <TEXT>",
+        about: "Move to element with this text",
+    },
+    CommandHelpEntry {
+        command: "--role <ROLE> [--index <N>]",
+        about: "Move to element with this role",
+    },
+    CommandHelpEntry {
+        command: "--snapshot <ID> --element <ELEM-ID>",
+        about: "Move to element from snapshot",
+    },
+    CommandHelpEntry {
+        command: "--x <X> --y <Y>",
+        about: "Move to screen coordinates",
+    },
+];
+
+const DRAG_FROM_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--from-text <TEXT>",
+        about: "Drag from element with this text",
+    },
+    CommandHelpEntry {
+        command: "--from-role <ROLE> [--from-index <N>]",
+        about: "Drag from element with this role",
+    },
+    CommandHelpEntry {
+        command: "--from-snapshot <ID> --from-element <ELEM-ID>",
+        about: "Drag from element in snapshot",
+    },
+    CommandHelpEntry {
+        command: "--from-x <X> --from-y <Y>",
+        about: "Drag from screen coordinates",
+    },
+];
+
+const DRAG_TO_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--to-text <TEXT>",
+        about: "Drag to element with this text",
+    },
+    CommandHelpEntry {
+        command: "--to-role <ROLE> [--to-index <N>]",
+        about: "Drag to element with this role",
+    },
+    CommandHelpEntry {
+        command: "--to-snapshot <ID> --to-element <ELEM-ID>",
+        about: "Drag to element in snapshot",
+    },
+    CommandHelpEntry {
+        command: "--to-x <X> --to-y <Y>",
+        about: "Drag to screen coordinates",
+    },
+];
+
+const SWIPE_FROM_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--from-text <TEXT>",
+        about: "Swipe from element with this text",
+    },
+    CommandHelpEntry {
+        command: "--from-role <ROLE> [--from-index <N>]",
+        about: "Swipe from element with this role",
+    },
+    CommandHelpEntry {
+        command: "--from-snapshot <ID> --from-element <ELEM-ID>",
+        about: "Swipe from element in snapshot",
+    },
+    CommandHelpEntry {
+        command: "--from-x <X> --from-y <Y>",
+        about: "Swipe from screen coordinates",
+    },
+];
+
+const SWIPE_TO_LOCATOR_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--to-text <TEXT>",
+        about: "Swipe to element with this text",
+    },
+    CommandHelpEntry {
+        command: "--to-role <ROLE> [--to-index <N>]",
+        about: "Swipe to element with this role",
+    },
+    CommandHelpEntry {
+        command: "--to-snapshot <ID> --to-element <ELEM-ID>",
+        about: "Swipe to element in snapshot",
+    },
+    CommandHelpEntry {
+        command: "--to-x <X> --to-y <Y>",
+        about: "Swipe to screen coordinates",
+    },
+];
+
+const OPTIONAL_ACTION_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Target application by name or bundle ID",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Target window by ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Target window by title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Target window by index within the app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Target process by PID",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const APP_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Application name or bundle ID",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Window ID belonging to the application",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Window title belonging to the application",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Process ID",
+    },
+];
+
+const WINDOW_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Target the frontmost window of this app",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Target the window with this ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Target the window matching this title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Target the Nth window of the target app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Target the frontmost window of this process",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const WINDOW_CLOSE_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Close the frontmost window of this app",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Close the window with this ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Close the window matching this title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Close the Nth window of the target app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Close the frontmost window of this process",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const WINDOW_MINIMIZE_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Minimize the frontmost window of this app",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Minimize the window with this ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Minimize the window matching this title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Minimize the Nth window of the target app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Minimize the frontmost window of this process",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const WINDOW_MAXIMIZE_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Maximize the frontmost window of this app",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Maximize the window with this ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Maximize the window matching this title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Maximize the Nth window of the target app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Maximize the frontmost window of this process",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const WINDOW_MOVE_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Move the frontmost window of this app",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Move the window with this ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Move the window matching this title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Move the Nth window of the target app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Move the frontmost window of this process",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const WINDOW_RESIZE_TARGET_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--app <NAME>",
+        about: "Resize the frontmost window of this app",
+    },
+    CommandHelpEntry {
+        command: "--window-id <ID>",
+        about: "Resize the window with this ID",
+    },
+    CommandHelpEntry {
+        command: "--window-title <TITLE>",
+        about: "Resize the window matching this title",
+    },
+    CommandHelpEntry {
+        command: "--window-index <N>",
+        about: "Resize the Nth window of the target app",
+    },
+    CommandHelpEntry {
+        command: "--pid <PID>",
+        about: "Resize the frontmost window of this process",
+    },
+    CommandHelpEntry {
+        command: "--focus auto|never",
+        about: "Window focus policy before action (default: auto)",
+    },
+];
+
+const VERIFICATION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--verify focus|window-state|geometry",
+    about: "Post-action verification (repeatable)",
+}];
+
+const WINDOW_STATE_VERIFICATION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--verify window-state",
+    about: "Verify the window is minimized after the action",
+}];
+
+const GEOMETRY_VERIFICATION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--verify geometry",
+    about: "Verify the window geometry after the action",
+}];
+
+const WINDOW_MOVE_VERIFICATION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--verify geometry",
+    about: "Verify the window position after the action",
+}];
+
 const SURFACE_WINDOW_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
     heading: "Options",
     rows: SURFACE_WINDOW_OPTION_ROWS,
@@ -604,6 +1109,306 @@ const ELEMENTS_FULLSCREEN_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection 
     heading: "Options",
     rows: ELEMENTS_FULLSCREEN_OPTION_ROWS,
 }];
+
+const SNAPSHOT_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Arguments",
+    rows: SNAPSHOT_ARGUMENT_ROWS,
+}];
+
+const ARTIFACT_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Arguments",
+    rows: ARTIFACT_ARGUMENT_ROWS,
+}];
+
+const CLICK_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Options",
+        rows: CLICK_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Locator (pick one group)",
+        rows: INPUT_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const TYPE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: TYPE_ARGUMENT_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: TYPE_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Locator (pick one group)",
+        rows: INPUT_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const PRESS_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: PRESS_ARGUMENT_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: PRESS_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const HOTKEY_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: HOTKEY_ARGUMENT_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const SCROLL_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Options",
+        rows: SCROLL_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Locator (pick one group)",
+        rows: SCROLL_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+];
+
+const DRAG_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "From Locator (pick one group, required)",
+        rows: DRAG_FROM_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "To Locator (pick one group, required)",
+        rows: DRAG_TO_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: DRAG_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+];
+
+const SWIPE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "From Locator (pick one group, required)",
+        rows: SWIPE_FROM_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "To Locator (pick one group, required)",
+        rows: SWIPE_TO_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: SWIPE_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+];
+
+const MOVE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Locator (pick one group, required)",
+        rows: MOVE_LOCATOR_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (optional, defaults to frontmost)",
+        rows: OPTIONAL_ACTION_TARGET_ROWS,
+    },
+];
+
+const APP_LAUNCH_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Arguments",
+    rows: APP_LAUNCH_ARGUMENT_ROWS,
+}];
+
+const APP_SWITCH_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Target (pick one, required)",
+        rows: APP_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const APP_LIFECYCLE_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Target (pick one, required)",
+    rows: APP_TARGET_ROWS,
+}];
+
+const APP_QUIT_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Target (pick one, required)",
+        rows: APP_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const WINDOW_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Options",
+    rows: WINDOW_LIST_OPTION_ROWS,
+}];
+
+const WINDOW_FOCUS_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Options",
+        rows: WINDOW_FOCUS_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: VERIFICATION_ROWS,
+    },
+];
+
+const WINDOW_CLOSE_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Target (pick one, required)",
+    rows: WINDOW_CLOSE_TARGET_ROWS,
+}];
+
+const WINDOW_MINIMIZE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Target (pick one, required)",
+        rows: WINDOW_MINIMIZE_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: WINDOW_STATE_VERIFICATION_ROWS,
+    },
+];
+
+const WINDOW_MAXIMIZE_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Target (pick one, required)",
+    rows: WINDOW_MAXIMIZE_TARGET_ROWS,
+}];
+
+const WINDOW_MOVE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Options",
+        rows: WINDOW_MOVE_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (pick one, required)",
+        rows: WINDOW_MOVE_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: WINDOW_MOVE_VERIFICATION_ROWS,
+    },
+];
+
+const WINDOW_RESIZE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Options",
+        rows: WINDOW_RESIZE_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (pick one, required)",
+        rows: WINDOW_RESIZE_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: GEOMETRY_VERIFICATION_ROWS,
+    },
+];
+
+const WINDOW_SET_BOUNDS_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Options",
+        rows: WINDOW_SET_BOUNDS_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Target (pick one, required)",
+        rows: WINDOW_TARGET_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Verification",
+        rows: GEOMETRY_VERIFICATION_ROWS,
+    },
+];
+
+const APP_SWITCH_HELP_ABOUT: &str =
+    "Bring an application to the foreground. Switches to the app's frontmost window.\nUse 'operator window focus' to target a specific window within the app.";
+const PRESS_HELP_ABOUT: &str = "Press a single key, optionally multiple times";
+const SCROLL_HELP_ABOUT: &str = "Scroll by delta at a locator or target";
+const DRAG_HELP_ABOUT: &str = "Drag from one locator to another";
+const SWIPE_HELP_ABOUT: &str = "Swipe from one locator to another";
+const MOVE_HELP_ABOUT: &str = "Move the pointer to a locator or coordinates without clicking";
+const APP_HIDE_HELP_ABOUT: &str = "Hide an application (remove from screen without quitting)";
+
+const PERMISSIONS_HELP: LeafHelp = LeafHelp {
+    usage: "operator permissions [OPTIONS]",
+    about: PERMISSIONS_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &["operator permissions", "operator --json permissions"],
+    footer: "",
+};
+
+const CAPABILITIES_HELP: LeafHelp = LeafHelp {
+    usage: "operator capabilities [OPTIONS]",
+    about: CAPABILITIES_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &["operator capabilities", "operator --json capabilities"],
+    footer: "",
+};
+
+const SHOW_HELP: LeafHelp = LeafHelp {
+    usage: "operator show [OPTIONS]",
+    about: SHOW_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &["operator show", "operator --json show"],
+    footer: "",
+};
 
 const CAPTURE_FRONTMOST_HELP: LeafHelp = LeafHelp {
     usage: "operator capture frontmost [OPTIONS]",
@@ -692,6 +1497,306 @@ const ELEMENTS_FULLSCREEN_HELP: LeafHelp = LeafHelp {
     sections: ELEMENTS_FULLSCREEN_HELP_SECTIONS,
     include_global_runtime_flags: true,
     examples: &["operator elements fullscreen"],
+    footer: "",
+};
+
+const SNAPSHOT_HELP: LeafHelp = LeafHelp {
+    usage: "operator snapshot [OPTIONS] <SNAPSHOT-ID>",
+    about: SNAPSHOT_ABOUT,
+    sections: SNAPSHOT_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator snapshot s_abc123",
+        "operator --json snapshot s_abc123",
+    ],
+    footer: "",
+};
+
+const ARTIFACT_HELP: LeafHelp = LeafHelp {
+    usage: "operator artifact [OPTIONS] <ARTIFACT-ID>",
+    about: ARTIFACT_ABOUT,
+    sections: ARTIFACT_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator artifact capture-1.png",
+        "operator --json artifact capture-1.png",
+    ],
+    footer: "",
+};
+
+const CLICK_HELP: LeafHelp = LeafHelp {
+    usage: "operator click [OPTIONS]",
+    about: INPUT_CLICK_ABOUT,
+    sections: CLICK_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator click --text Save",
+        "operator click --text \"Open File\" --app Finder --verify focus",
+        "operator click --snapshot s_abc123 --element e_7",
+        "operator click --x 200 --y 400",
+        "operator click --role button --index 2 --mode double",
+    ],
+    footer: "",
+};
+
+const TYPE_HELP: LeafHelp = LeafHelp {
+    usage: "operator type [OPTIONS] <TEXT>",
+    about: INPUT_TYPE_ABOUT,
+    sections: TYPE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator type \"hello world\"",
+        "operator type \"search query\" --text \"Search...\" --after-key return",
+        "operator type \"new content\" --role textField --clear-before",
+        "operator type \"slow input\" --delay-ms 50",
+    ],
+    footer: "",
+};
+
+const PRESS_HELP: LeafHelp = LeafHelp {
+    usage: "operator press [OPTIONS] <KEY>",
+    about: PRESS_HELP_ABOUT,
+    sections: PRESS_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator press return",
+        "operator press escape --app Notes",
+        "operator press tab --count 3",
+    ],
+    footer: "",
+};
+
+const HOTKEY_HELP: LeafHelp = LeafHelp {
+    usage: "operator hotkey [OPTIONS] <KEY>...",
+    about: INPUT_HOTKEY_ABOUT,
+    sections: HOTKEY_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator hotkey command s",
+        "operator hotkey command shift z --app TextEdit",
+        "operator hotkey control c",
+    ],
+    footer: "",
+};
+
+const SCROLL_HELP: LeafHelp = LeafHelp {
+    usage: "operator scroll [OPTIONS] --delta-x <DX> --delta-y <DY>",
+    about: SCROLL_HELP_ABOUT,
+    sections: SCROLL_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator scroll --delta-x 0 --delta-y 300",
+        "operator scroll --delta-x 0 --delta-y -200 --app Safari",
+        "operator scroll --delta-x 0 --delta-y 100 --x 400 --y 500",
+    ],
+    footer: "",
+};
+
+const DRAG_HELP: LeafHelp = LeafHelp {
+    usage: "operator drag [OPTIONS]",
+    about: DRAG_HELP_ABOUT,
+    sections: DRAG_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator drag --from-text \"file.txt\" --to-text \"Documents\"",
+        "operator drag --from-x 100 --from-y 200 --to-x 400 --to-y 500",
+        "operator drag --from-snapshot s_abc123 --from-element e_3 --to-snapshot s_abc123 --to-element e_9",
+        "operator drag --from-x 100 --from-y 200 --to-x 400 --to-y 500 --duration-ms 500 --steps 20",
+    ],
+    footer: "",
+};
+
+const SWIPE_HELP: LeafHelp = LeafHelp {
+    usage: "operator swipe [OPTIONS]",
+    about: SWIPE_HELP_ABOUT,
+    sections: SWIPE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator swipe --from-x 200 --from-y 500 --to-x 200 --to-y 100",
+        "operator swipe --from-x 100 --from-y 300 --to-x 600 --to-y 300 --duration-ms 300",
+    ],
+    footer: "",
+};
+
+const MOVE_HELP: LeafHelp = LeafHelp {
+    usage: "operator move [OPTIONS]",
+    about: MOVE_HELP_ABOUT,
+    sections: MOVE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator move --text \"Submit\"",
+        "operator move --x 400 --y 300",
+        "operator move --role button --index 1 --app Safari",
+    ],
+    footer: "",
+};
+
+const APP_LIST_HELP: LeafHelp = LeafHelp {
+    usage: "operator app list [OPTIONS]",
+    about: APP_LIST_ABOUT,
+    sections: &[],
+    include_global_runtime_flags: true,
+    examples: &["operator app list", "operator --json app list"],
+    footer: "",
+};
+
+const APP_LAUNCH_HELP: LeafHelp = LeafHelp {
+    usage: "operator app launch [OPTIONS] <APP>",
+    about: APP_LAUNCH_ABOUT,
+    sections: APP_LAUNCH_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator app launch Notes",
+        "operator app launch com.apple.TextEdit",
+    ],
+    footer: "",
+};
+
+const APP_SWITCH_HELP: LeafHelp = LeafHelp {
+    usage: "operator app switch [OPTIONS]",
+    about: APP_SWITCH_HELP_ABOUT,
+    sections: APP_SWITCH_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator app switch --app TextEdit",
+        "operator app switch --app Safari --verify focus",
+    ],
+    footer: "",
+};
+
+const APP_QUIT_HELP: LeafHelp = LeafHelp {
+    usage: "operator app quit [OPTIONS]",
+    about: APP_QUIT_ABOUT,
+    sections: APP_QUIT_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator app quit --app Notes",
+        "operator app quit --pid 1234",
+    ],
+    footer: "",
+};
+
+const APP_HIDE_HELP: LeafHelp = LeafHelp {
+    usage: "operator app hide [OPTIONS]",
+    about: APP_HIDE_HELP_ABOUT,
+    sections: APP_LIFECYCLE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &["operator app hide --app Notes"],
+    footer: "",
+};
+
+const APP_UNHIDE_HELP: LeafHelp = LeafHelp {
+    usage: "operator app unhide [OPTIONS]",
+    about: APP_UNHIDE_ABOUT,
+    sections: APP_LIFECYCLE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &["operator app unhide --app Notes"],
+    footer: "",
+};
+
+const APP_RELAUNCH_HELP: LeafHelp = LeafHelp {
+    usage: "operator app relaunch [OPTIONS]",
+    about: APP_RELAUNCH_ABOUT,
+    sections: APP_LIFECYCLE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &["operator app relaunch --app Notes"],
+    footer: "",
+};
+
+const WINDOW_LIST_HELP: LeafHelp = LeafHelp {
+    usage: "operator window list [OPTIONS]",
+    about: WINDOW_LIST_ABOUT,
+    sections: WINDOW_LIST_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window list",
+        "operator window list --app TextEdit",
+        "operator --json window list",
+    ],
+    footer: "",
+};
+
+const WINDOW_FOCUS_HELP: LeafHelp = LeafHelp {
+    usage: "operator window focus [OPTIONS] --window-id <ID>",
+    about: WINDOW_FOCUS_ABOUT,
+    sections: WINDOW_FOCUS_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window focus --window-id 42",
+        "operator window focus --window-id 42 --verify focus",
+    ],
+    footer: "",
+};
+
+const WINDOW_CLOSE_HELP: LeafHelp = LeafHelp {
+    usage: "operator window close [OPTIONS]",
+    about: WINDOW_CLOSE_ABOUT,
+    sections: WINDOW_CLOSE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window close --window-id 42",
+        "operator window close --app TextEdit",
+    ],
+    footer: "",
+};
+
+const WINDOW_MINIMIZE_HELP: LeafHelp = LeafHelp {
+    usage: "operator window minimize [OPTIONS]",
+    about: WINDOW_MINIMIZE_ABOUT,
+    sections: WINDOW_MINIMIZE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window minimize --window-id 42",
+        "operator window minimize --app Notes --verify window-state",
+    ],
+    footer: "",
+};
+
+const WINDOW_MAXIMIZE_HELP: LeafHelp = LeafHelp {
+    usage: "operator window maximize [OPTIONS]",
+    about: WINDOW_MAXIMIZE_ABOUT,
+    sections: WINDOW_MAXIMIZE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window maximize --window-id 42",
+        "operator window maximize --app TextEdit",
+    ],
+    footer: "",
+};
+
+const WINDOW_MOVE_HELP: LeafHelp = LeafHelp {
+    usage: "operator window move [OPTIONS] --x <X> --y <Y>",
+    about: WINDOW_MOVE_ABOUT,
+    sections: WINDOW_MOVE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window move --window-id 42 --x 100 --y 50",
+        "operator window move --app TextEdit --x 0 --y 0 --verify geometry",
+    ],
+    footer: "",
+};
+
+const WINDOW_RESIZE_HELP: LeafHelp = LeafHelp {
+    usage: "operator window resize [OPTIONS] --width <W> --height <H>",
+    about: WINDOW_RESIZE_ABOUT,
+    sections: WINDOW_RESIZE_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window resize --window-id 42 --width 1280 --height 800",
+        "operator window resize --app TextEdit --width 900 --height 600 --verify geometry",
+    ],
+    footer: "",
+};
+
+const WINDOW_SET_BOUNDS_HELP: LeafHelp = LeafHelp {
+    usage: "operator window set-bounds [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
+    about: WINDOW_SET_BOUNDS_ABOUT,
+    sections: WINDOW_SET_BOUNDS_HELP_SECTIONS,
+    include_global_runtime_flags: true,
+    examples: &[
+        "operator window set-bounds --window-id 42 --x 0 --y 0 --width 1280 --height 800",
+        "operator window set-bounds --app Notes --x 100 --y 100 --width 800 --height 600 --verify geometry",
+    ],
     footer: "",
 };
 
@@ -1280,6 +2385,8 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
 
     match command_path(args).as_slice() {
         [] => Some(root_help()),
+        ["permissions", ..] => Some(styled_leaf_help(&PERMISSIONS_HELP)),
+        ["capabilities", ..] => Some(styled_leaf_help(&CAPABILITIES_HELP)),
         ["capture"] => Some(styled_group_help(&CAPTURE_GROUP_HELP)),
         ["capture", "frontmost", ..] => Some(styled_leaf_help(&CAPTURE_FRONTMOST_HELP)),
         ["capture", "window", ..] => Some(styled_leaf_help(&CAPTURE_WINDOW_HELP)),
@@ -1290,8 +2397,34 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["elements", "window", ..] => Some(styled_leaf_help(&ELEMENTS_WINDOW_HELP)),
         ["elements", "region", ..] => Some(styled_leaf_help(&ELEMENTS_REGION_HELP)),
         ["elements", "fullscreen", ..] => Some(styled_leaf_help(&ELEMENTS_FULLSCREEN_HELP)),
+        ["snapshot", ..] => Some(styled_leaf_help(&SNAPSHOT_HELP)),
+        ["artifact", ..] => Some(styled_leaf_help(&ARTIFACT_HELP)),
+        ["show", ..] => Some(styled_leaf_help(&SHOW_HELP)),
+        ["click", ..] => Some(styled_leaf_help(&CLICK_HELP)),
+        ["type", ..] => Some(styled_leaf_help(&TYPE_HELP)),
+        ["press", ..] => Some(styled_leaf_help(&PRESS_HELP)),
+        ["hotkey", ..] => Some(styled_leaf_help(&HOTKEY_HELP)),
+        ["scroll", ..] => Some(styled_leaf_help(&SCROLL_HELP)),
+        ["drag", ..] => Some(styled_leaf_help(&DRAG_HELP)),
+        ["swipe", ..] => Some(styled_leaf_help(&SWIPE_HELP)),
+        ["move", ..] => Some(styled_leaf_help(&MOVE_HELP)),
         ["app"] => Some(styled_group_help(&APP_GROUP_HELP)),
+        ["app", "list", ..] => Some(styled_leaf_help(&APP_LIST_HELP)),
+        ["app", "launch", ..] => Some(styled_leaf_help(&APP_LAUNCH_HELP)),
+        ["app", "switch", ..] => Some(styled_leaf_help(&APP_SWITCH_HELP)),
+        ["app", "quit", ..] => Some(styled_leaf_help(&APP_QUIT_HELP)),
+        ["app", "hide", ..] => Some(styled_leaf_help(&APP_HIDE_HELP)),
+        ["app", "unhide", ..] => Some(styled_leaf_help(&APP_UNHIDE_HELP)),
+        ["app", "relaunch", ..] => Some(styled_leaf_help(&APP_RELAUNCH_HELP)),
         ["window"] => Some(styled_group_help(&WINDOW_GROUP_HELP)),
+        ["window", "list", ..] => Some(styled_leaf_help(&WINDOW_LIST_HELP)),
+        ["window", "focus", ..] => Some(styled_leaf_help(&WINDOW_FOCUS_HELP)),
+        ["window", "close", ..] => Some(styled_leaf_help(&WINDOW_CLOSE_HELP)),
+        ["window", "minimize", ..] => Some(styled_leaf_help(&WINDOW_MINIMIZE_HELP)),
+        ["window", "maximize", ..] => Some(styled_leaf_help(&WINDOW_MAXIMIZE_HELP)),
+        ["window", "move", ..] => Some(styled_leaf_help(&WINDOW_MOVE_HELP)),
+        ["window", "resize", ..] => Some(styled_leaf_help(&WINDOW_RESIZE_HELP)),
+        ["window", "set-bounds", ..] => Some(styled_leaf_help(&WINDOW_SET_BOUNDS_HELP)),
         ["mcp", "serve", ..] => Some(styled_leaf_help(&MCP_SERVE_HELP)),
         ["mcp"] => Some(styled_group_help(&MCP_GROUP_HELP)),
         ["agent", ..] => Some(styled_leaf_help(&AGENT_HELP)),
@@ -1819,8 +2952,6 @@ struct InputMoveArgs {
     #[command(flatten)]
     action_target: InputActionTargetArgs,
     #[command(flatten)]
-    verification: ActionVerificationArgs,
-    #[command(flatten)]
     locator: InputLocatorArgs,
 }
 
@@ -1837,7 +2968,6 @@ impl InputMoveArgs {
             insert_serialized(&mut input, "locator", locator)?;
         }
         insert_action_target(&mut input, target_selector, focus_policy)?;
-        insert_verifications(&mut input, self.verification.into_verifications())?;
         Ok(ToolInvocation {
             tool: "move",
             input: Value::Object(input),
@@ -1966,8 +3096,6 @@ struct InputScrollArgs {
     #[command(flatten)]
     action_target: InputActionTargetArgs,
     #[command(flatten)]
-    verification: ActionVerificationArgs,
-    #[command(flatten)]
     locator: InputLocatorArgs,
 }
 
@@ -1979,7 +3107,6 @@ impl InputScrollArgs {
         input.insert("delta_x".into(), Value::from(self.delta_x));
         input.insert("delta_y".into(), Value::from(self.delta_y));
         insert_action_target(&mut input, target_selector, focus_policy)?;
-        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(locator) = self.locator.into_locator()? {
             insert_serialized(&mut input, "locator", locator)?;
         }
@@ -1997,8 +3124,6 @@ struct InputDragArgs {
     common: CommonArgs,
     #[command(flatten)]
     action_target: InputActionTargetArgs,
-    #[command(flatten)]
-    verification: ActionVerificationArgs,
     #[command(flatten)]
     from: DragFromLocatorArgs,
     #[command(flatten)]
@@ -2019,7 +3144,6 @@ impl InputDragArgs {
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
-        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(duration_ms) = self.duration_ms {
             input.insert("duration_ms".into(), Value::from(duration_ms));
         }
@@ -2044,8 +3168,6 @@ struct InputSwipeArgs {
     #[command(flatten)]
     action_target: InputActionTargetArgs,
     #[command(flatten)]
-    verification: ActionVerificationArgs,
-    #[command(flatten)]
     from: DragFromLocatorArgs,
     #[command(flatten)]
     to: DragToLocatorArgs,
@@ -2063,7 +3185,6 @@ impl InputSwipeArgs {
         insert_serialized(&mut input, "from", self.from.into_locator()?)?;
         insert_serialized(&mut input, "to", self.to.into_locator()?)?;
         insert_action_target(&mut input, target_selector, focus_policy)?;
-        insert_verifications(&mut input, self.verification.into_verifications())?;
         if let Some(duration_ms) = self.duration_ms {
             input.insert("duration_ms".into(), Value::from(duration_ms));
         }
@@ -2371,9 +3492,9 @@ enum AppCommand {
     #[command(about = APP_LAUNCH_ABOUT, after_help = APP_LAUNCH_AFTER_HELP)]
     Launch(AppLaunchArgs),
     #[command(about = APP_SWITCH_ABOUT, after_help = APP_SWITCH_AFTER_HELP)]
-    Switch(AppLifecycleArgs),
+    Switch(AppLifecycleVerifiedArgs),
     #[command(about = APP_QUIT_ABOUT)]
-    Quit(AppLifecycleArgs),
+    Quit(AppLifecycleVerifiedArgs),
     #[command(about = APP_RELAUNCH_ABOUT)]
     Relaunch(AppLifecycleArgs),
     #[command(about = APP_HIDE_ABOUT)]
@@ -2440,8 +3561,6 @@ impl AppLaunchArgs {
 struct AppLifecycleArgs {
     #[command(flatten)]
     target: LifecycleTargetArgs,
-    #[command(flatten)]
-    verification: ActionVerificationArgs,
 }
 
 impl AppLifecycleArgs {
@@ -2450,7 +3569,30 @@ impl AppLifecycleArgs {
         tool: &'static str,
         common: CommonArgs,
     ) -> Result<ToolInvocation, String> {
-        lifecycle_action_invocation(tool, common, self.target, self.verification)
+        lifecycle_action_invocation(tool, common, self.target, Vec::new())
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct AppLifecycleVerifiedArgs {
+    #[command(flatten)]
+    target: LifecycleTargetArgs,
+    #[command(flatten)]
+    verification: ActionVerificationArgs,
+}
+
+impl AppLifecycleVerifiedArgs {
+    fn into_invocation(
+        self,
+        tool: &'static str,
+        common: CommonArgs,
+    ) -> Result<ToolInvocation, String> {
+        lifecycle_action_invocation(
+            tool,
+            common,
+            self.target,
+            self.verification.into_verifications(),
+        )
     }
 }
 
@@ -2623,13 +3765,43 @@ impl InputActionTargetArgs {
 
 #[derive(Debug, Clone, Args, Default)]
 struct LifecycleTargetArgs {
-    #[command(flatten)]
-    selector: TargetSelectorArgs,
+    #[arg(long)]
+    app: Option<String>,
+    #[arg(long)]
+    pid: Option<u32>,
+    #[arg(long = "window-id")]
+    window_id: Option<u64>,
+    #[arg(long = "window-title")]
+    window_title: Option<String>,
 }
 
 impl LifecycleTargetArgs {
     fn into_selector(self) -> Result<ActionTargetSelector, String> {
-        self.selector.into_required_selector()
+        let selector_count = [
+            self.app.is_some(),
+            self.pid.is_some(),
+            self.window_id.is_some(),
+            self.window_title.is_some(),
+        ]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count();
+
+        if selector_count > 1 {
+            return Err("target selector flags are mutually exclusive".into());
+        }
+
+        if let Some(app) = self.app {
+            Ok(ActionTargetSelector::App(app))
+        } else if let Some(pid) = self.pid {
+            Ok(ActionTargetSelector::Pid(pid))
+        } else if let Some(window_id) = self.window_id {
+            Ok(ActionTargetSelector::WindowId(WindowId::from(window_id)))
+        } else if let Some(window_title) = self.window_title {
+            Ok(ActionTargetSelector::WindowTitle(window_title))
+        } else {
+            Err("a target selector flag is required".to_string())
+        }
     }
 }
 
@@ -2876,11 +4048,11 @@ fn lifecycle_action_invocation(
     tool: &'static str,
     common: CommonArgs,
     target: LifecycleTargetArgs,
-    verification: ActionVerificationArgs,
+    verifications: Vec<ActionVerification>,
 ) -> Result<ToolInvocation, String> {
     let mut input = common_input(&common);
     insert_serialized(&mut input, "target_selector", target.into_selector()?)?;
-    insert_verifications(&mut input, verification.into_verifications())?;
+    insert_verifications(&mut input, verifications)?;
     Ok(ToolInvocation {
         tool,
         input: Value::Object(input),

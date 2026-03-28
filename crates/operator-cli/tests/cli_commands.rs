@@ -406,27 +406,34 @@ endpoint = "wss://windows-lab.internal"
 #[test]
 fn permissions_help_shows_examples() {
     let help = command_help(["operator", "permissions", "--help"]);
-    assert!(help.contains("Check automation permissions and runtime readiness"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Override the runtime timeout for this command"));
-    assert!(help.contains("Examples\n  operator permissions\n  operator --json permissions"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator permissions [OPTIONS]",
+        "Check automation permissions and runtime readiness",
+        &["operator permissions", "operator --json permissions"],
+    );
 }
 
 #[test]
 fn capabilities_help_shows_examples() {
     let help = command_help(["operator", "capabilities", "--help"]);
-    assert!(help.contains("Show supported surfaces, queries, and actions for the active target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator capabilities\n  operator capabilities --json"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator capabilities [OPTIONS]",
+        "Show supported surfaces, queries, and actions for the active target",
+        &["operator capabilities", "operator --json capabilities"],
+    );
 }
 
 #[test]
 fn show_help_shows_examples() {
     let help = command_help(["operator", "show", "--help"]);
-    assert!(help.contains("Show the currently focused app, window, and element"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Examples\n  operator show\n  operator --json show"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator show [OPTIONS]",
+        "Show the currently focused app, window, and element",
+        &["operator show", "operator --json show"],
+    );
 }
 
 #[test]
@@ -506,32 +513,52 @@ fn elements_help_lists_surface_subcommands() {
 #[test]
 fn snapshot_help_shows_direct_id_usage() {
     let help = command_help(["operator", "snapshot", "--help"]);
-    assert!(help.contains("Usage operator snapshot [OPTIONS] <SNAPSHOT-ID>"));
-    assert!(help.contains("Read a stored snapshot by ID"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator snapshot [OPTIONS] <SNAPSHOT-ID>",
+        "Read a stored snapshot by ID",
+        &[
+            "operator snapshot s_abc123",
+            "operator --json snapshot s_abc123",
+        ],
+    );
+    assert!(help.contains("Arguments"));
     assert!(help.contains("<SNAPSHOT-ID>"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator snapshot s_123"));
 }
 
 #[test]
 fn artifact_help_shows_direct_id_usage() {
     let help = command_help(["operator", "artifact", "--help"]);
-    assert!(help.contains("Usage operator artifact [OPTIONS] <ARTIFACT-ID>"));
-    assert!(help.contains("Read a stored capture artifact by ID"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator artifact [OPTIONS] <ARTIFACT-ID>",
+        "Read a stored capture artifact by ID",
+        &[
+            "operator artifact capture-1.png",
+            "operator --json artifact capture-1.png",
+        ],
+    );
+    assert!(help.contains("Arguments"));
     assert!(help.contains("<ARTIFACT-ID>"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator artifact capture-1.png"));
 }
 
 #[test]
 fn type_help_shows_positional_text_and_after_key() {
     let help = command_help(["operator", "type", "--help"]);
-    assert!(help.contains("Usage operator type [OPTIONS] <TEXT>"));
-    assert!(help.contains("--after-key <AFTER_KEYS>"));
-    assert!(help.contains("--focus <FOCUS>"));
-    assert!(help.contains("Examples\n  operator type \"hello operator\""));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator type [OPTIONS] <TEXT>",
+        "Type text into the focused or resolved target",
+        &[
+            "operator type \"hello world\"",
+            "operator type \"search query\" --text \"Search...\" --after-key return",
+        ],
+    );
+    assert!(help.contains("Arguments"));
+    assert!(help.contains("Locator (pick one group)"));
+    assert!(help.contains("Target (optional, defaults to frontmost)"));
+    assert!(help.contains("--after-key return|tab|escape|delete"));
+    assert!(help.contains("--focus auto|never"));
 }
 
 #[test]
@@ -580,21 +607,31 @@ fn root_help_keeps_global_runtime_flag_descriptions_on_the_same_line() {
 #[test]
 fn window_resize_help_shows_focus_and_verify_flags() {
     let help = command_help(["operator", "window", "resize", "--help"]);
-    assert!(
-        help.contains("Usage operator window resize [OPTIONS] --width <WIDTH> --height <HEIGHT>")
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window resize [OPTIONS] --width <W> --height <H>",
+        "Resize a window",
+        &[
+            "operator window resize --window-id 42 --width 1280 --height 800",
+            "operator window resize --app TextEdit --width 900 --height 600 --verify geometry",
+        ],
     );
-    assert!(help.contains("--focus <FOCUS>"));
-    assert!(help.contains("--verify <VERIFICATIONS>"));
-    assert!(help.contains("Examples\n  operator window resize --window-id 42"));
+    assert!(help.contains("Options"));
+    assert!(help.contains("Target (pick one, required)"));
+    assert!(help.contains("Verification"));
+    assert!(help.contains("--focus auto|never"));
+    assert!(help.contains("--verify geometry"));
 }
 
 #[test]
 fn app_list_help_snapshot_is_stable() {
     let help = command_help(["operator", "app", "list", "--help"]);
-    assert!(help.contains("List all running applications"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator app list"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app list [OPTIONS]",
+        "List all running applications",
+        &["operator app list", "operator --json app list"],
+    );
 }
 
 #[test]
@@ -728,78 +765,362 @@ fn elements_fullscreen_help_snapshot_is_stable() {
 #[test]
 fn snapshot_help_snapshot_is_stable() {
     let help = command_help(["operator", "snapshot", "--help"]);
-    assert!(help.contains("Read a stored snapshot by ID"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator snapshot s_123"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator snapshot [OPTIONS] <SNAPSHOT-ID>",
+        "Read a stored snapshot by ID",
+        &[
+            "operator snapshot s_abc123",
+            "operator --json snapshot s_abc123",
+        ],
+    );
 }
 
 #[test]
 fn artifact_help_snapshot_is_stable() {
     let help = command_help(["operator", "artifact", "--help"]);
-    assert!(help.contains("Read a stored capture artifact by ID"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator artifact capture-1.png"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator artifact [OPTIONS] <ARTIFACT-ID>",
+        "Read a stored capture artifact by ID",
+        &[
+            "operator artifact capture-1.png",
+            "operator --json artifact capture-1.png",
+        ],
+    );
 }
 
 #[test]
 fn click_help_snapshot_is_stable() {
     let help = command_help(["operator", "click", "--help"]);
-    assert!(help.starts_with("Usage operator click"));
-    assert!(
-        help.contains("Usage operator click [OPTIONS]\n\nClick a locator, coordinates, or target")
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator click [OPTIONS]",
+        "Click a locator, coordinates, or target",
+        &[
+            "operator click --text Save",
+            "operator click --text \"Open File\" --app Finder --verify focus",
+        ],
     );
-    assert!(help.contains("Click a locator, coordinates, or target"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("--mode <MODE>"));
+    assert!(help.contains("Locator (pick one group)"));
+    assert!(help.contains("Target (optional, defaults to frontmost)"));
+    assert!(help.contains("Verification"));
+    assert!(help.contains("--mode left|right|middle|double"));
+}
+
+#[test]
+fn press_help_snapshot_is_stable() {
+    let help = command_help(["operator", "press", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator press [OPTIONS] <KEY>",
+        "Press a single key, optionally multiple times",
+        &[
+            "operator press return",
+            "operator press escape --app Notes",
+            "operator press tab --count 3",
+        ],
+    );
+    assert!(help.contains("Arguments"));
+    assert!(help.contains("Verification"));
+}
+
+#[test]
+fn hotkey_help_snapshot_is_stable() {
+    let help = command_help(["operator", "hotkey", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator hotkey [OPTIONS] <KEY>...",
+        "Press a key chord",
+        &[
+            "operator hotkey command s",
+            "operator hotkey command shift z --app TextEdit",
+            "operator hotkey control c",
+        ],
+    );
+    assert!(help.contains("Arguments"));
+    assert!(help.contains("Verification"));
+}
+
+#[test]
+fn scroll_help_snapshot_is_stable() {
+    let help = command_help(["operator", "scroll", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator scroll [OPTIONS] --delta-x <DX> --delta-y <DY>",
+        "Scroll by delta at a locator or target",
+        &[
+            "operator scroll --delta-x 0 --delta-y 300",
+            "operator scroll --delta-x 0 --delta-y -200 --app Safari",
+        ],
+    );
+    assert!(help.contains("Locator (pick one group)"));
+    assert!(help.contains("Target (optional, defaults to frontmost)"));
+    assert!(!help.contains("\nVerification\n"));
+}
+
+#[test]
+fn drag_help_snapshot_is_stable() {
+    let help = command_help(["operator", "drag", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator drag [OPTIONS]",
+        "Drag from one locator to another",
+        &[
+            "operator drag --from-text \"file.txt\" --to-text \"Documents\"",
+            "operator drag --from-x 100 --from-y 200 --to-x 400 --to-y 500",
+        ],
+    );
+    assert!(help.contains("From Locator (pick one group, required)"));
+    assert!(help.contains("To Locator (pick one group, required)"));
+    assert!(!help.contains("\nVerification\n"));
+}
+
+#[test]
+fn swipe_help_snapshot_is_stable() {
+    let help = command_help(["operator", "swipe", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator swipe [OPTIONS]",
+        "Swipe from one locator to another",
+        &[
+            "operator swipe --from-x 200 --from-y 500 --to-x 200 --to-y 100",
+            "operator swipe --from-x 100 --from-y 300 --to-x 600 --to-y 300 --duration-ms 300",
+        ],
+    );
+    assert!(help.contains("From Locator (pick one group, required)"));
+    assert!(help.contains("To Locator (pick one group, required)"));
+}
+
+#[test]
+fn move_help_snapshot_is_stable() {
+    let help = command_help(["operator", "move", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator move [OPTIONS]",
+        "Move the pointer to a locator or coordinates without clicking",
+        &[
+            "operator move --text \"Submit\"",
+            "operator move --x 400 --y 300",
+            "operator move --role button --index 1 --app Safari",
+        ],
+    );
+    assert!(help.contains("Locator (pick one group, required)"));
+    assert!(!help.contains("\nVerification\n"));
 }
 
 #[test]
 fn app_launch_help_snapshot_is_stable() {
     let help = command_help(["operator", "app", "launch", "--help"]);
-    assert!(help.contains("Launch an application by name or bundle identifier"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator app launch Notes"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app launch [OPTIONS] <APP>",
+        "Launch an application by name or bundle identifier",
+        &[
+            "operator app launch Notes",
+            "operator app launch com.apple.TextEdit",
+        ],
+    );
+    assert!(help.contains("Arguments"));
+}
+
+#[test]
+fn app_quit_help_snapshot_is_stable() {
+    let help = command_help(["operator", "app", "quit", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app quit [OPTIONS]",
+        "Quit an application",
+        &[
+            "operator app quit --app Notes",
+            "operator app quit --pid 1234",
+        ],
+    );
+    assert!(help.contains("Target (pick one, required)"));
+    assert!(help.contains("Verification"));
+}
+
+#[test]
+fn app_hide_help_snapshot_is_stable() {
+    let help = command_help(["operator", "app", "hide", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app hide [OPTIONS]",
+        "Hide an application (remove from screen without quitting)",
+        &["operator app hide --app Notes"],
+    );
+    assert!(help.contains("Target (pick one, required)"));
+    assert!(!help.contains("\nVerification\n"));
+}
+
+#[test]
+fn app_unhide_help_snapshot_is_stable() {
+    let help = command_help(["operator", "app", "unhide", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app unhide [OPTIONS]",
+        "Unhide a hidden application",
+        &["operator app unhide --app Notes"],
+    );
+    assert!(help.contains("Target (pick one, required)"));
+}
+
+#[test]
+fn app_relaunch_help_snapshot_is_stable() {
+    let help = command_help(["operator", "app", "relaunch", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app relaunch [OPTIONS]",
+        "Quit and relaunch an application",
+        &["operator app relaunch --app Notes"],
+    );
+    assert!(help.contains("Target (pick one, required)"));
 }
 
 #[test]
 fn app_switch_help_snapshot_is_stable() {
     let help = command_help(["operator", "app", "switch", "--help"]);
-    assert!(help.contains("Bring an application to the foreground"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("--verify <VERIFICATIONS>"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator app switch [OPTIONS]",
+        "Bring an application to the foreground. Switches to the app's frontmost window.",
+        &[
+            "operator app switch --app TextEdit",
+            "operator app switch --app Safari --verify focus",
+        ],
+    );
+    assert!(
+        help.contains("Use 'operator window focus' to target a specific window within the app.")
+    );
+    assert!(help.contains("Target (pick one, required)"));
+    assert!(help.contains("--verify focus|window-state|geometry"));
 }
 
 #[test]
 fn window_focus_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "focus", "--help"]);
-    assert!(help.contains("Bring a specific window to the foreground"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("--verify <VERIFICATIONS>"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window focus [OPTIONS] --window-id <ID>",
+        "Bring a specific window to the foreground",
+        &[
+            "operator window focus --window-id 42",
+            "operator window focus --window-id 42 --verify focus",
+        ],
+    );
+    assert!(help.contains("Verification"));
+    assert!(help.contains("--verify focus|window-state|geometry"));
 }
 
 #[test]
 fn window_resize_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "resize", "--help"]);
-    assert!(help.contains("Resize a window"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("--focus <FOCUS>"));
-    assert!(help.contains("--verify <VERIFICATIONS>"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window resize [OPTIONS] --width <W> --height <H>",
+        "Resize a window",
+        &[
+            "operator window resize --window-id 42 --width 1280 --height 800",
+            "operator window resize --app TextEdit --width 900 --height 600 --verify geometry",
+        ],
+    );
+    assert!(help.contains("--focus auto|never"));
+    assert!(help.contains("--verify geometry"));
+}
+
+#[test]
+fn window_close_help_snapshot_is_stable() {
+    let help = command_help(["operator", "window", "close", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window close [OPTIONS]",
+        "Close a window",
+        &[
+            "operator window close --window-id 42",
+            "operator window close --app TextEdit",
+        ],
+    );
+    assert!(help.contains("Target (pick one, required)"));
+}
+
+#[test]
+fn window_minimize_help_snapshot_is_stable() {
+    let help = command_help(["operator", "window", "minimize", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window minimize [OPTIONS]",
+        "Minimize a window to the Dock",
+        &[
+            "operator window minimize --window-id 42",
+            "operator window minimize --app Notes --verify window-state",
+        ],
+    );
+    assert!(help.contains("Verification"));
+    assert!(help.contains("--verify window-state"));
+}
+
+#[test]
+fn window_maximize_help_snapshot_is_stable() {
+    let help = command_help(["operator", "window", "maximize", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window maximize [OPTIONS]",
+        "Maximize a window to fill the display",
+        &[
+            "operator window maximize --window-id 42",
+            "operator window maximize --app TextEdit",
+        ],
+    );
+    assert!(help.contains("Target (pick one, required)"));
+}
+
+#[test]
+fn window_move_help_snapshot_is_stable() {
+    let help = command_help(["operator", "window", "move", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window move [OPTIONS] --x <X> --y <Y>",
+        "Move a window to new screen coordinates",
+        &[
+            "operator window move --window-id 42 --x 100 --y 50",
+            "operator window move --app TextEdit --x 0 --y 0 --verify geometry",
+        ],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("Verification"));
+}
+
+#[test]
+fn window_set_bounds_help_snapshot_is_stable() {
+    let help = command_help(["operator", "window", "set-bounds", "--help"]);
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window set-bounds [OPTIONS] --x <X> --y <Y> --width <W> --height <H>",
+        "Set the full position and size of a window in one operation",
+        &[
+            "operator window set-bounds --window-id 42 --x 0 --y 0 --width 1280 --height 800",
+            "operator window set-bounds --app Notes --x 100 --y 100 --width 800 --height 600 --verify geometry",
+        ],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("Verification"));
 }
 
 #[test]
 fn window_list_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "list", "--help"]);
-    assert!(help.contains("List application windows"));
-    assert!(help.contains("Select the named runtime target"));
-    assert!(help.contains("Emit machine-readable JSON output"));
-    assert!(help.contains("Examples\n  operator window list"));
+    assert_leaf_help_shape(
+        &help,
+        "Usage operator window list [OPTIONS]",
+        "List application windows",
+        &[
+            "operator window list",
+            "operator window list --app TextEdit",
+            "operator --json window list",
+        ],
+    );
+    assert!(help.contains("Options"));
+    assert!(help.contains("--app <NAME>"));
 }
 
 #[test]
@@ -1432,6 +1753,37 @@ async fn app_switch_command_maps_app_target_selector_to_tool_input() {
 }
 
 #[tokio::test]
+async fn app_switch_command_maps_verification_to_tool_input() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator", "app", "switch", "--app", "Safari", "--verify", "focus",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "switch-app");
+    assert_eq!(
+        invocation.input,
+        json!({
+            "target_selector": {
+                "App": "Safari"
+            },
+            "verifications": ["Focus"]
+        })
+    );
+}
+
+#[test]
+fn app_switch_command_rejects_window_index_target_selector() {
+    let error =
+        cli_main::args::Cli::try_parse_from(["operator", "app", "switch", "--window-index", "1"])
+            .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("unexpected argument '--window-index'"));
+}
+
+#[tokio::test]
 async fn app_quit_command_maps_pid_target_selector_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -1455,6 +1807,36 @@ async fn app_quit_command_maps_pid_target_selector_to_tool_input() {
             }
         })
     );
+}
+
+#[test]
+fn app_hide_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator", "app", "hide", "--app", "Notes", "--verify", "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[test]
+fn app_unhide_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator", "app", "unhide", "--app", "Notes", "--verify", "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[test]
+fn app_relaunch_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator", "app", "relaunch", "--app", "Notes", "--verify", "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
 }
 
 #[tokio::test]
@@ -1481,9 +1863,9 @@ async fn app_relaunch_command_maps_window_title_target_selector_to_tool_input() 
 }
 
 #[tokio::test]
-async fn app_hide_command_maps_window_index_target_selector_to_tool_input() {
+async fn app_hide_command_maps_window_title_target_selector_to_tool_input() {
     let cli =
-        cli_main::args::Cli::try_parse_from(["operator", "app", "hide", "--window-index", "1"])
+        cli_main::args::Cli::try_parse_from(["operator", "app", "hide", "--window-title", "Draft"])
             .unwrap();
 
     let invocation = cli.into_invocation().unwrap();
@@ -1492,7 +1874,7 @@ async fn app_hide_command_maps_window_index_target_selector_to_tool_input() {
         invocation.input,
         json!({
             "target_selector": {
-                "WindowIndex": 1
+                "WindowTitle": "Draft"
             }
         })
     );
@@ -1585,6 +1967,23 @@ async fn scroll_command_maps_locator_and_deltas_to_tool_input() {
 }
 
 #[test]
+fn scroll_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "scroll",
+        "--delta-x",
+        "0",
+        "--delta-y",
+        "-120",
+        "--verify",
+        "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
+#[test]
 fn scroll_command_rejects_incomplete_snapshot_locator() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
@@ -1603,7 +2002,7 @@ fn scroll_command_rejects_incomplete_snapshot_locator() {
 }
 
 #[tokio::test]
-async fn move_command_maps_coordinate_locator_and_verification() {
+async fn move_command_maps_coordinate_locator() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
         "move",
@@ -1615,8 +2014,6 @@ async fn move_command_maps_coordinate_locator_and_verification() {
         "640",
         "--y",
         "480",
-        "--verify",
-        "focus",
     ])
     .unwrap();
 
@@ -1632,10 +2029,19 @@ async fn move_command_maps_coordinate_locator_and_verification() {
                     "x": 640.0,
                     "y": 480.0
                 }
-            },
-            "verifications": ["Focus"]
+            }
         })
     );
+}
+
+#[test]
+fn move_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator", "move", "--x", "640", "--y", "480", "--verify", "focus",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
 }
 
 #[tokio::test]
@@ -1692,6 +2098,17 @@ async fn drag_command_maps_motion_options_to_tool_input() {
     );
 }
 
+#[test]
+fn drag_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator", "drag", "--from-x", "1", "--from-y", "2", "--to-x", "3", "--to-y", "4",
+        "--verify", "geometry",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
+}
+
 #[tokio::test]
 async fn swipe_command_maps_motion_options_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
@@ -1739,6 +2156,17 @@ async fn swipe_command_maps_motion_options_to_tool_input() {
             "steps": 6
         })
     );
+}
+
+#[test]
+fn swipe_command_rejects_verification_flags() {
+    let error = cli_main::args::Cli::try_parse_from([
+        "operator", "swipe", "--from-x", "1", "--from-y", "2", "--to-x", "3", "--to-y", "4",
+        "--verify", "geometry",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("unexpected argument '--verify'"));
 }
 
 #[tokio::test]
@@ -2484,7 +2912,7 @@ fn strip_ansi(input: &str) -> String {
     stripped
 }
 
-fn assert_surface_leaf_help_shape(help: &str, usage: &str, about: &str, examples: &[&str]) {
+fn assert_leaf_help_shape(help: &str, usage: &str, about: &str, examples: &[&str]) {
     assert!(help.contains(usage));
     assert!(help.contains(about));
     assert!(help.contains("Global Runtime Flags"));
@@ -2496,6 +2924,10 @@ fn assert_surface_leaf_help_shape(help: &str, usage: &str, about: &str, examples
     for example in examples {
         assert!(help.contains(example), "missing example: {example}");
     }
+}
+
+fn assert_surface_leaf_help_shape(help: &str, usage: &str, about: &str, examples: &[&str]) {
+    assert_leaf_help_shape(help, usage, about, examples);
 }
 
 fn assert_legacy_command_migration(args: &[&str], legacy: &str, replacement: &str) {
