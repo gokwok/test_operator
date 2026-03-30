@@ -3,6 +3,10 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 use hmdriver_rs::{
     CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry, WindowRect,
@@ -64,6 +68,49 @@ async fn permissions_query_returns_driver_scoped_checks() {
     assert_eq!(
         report.status(HDC_UI_BRIDGE_CHECK_ID),
         Some(PermissionStatus::Denied)
+    );
+}
+
+#[tokio::test]
+async fn permissions_query_times_out_slow_shell_connect_without_waiting_for_full_probe() {
+    let driver = build_driver_with_config(
+        FakeSessionFactory {
+            shell_connect: ProbeOutcome::Sleep(Duration::from_millis(500)),
+            ..Default::default()
+        },
+        DriverConfig::from([
+            ("addr".into(), json!("192.168.8.43:35319")),
+            ("timeout_ms".into(), json!(50_u64)),
+        ]),
+    );
+
+    let started = Instant::now();
+    let result = driver
+        .query(QueryRequest::PermissionsStatus, &exec_context())
+        .await
+        .expect("permissions query should return a report");
+    let elapsed = started.elapsed();
+
+    let QueryResult::Permissions(report) = result else {
+        panic!("expected permissions result");
+    };
+
+    assert!(elapsed < Duration::from_millis(300));
+    assert_eq!(
+        report.status(HDC_CONNECT_CHECK_ID),
+        Some(PermissionStatus::Denied)
+    );
+    assert_eq!(
+        report.status(HDC_SHELL_CHECK_ID),
+        Some(PermissionStatus::NotDetermined)
+    );
+    assert_eq!(
+        report.status(HDC_CAPTURE_CHECK_ID),
+        Some(PermissionStatus::NotDetermined)
+    );
+    assert_eq!(
+        report.status(HDC_UI_BRIDGE_CHECK_ID),
+        Some(PermissionStatus::NotDetermined)
     );
 }
 
@@ -172,12 +219,22 @@ async fn capabilities_query_returns_declared_capability_set() {
 }
 
 fn build_driver(factory: FakeSessionFactory) -> Arc<dyn PlatformDriver> {
+    build_driver_with_config(
+        factory,
+        DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))]),
+    )
+}
+
+fn build_driver_with_config(
+    factory: FakeSessionFactory,
+    driver_config: DriverConfig,
+) -> Arc<dyn PlatformDriver> {
     HarmonyHdcDriverFactory::new_with_session_factory(Arc::new(factory))
         .build(&TargetDescriptor {
             id: TargetId("harmony-pc".into()),
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
-            driver_config: DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))]),
+            driver_config,
         })
         .expect("factory should build harmony driver")
 }
@@ -250,6 +307,7 @@ struct CallCounts {
 enum ProbeOutcome {
     Ok,
     Err(&'static str),
+    Sleep(Duration),
 }
 
 impl Default for ProbeOutcome {
@@ -263,6 +321,10 @@ impl ProbeOutcome {
         match self {
             Self::Ok => Ok(()),
             Self::Err(message) => Err(operator_core::OperatorError::Platform(message.into())),
+            Self::Sleep(duration) => {
+                thread::sleep(duration);
+                Ok(())
+            }
         }
     }
 }

@@ -1,9 +1,3 @@
-use std::path::Path;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
-
 use hmdriver_rs::{CorrelatedWindowList, CurrentApp};
 use operator_core::{
     DriverConfig, ImageSizePx, PermissionStatus, PlatformDriver, Rect, TargetDescriptor, TargetId,
@@ -15,6 +9,11 @@ use operator_platform_harmony::{
 };
 use operator_runtime::PlatformDriverFactory;
 use serde_json::json;
+use std::path::Path;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 #[test]
 fn config_normalizes_defaulted_fields() {
@@ -31,7 +30,7 @@ fn config_normalizes_defaulted_fields() {
 }
 
 #[tokio::test]
-async fn health_check_reuses_cached_shell_and_ui_sessions() {
+async fn health_check_reuses_shell_session_and_reprobes_ui_bridge() {
     let counts = Arc::new(CallCounts::default());
     let driver = build_driver(FakeSessionFactory::success(Arc::clone(&counts)));
 
@@ -57,7 +56,7 @@ async fn health_check_reuses_cached_shell_and_ui_sessions() {
         Some(PermissionStatus::Granted)
     );
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.ui_connects.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.ui_connects.load(Ordering::SeqCst), 2);
     assert_eq!(counts.shell_probes.load(Ordering::SeqCst), 2);
     assert_eq!(counts.capture_probes.load(Ordering::SeqCst), 2);
     assert_eq!(counts.ui_probes.load(Ordering::SeqCst), 2);

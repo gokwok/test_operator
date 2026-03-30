@@ -2,7 +2,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use hmdriver_rs::{CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
@@ -29,7 +29,7 @@ use crate::{
 
 const SHELL_PROBE_COMMAND: &str = "echo operator >/dev/null";
 
-pub trait HarmonyHdcShellSession {
+pub trait HarmonyHdcShellSession: Send {
     fn exec_checked(&mut self, command: &str) -> Result<(), OperatorError>;
     fn screenshot_probe(&mut self) -> Result<(), OperatorError>;
     fn capture_screenshot(&mut self, path: &Path) -> Result<(), OperatorError>;
@@ -243,7 +243,12 @@ impl WorkerState {
     }
 
     fn permission_snapshot(&mut self) -> HarmonyPermissionSnapshot {
-        let connect = match self.ensure_shell_session() {
+        let probe_budget = self.permissions_probe_budget();
+        let started = Instant::now();
+
+        let connect = match self.ensure_shell_session_for_permissions(
+            self.permission_probe_timeout(started, probe_budget, Duration::from_secs(3)),
+        ) {
             Ok(()) => ProbeStatus::granted(),
             Err(error) => {
                 let message = error.to_string();
@@ -256,13 +261,21 @@ impl WorkerState {
             }
         };
 
-        let shell = match self.probe_shell() {
+        let shell = match self.probe_shell_for_permissions(self.permission_probe_timeout(
+            started,
+            probe_budget,
+            Duration::from_secs(1),
+        )) {
             Ok(()) => ProbeStatus::granted(),
             Err(error) => ProbeStatus::denied(error.to_string()),
         };
 
         let capture = if shell.status == PermissionStatus::Granted {
-            match self.probe_capture() {
+            match self.probe_capture_for_permissions(self.permission_probe_timeout(
+                started,
+                probe_budget,
+                Duration::from_secs(1),
+            )) {
                 Ok(()) => ProbeStatus::granted(),
                 Err(error) => ProbeStatus::denied(error.to_string()),
             }
@@ -270,7 +283,11 @@ impl WorkerState {
             ProbeStatus::skipped("skipped because hdc.shell is not ready")
         };
 
-        let ui_bridge = match self.probe_ui() {
+        let ui_bridge = match self.probe_ui_for_permissions(self.permission_probe_timeout(
+            started,
+            probe_budget,
+            probe_budget,
+        )) {
             Ok(()) => ProbeStatus::granted(),
             Err(error) => ProbeStatus::denied(error.to_string()),
         };
@@ -283,6 +300,40 @@ impl WorkerState {
         }
     }
 
+    fn permissions_probe_budget(&self) -> Duration {
+        self.config.timeout().min(Duration::from_secs(9))
+    }
+
+    fn permission_probe_timeout(
+        &self,
+        started: Instant,
+        budget: Duration,
+        cap: Duration,
+    ) -> Duration {
+        let elapsed = started.elapsed();
+        let remaining = budget.saturating_sub(elapsed);
+        if remaining.is_zero() {
+            return Duration::from_millis(1);
+        }
+        remaining.min(cap)
+    }
+
+    fn ensure_shell_session_for_permissions(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<(), OperatorError> {
+        if self.shell_session.is_none() {
+            let factory = Arc::clone(&self.session_factory);
+            let config = self.config.clone();
+            self.shell_session = Some(run_probe_with_timeout(
+                timeout,
+                "hdc shell connect",
+                move || factory.connect_shell(&config),
+            )?);
+        }
+        Ok(())
+    }
+
     fn ensure_shell_session(&mut self) -> Result<(), OperatorError> {
         if self.shell_session.is_none() {
             self.shell_session = Some(self.session_factory.connect_shell(&self.config)?);
@@ -290,41 +341,25 @@ impl WorkerState {
         Ok(())
     }
 
-    fn probe_shell(&mut self) -> Result<(), OperatorError> {
-        self.ensure_shell_session()?;
-        let result = self
-            .shell_session
-            .as_mut()
-            .expect("shell session should be initialized")
-            .exec_checked(SHELL_PROBE_COMMAND);
-        if result.is_err() {
-            self.shell_session = None;
-        }
-        result
+    fn probe_shell_for_permissions(&mut self, timeout: Duration) -> Result<(), OperatorError> {
+        self.with_shell_session_timeout(timeout, "hdc shell probe", |session| {
+            session.exec_checked(SHELL_PROBE_COMMAND)
+        })
     }
 
-    fn probe_capture(&mut self) -> Result<(), OperatorError> {
-        self.ensure_shell_session()?;
-        self.shell_session
-            .as_mut()
-            .expect("shell session should be initialized")
-            .screenshot_probe()
+    fn probe_capture_for_permissions(&mut self, timeout: Duration) -> Result<(), OperatorError> {
+        self.with_shell_session_timeout(timeout, "hdc capture probe", |session| {
+            session.screenshot_probe()
+        })
     }
 
-    fn probe_ui(&mut self) -> Result<(), OperatorError> {
-        if self.ui_session.is_none() {
-            self.ui_session = Some(self.session_factory.connect_ui(&self.config)?);
-        }
-
-        let result = self
-            .ui_session
-            .as_ref()
-            .expect("ui session should be initialized")
-            .check_ready();
-        if result.is_err() {
-            self.ui_session = None;
-        }
-        result
+    fn probe_ui_for_permissions(&mut self, timeout: Duration) -> Result<(), OperatorError> {
+        let factory = Arc::clone(&self.session_factory);
+        let config = self.config.clone();
+        run_probe_with_timeout(timeout, "harmony ui bridge probe", move || {
+            let session = factory.connect_ui(&config)?;
+            session.check_ready()
+        })
     }
 
     fn ensure_ui_session(&mut self) -> Result<(), OperatorError> {
@@ -332,6 +367,42 @@ impl WorkerState {
             self.ui_session = Some(self.session_factory.connect_ui(&self.config)?);
         }
         Ok(())
+    }
+
+    fn with_shell_session_timeout<T>(
+        &mut self,
+        timeout: Duration,
+        label: &'static str,
+        op: impl FnOnce(&mut dyn HarmonyHdcShellSession) -> Result<T, OperatorError> + Send + 'static,
+    ) -> Result<T, OperatorError>
+    where
+        T: Send + 'static,
+    {
+        self.ensure_shell_session_for_permissions(timeout)?;
+
+        let session = self
+            .shell_session
+            .take()
+            .expect("shell session should be initialized");
+        let (tx, rx) = mpsc::channel();
+        let _ = thread::spawn(move || {
+            let mut session = session;
+            let result = op(session.as_mut());
+            let _ = tx.send((session, result));
+        });
+
+        match rx.recv_timeout(timeout) {
+            Ok((session, result)) => {
+                if result.is_ok() {
+                    self.shell_session = Some(session);
+                }
+                result
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(probe_timeout_error(label, timeout)),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(OperatorError::Platform(format!("{label} worker stopped")))
+            }
+        }
     }
 
     fn capture_observe(
@@ -1049,6 +1120,32 @@ fn build_driver(config: &HarmonyHdcConfig) -> Result<Driver, OperatorError> {
     builder
         .connect()
         .map_err(|error| hdc_platform_error("failed to establish hdc session", error))
+}
+
+fn run_probe_with_timeout<T>(
+    timeout: Duration,
+    label: &'static str,
+    op: impl FnOnce() -> Result<T, OperatorError> + Send + 'static,
+) -> Result<T, OperatorError>
+where
+    T: Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    let _ = thread::spawn(move || {
+        let _ = tx.send(op());
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(probe_timeout_error(label, timeout)),
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err(OperatorError::Platform(format!("{label} worker stopped")))
+        }
+    }
+}
+
+fn probe_timeout_error(label: &str, timeout: Duration) -> OperatorError {
+    OperatorError::Platform(format!("{label} timed out after {}ms", timeout.as_millis()))
 }
 
 fn ensure_shell_success(command: &str, result: &ShellResult) -> Result<(), OperatorError> {
