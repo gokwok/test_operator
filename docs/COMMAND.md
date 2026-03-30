@@ -290,8 +290,8 @@ operator
 `app list` 的当前 northbound 语义分成两个显式模式：
 
 - `app list` 与 `app list --running` 等价：
-  - 返回当前正在运行的、可操作的应用列表
-  - macOS 结果来自原生 running application 枚举
+  - 返回当前正在运行、且当前至少拥有一个窗口的可操作应用列表
+  - macOS 结果来自原生 running application 枚举，并用 Core Graphics 窗口 owner 集合过滤
   - 默认排除 `.prohibited` 的 background-only processes
 - `app list --all`：
   - 返回当前系统中所有可操作的应用列表

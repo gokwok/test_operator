@@ -717,6 +717,7 @@ fn app_list_help_snapshot_is_stable() {
     assert!(help.contains("--running"));
     assert!(help.contains("--all"));
     assert!(help.contains("defaults to `--running`"));
+    assert!(help.contains("currently own at least one window"));
 }
 
 #[test]

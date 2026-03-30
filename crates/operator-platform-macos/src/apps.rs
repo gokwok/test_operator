@@ -13,6 +13,18 @@ use cocoa::{
     foundation::{NSAutoreleasePool, NSString},
 };
 #[cfg(target_os = "macos")]
+use core_foundation::{
+    base::{CFType, TCFType},
+    dictionary::CFDictionary,
+    number::CFNumber,
+    string::CFString,
+};
+#[cfg(target_os = "macos")]
+use core_graphics::window::{
+    copy_window_info, kCGNullWindowID, kCGWindowLayer, kCGWindowListExcludeDesktopElements,
+    kCGWindowListOptionAll, kCGWindowOwnerPID,
+};
+#[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
 use operator_core::{AppInfo, AppListMode, FocusInfo, OperatorError, Rect, WindowId, WindowInfo};
 use serde::Deserialize;
@@ -485,6 +497,18 @@ fn list_app_records_native(mode: AppListMode) -> Result<Vec<AppRecord>, Operator
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 unsafe fn list_running_app_records_native_inner() -> Result<Vec<AppRecord>, OperatorError> {
+    let apps = list_workspace_running_app_records_native_inner()?;
+    let window_owner_pids = window_backed_owner_pids()?;
+    Ok(filter_running_apps_to_window_owners(
+        apps,
+        &window_owner_pids,
+    ))
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+unsafe fn list_workspace_running_app_records_native_inner() -> Result<Vec<AppRecord>, OperatorError>
+{
     let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
     if workspace == nil {
         return Err(OperatorError::Platform(
@@ -538,13 +562,63 @@ unsafe fn list_running_app_records_native_inner() -> Result<Vec<AppRecord>, Oper
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 unsafe fn list_all_app_records_native_inner() -> Result<Vec<AppRecord>, OperatorError> {
-    let mut apps = list_running_app_records_native_inner()?;
+    let mut apps = list_workspace_running_app_records_native_inner()?;
 
     for root in application_search_roots() {
         collect_app_bundle_records(&root, &mut apps)?;
     }
 
     Ok(apps)
+}
+
+fn filter_running_apps_to_window_owners(
+    apps: Vec<AppRecord>,
+    window_owner_pids: &HashSet<u32>,
+) -> Vec<AppRecord> {
+    apps.into_iter()
+        .filter(|app| app.pid.is_some_and(|pid| window_owner_pids.contains(&pid)))
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn window_backed_owner_pids() -> Result<HashSet<u32>, OperatorError> {
+    let options = kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements;
+    let windows = copy_window_info(options, kCGNullWindowID).ok_or_else(|| {
+        OperatorError::Platform("failed to enumerate Core Graphics window metadata".into())
+    })?;
+
+    let mut owner_pids = HashSet::new();
+    for value in windows.get_all_values() {
+        let window = unsafe { CFDictionary::<CFString, CFType>::wrap_under_get_rule(value as _) };
+
+        if cf_dictionary_i64(&window, unsafe {
+            CFString::wrap_under_get_rule(kCGWindowLayer)
+        }) != Some(0)
+        {
+            continue;
+        }
+
+        let Some(pid) = cf_dictionary_i64(&window, unsafe {
+            CFString::wrap_under_get_rule(kCGWindowOwnerPID)
+        })
+        .and_then(|pid| u32::try_from(pid).ok())
+        .filter(|pid| *pid > 0) else {
+            continue;
+        };
+
+        owner_pids.insert(pid);
+    }
+
+    Ok(owner_pids)
+}
+
+#[cfg(target_os = "macos")]
+fn cf_dictionary_i64(dictionary: &CFDictionary<CFString, CFType>, key: CFString) -> Option<i64> {
+    dictionary.find(&key).and_then(|value| {
+        value
+            .downcast::<CFNumber>()
+            .and_then(|number| number.to_i64())
+    })
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1158,11 +1232,14 @@ fn command_output(command: &str, output: std::process::Output) -> Result<String,
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use operator_core::{WindowId, WindowInfo};
 
     use super::{
-        app_identity_key, dedupe_app_records, find_window_record, list_windows_script,
-        normalize_app_records, AppIdentityKey, AppRecord, WindowRecord, SYNTHETIC_WINDOW_ID_MASK,
+        app_identity_key, dedupe_app_records, filter_running_apps_to_window_owners,
+        find_window_record, list_windows_script, normalize_app_records, AppIdentityKey, AppRecord,
+        WindowRecord, SYNTHETIC_WINDOW_ID_MASK,
     };
 
     #[test]
@@ -1257,6 +1334,40 @@ mod tests {
         assert_eq!(normalized[1].pid, None);
         assert_eq!(normalized[2].name, "Safari");
         assert_eq!(normalized[2].pid, Some(91));
+    }
+
+    #[test]
+    fn running_app_filter_keeps_only_window_backed_processes() {
+        let filtered = filter_running_apps_to_window_owners(
+            vec![
+                AppRecord {
+                    bundle_id: Some("com.apple.TextEdit".into()),
+                    name: "TextEdit".into(),
+                    pid: Some(101),
+                    is_running: true,
+                    path: Some("/Applications/TextEdit.app".into()),
+                },
+                AppRecord {
+                    bundle_id: Some("com.openai.codex".into()),
+                    name: "Codex".into(),
+                    pid: Some(202),
+                    is_running: true,
+                    path: Some("/Applications/Codex.app".into()),
+                },
+                AppRecord {
+                    bundle_id: Some("com.example.helper".into()),
+                    name: "Helper".into(),
+                    pid: None,
+                    is_running: true,
+                    path: None,
+                },
+            ],
+            &HashSet::from([202]),
+        );
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "Codex");
+        assert_eq!(filtered[0].pid, Some(202));
     }
 
     #[test]

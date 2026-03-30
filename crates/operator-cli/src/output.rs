@@ -90,19 +90,32 @@ fn render_apps(output: &Value) -> String {
         return "no apps".into();
     }
 
-    apps.iter()
+    let heading = if apps
+        .iter()
+        .all(|app| app["is_running"].as_bool().unwrap_or(false))
+    {
+        "Running Applications"
+    } else {
+        "Applications"
+    };
+
+    let rendered = apps
+        .iter()
         .map(|app| {
             let name = app["name"].as_str().unwrap_or("<unknown>");
-            match app["pid"].as_u64() {
-                Some(pid) => format!("{name}\tpid={pid}"),
-                None if app["is_running"].as_bool() == Some(false) => {
-                    format!("{name}\tinstalled")
-                }
-                None => name.to_string(),
-            }
+            let bundle = app["bundle_id"].as_str().unwrap_or("unknown");
+            let status_or_pid = match app["pid"].as_u64() {
+                Some(pid) => format!("PID: {pid}"),
+                None if app["is_running"].as_bool() == Some(false) => "Status: installed".into(),
+                None => "Status: running".into(),
+            };
+
+            format!("  • {name}\n    Bundle: {bundle}\n    {status_or_pid}")
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+
+    format!("{heading} ({}):\n{rendered}", apps.len())
 }
 
 fn render_windows(output: &Value) -> String {
@@ -276,7 +289,57 @@ fn render_number(value: f64) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::render_permissions;
+    use super::{render_apps, render_permissions};
+
+    #[test]
+    fn render_apps_uses_multiline_blocks_for_running_entries() {
+        let output = json!({
+            "apps": [
+                {
+                    "bundle_id": "company.thebrowser.Browser",
+                    "name": "Arc",
+                    "pid": 2366,
+                    "is_running": true
+                },
+                {
+                    "bundle_id": "com.openai.codex",
+                    "name": "Codex",
+                    "pid": 2834,
+                    "is_running": true
+                }
+            ]
+        });
+
+        assert_eq!(
+            render_apps(&output),
+            "Running Applications (2):\n  • Arc\n    Bundle: company.thebrowser.Browser\n    PID: 2366\n  • Codex\n    Bundle: com.openai.codex\n    PID: 2834"
+        );
+    }
+
+    #[test]
+    fn render_apps_marks_non_running_entries_with_status() {
+        let output = json!({
+            "apps": [
+                {
+                    "bundle_id": "com.apple.Calculator",
+                    "name": "Calculator",
+                    "pid": null,
+                    "is_running": false
+                },
+                {
+                    "bundle_id": null,
+                    "name": "Codex",
+                    "pid": 2834,
+                    "is_running": true
+                }
+            ]
+        });
+
+        assert_eq!(
+            render_apps(&output),
+            "Applications (2):\n  • Calculator\n    Bundle: com.apple.Calculator\n    Status: installed\n  • Codex\n    Bundle: unknown\n    PID: 2834"
+        );
+    }
 
     #[test]
     fn render_permissions_includes_system_events_status() {

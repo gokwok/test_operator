@@ -103,7 +103,7 @@ const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "macOS note: `app list` defaults to `--running`. `--running` lists operable running apps, while `--all` scans installed app bundles and marks non-running apps without a pid.";
+    "macOS note: `app list` defaults to `--running`. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid.";
 const WINDOW_LIST_FOOTER: &str =
     "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
 

@@ -816,7 +816,7 @@ Usage: operator app list [OPTIONS]
 List operable applications
 
 Mode (pick one)
-  --running                  List operable applications that are currently running (default)
+  --running                  List operable applications that are currently running with windows (default)
   --all                      List all operable applications visible to the target
 
 Global Runtime Flags
@@ -834,7 +834,7 @@ Examples
 
 Current macOS note:
 - `app list` defaults to `app list --running`.
-- `--running` returns operable running apps on macOS and filters out `.prohibited` background-only processes.
+- `--running` returns operable running apps on macOS that currently own at least one window, and filters out `.prohibited` background-only processes.
 - `--all` scans installed app bundles, merges them with the running set, and marks non-running apps with `is_running = false` and no `pid`.
 
 #### `operator app switch`
