@@ -785,7 +785,7 @@ Usage: operator app [OPTIONS] <COMMAND>
 Manage application lifecycle
 
 Commands
-  list      List running applications
+  list      List running application processes
   launch    Launch an application
   switch    Bring an application to the foreground
   quit      Quit an application
@@ -813,7 +813,7 @@ Use 'operator app <command> --help' for detailed usage.
 ```
 Usage: operator app list [OPTIONS]
 
-List all running applications
+List running application processes
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
@@ -825,6 +825,10 @@ Examples
   operator app list
   operator --json app list
 ```
+
+Current macOS note:
+- `app list` returns running application processes reported by System Events.
+- Helper and background services may appear in the result.
 
 #### `operator app switch`
 
@@ -1026,6 +1030,10 @@ Examples
   operator window list --app TextEdit
   operator --json window list
 ```
+
+Current macOS note:
+- `window list` without `--app` performs a full window enumeration and may be noticeably slower.
+- Prefer `window list --app <APP>` when the target app is already known.
 
 #### `operator window focus`
 

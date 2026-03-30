@@ -1,5 +1,5 @@
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
     process::Command,
 };
@@ -66,7 +66,10 @@ JSON.stringify(apps);
 "#;
 
         let apps: Vec<AppRecord> = parse_jxa_json(run_jxa(script)?)?;
-        Ok(apps.into_iter().map(AppInfo::from).collect())
+        Ok(dedupe_app_records(apps)
+            .into_iter()
+            .map(AppInfo::from)
+            .collect())
     }
 
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError> {
@@ -430,6 +433,13 @@ impl From<AppRecord> for AppInfo {
             is_running: value.is_running,
         }
     }
+}
+
+fn dedupe_app_records(apps: Vec<AppRecord>) -> Vec<AppRecord> {
+    let mut seen = HashSet::new();
+    apps.into_iter()
+        .filter(|app| seen.insert((app.pid, app.bundle_id.clone(), app.name.clone())))
+        .collect()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -906,7 +916,38 @@ fn command_output(command: &str, output: std::process::Output) -> Result<String,
 mod tests {
     use operator_core::{WindowId, WindowInfo};
 
-    use super::{find_window_record, list_windows_script, WindowRecord, SYNTHETIC_WINDOW_ID_MASK};
+    use super::{
+        dedupe_app_records, find_window_record, list_windows_script, AppRecord, WindowRecord,
+        SYNTHETIC_WINDOW_ID_MASK,
+    };
+
+    #[test]
+    fn dedupe_app_records_removes_exact_duplicate_process_entries() {
+        let deduped = dedupe_app_records(vec![
+            AppRecord {
+                bundle_id: Some("com.apple.Safari".into()),
+                name: "Safari".into(),
+                pid: Some(2392),
+                is_running: true,
+            },
+            AppRecord {
+                bundle_id: Some("com.apple.Safari".into()),
+                name: "Safari".into(),
+                pid: Some(2392),
+                is_running: true,
+            },
+            AppRecord {
+                bundle_id: Some("com.apple.Safari".into()),
+                name: "Safari".into(),
+                pid: Some(2450),
+                is_running: true,
+            },
+        ]);
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].pid, Some(2392));
+        assert_eq!(deduped[1].pid, Some(2450));
+    }
 
     #[test]
     fn missing_native_window_id_uses_stable_synthetic_id() {

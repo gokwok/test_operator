@@ -624,7 +624,7 @@ fn app_help_lists_lifecycle_subcommands() {
     let help = command_help(["operator", "app", "--help"]);
     assert!(help.contains("Manage application lifecycle"));
     assert!(help.contains("list"));
-    assert!(help.contains("List all running applications"));
+    assert!(help.contains("List running application processes"));
     assert!(help.contains("launch"));
     assert!(help.contains("Launch an application"));
     assert!(help.contains("Use 'operator app <command> --help' for detailed usage."));
@@ -687,9 +687,10 @@ fn app_list_help_snapshot_is_stable() {
     assert_leaf_help_shape(
         &help,
         "Usage operator app list [OPTIONS]",
-        "List all running applications",
+        "List running application processes",
         &["operator app list", "operator --json app list"],
     );
+    assert!(help.contains("Helper and background services may appear"));
 }
 
 #[test]
@@ -1181,6 +1182,7 @@ fn window_list_help_snapshot_is_stable() {
     );
     assert!(help.contains("Options"));
     assert!(help.contains("--app <NAME>"));
+    assert!(help.contains("Prefer `--app <NAME>`"));
 }
 
 #[test]

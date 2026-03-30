@@ -100,8 +100,12 @@ const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
 const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 
-const APP_LIST_ABOUT: &str = "List all running applications";
+const APP_LIST_ABOUT: &str = "List running application processes";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
+const APP_LIST_FOOTER: &str =
+    "macOS note: app list returns running application processes reported by System Events. Helper and background services may appear.";
+const WINDOW_LIST_FOOTER: &str =
+    "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
 
 const INPUT_CLICK_ABOUT: &str = "Click a locator, coordinates, or target";
 const INPUT_MOVE_ABOUT: &str = "Move the pointer to a locator, coordinates, or target";
@@ -1643,7 +1647,7 @@ const APP_LIST_HELP: LeafHelp = LeafHelp {
     sections: &[],
     include_global_runtime_flags: true,
     examples: &["operator app list", "operator --json app list"],
-    footer: "",
+    footer: APP_LIST_FOOTER,
 };
 
 const APP_LAUNCH_HELP: LeafHelp = LeafHelp {
@@ -1719,7 +1723,7 @@ const WINDOW_LIST_HELP: LeafHelp = LeafHelp {
         "operator window list --app TextEdit",
         "operator --json window list",
     ],
-    footer: "",
+    footer: WINDOW_LIST_FOOTER,
 };
 
 const WINDOW_FOCUS_HELP: LeafHelp = LeafHelp {

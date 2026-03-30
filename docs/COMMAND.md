@@ -287,6 +287,12 @@ operator
 
 - `app launch <bundle-id-or-name>`
 
+`app list` 的当前 northbound 语义按“运行中的应用进程列表”解释：
+
+- macOS 结果来自 System Events 的 application process 枚举
+- helper / background service 可能出现在列表中
+- 它不是严格意义上的“用户可操作应用列表”
+
 ### `window`
 
 窗口相关命令统一收敛到 `window` 家族：
@@ -299,6 +305,11 @@ operator
 - `window move`
 - `window resize`
 - `window set-bounds`
+
+`window list` 在未指定 `--app` 时属于显式全量枚举路径：
+
+- macOS 上这条路径可能明显更慢
+- 已知目标 app 时，应优先使用 `window list --app <APP>`
 
 ### Planned 系统命令
 
