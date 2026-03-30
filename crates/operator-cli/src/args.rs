@@ -103,7 +103,7 @@ const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "macOS note: `app list` defaults to `--running`. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid. `--name` uses case-insensitive contains matching and `--bundle` requires an exact bundle id match.";
+    "macOS note: `app list` defaults to `--running`, but `--name` and `--bundle` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid. `--name` uses case-insensitive contains matching and `--bundle` requires an exact bundle id match.";
 const WINDOW_LIST_FOOTER: &str =
     "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
 
@@ -476,6 +476,7 @@ const APP_LIST_AFTER_HELP: &str = "Examples
   operator app list --running
   operator app list --all
   operator app list --name Cod
+  operator app list --running --bundle com.apple.TextEdit
   operator app list --all --bundle com.apple.TextEdit
   operator --json app list --all";
 
@@ -700,11 +701,12 @@ const WINDOW_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
 const APP_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--running",
-        about: "List operable applications that are currently running (default)",
+        about: "List operable applications that are currently running (default without filters)",
     },
     CommandHelpEntry {
         command: "--all",
-        about: "List all operable applications visible to the target",
+        about:
+            "List all operable applications visible to the target (default with --name/--bundle)",
     },
 ];
 
@@ -1688,6 +1690,7 @@ const APP_LIST_HELP: LeafHelp = LeafHelp {
         "operator app list --running",
         "operator app list --all",
         "operator app list --name Cod",
+        "operator app list --running --bundle com.apple.TextEdit",
         "operator app list --all --bundle com.apple.TextEdit",
         "operator --json app list --all",
     ],
@@ -3606,7 +3609,9 @@ struct AppListArgs {
 impl AppListArgs {
     fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
         let mut input = common_input(&common);
-        let mode = if self.all {
+        let mode = if self.running {
+            AppListMode::Running
+        } else if self.all || self.name.is_some() || self.bundle.is_some() {
             AppListMode::All
         } else {
             AppListMode::Running

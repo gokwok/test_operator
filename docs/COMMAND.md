@@ -300,8 +300,10 @@ operator
 - `app list --name <TEXT>`：
   - 按应用名做包含匹配
   - 当前实现按大小写不敏感的 contains 规则过滤
+  - 如果未显式传 `--running` 或 `--all`，则默认切到 `--all`
 - `app list --bundle <BUNDLE_ID>`：
   - 按 bundle id 做全匹配
+  - 如果未显式传 `--running` 或 `--all`，则默认切到 `--all`
   - 可与 `--running` 或 `--all` 组合使用
 
 ### `window`

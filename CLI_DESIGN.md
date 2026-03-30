@@ -840,6 +840,7 @@ Examples
 
 Current macOS note:
 - `app list` defaults to `app list --running`.
+- `app list --name ...` and `app list --bundle ...` default to the `--all` view unless `--running` is passed explicitly.
 - `--running` returns operable running apps on macOS that currently own at least one window, and filters out `.prohibited` background-only processes.
 - `--all` scans installed app bundles, merges them with the running set, and marks non-running apps with `is_running = false` and no `pid`.
 - `--name` uses case-insensitive contains matching on the application display name.

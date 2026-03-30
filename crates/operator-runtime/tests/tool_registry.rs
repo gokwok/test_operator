@@ -492,7 +492,7 @@ async fn list_apps_tool_forwards_explicit_all_mode() {
 }
 
 #[tokio::test]
-async fn list_apps_tool_forwards_name_and_bundle_filters() {
+async fn list_apps_tool_defaults_filtered_queries_to_all_mode() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
         CapabilitySet::new([Capability::AppLifecycle]),
@@ -531,7 +531,7 @@ async fn list_apps_tool_forwards_name_and_bundle_filters() {
         calls,
         vec![(
             QueryRequest::ListApps {
-                mode: AppListMode::Running,
+                mode: AppListMode::All,
                 filter: AppListFilter {
                     name: Some("Cod".into()),
                     bundle: Some("com.openai.codex".into()),

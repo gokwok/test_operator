@@ -108,7 +108,7 @@ async fn list_apps(
     let result = core
         .query(
             QueryRequest::ListApps {
-                mode: input.mode,
+                mode: input.resolved_mode(),
                 filter: input.filter,
             },
             ctx,
@@ -229,11 +229,22 @@ struct ListAppsToolInput {
     #[serde(flatten)]
     #[schemars(flatten)]
     exec: ToolExecInput,
-    #[serde(default)]
-    mode: AppListMode,
+    mode: Option<AppListMode>,
     #[serde(flatten)]
     #[schemars(flatten)]
     filter: AppListFilter,
+}
+
+impl ListAppsToolInput {
+    fn resolved_mode(&self) -> AppListMode {
+        self.mode.unwrap_or_else(|| {
+            if self.filter.name.is_some() || self.filter.bundle.is_some() {
+                AppListMode::All
+            } else {
+                AppListMode::Running
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

@@ -338,10 +338,7 @@ fn app_list_name_filter_maps_to_list_apps_tool() {
 
     let invocation = cli.into_invocation().unwrap();
     assert_eq!(invocation.tool, "list-apps");
-    assert_eq!(
-        invocation.input,
-        json!({ "mode": "running", "name": "Cod" })
-    );
+    assert_eq!(invocation.input, json!({ "mode": "all", "name": "Cod" }));
 }
 
 #[test]
@@ -350,7 +347,6 @@ fn app_list_bundle_filter_maps_to_list_apps_tool() {
         "operator",
         "app",
         "list",
-        "--all",
         "--bundle",
         "com.apple.TextEdit",
     ])
@@ -361,6 +357,26 @@ fn app_list_bundle_filter_maps_to_list_apps_tool() {
     assert_eq!(
         invocation.input,
         json!({ "mode": "all", "bundle": "com.apple.TextEdit" })
+    );
+}
+
+#[test]
+fn app_list_running_filter_keeps_explicit_running_mode() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "list",
+        "--running",
+        "--bundle",
+        "com.apple.TextEdit",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-apps");
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "running", "bundle": "com.apple.TextEdit" })
     );
 }
 
@@ -744,6 +760,7 @@ fn app_list_help_snapshot_is_stable() {
             "operator app list --running",
             "operator app list --all",
             "operator app list --name Cod",
+            "operator app list --running --bundle com.apple.TextEdit",
             "operator app list --all --bundle com.apple.TextEdit",
             "operator --json app list --all",
         ],
@@ -755,6 +772,7 @@ fn app_list_help_snapshot_is_stable() {
     assert!(help.contains("--name <TEXT>"));
     assert!(help.contains("--bundle <BUNDLE_ID>"));
     assert!(help.contains("defaults to `--running`"));
+    assert!(help.contains("switch the default view to `--all`"));
     assert!(help.contains("currently own at least one window"));
     assert!(help.contains("case-insensitive contains matching"));
 }
