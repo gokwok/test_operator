@@ -1,12 +1,23 @@
 # Harmony HDC 首轮实机验证记录
 
 日期：2026-03-27
+命令面同步：2026-03-30（按当前稳定 shell contract 回写）
 
 对应 Linear issue：`OPE-132`
 
 ## 目的
 
-在真实 Harmony PC 目标上验证 `harmony.hdc` 第一阶段 northbound CLI 能力面，记录本轮实测通过项、当前命令面漂移，以及已知缺口。
+在真实 Harmony PC 目标上验证 `harmony.hdc` 第一阶段 northbound CLI 能力面，记录本轮实测通过项和已知缺口。
+
+说明：
+
+- `OPE-132` 实机验证发生时，CLI 仍处于 redesign 之前的旧命令面。
+- 本文已按 2026-03-30 的当前稳定 shell contract 回写命令名。
+- 如需对照当时的原始调用，旧路径主要为：
+  - `observe frontmost --capture screenshot` -> `capture frontmost`
+  - `list apps` -> `app list`
+  - `list windows` -> `window list`
+  - `input click|type|hotkey` -> `click|type|hotkey`
 
 ## 验证环境
 
@@ -58,46 +69,37 @@ operator --target harmony-pc --timeout-ms 60000 --json capabilities
   - `PointerInput`
   - `WindowQuery`
 
-### 1. `observe frontmost`
+### 1. `capture frontmost`
 
 命令：
 
 ```bash
-operator --target harmony-pc --timeout-ms 60000 --json observe frontmost
-```
-
-结果：
-
-- 当前直接失败，错误为 `capability not supported: InspectTree`
-- 说明 CLI 默认 `observe frontmost` 仍按 `capture=all` 请求 `InspectTree`
-- 这与第一阶段 screenshot-first 预期存在 northbound shell surface 漂移
-
-本轮可工作的替代命令：
-
-```bash
-operator --target harmony-pc --timeout-ms 60000 --json observe frontmost --capture screenshot
+operator --target harmony-pc --timeout-ms 60000 --json capture frontmost
 ```
 
 实测结果：
 
+- `OPE-132` 实机时使用的等价旧命令为 `observe frontmost --capture screenshot`
+- 当前稳定命令面已收敛为 `capture frontmost`，不再要求用户显式传 `--capture screenshot`
 - 成功返回 snapshot：`snapshot-1774602675208023-0`
 - 成功持久化截图 artifact：`capture-1774602673278905-0.jpeg`
 - 返回 `capture_bounds = { x: 1375, y: 317, width: 1594, height: 1586 }`
 - 本轮截图对应前台 Notepad 窗口，而不是整屏桌面
 
-### 2. 应用与窗口查询
+### 2. `app list` / `window list`
 
 命令：
 
 ```bash
-operator --target harmony-pc --timeout-ms 60000 --json list apps
-operator --target harmony-pc --timeout-ms 60000 --json list windows
+operator --target harmony-pc --timeout-ms 60000 --json app list
+operator --target harmony-pc --timeout-ms 60000 --json window list
 ```
 
 结果：
 
-- `list apps` 成功返回运行中的 bundle 列表
-- `list windows` 成功返回窗口列表与 bounds
+- `OPE-132` 实机时对应旧命令分别为 `list apps` 和 `list windows`
+- `app list` 成功返回运行中的 bundle 列表
+- `window list` 成功返回窗口列表与 bounds
 - 本轮在启动 Notepad 之前，前台窗口是 `com.huawei.hmos.browser` / `browser0`
 - 启动 Notepad 后，窗口 `id = 282`、`title = notepad1`、`is_focused = true`
 
@@ -124,21 +126,22 @@ operator --target harmony-pc --timeout-ms 60000 --json app launch com.huawei.hmo
 命令：
 
 ```bash
-operator --target harmony-pc --timeout-ms 60000 --json input click --app com.huawei.hmos.notepad
-operator --target harmony-pc --timeout-ms 60000 --json input type "OPE132 HARMONY VALIDATION 20260327" --app com.huawei.hmos.notepad
-operator --target harmony-pc --timeout-ms 60000 --json input hotkey ctrl a --app com.huawei.hmos.notepad
+operator --target harmony-pc --timeout-ms 60000 --json click --app com.huawei.hmos.notepad
+operator --target harmony-pc --timeout-ms 60000 --json type "OPE132 HARMONY VALIDATION 20260327" --app com.huawei.hmos.notepad
+operator --target harmony-pc --timeout-ms 60000 --json hotkey ctrl a --app com.huawei.hmos.notepad
 ```
 
 结果：
 
-- `input click` 成功，解析到前台 Notepad 窗口中心点 `(2172, 1110)`
-- `input type` 成功，返回 `typed`
-- `input hotkey ctrl a` 成功，返回 `sent hotkey`
+- `OPE-132` 实机时对应旧命令分别为 `input click`、`input type`、`input hotkey`
+- `click` 成功，解析到前台 Notepad 窗口中心点 `(2172, 1110)`
+- `type` 成功，返回 `typed`
+- `hotkey ctrl a` 成功，返回 `sent hotkey`
 - 三个动作都正确回填了 `target_app = com.huawei.hmos.notepad` 与 `target_window = notepad1`
 
 ## 本轮结论
 
 - `harmony.hdc` 第一阶段的查询面、应用启动、以及基于 app/window target 的 `click/type/hotkey` 已经在真实 Harmony PC 上跑通。
-- screenshot-first `observe` 可用，但当前 shell 默认 `observe frontmost` 仍不可直接作为第一阶段稳定命令，需要显式传 `--capture screenshot`。
-- `focus` 及任何 tree-backed hot-path observe 仍不应被视为第一阶段稳定能力。
+- 第一阶段稳定截图路径应视为 `capture frontmost`；`OPE-132` 实机时跑通的是其 redesign 之前的等价旧命令。
+- `show` 与任何 tree-backed `elements` 热路径仍不应被视为第一阶段稳定能力。
 - 更完整的 northbound 状态见 [`docs/platforms/harmony-hdc-support-matrix.md`](./harmony-hdc-support-matrix.md)。
