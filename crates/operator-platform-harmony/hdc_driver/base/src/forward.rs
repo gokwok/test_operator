@@ -66,27 +66,42 @@ pub(crate) fn send_file_via_shell(
     remote_path: &str,
 ) -> Result<()> {
     let bytes = std::fs::read(local_path)?;
-    let encoded = openssl::base64::encode_block(&bytes);
+    send_bytes_via_shell(session, &bytes, remote_path)
+}
+
+pub(crate) fn send_bytes_via_shell(
+    session: &mut Session,
+    bytes: &[u8],
+    remote_path: &str,
+) -> Result<()> {
+    for command in build_send_file_commands(bytes, remote_path)? {
+        session.exec_checked(&command)?;
+    }
+    Ok(())
+}
+
+fn build_send_file_commands(bytes: &[u8], remote_path: &str) -> Result<Vec<String>> {
+    let encoded = openssl::base64::encode_block(bytes);
     let staging_path = format!("{remote_path}.b64");
     let escaped_staging = shell_escape(&staging_path);
     let escaped_remote = shell_escape(remote_path);
 
-    session.exec_checked(&format!("rm -f {escaped_staging} {escaped_remote}"))?;
+    let mut commands = vec![format!("rm -f {escaped_staging} {escaped_remote}")];
     for chunk in encoded.as_bytes().chunks(3072) {
         let chunk = std::str::from_utf8(chunk)
             .map_err(|_| HdcError::protocol("base64 chunk is not valid UTF-8"))?;
-        session.exec_checked(&format!(
+        commands.push(format!(
             "printf %s {} >> {}",
             shell_escape(chunk),
             escaped_staging
-        ))?;
+        ));
     }
-    session.exec_checked(&format!(
+    commands.push(format!(
         "(base64 -d {staging} > {remote} 2>/dev/null || toybox base64 -d {staging} > {remote} 2>/dev/null); ret=$?; rm -f {staging}; exit $ret",
         staging = escaped_staging,
         remote = escaped_remote
-    ))?;
-    Ok(())
+    ));
+    Ok(commands)
 }
 
 fn run_forward_loop(
@@ -308,8 +323,8 @@ fn shell_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_forward_control_payload, build_forward_data_payload, parse_forward_cid,
-        parse_forward_data, shell_escape,
+        build_forward_control_payload, build_forward_data_payload, build_send_file_commands,
+        parse_forward_cid, parse_forward_data, shell_escape,
     };
 
     #[test]
@@ -336,5 +351,31 @@ mod tests {
     #[test]
     fn parse_forward_cid_rejects_short_payloads() {
         assert!(parse_forward_cid(&[1, 2, 3]).is_err());
+    }
+
+    #[test]
+    fn small_payload_generates_single_printf_command() {
+        let commands = build_send_file_commands(b"operator", "/data/local/tmp/agent.so")
+            .expect("commands should build");
+
+        assert_eq!(commands.len(), 3);
+        assert!(commands[0].contains("rm -f"));
+        assert!(commands[1].starts_with("printf %s "));
+        assert!(commands[1].contains("agent.so.b64"));
+        assert!(commands[2].contains("base64 -d"));
+        assert!(commands[2].contains("toybox base64 -d"));
+    }
+
+    #[test]
+    fn large_payload_is_split_into_multiple_printf_commands() {
+        let commands = build_send_file_commands(&vec![0_u8; 3_000], "/data/local/tmp/agent.so")
+            .expect("commands should build");
+
+        let printf_count = commands
+            .iter()
+            .filter(|command| command.starts_with("printf %s "))
+            .count();
+
+        assert_eq!(printf_count, 2);
     }
 }

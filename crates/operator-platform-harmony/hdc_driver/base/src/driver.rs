@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::auth::default_key_dir;
 use crate::error::{HdcError, Result};
-use crate::forward::{TcpForwardHandle, send_file_via_shell};
+use crate::forward::{TcpForwardHandle, send_bytes_via_shell, send_file_via_shell};
 use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
 use crate::swipe::SwipeExt;
@@ -396,6 +396,14 @@ impl Driver {
         remote_path: impl AsRef<str>,
     ) -> Result<()> {
         send_file_via_shell(&mut self.session, local_path.as_ref(), remote_path.as_ref())
+    }
+
+    pub fn send_bytes(
+        &mut self,
+        bytes: impl AsRef<[u8]>,
+        remote_path: impl AsRef<str>,
+    ) -> Result<()> {
+        send_bytes_via_shell(&mut self.session, bytes.as_ref(), remote_path.as_ref())
     }
 
     pub fn forward_tcp(&self, local_port: u16, remote_port: u16) -> Result<TcpForwardHandle> {

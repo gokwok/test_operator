@@ -24,6 +24,7 @@ fn config_normalizes_defaulted_fields() {
     .expect("config should parse");
 
     assert_eq!(config.connect_key(), "192.168.8.43:35319");
+    assert_eq!(config.agent_path(), None);
     assert_eq!(config.remote_agent_path(), "/data/local/tmp/agent.so");
     assert_eq!(config.timeout().as_millis(), 60_000);
     assert_eq!(config.startup_delay().as_millis(), 500);

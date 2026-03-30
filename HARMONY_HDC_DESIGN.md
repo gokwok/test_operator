@@ -191,13 +191,15 @@ driver = "harmony.hdc"
 
 [targets.harmony-pc.driver_config]
 addr = "192.168.8.43:35319"
-connect_key = "pc-01"
-key_dir = "/Users/gokwok/.hdc"
-timeout_ms = 60000
-agent_path = "/absolute/path/to/uitest_agent_v1.1.0.so"
-remote_agent_path = "/data/local/tmp/agent.so"
-startup_delay_ms = 500
+# optional overrides when needed:
+# connect_key = "pc-01"
+# key_dir = "/Users/gokwok/.hdc"
+# timeout_ms = 60000
+# remote_agent_path = "/data/local/tmp/agent.so"
+# startup_delay_ms = 500
 ```
+
+默认 UI agent 由 driver 编译期内嵌；只有在调试或替换 agent 版本时，才需要显式配置 `agent_path`。
 
 CLI / MCP / Agent 仍只通过：
 

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -15,6 +15,10 @@ use crate::types::{Bounds, Coord, DisplayRotation, Point, UiComponentInfo, UiEve
 
 const UITEST_SERVICE_PORT: u16 = 8012;
 const DEFAULT_REMOTE_AGENT_PATH: &str = "/data/local/tmp/agent.so";
+const EMBEDDED_UITEST_AGENT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/uitest/uitest_agent_v1.1.0.so"
+));
 
 #[derive(Debug, Clone)]
 pub struct UiDriverBuilder {
@@ -84,6 +88,12 @@ struct UiSession {
     writer: TcpStream,
 }
 
+#[derive(Debug)]
+enum AgentPayload {
+    File(PathBuf),
+    Embedded(&'static [u8]),
+}
+
 impl UiDriverBuilder {
     pub fn new(target: impl Into<String>) -> Self {
         Self {
@@ -145,10 +155,10 @@ impl UiDriverBuilder {
             driver_builder = driver_builder.version(version);
         }
         let mut driver = driver_builder.connect()?;
-        let agent_path = resolve_agent_path(self.agent_path)?;
+        let agent_payload = resolve_agent_payload(self.agent_path)?;
 
         kill_uitest_daemon(&mut driver)?;
-        push_agent(&mut driver, &agent_path, &self.remote_agent_path)?;
+        push_agent(&mut driver, &agent_payload, &self.remote_agent_path)?;
         start_uitest_daemon(&mut driver)?;
         thread::sleep(self.startup_delay);
 
@@ -997,10 +1007,10 @@ impl UiSession {
     }
 }
 
-fn resolve_agent_path(path: Option<PathBuf>) -> Result<PathBuf> {
+fn resolve_agent_payload(path: Option<PathBuf>) -> Result<AgentPayload> {
     if let Some(path) = path {
         if path.is_file() {
-            return Ok(path);
+            return Ok(AgentPayload::File(path));
         }
         return Err(HdcError::protocol(format!(
             "agent file not found: {}",
@@ -1008,15 +1018,7 @@ fn resolve_agent_path(path: Option<PathBuf>) -> Result<PathBuf> {
         )));
     }
 
-    let candidate =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/uitest/uitest_agent_v1.1.0.so");
-    if candidate.is_file() {
-        Ok(candidate)
-    } else {
-        Err(HdcError::protocol(
-            "failed to locate agent.so, pass an explicit path with UiDriverBuilder::agent_path",
-        ))
-    }
+    Ok(AgentPayload::Embedded(EMBEDDED_UITEST_AGENT))
 }
 
 fn kill_uitest_daemon(driver: &mut Driver) -> Result<()> {
@@ -1034,7 +1036,7 @@ fn kill_uitest_daemon(driver: &mut Driver) -> Result<()> {
     Ok(())
 }
 
-fn push_agent(driver: &mut Driver, local_path: &Path, remote_path: &str) -> Result<()> {
+fn push_agent(driver: &mut Driver, agent_payload: &AgentPayload, remote_path: &str) -> Result<()> {
     let remote_staging_path = format!("{remote_path}.upload");
     let _ = shell_checked(
         driver,
@@ -1044,7 +1046,10 @@ fn push_agent(driver: &mut Driver, local_path: &Path, remote_path: &str) -> Resu
             shell_escape(remote_path)
         ),
     );
-    driver.send_file(local_path, &remote_staging_path)?;
+    match agent_payload {
+        AgentPayload::File(local_path) => driver.send_file(local_path, &remote_staging_path)?,
+        AgentPayload::Embedded(bytes) => driver.send_bytes(*bytes, &remote_staging_path)?,
+    }
     shell_checked(
         driver,
         &format!(
@@ -1141,11 +1146,13 @@ fn read_string_field(value: &Value, key: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SelectorFilter, UiQuery, UiSelector, UiWindow, parse_bounds, parse_point, parse_ui_event,
-        shell_escape,
+        AgentPayload, EMBEDDED_UITEST_AGENT, SelectorFilter, UiQuery, UiSelector, UiWindow,
+        parse_bounds, parse_point, parse_ui_event, resolve_agent_payload, shell_escape,
     };
     use serde_json::json;
-    use std::time::Duration;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn selector_filter_maps_text_to_on_text() {
@@ -1186,6 +1193,46 @@ mod tests {
     #[test]
     fn shell_escape_quotes_single_quotes() {
         assert_eq!(shell_escape("it's"), "'it'\"'\"'s'");
+    }
+
+    #[test]
+    fn default_agent_payload_is_embedded() {
+        match resolve_agent_payload(None).expect("embedded agent should resolve") {
+            AgentPayload::Embedded(bytes) => assert_eq!(bytes, EMBEDDED_UITEST_AGENT),
+            AgentPayload::File(path) => {
+                panic!(
+                    "expected embedded payload, got explicit file {}",
+                    path.display()
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_agent_path_is_preserved() {
+        let path = std::env::temp_dir().join(format!(
+            "operator-agent-{}.so",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be monotonic enough for tests")
+                .as_nanos()
+        ));
+        fs::write(&path, b"agent").expect("temp write should succeed");
+
+        match resolve_agent_payload(Some(path.clone())).expect("path should resolve") {
+            AgentPayload::File(resolved) => assert_eq!(resolved, path),
+            AgentPayload::Embedded(_) => panic!("expected file payload"),
+        }
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn missing_explicit_agent_path_is_rejected() {
+        let error = resolve_agent_payload(Some(PathBuf::from("/tmp/operator-missing-agent.so")))
+            .expect_err("missing path should fail");
+
+        assert!(error.to_string().contains("agent file not found"));
     }
 
     #[test]

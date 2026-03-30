@@ -117,6 +117,7 @@ let mut driver = Driver::builder("192.168.8.43:35319")
 
 - `screenshot(path) -> Result<PathBuf>`
 - `dump_hierarchy() -> Result<serde_json::Value>`
+- `send_bytes(bytes, remote_path) -> Result<()>`
 - `send_file(local_path, remote_path) -> Result<()>`
 - `forward_tcp(local_port, remote_port) -> Result<TcpForwardHandle>`
 
@@ -160,9 +161,9 @@ let ui = UiDriver::builder("192.168.8.43:35319")
 - `startup_delay(Duration) -> Self`
 - `connect() -> Result<UiDriver>`
 
-默认情况下，`UiDriverBuilder` 会在仓库内查找：
+默认情况下，`UiDriverBuilder` 使用编译期内嵌的 `uitest_agent_v1.1.0.so`。
 
-- `assets/uitest/uitest_agent_v1.1.0.so`
+只有在需要覆盖内置 agent 时，才需要显式传 `agent_path(...)`。
 
 ### UiDriver 方法
 

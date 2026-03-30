@@ -195,6 +195,7 @@ mod tests {
         let parsed = HarmonyHdcConfig::try_from(&config).expect("config should parse");
 
         assert_eq!(parsed.connect_key(), "192.168.8.43:35319");
+        assert_eq!(parsed.agent_path(), None);
         assert_eq!(parsed.remote_agent_path(), "/data/local/tmp/agent.so");
         assert_eq!(parsed.timeout().as_millis(), 60_000);
         assert_eq!(parsed.startup_delay().as_millis(), 500);
