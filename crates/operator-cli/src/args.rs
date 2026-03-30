@@ -103,7 +103,7 @@ const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 const APP_LIST_ABOUT: &str = "List running application processes";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "macOS note: app list returns running application processes reported by System Events. Helper and background services may appear.";
+    "macOS note: app list uses the native running-application list. Helper and background services may still appear.";
 const WINDOW_LIST_FOOTER: &str =
     "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
 

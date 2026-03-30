@@ -290,7 +290,7 @@ mod tests {
                         "id": "system_events",
                         "label": "System Events",
                         "status": "Granted",
-                        "message": "System Events access is required for macOS app and window queries."
+                        "message": "System Events access is required for macOS window queries and focus reads."
                     },
                     {
                         "id": "screen_recording",
@@ -323,7 +323,7 @@ mod tests {
                         "id": "system_events",
                         "label": "System Events",
                         "status": "Denied",
-                        "message": "System Events access is required for macOS app and window queries."
+                        "message": "System Events access is required for macOS window queries and focus reads."
                     },
                     {
                         "id": "screen_recording",
@@ -337,7 +337,7 @@ mod tests {
 
         assert_eq!(
             render_permissions(&output),
-            "Accessibility: Granted\nSystem Events: Denied\nScreen Recording: Granted\nnote: System Events access is required for macOS app and window queries."
+            "Accessibility: Granted\nSystem Events: Denied\nScreen Recording: Granted\nnote: System Events access is required for macOS window queries and focus reads."
         );
     }
 }

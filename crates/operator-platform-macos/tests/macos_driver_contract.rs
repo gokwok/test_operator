@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, Once},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, Once,
+    },
 };
 
 use operator_core::{
@@ -501,6 +504,43 @@ async fn list_apps_and_windows_queries_forward_to_services() {
         driver.app_service().last_window_filter(),
         Some("TextEdit".to_string())
     );
+}
+
+#[tokio::test]
+async fn list_apps_query_bypasses_system_events_permission_probe() {
+    let permissions = CountingPermissionReader::with_report(macos_permissions_report(
+        PermissionStatus::Denied,
+        PermissionStatus::Denied,
+        PermissionStatus::Denied,
+    ));
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            ..Default::default()
+        },
+        permissions.clone(),
+    );
+
+    let apps = driver
+        .query(QueryRequest::ListApps, &exec_context())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        apps,
+        QueryResult::Apps(vec![AppInfo {
+            bundle_id: Some("com.apple.TextEdit".into()),
+            name: "TextEdit".into(),
+            pid: Some(101),
+            is_running: true,
+        }])
+    );
+    assert_eq!(permissions.call_count(), 0);
 }
 
 #[tokio::test]
@@ -2851,7 +2891,7 @@ async fn health_check_requires_system_events_for_app_and_window_queries() {
     assert!(!health.healthy);
     assert_eq!(
         health.message.as_deref(),
-        Some("System Events access is required for macOS app and window queries.")
+        Some("System Events access is required for macOS window queries and focus reads.")
     );
     assert_eq!(
         health.permissions.status("system_events"),
@@ -2877,7 +2917,7 @@ async fn list_windows_query_requires_system_events_readiness() {
 
     assert_eq!(
         error.to_string(),
-        "permission denied: System Events access is required for macOS app and window queries."
+        "permission denied: System Events access is required for macOS window queries and focus reads."
     );
 }
 
@@ -3156,6 +3196,32 @@ impl PermissionReader for StubPermissionReader {
     }
 }
 
+#[derive(Clone)]
+struct CountingPermissionReader {
+    report: PermissionsReport,
+    calls: Arc<AtomicUsize>,
+}
+
+impl CountingPermissionReader {
+    fn with_report(report: PermissionsReport) -> Self {
+        Self {
+            report,
+            calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn call_count(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl PermissionReader for CountingPermissionReader {
+    fn current_permissions(&self) -> Result<PermissionsReport, OperatorError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.report.clone())
+    }
+}
+
 fn macos_permissions_report(
     accessibility: PermissionStatus,
     system_events: PermissionStatus,
@@ -3164,8 +3230,9 @@ fn macos_permissions_report(
     PermissionsReport::new([
         PermissionCheck::new("accessibility", "Accessibility", accessibility)
             .with_message("Accessibility permission is required for macOS automation."),
-        PermissionCheck::new("system_events", "System Events", system_events)
-            .with_message("System Events access is required for macOS app and window queries."),
+        PermissionCheck::new("system_events", "System Events", system_events).with_message(
+            "System Events access is required for macOS window queries and focus reads.",
+        ),
         PermissionCheck::new("screen_recording", "Screen Recording", screen_recording)
             .with_message("Screen Recording permission is required for macOS capture."),
     ])

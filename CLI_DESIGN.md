@@ -827,7 +827,7 @@ Examples
 ```
 
 Current macOS note:
-- `app list` returns running application processes reported by System Events.
+- `app list` returns the native running-application list on macOS.
 - Helper and background services may appear in the result.
 
 #### `operator app switch`

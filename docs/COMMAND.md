@@ -289,7 +289,7 @@ operator
 
 `app list` 的当前 northbound 语义按“运行中的应用进程列表”解释：
 
-- macOS 结果来自 System Events 的 application process 枚举
+- macOS 结果来自原生 running application 枚举
 - helper / background service 可能出现在列表中
 - 它不是严格意义上的“用户可操作应用列表”
 

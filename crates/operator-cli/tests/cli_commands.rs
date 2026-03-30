@@ -690,7 +690,8 @@ fn app_list_help_snapshot_is_stable() {
         "List running application processes",
         &["operator app list", "operator --json app list"],
     );
-    assert!(help.contains("Helper and background services may appear"));
+    assert!(help.contains("native running-application list"));
+    assert!(help.contains("Helper and background services may still appear"));
 }
 
 #[test]

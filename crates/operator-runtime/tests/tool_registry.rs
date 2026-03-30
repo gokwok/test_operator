@@ -333,7 +333,9 @@ async fn read_only_query_tools_forward_runtime_results() {
         PermissionCheck::new("accessibility", "Accessibility", PermissionStatus::Denied)
             .with_message("Accessibility permission is required for macOS automation."),
         PermissionCheck::new("system_events", "System Events", PermissionStatus::Granted)
-            .with_message("System Events access is required for macOS app and window queries."),
+            .with_message(
+                "System Events access is required for macOS window queries and focus reads.",
+            ),
         PermissionCheck::new(
             "screen_recording",
             "Screen Recording",

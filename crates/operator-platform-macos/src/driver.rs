@@ -251,11 +251,7 @@ where
         _ctx: &ExecContext,
     ) -> Result<QueryResult, OperatorError> {
         match req {
-            QueryRequest::ListApps => {
-                let permissions = self.permission_reader.current_permissions()?;
-                require_system_events_permission(&permissions)?;
-                Ok(QueryResult::Apps(self.app_service.list_apps()?))
-            }
+            QueryRequest::ListApps => Ok(QueryResult::Apps(self.app_service.list_apps()?)),
             QueryRequest::ListWindows { app } => Ok(QueryResult::Windows({
                 let permissions = self.permission_reader.current_permissions()?;
                 require_system_events_permission(&permissions)?;
@@ -1389,7 +1385,7 @@ fn require_system_events_permission(
 ) -> Result<(), OperatorError> {
     if permission_status(permissions, SYSTEM_EVENTS_CHECK_ID) != PermissionStatus::Granted {
         return Err(OperatorError::PermissionDenied(
-            "System Events access is required for macOS app and window queries.".into(),
+            "System Events access is required for macOS window queries and focus reads.".into(),
         ));
     }
 

@@ -1,9 +1,17 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
+    ffi::CStr,
     hash::{Hash, Hasher},
     process::Command,
 };
 
+#[cfg(target_os = "macos")]
+use cocoa::{
+    base::{id, nil, NO},
+    foundation::NSAutoreleasePool,
+};
+#[cfg(target_os = "macos")]
+use objc::{class, msg_send, sel, sel_impl};
 use operator_core::{AppInfo, FocusInfo, OperatorError, Rect, WindowId, WindowInfo};
 use serde::Deserialize;
 
@@ -50,26 +58,7 @@ pub struct SystemAppService;
 
 impl AppService for SystemAppService {
     fn list_apps(&self) -> Result<Vec<AppInfo>, OperatorError> {
-        let script = r#"
-const systemEvents = Application("System Events");
-const apps = systemEvents.applicationProcesses().map(function(process) {
-  return {
-    bundle_id: typeof process.bundleIdentifier === "function"
-      ? process.bundleIdentifier()
-      : null,
-    name: process.name(),
-    pid: process.unixId(),
-    is_running: true
-  };
-});
-JSON.stringify(apps);
-"#;
-
-        let apps: Vec<AppRecord> = parse_jxa_json(run_jxa(script)?)?;
-        Ok(dedupe_app_records(apps)
-            .into_iter()
-            .map(AppInfo::from)
-            .collect())
+        Ok(normalize_app_records(list_app_records_native()?))
     }
 
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError> {
@@ -435,11 +424,102 @@ impl From<AppRecord> for AppInfo {
     }
 }
 
+fn normalize_app_records(apps: Vec<AppRecord>) -> Vec<AppInfo> {
+    let mut normalized: Vec<_> = dedupe_app_records(apps)
+        .into_iter()
+        .map(AppInfo::from)
+        .collect();
+    normalized.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.pid.cmp(&right.pid))
+            .then_with(|| left.bundle_id.cmp(&right.bundle_id))
+    });
+    normalized
+}
+
 fn dedupe_app_records(apps: Vec<AppRecord>) -> Vec<AppRecord> {
     let mut seen = HashSet::new();
     apps.into_iter()
         .filter(|app| seen.insert((app.pid, app.bundle_id.clone(), app.name.clone())))
         .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn list_app_records_native() -> Result<Vec<AppRecord>, OperatorError> {
+    let pool = unsafe { NSAutoreleasePool::new(nil) };
+    let apps = unsafe { list_app_records_native_inner() };
+    unsafe { pool.drain() };
+    apps
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+unsafe fn list_app_records_native_inner() -> Result<Vec<AppRecord>, OperatorError> {
+    let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
+    if workspace == nil {
+        return Err(OperatorError::Platform(
+            "failed to access shared NSWorkspace instance".into(),
+        ));
+    }
+
+    let running_apps: id = msg_send![workspace, runningApplications];
+    if running_apps == nil {
+        return Ok(Vec::new());
+    }
+
+    let count: usize = msg_send![running_apps, count];
+    let mut apps = Vec::with_capacity(count);
+
+    for index in 0..count {
+        let app: id = msg_send![running_apps, objectAtIndex: index];
+        if app == nil {
+            continue;
+        }
+
+        let is_terminated: bool = msg_send![app, isTerminated];
+        if is_terminated != NO {
+            continue;
+        }
+
+        let Some(name) = nsstring_to_string(msg_send![app, localizedName]) else {
+            continue;
+        };
+        let bundle_id = nsstring_to_string(msg_send![app, bundleIdentifier]);
+        let pid: i32 = msg_send![app, processIdentifier];
+
+        apps.push(AppRecord {
+            bundle_id,
+            name,
+            pid: (pid > 0).then_some(pid as u32),
+            is_running: true,
+        });
+    }
+
+    Ok(apps)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn list_app_records_native() -> Result<Vec<AppRecord>, OperatorError> {
+    Err(OperatorError::Platform(
+        "native app listing is only supported on macOS".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+unsafe fn nsstring_to_string(value: id) -> Option<String> {
+    if value == nil {
+        return None;
+    }
+
+    let utf8: *const std::os::raw::c_char = msg_send![value, UTF8String];
+    if utf8.is_null() {
+        return None;
+    }
+
+    Some(CStr::from_ptr(utf8).to_string_lossy().into_owned())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -917,8 +997,8 @@ mod tests {
     use operator_core::{WindowId, WindowInfo};
 
     use super::{
-        dedupe_app_records, find_window_record, list_windows_script, AppRecord, WindowRecord,
-        SYNTHETIC_WINDOW_ID_MASK,
+        dedupe_app_records, find_window_record, list_windows_script, normalize_app_records,
+        AppRecord, WindowRecord, SYNTHETIC_WINDOW_ID_MASK,
     };
 
     #[test]
@@ -947,6 +1027,38 @@ mod tests {
         assert_eq!(deduped.len(), 2);
         assert_eq!(deduped[0].pid, Some(2392));
         assert_eq!(deduped[1].pid, Some(2450));
+    }
+
+    #[test]
+    fn normalize_app_records_sorts_by_name_then_pid_then_bundle_id() {
+        let normalized = normalize_app_records(vec![
+            AppRecord {
+                bundle_id: Some("com.apple.notes.helper".into()),
+                name: "Notes".into(),
+                pid: Some(52),
+                is_running: true,
+            },
+            AppRecord {
+                bundle_id: Some("com.apple.Safari".into()),
+                name: "Safari".into(),
+                pid: Some(91),
+                is_running: true,
+            },
+            AppRecord {
+                bundle_id: Some("com.apple.notes".into()),
+                name: "Notes".into(),
+                pid: Some(17),
+                is_running: true,
+            },
+        ]);
+
+        assert_eq!(normalized.len(), 3);
+        assert_eq!(normalized[0].name, "Notes");
+        assert_eq!(normalized[0].pid, Some(17));
+        assert_eq!(normalized[1].name, "Notes");
+        assert_eq!(normalized[1].pid, Some(52));
+        assert_eq!(normalized[2].name, "Safari");
+        assert_eq!(normalized[2].pid, Some(91));
     }
 
     #[test]

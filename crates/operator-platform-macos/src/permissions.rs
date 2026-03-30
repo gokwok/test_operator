@@ -12,7 +12,7 @@ const SCREEN_RECORDING_LABEL: &str = "Screen Recording";
 
 const ACCESSIBILITY_MESSAGE: &str = "Accessibility permission is required for macOS automation.";
 const SYSTEM_EVENTS_MESSAGE: &str =
-    "System Events access is required for macOS app and window queries.";
+    "System Events access is required for macOS window queries and focus reads.";
 const SCREEN_RECORDING_MESSAGE: &str = "Screen Recording permission is required for macOS capture.";
 
 pub trait PermissionReader: Send + Sync {
