@@ -1,5 +1,6 @@
 use operator_core::{
-    AppListMode, Capability, CapabilitySet, OperatorError, QueryRequest, QueryResult,
+    AppInfo, AppListFilter, AppListMode, Capability, CapabilitySet, OperatorError, QueryRequest,
+    QueryResult,
 };
 
 use crate::{
@@ -15,15 +16,17 @@ pub(crate) async fn query(
     match req {
         QueryRequest::ListApps {
             mode: AppListMode::Running,
+            filter,
         } => {
             let report = worker.query_apps().await?;
-            Ok(QueryResult::Apps(normalize_apps(
-                report.bundles,
-                report.current_app,
+            Ok(QueryResult::Apps(filter_app_infos(
+                normalize_apps(report.bundles, report.current_app),
+                &filter,
             )))
         }
         QueryRequest::ListApps {
             mode: AppListMode::All,
+            ..
         } => Err(OperatorError::Platform(
             "app list --all is not supported for Harmony targets".into(),
         )),
@@ -39,4 +42,8 @@ pub(crate) async fn query(
             Capability::InspectTree,
         )),
     }
+}
+
+fn filter_app_infos(apps: Vec<AppInfo>, filter: &AppListFilter) -> Vec<AppInfo> {
+    apps.into_iter().filter(|app| filter.matches(app)).collect()
 }

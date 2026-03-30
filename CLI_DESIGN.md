@@ -819,6 +819,10 @@ Mode (pick one)
   --running                  List operable applications that are currently running with windows (default)
   --all                      List all operable applications visible to the target
 
+Filters (optional)
+  --name <TEXT>              Filter by application name using contains matching
+  --bundle <BUNDLE_ID>       Filter by exact bundle ID
+
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
   --target <TARGET>          Select the named runtime target
@@ -829,6 +833,8 @@ Examples
   operator app list
   operator app list --running
   operator app list --all
+  operator app list --name Cod
+  operator app list --all --bundle com.apple.TextEdit
   operator --json app list --all
 ```
 
@@ -836,6 +842,8 @@ Current macOS note:
 - `app list` defaults to `app list --running`.
 - `--running` returns operable running apps on macOS that currently own at least one window, and filters out `.prohibited` background-only processes.
 - `--all` scans installed app bundles, merges them with the running set, and marks non-running apps with `is_running = false` and no `pid`.
+- `--name` uses case-insensitive contains matching on the application display name.
+- `--bundle` matches the bundle id exactly.
 
 #### `operator app switch`
 

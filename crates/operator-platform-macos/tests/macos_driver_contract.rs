@@ -8,11 +8,11 @@ use std::{
 
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, AppInfo, AppListMode, ArtifactId, Capability, ClickMode, DragModifier,
-    DragMotion, ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest,
-    OperatorError, PermissionCheck, PermissionStatus, PermissionsReport, PlatformDriver, Point,
-    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, UiElement, WindowId,
-    WindowInfo,
+    ActionTargetSelector, AppInfo, AppListFilter, AppListMode, ArtifactId, Capability, ClickMode,
+    DragModifier, DragMotion, ElementId, ElementSource, ExecContext, FocusInfo, Locator,
+    ObserveRequest, OperatorError, PermissionCheck, PermissionStatus, PermissionsReport,
+    PlatformDriver, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey,
+    UiElement, WindowId, WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -471,6 +471,7 @@ async fn list_apps_and_windows_queries_forward_to_services() {
         .query(
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
+                filter: AppListFilter::default(),
             },
             &exec_context(),
         )
@@ -540,6 +541,7 @@ async fn list_apps_query_bypasses_system_events_permission_probe() {
         .query(
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
+                filter: AppListFilter::default(),
             },
             &exec_context(),
         )
@@ -591,6 +593,7 @@ async fn list_apps_query_forwards_requested_mode_to_app_service() {
         .query(
             QueryRequest::ListApps {
                 mode: AppListMode::All,
+                filter: AppListFilter::default(),
             },
             &exec_context(),
         )
@@ -617,6 +620,58 @@ async fn list_apps_query_forwards_requested_mode_to_app_service() {
     assert_eq!(
         driver.app_service().app_list_modes(),
         vec![AppListMode::All]
+    );
+}
+
+#[tokio::test]
+async fn list_apps_query_applies_name_and_bundle_filters() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![
+                AppInfo {
+                    bundle_id: Some("com.openai.codex".into()),
+                    name: "Codex".into(),
+                    pid: Some(101),
+                    is_running: true,
+                },
+                AppInfo {
+                    bundle_id: Some("com.apple.TextEdit".into()),
+                    name: "TextEdit".into(),
+                    pid: Some(202),
+                    is_running: true,
+                },
+            ],
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let apps = driver
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::Running,
+                filter: AppListFilter {
+                    name: Some("Cod".into()),
+                    bundle: Some("com.openai.codex".into()),
+                },
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        apps,
+        QueryResult::Apps(vec![AppInfo {
+            bundle_id: Some("com.openai.codex".into()),
+            name: "Codex".into(),
+            pid: Some(101),
+            is_running: true,
+        }])
+    );
+    assert_eq!(
+        driver.app_service().app_list_modes(),
+        vec![AppListMode::Running]
     );
 }
 

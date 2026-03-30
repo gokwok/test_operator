@@ -332,6 +332,39 @@ fn app_list_all_command_maps_to_list_apps_tool() {
 }
 
 #[test]
+fn app_list_name_filter_maps_to_list_apps_tool() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "app", "list", "--name", "Cod"]).unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-apps");
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "running", "name": "Cod" })
+    );
+}
+
+#[test]
+fn app_list_bundle_filter_maps_to_list_apps_tool() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "app",
+        "list",
+        "--all",
+        "--bundle",
+        "com.apple.TextEdit",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-apps");
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "all", "bundle": "com.apple.TextEdit" })
+    );
+}
+
+#[test]
 fn app_list_rejects_conflicting_modes() {
     let error =
         cli_main::args::Cli::try_parse_from(["operator", "app", "list", "--running", "--all"])
@@ -710,14 +743,20 @@ fn app_list_help_snapshot_is_stable() {
             "operator app list",
             "operator app list --running",
             "operator app list --all",
+            "operator app list --name Cod",
+            "operator app list --all --bundle com.apple.TextEdit",
             "operator --json app list --all",
         ],
     );
     assert!(help.contains("Mode (pick one)"));
+    assert!(help.contains("Filters (optional)"));
     assert!(help.contains("--running"));
     assert!(help.contains("--all"));
+    assert!(help.contains("--name <TEXT>"));
+    assert!(help.contains("--bundle <BUNDLE_ID>"));
     assert!(help.contains("defaults to `--running`"));
     assert!(help.contains("currently own at least one window"));
+    assert!(help.contains("case-insensitive contains matching"));
 }
 
 #[test]

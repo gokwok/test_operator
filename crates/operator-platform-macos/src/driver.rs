@@ -7,10 +7,10 @@ use std::{
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, AppInfo, AppListMode, Capability, CapabilitySet, ClickMode, DragMotion,
-    ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError,
-    PermissionStatus, Point, QueryRequest, QueryResult, Rect, Snapshot, SnapshotMetadata, Surface,
-    SurfaceKind, TypeTrailingKey, WindowInfo,
+    ActionTargetSelector, AppInfo, AppListFilter, AppListMode, Capability, CapabilitySet,
+    ClickMode, DragMotion, ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult,
+    OperatorError, PermissionStatus, Point, QueryRequest, QueryResult, Rect, Snapshot,
+    SnapshotMetadata, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 
 use crate::{
@@ -251,9 +251,10 @@ where
         _ctx: &ExecContext,
     ) -> Result<QueryResult, OperatorError> {
         match req {
-            QueryRequest::ListApps { mode } => {
-                Ok(QueryResult::Apps(self.app_service.list_apps(mode)?))
-            }
+            QueryRequest::ListApps { mode, filter } => Ok(QueryResult::Apps(filter_app_infos(
+                self.app_service.list_apps(mode)?,
+                &filter,
+            ))),
             QueryRequest::ListWindows { app } => Ok(QueryResult::Windows({
                 let permissions = self.permission_reader.current_permissions()?;
                 require_system_events_permission(&permissions)?;
@@ -453,6 +454,10 @@ where
             }
         }
     }
+}
+
+fn filter_app_infos(apps: Vec<AppInfo>, filter: &AppListFilter) -> Vec<AppInfo> {
+    apps.into_iter().filter(|app| filter.matches(app)).collect()
 }
 
 impl<A, P, C, I, S> MacosDriver<A, P, C, I, S>

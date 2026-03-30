@@ -12,8 +12,8 @@ use hmdriver_rs::{
     CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry, WindowRect,
 };
 use operator_core::{
-    AppListMode, DriverConfig, ExecContext, ImageSizePx, PermissionStatus, PlatformDriver,
-    QueryRequest, QueryResult, Rect, TargetDescriptor, TargetId,
+    AppListFilter, AppListMode, DriverConfig, ExecContext, ImageSizePx, PermissionStatus,
+    PlatformDriver, QueryRequest, QueryResult, Rect, TargetDescriptor, TargetId,
 };
 use operator_platform_harmony::{
     HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory, HarmonyHdcShellSession,
@@ -150,6 +150,7 @@ async fn list_apps_and_windows_queries_normalize_results_and_reuse_shell_session
         .query(
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
+                filter: AppListFilter::default(),
             },
             &exec_context(),
         )

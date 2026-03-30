@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use operator_core::{
-    AppInfo, AppListMode, Capability, FocusInfo, OperatorError, PermissionsReport, QueryRequest,
-    QueryResult, WindowInfo,
+    AppInfo, AppListFilter, AppListMode, Capability, FocusInfo, OperatorError, PermissionsReport,
+    QueryRequest, QueryResult, WindowInfo,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,8 @@ pub(crate) fn list_apps_registration() -> ToolRegistration {
     ToolRegistration {
         spec: ToolSpec {
             name: "list-apps",
-            description: "List apps visible to the current target.",
+            description:
+                "List apps visible to the current target, optionally filtered by name or bundle id.",
             input_schema: json_schema_for::<ListAppsToolInput>(),
             output_schema: json_schema_for::<ListAppsToolOutput>(),
             capabilities_required: LIST_APPS_CAPABILITIES,
@@ -105,7 +106,13 @@ async fn list_apps(
 ) -> Result<Value, OperatorError> {
     let input = parse_input::<ListAppsToolInput>("list-apps", input)?;
     let result = core
-        .query(QueryRequest::ListApps { mode: input.mode }, ctx)
+        .query(
+            QueryRequest::ListApps {
+                mode: input.mode,
+                filter: input.filter,
+            },
+            ctx,
+        )
         .await?;
     let QueryResult::Apps(apps) = result else {
         return unexpected_variant("list-apps", "apps");
@@ -224,6 +231,9 @@ struct ListAppsToolInput {
     exec: ToolExecInput,
     #[serde(default)]
     mode: AppListMode,
+    #[serde(flatten)]
+    #[schemars(flatten)]
+    filter: AppListFilter,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

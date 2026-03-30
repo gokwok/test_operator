@@ -1,9 +1,10 @@
 use std::{process::Command, thread, time::Duration};
 
 use operator_core::{
-    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, AppListMode, ClickMode,
-    ExecContext, Locator, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport,
-    PlatformDriver, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, WindowInfo,
+    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, AppListFilter, AppListMode,
+    ClickMode, ExecContext, Locator, ObserveRequest, OperatorError, PermissionStatus,
+    PermissionsReport, PlatformDriver, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
+    WindowInfo,
 };
 use operator_platform_macos::MacosDriver;
 
@@ -1326,6 +1327,7 @@ async fn switch_app_with_system_driver() {
         .query(
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
+                filter: AppListFilter::default(),
             },
             &exec_context(),
         )

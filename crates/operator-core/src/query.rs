@@ -11,10 +11,24 @@ pub enum AppListMode {
     All,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AppListFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum QueryRequest {
-    ListApps { mode: AppListMode },
-    ListWindows { app: Option<String> },
+    ListApps {
+        mode: AppListMode,
+        #[serde(default)]
+        filter: AppListFilter,
+    },
+    ListWindows {
+        app: Option<String>,
+    },
     GetFocus,
     PermissionsStatus,
     Capabilities,
@@ -35,6 +49,25 @@ pub struct AppInfo {
     pub name: String,
     pub pid: Option<u32>,
     pub is_running: bool,
+}
+
+impl AppListFilter {
+    pub fn matches(&self, app: &AppInfo) -> bool {
+        if let Some(name) = self.name.as_ref() {
+            let needle = name.to_lowercase();
+            if !app.name.to_lowercase().contains(&needle) {
+                return false;
+            }
+        }
+
+        if let Some(bundle) = self.bundle.as_ref() {
+            if app.bundle_id.as_deref() != Some(bundle.as_str()) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -116,4 +149,46 @@ pub enum PermissionStatus {
     Granted,
     Denied,
     NotDetermined,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppInfo, AppListFilter};
+
+    #[test]
+    fn app_list_filter_matches_name_by_contains() {
+        let filter = AppListFilter {
+            name: Some("code".into()),
+            bundle: None,
+        };
+        let app = AppInfo {
+            bundle_id: Some("com.openai.codex".into()),
+            name: "Codex".into(),
+            pid: Some(42),
+            is_running: true,
+        };
+
+        assert!(filter.matches(&app));
+    }
+
+    #[test]
+    fn app_list_filter_matches_bundle_by_exact_value() {
+        let filter = AppListFilter {
+            name: None,
+            bundle: Some("com.apple.TextEdit".into()),
+        };
+        let app = AppInfo {
+            bundle_id: Some("com.apple.TextEdit".into()),
+            name: "TextEdit".into(),
+            pid: Some(101),
+            is_running: true,
+        };
+
+        assert!(filter.matches(&app));
+        assert!(!AppListFilter {
+            name: None,
+            bundle: Some("com.apple.textedit".into()),
+        }
+        .matches(&app));
+    }
 }

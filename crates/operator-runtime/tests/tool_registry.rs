@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, ActionVerification, AppInfo, AppListMode, ArtifactId, Capability,
-    CapabilitySet, ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator,
-    ObserveRequest, ObserveResult, OperatorError, PermissionCheck, PermissionStatus,
+    ActionTargetSelector, ActionVerification, AppInfo, AppListFilter, AppListMode, ArtifactId,
+    Capability, CapabilitySet, ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo,
+    Locator, ObserveRequest, ObserveResult, OperatorError, PermissionCheck, PermissionStatus,
     PermissionsReport, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
     TypeTrailingKey, WindowInfo,
 };
@@ -402,6 +402,7 @@ async fn read_only_query_tools_forward_runtime_results() {
             (
                 QueryRequest::ListApps {
                     mode: AppListMode::Running,
+                    filter: AppListFilter::default(),
                 },
                 ExecContext {
                     target: "local:macos".into(),
@@ -479,6 +480,62 @@ async fn list_apps_tool_forwards_explicit_all_mode() {
         vec![(
             QueryRequest::ListApps {
                 mode: AppListMode::All,
+                filter: AppListFilter::default(),
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
+async fn list_apps_tool_forwards_name_and_bundle_filters() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(QueryResult::Apps(vec![AppInfo {
+        bundle_id: Some("com.openai.codex".into()),
+        name: "Codex".into(),
+        pid: Some(42),
+        is_running: true,
+    }])));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let apps = runtime
+        .tools()
+        .invoke(
+            "list-apps",
+            json!({
+                "target": "local:macos",
+                "name": "Cod",
+                "bundle": "com.openai.codex"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(apps["apps"][0]["name"], json!("Codex"));
+
+    let calls = driver.query_calls().await;
+    assert_eq!(
+        calls,
+        vec![(
+            QueryRequest::ListApps {
+                mode: AppListMode::Running,
+                filter: AppListFilter {
+                    name: Some("Cod".into()),
+                    bundle: Some("com.openai.codex".into()),
+                },
             },
             ExecContext {
                 target: "local:macos".into(),
@@ -597,6 +654,7 @@ async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tre
             (
                 QueryRequest::ListApps {
                     mode: AppListMode::Running,
+                    filter: AppListFilter::default(),
                 },
                 ExecContext {
                     target: "harmony-pc".into(),

@@ -103,7 +103,7 @@ const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "macOS note: `app list` defaults to `--running`. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid.";
+    "macOS note: `app list` defaults to `--running`. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid. `--name` uses case-insensitive contains matching and `--bundle` requires an exact bundle id match.";
 const WINDOW_LIST_FOOTER: &str =
     "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
 
@@ -475,6 +475,8 @@ const APP_LIST_AFTER_HELP: &str = "Examples
   operator app list
   operator app list --running
   operator app list --all
+  operator app list --name Cod
+  operator app list --all --bundle com.apple.TextEdit
   operator --json app list --all";
 
 const INPUT_CLICK_AFTER_HELP: &str = "Examples
@@ -703,6 +705,17 @@ const APP_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--all",
         about: "List all operable applications visible to the target",
+    },
+];
+
+const APP_LIST_FILTER_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--name <TEXT>",
+        about: "Filter by application name using contains matching",
+    },
+    CommandHelpEntry {
+        command: "--bundle <BUNDLE_ID>",
+        about: "Filter by exact bundle ID",
     },
 ];
 
@@ -1283,10 +1296,16 @@ const MOVE_HELP_SECTIONS: &[LeafHelpSection] = &[
     },
 ];
 
-const APP_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
-    heading: "Mode (pick one)",
-    rows: APP_LIST_OPTION_ROWS,
-}];
+const APP_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Mode (pick one)",
+        rows: APP_LIST_OPTION_ROWS,
+    },
+    LeafHelpSection {
+        heading: "Filters (optional)",
+        rows: APP_LIST_FILTER_ROWS,
+    },
+];
 
 const APP_LAUNCH_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
     heading: "Arguments",
@@ -1668,6 +1687,8 @@ const APP_LIST_HELP: LeafHelp = LeafHelp {
         "operator app list",
         "operator app list --running",
         "operator app list --all",
+        "operator app list --name Cod",
+        "operator app list --all --bundle com.apple.TextEdit",
         "operator --json app list --all",
     ],
     footer: APP_LIST_FOOTER,
@@ -3576,6 +3597,10 @@ struct AppListArgs {
     running: bool,
     #[arg(long, conflicts_with = "running")]
     all: bool,
+    #[arg(long)]
+    name: Option<String>,
+    #[arg(long)]
+    bundle: Option<String>,
 }
 
 impl AppListArgs {
@@ -3587,6 +3612,12 @@ impl AppListArgs {
             AppListMode::Running
         };
         insert_serialized(&mut input, "mode", mode)?;
+        if let Some(name) = self.name {
+            input.insert("name".into(), Value::String(name));
+        }
+        if let Some(bundle) = self.bundle {
+            input.insert("bundle".into(), Value::String(bundle));
+        }
         Ok(ToolInvocation {
             tool: "list-apps",
             input: Value::Object(input),
