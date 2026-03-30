@@ -813,7 +813,11 @@ Use 'operator app <command> --help' for detailed usage.
 ```
 Usage: operator app list [OPTIONS]
 
-List running application processes
+List operable applications
+
+Mode (pick one)
+  --running                  List operable applications that are currently running (default)
+  --all                      List all operable applications visible to the target
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
@@ -823,12 +827,15 @@ Global Runtime Flags
 
 Examples
   operator app list
-  operator --json app list
+  operator app list --running
+  operator app list --all
+  operator --json app list --all
 ```
 
 Current macOS note:
-- `app list` returns the native running-application list on macOS.
-- Helper and background services may appear in the result.
+- `app list` defaults to `app list --running`.
+- `--running` returns operable running apps on macOS and filters out `.prohibited` background-only processes.
+- `--all` scans installed app bundles, merges them with the running set, and marks non-running apps with `is_running = false` and no `pid`.
 
 #### `operator app switch`
 

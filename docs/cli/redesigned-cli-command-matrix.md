@@ -49,7 +49,8 @@
 
 | 命令面 | 状态 | 说明 |
 | --- | --- | --- |
-| `app list` | 本轮实机验证通过 | 成功返回运行中 app 列表并包含 `TextEdit` |
+| `app list` | 本轮实机验证通过 | 默认等价于 `app list --running`；成功返回运行中可操作 app 列表并包含 `TextEdit` |
+| `app list --all` | 已实现，未在 OPE-140 live rerun | 显式返回系统中所有可操作 app；非运行中的条目标记为 `is_running = false` |
 | `app launch` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `app` 分组 |
 | `app switch` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `app` 分组 |
 | `app quit` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `app` 分组 |

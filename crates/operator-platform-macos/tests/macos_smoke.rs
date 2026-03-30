@@ -1,9 +1,9 @@
 use std::{process::Command, thread, time::Duration};
 
 use operator_core::{
-    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, ClickMode, ExecContext,
-    Locator, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport, PlatformDriver,
-    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, WindowInfo,
+    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, AppListMode, ClickMode,
+    ExecContext, Locator, ObserveRequest, OperatorError, PermissionStatus, PermissionsReport,
+    PlatformDriver, QueryRequest, QueryResult, Rect, Surface, SurfaceKind, WindowInfo,
 };
 use operator_platform_macos::MacosDriver;
 
@@ -1322,7 +1322,15 @@ async fn switch_app_with_system_driver() {
 
     thread::sleep(Duration::from_millis(500));
 
-    let apps = match driver.query(QueryRequest::ListApps, &exec_context()).await {
+    let apps = match driver
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::Running,
+            },
+            &exec_context(),
+        )
+        .await
+    {
         Ok(apps) => apps,
         Err(error) if is_sandboxed_macos_failure(&error) => {
             eprintln!("Skipping macOS switch-app smoke test in sandboxed session: {error}");

@@ -35,7 +35,7 @@
 | 命令 | 结果 | 证据 |
 | --- | --- | --- |
 | `operator show` | Passed | 返回 `app_name = TextEdit`、`bundle_id = com.apple.TextEdit`、`role = AXTextArea`、`label = 文本输入区` |
-| `operator app list` | Passed | 返回 `126` 个运行中 app，包含 `TextEdit`（`pid = 99694`） |
+| `operator app list` | Passed | 在当前 contract 下等价于 `operator app list --running`；本轮记录返回 `126` 个运行中 app，包含 `TextEdit`（`pid = 99694`） |
 | `operator window list` | Passed | 返回 `5` 个窗口；聚焦窗口为 `TextEdit` / `未命名`，`id = 15006102542963268405` |
 | `operator capture frontmost` | Passed | 返回 `snapshot-1774643300926506-0` 与 `capture-1774643300499510-0.png`；`capture_bounds = { x: 146, y: 71, width: 586, height: 488 }`；图像大小 `1172x976` |
 | `operator elements frontmost` | Passed | 返回 `snapshot-1774643306023750-0`；根节点为 `AXWindow` / `未命名`；包含 `AXTextArea` 节点 `ax-0-0-0` |

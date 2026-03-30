@@ -7,8 +7,8 @@ use clap::{
     Args, ColorChoice, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum,
 };
 use operator_core::{
-    ActionFocusPolicy, ActionTargetSelector, ActionVerification, ArtifactId, ClickMode, Locator,
-    Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey, WindowId,
+    ActionFocusPolicy, ActionTargetSelector, ActionVerification, AppListMode, ArtifactId,
+    ClickMode, Locator, Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey, WindowId,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -100,10 +100,10 @@ const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
 const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 
-const APP_LIST_ABOUT: &str = "List running application processes";
+const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "macOS note: app list uses the native running-application list. Helper and background services may still appear.";
+    "macOS note: `app list` defaults to `--running`. `--running` lists operable running apps, while `--all` scans installed app bundles and marks non-running apps without a pid.";
 const WINDOW_LIST_FOOTER: &str =
     "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
 
@@ -473,7 +473,9 @@ const ARTIFACT_AFTER_HELP: &str = "Examples
 
 const APP_LIST_AFTER_HELP: &str = "Examples
   operator app list
-  operator --json app list";
+  operator app list --running
+  operator app list --all
+  operator --json app list --all";
 
 const INPUT_CLICK_AFTER_HELP: &str = "Examples
   operator click --text Save --app Notes --focus auto --verify focus
@@ -692,6 +694,17 @@ const WINDOW_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "--app <NAME>",
     about: "Filter by application name or bundle ID (optional)",
 }];
+
+const APP_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "--running",
+        about: "List operable applications that are currently running (default)",
+    },
+    CommandHelpEntry {
+        command: "--all",
+        about: "List all operable applications visible to the target",
+    },
+];
 
 const WINDOW_FOCUS_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "--window-id <ID>",
@@ -1270,6 +1283,11 @@ const MOVE_HELP_SECTIONS: &[LeafHelpSection] = &[
     },
 ];
 
+const APP_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
+    heading: "Mode (pick one)",
+    rows: APP_LIST_OPTION_ROWS,
+}];
+
 const APP_LAUNCH_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
     heading: "Arguments",
     rows: APP_LAUNCH_ARGUMENT_ROWS,
@@ -1644,9 +1662,14 @@ const MOVE_HELP: LeafHelp = LeafHelp {
 const APP_LIST_HELP: LeafHelp = LeafHelp {
     usage: "operator app list [OPTIONS]",
     about: APP_LIST_ABOUT,
-    sections: &[],
+    sections: APP_LIST_HELP_SECTIONS,
     include_global_runtime_flags: true,
-    examples: &["operator app list", "operator --json app list"],
+    examples: &[
+        "operator app list",
+        "operator app list --running",
+        "operator app list --all",
+        "operator --json app list --all",
+    ],
     footer: APP_LIST_FOOTER,
 };
 
@@ -3548,11 +3571,27 @@ impl WindowListArgs {
 }
 
 #[derive(Debug, Clone, Args, Default)]
-struct AppListArgs {}
+struct AppListArgs {
+    #[arg(long, conflicts_with = "all")]
+    running: bool,
+    #[arg(long, conflicts_with = "running")]
+    all: bool,
+}
 
 impl AppListArgs {
     fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
-        invoke_without_specific_input("list-apps", common)
+        let mut input = common_input(&common);
+        let mode = if self.all {
+            AppListMode::All
+        } else {
+            AppListMode::Running
+        };
+        insert_serialized(&mut input, "mode", mode)?;
+        Ok(ToolInvocation {
+            tool: "list-apps",
+            input: Value::Object(input),
+            json_output: common.json_output,
+        })
     }
 }
 

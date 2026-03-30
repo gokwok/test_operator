@@ -319,7 +319,25 @@ fn app_list_command_maps_to_list_apps_tool() {
 
     let invocation = cli.into_invocation().unwrap();
     assert_eq!(invocation.tool, "list-apps");
-    assert_eq!(invocation.input, json!({}));
+    assert_eq!(invocation.input, json!({ "mode": "running" }));
+}
+
+#[test]
+fn app_list_all_command_maps_to_list_apps_tool() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "app", "list", "--all"]).unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-apps");
+    assert_eq!(invocation.input, json!({ "mode": "all" }));
+}
+
+#[test]
+fn app_list_rejects_conflicting_modes() {
+    let error =
+        cli_main::args::Cli::try_parse_from(["operator", "app", "list", "--running", "--all"])
+            .unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
 
 #[test]
@@ -624,7 +642,7 @@ fn app_help_lists_lifecycle_subcommands() {
     let help = command_help(["operator", "app", "--help"]);
     assert!(help.contains("Manage application lifecycle"));
     assert!(help.contains("list"));
-    assert!(help.contains("List running application processes"));
+    assert!(help.contains("List operable applications"));
     assert!(help.contains("launch"));
     assert!(help.contains("Launch an application"));
     assert!(help.contains("Use 'operator app <command> --help' for detailed usage."));
@@ -687,11 +705,18 @@ fn app_list_help_snapshot_is_stable() {
     assert_leaf_help_shape(
         &help,
         "Usage operator app list [OPTIONS]",
-        "List running application processes",
-        &["operator app list", "operator --json app list"],
+        "List operable applications",
+        &[
+            "operator app list",
+            "operator app list --running",
+            "operator app list --all",
+            "operator --json app list --all",
+        ],
     );
-    assert!(help.contains("native running-application list"));
-    assert!(help.contains("Helper and background services may still appear"));
+    assert!(help.contains("Mode (pick one)"));
+    assert!(help.contains("--running"));
+    assert!(help.contains("--all"));
+    assert!(help.contains("defaults to `--running`"));
 }
 
 #[test]

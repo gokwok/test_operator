@@ -51,7 +51,8 @@ osascript -e 'tell application "TextEdit" to activate' \
 
 ```bash
 OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json show
-OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json app list
+OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json app list --running
+OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json app list --all
 OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json window list
 OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json capture frontmost
 OPERATOR_HOME=/tmp/operator-ope140 target/debug/operator --json elements frontmost

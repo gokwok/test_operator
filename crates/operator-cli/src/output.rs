@@ -95,6 +95,9 @@ fn render_apps(output: &Value) -> String {
             let name = app["name"].as_str().unwrap_or("<unknown>");
             match app["pid"].as_u64() {
                 Some(pid) => format!("{name}\tpid={pid}"),
+                None if app["is_running"].as_bool() == Some(false) => {
+                    format!("{name}\tinstalled")
+                }
                 None => name.to_string(),
             }
         })

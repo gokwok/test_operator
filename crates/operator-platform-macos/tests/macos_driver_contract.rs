@@ -8,10 +8,11 @@ use std::{
 
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, AppInfo, ArtifactId, Capability, ClickMode, DragModifier, DragMotion,
-    ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest, OperatorError,
-    PermissionCheck, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
-    QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, UiElement, WindowId, WindowInfo,
+    ActionTargetSelector, AppInfo, AppListMode, ArtifactId, Capability, ClickMode, DragModifier,
+    DragMotion, ElementId, ElementSource, ExecContext, FocusInfo, Locator, ObserveRequest,
+    OperatorError, PermissionCheck, PermissionStatus, PermissionsReport, PlatformDriver, Point,
+    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, UiElement, WindowId,
+    WindowInfo,
 };
 use operator_platform_macos::{
     AppService, CaptureProvider, CaptureResult, InputSynthesizer, InspectResult, MacosDriver,
@@ -467,7 +468,12 @@ async fn list_apps_and_windows_queries_forward_to_services() {
     );
 
     let apps = driver
-        .query(QueryRequest::ListApps, &exec_context())
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::Running,
+            },
+            &exec_context(),
+        )
         .await
         .unwrap();
     let windows = driver
@@ -504,6 +510,10 @@ async fn list_apps_and_windows_queries_forward_to_services() {
         driver.app_service().last_window_filter(),
         Some("TextEdit".to_string())
     );
+    assert_eq!(
+        driver.app_service().app_list_modes(),
+        vec![AppListMode::Running]
+    );
 }
 
 #[tokio::test]
@@ -527,7 +537,12 @@ async fn list_apps_query_bypasses_system_events_permission_probe() {
     );
 
     let apps = driver
-        .query(QueryRequest::ListApps, &exec_context())
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::Running,
+            },
+            &exec_context(),
+        )
         .await
         .unwrap();
 
@@ -541,6 +556,68 @@ async fn list_apps_query_bypasses_system_events_permission_probe() {
         }])
     );
     assert_eq!(permissions.call_count(), 0);
+}
+
+#[tokio::test]
+async fn list_apps_query_forwards_requested_mode_to_app_service() {
+    let driver = MacosDriver::new(
+        StubAppService {
+            apps: vec![AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            }],
+            all_apps: Some(vec![
+                AppInfo {
+                    bundle_id: Some("com.apple.Calculator".into()),
+                    name: "Calculator".into(),
+                    pid: None,
+                    is_running: false,
+                },
+                AppInfo {
+                    bundle_id: Some("com.apple.TextEdit".into()),
+                    name: "TextEdit".into(),
+                    pid: Some(101),
+                    is_running: true,
+                },
+            ]),
+            ..Default::default()
+        },
+        StubPermissionReader::granted(),
+    );
+
+    let apps = driver
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+            },
+            &exec_context(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        apps,
+        QueryResult::Apps(vec![
+            AppInfo {
+                bundle_id: Some("com.apple.Calculator".into()),
+                name: "Calculator".into(),
+                pid: None,
+                is_running: false,
+            },
+            AppInfo {
+                bundle_id: Some("com.apple.TextEdit".into()),
+                name: "TextEdit".into(),
+                pid: Some(101),
+                is_running: true,
+            },
+        ])
+    );
+    assert_eq!(
+        driver.app_service().app_list_modes(),
+        vec![AppListMode::All]
+    );
 }
 
 #[tokio::test]
@@ -2942,6 +3019,7 @@ fn default_action_request() -> ActionRequest {
 #[derive(Default)]
 struct StubAppService {
     apps: Vec<AppInfo>,
+    all_apps: Option<Vec<AppInfo>>,
     windows: Vec<WindowInfo>,
     frontmost_windows: Option<Vec<WindowInfo>>,
     windows_after_focus: Option<Vec<WindowInfo>>,
@@ -2963,6 +3041,7 @@ struct StubAppService {
     unhidden: Mutex<Vec<String>>,
     focused_windows: Mutex<Vec<WindowId>>,
     last_window_filter: Mutex<Option<String>>,
+    app_list_modes: Mutex<Vec<AppListMode>>,
     frontmost_window_queries: Mutex<u32>,
     move_window_result: Option<Rect>,
     resize_window_result: Option<Rect>,
@@ -3029,11 +3108,19 @@ impl StubAppService {
     fn frontmost_window_query_count(&self) -> u32 {
         *self.frontmost_window_queries.lock().unwrap()
     }
+
+    fn app_list_modes(&self) -> Vec<AppListMode> {
+        self.app_list_modes.lock().unwrap().clone()
+    }
 }
 
 impl AppService for StubAppService {
-    fn list_apps(&self) -> Result<Vec<AppInfo>, OperatorError> {
-        Ok(self.apps.clone())
+    fn list_apps(&self, mode: AppListMode) -> Result<Vec<AppInfo>, OperatorError> {
+        self.app_list_modes.lock().unwrap().push(mode);
+        match mode {
+            AppListMode::Running => Ok(self.apps.clone()),
+            AppListMode::All => Ok(self.all_apps.clone().unwrap_or_else(|| self.apps.clone())),
+        }
     }
 
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError> {

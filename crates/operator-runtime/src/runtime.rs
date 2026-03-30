@@ -246,7 +246,7 @@ impl RuntimeCore {
         ctx: &ExecContext,
     ) -> Result<(), OperatorError> {
         let required = match req {
-            QueryRequest::ListApps => Some(Capability::AppLifecycle),
+            QueryRequest::ListApps { .. } => Some(Capability::AppLifecycle),
             QueryRequest::ListWindows { .. } => Some(Capability::WindowQuery),
             QueryRequest::GetFocus => Some(Capability::InspectTree),
             QueryRequest::PermissionsStatus => Some(Capability::Permissions),

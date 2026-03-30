@@ -7,10 +7,10 @@ use std::{
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, AppInfo, Capability, CapabilitySet, ClickMode, DragMotion, ExecContext,
-    HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionStatus, Point,
-    QueryRequest, QueryResult, Rect, Snapshot, SnapshotMetadata, Surface, SurfaceKind,
-    TypeTrailingKey, WindowInfo,
+    ActionTargetSelector, AppInfo, AppListMode, Capability, CapabilitySet, ClickMode, DragMotion,
+    ExecContext, HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError,
+    PermissionStatus, Point, QueryRequest, QueryResult, Rect, Snapshot, SnapshotMetadata, Surface,
+    SurfaceKind, TypeTrailingKey, WindowInfo,
 };
 
 use crate::{
@@ -251,7 +251,9 @@ where
         _ctx: &ExecContext,
     ) -> Result<QueryResult, OperatorError> {
         match req {
-            QueryRequest::ListApps => Ok(QueryResult::Apps(self.app_service.list_apps()?)),
+            QueryRequest::ListApps { mode } => {
+                Ok(QueryResult::Apps(self.app_service.list_apps(mode)?))
+            }
             QueryRequest::ListWindows { app } => Ok(QueryResult::Windows({
                 let permissions = self.permission_reader.current_permissions()?;
                 require_system_events_permission(&permissions)?;
@@ -801,7 +803,7 @@ where
     }
 
     fn resolve_app_by_identity(&self, bundle_id_or_name: &str) -> Result<AppInfo, OperatorError> {
-        let apps = self.app_service.list_apps()?;
+        let apps = self.app_service.list_apps(AppListMode::Running)?;
         let matches =
             apps.into_iter()
                 .filter(|app| {
@@ -820,7 +822,7 @@ where
     }
 
     fn resolve_app_by_pid(&self, pid: u32) -> Result<AppInfo, OperatorError> {
-        let apps = self.app_service.list_apps()?;
+        let apps = self.app_service.list_apps(AppListMode::Running)?;
         let matches = apps
             .into_iter()
             .filter(|app| app.pid == Some(pid))

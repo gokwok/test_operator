@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use operator_core::{
-    AppInfo, Capability, FocusInfo, OperatorError, PermissionsReport, QueryRequest, QueryResult,
-    WindowInfo,
+    AppInfo, AppListMode, Capability, FocusInfo, OperatorError, PermissionsReport, QueryRequest,
+    QueryResult, WindowInfo,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -103,8 +103,10 @@ async fn list_apps(
     core: Arc<RuntimeCore>,
     ctx: operator_core::ExecContext,
 ) -> Result<Value, OperatorError> {
-    let _ = parse_input::<ListAppsToolInput>("list-apps", input)?;
-    let result = core.query(QueryRequest::ListApps, ctx).await?;
+    let input = parse_input::<ListAppsToolInput>("list-apps", input)?;
+    let result = core
+        .query(QueryRequest::ListApps { mode: input.mode }, ctx)
+        .await?;
     let QueryResult::Apps(apps) = result else {
         return unexpected_variant("list-apps", "apps");
     };
@@ -220,6 +222,8 @@ struct ListAppsToolInput {
     #[serde(flatten)]
     #[schemars(flatten)]
     exec: ToolExecInput,
+    #[serde(default)]
+    mode: AppListMode,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

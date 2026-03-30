@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, ActionVerification, AppInfo, ArtifactId, Capability, CapabilitySet,
-    ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator, ObserveRequest,
-    ObserveResult, OperatorError, PermissionCheck, PermissionStatus, PermissionsReport, Point,
-    QueryRequest, QueryResult, Rect, Surface, SurfaceKind, TypeTrailingKey, WindowInfo,
+    ActionTargetSelector, ActionVerification, AppInfo, AppListMode, ArtifactId, Capability,
+    CapabilitySet, ClickMode, DragModifier, DragMotion, ExecContext, FocusInfo, Locator,
+    ObserveRequest, ObserveResult, OperatorError, PermissionCheck, PermissionStatus,
+    PermissionsReport, Point, QueryRequest, QueryResult, Rect, Surface, SurfaceKind,
+    TypeTrailingKey, WindowInfo,
 };
 use operator_runtime::{
     AuditEvent, AuditEventKind, EventSink, FileArtifactStore, NamedTargetConfig, RuntimeBuilder,
@@ -399,7 +400,9 @@ async fn read_only_query_tools_forward_runtime_results() {
         calls,
         vec![
             (
-                QueryRequest::ListApps,
+                QueryRequest::ListApps {
+                    mode: AppListMode::Running,
+                },
                 ExecContext {
                     target: "local:macos".into(),
                     session: None,
@@ -425,6 +428,64 @@ async fn read_only_query_tools_forward_runtime_results() {
                 },
             ),
         ]
+    );
+}
+
+#[tokio::test]
+async fn list_apps_tool_forwards_explicit_all_mode() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(QueryResult::Apps(vec![
+        AppInfo {
+            bundle_id: Some("com.apple.Calculator".into()),
+            name: "Calculator".into(),
+            pid: None,
+            is_running: false,
+        },
+        AppInfo {
+            bundle_id: Some("com.apple.TextEdit".into()),
+            name: "TextEdit".into(),
+            pid: Some(101),
+            is_running: true,
+        },
+    ])));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let apps = runtime
+        .tools()
+        .invoke(
+            "list-apps",
+            json!({ "target": "local:macos", "mode": "all" }),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(apps["apps"][0]["name"], json!("Calculator"));
+    assert_eq!(apps["apps"][0]["is_running"], json!(false));
+    assert_eq!(apps["apps"][1]["name"], json!("TextEdit"));
+    assert_eq!(apps["apps"][1]["is_running"], json!(true));
+
+    let calls = driver.query_calls().await;
+    assert_eq!(
+        calls,
+        vec![(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+            },
+            ExecContext {
+                target: "local:macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
     );
 }
 
@@ -534,7 +595,9 @@ async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tre
         calls,
         vec![
             (
-                QueryRequest::ListApps,
+                QueryRequest::ListApps {
+                    mode: AppListMode::Running,
+                },
                 ExecContext {
                     target: "harmony-pc".into(),
                     session: None,

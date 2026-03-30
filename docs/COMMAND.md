@@ -287,11 +287,16 @@ operator
 
 - `app launch <bundle-id-or-name>`
 
-`app list` 的当前 northbound 语义按“运行中的应用进程列表”解释：
+`app list` 的当前 northbound 语义分成两个显式模式：
 
-- macOS 结果来自原生 running application 枚举
-- helper / background service 可能出现在列表中
-- 它不是严格意义上的“用户可操作应用列表”
+- `app list` 与 `app list --running` 等价：
+  - 返回当前正在运行的、可操作的应用列表
+  - macOS 结果来自原生 running application 枚举
+  - 默认排除 `.prohibited` 的 background-only processes
+- `app list --all`：
+  - 返回当前系统中所有可操作的应用列表
+  - macOS 通过扫描标准 app bundle 目录并与运行中的 app 集合合并来生成结果
+  - 非运行中的应用会保留 `is_running = false`，并且没有 `pid`
 
 ### `window`
 
