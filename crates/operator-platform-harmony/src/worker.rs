@@ -218,7 +218,6 @@ pub(crate) struct HarmonyCaptureReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HarmonyAppQueryReport {
     pub(crate) bundles: Vec<String>,
-    pub(crate) current_app: Option<CurrentApp>,
 }
 
 struct WorkerState {
@@ -523,12 +522,8 @@ impl WorkerState {
                 .as_mut()
                 .expect("shell session should be initialized");
             let bundles = session.list_apps()?;
-            let current_app = session.current_app()?;
 
-            Ok(HarmonyAppQueryReport {
-                bundles,
-                current_app,
-            })
+            Ok(HarmonyAppQueryReport { bundles })
         };
 
         if result.is_err() {

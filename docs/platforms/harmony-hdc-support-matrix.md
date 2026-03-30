@@ -2,6 +2,7 @@
 
 日期：2026-03-27
 命令面同步：2026-03-30（按当前稳定 shell contract 回写）
+OPE-160 补充实测：2026-03-30
 
 本文档区分三种状态：
 
@@ -20,7 +21,10 @@
 |---|---|---|
 | `permissions` | 实机验证通过 | `hdc.connect` / `hdc.shell` / `hdc.capture` / `hdc.ui_bridge` 全部 `Granted` |
 | `capabilities` | 实机验证通过 | 返回 `AppLifecycle`、`Capture`、`KeyboardInput`、`Permissions`、`PointerInput`、`WindowQuery` |
-| `app list` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `list apps`；返回运行中 bundle 列表 |
+| `app list` | 实机验证通过 | 默认等价 `app list --running`；`OPE-160` 补充实测为带窗口的运行中 app 列表，耗时 `0.506s` |
+| `app list --all` | 实机验证通过 | `OPE-160` 补充实测已支持；返回已安装 bundle 列表，并在运行中项上回填 `is_running` / `pid`，耗时 `0.868s` |
+| `app list --name <text>` | 实机验证通过 | `OPE-160` 补充实测已支持；未显式给 mode 时默认走 `--all`，按应用名大小写不敏感包含匹配，耗时 `0.709s` |
+| `app list --bundle <bundle>` | 实机验证通过 | `OPE-160` 补充实测已支持；未显式给 mode 时默认走 `--all`，按 bundle 全匹配，耗时 `0.574s` |
 | `window list --app <bundle>` | 实机验证通过 | 当前 CLI contract 仅支持按 app 列窗；`OPE-132` 实机时对应旧命令为 `list windows`；返回窗口列表、focus 和 bounds；结果包含系统面板窗口 |
 | `app launch <bundle>` | 实机验证通过 | `com.huawei.hmos.notepad` 成功被拉起并切到前台 |
 | `click --app <bundle>` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `input click --app <bundle>`；成功解析目标窗口并点击中心点 |

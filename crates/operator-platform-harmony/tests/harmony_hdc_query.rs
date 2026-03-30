@@ -115,7 +115,7 @@ async fn permissions_query_times_out_slow_shell_connect_without_waiting_for_full
 }
 
 #[tokio::test]
-async fn list_apps_and_windows_queries_normalize_results_and_reuse_shell_session() {
+async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session() {
     let counts = Arc::new(CallCounts::default());
     let driver = build_driver(FakeSessionFactory {
         counts: Arc::clone(&counts),
@@ -124,10 +124,6 @@ async fn list_apps_and_windows_queries_normalize_results_and_reuse_shell_session
             "com.demo.calculator".into(),
             "com.demo.notes".into(),
         ],
-        current_app: Some(CurrentApp {
-            bundle_name: "com.demo.notes".into(),
-            ability_name: "EntryAbility".into(),
-        }),
         windows: CorrelatedWindowList {
             windows: vec![
                 CorrelatedWindow {
@@ -171,14 +167,14 @@ async fn list_apps_and_windows_queries_normalize_results_and_reuse_shell_session
         QueryResult::Apps(vec![
             operator_core::AppInfo {
                 bundle_id: Some("com.demo.calculator".into()),
-                name: "com.demo.calculator".into(),
-                pid: None,
+                name: "Calculator".into(),
+                pid: Some(102),
                 is_running: true,
             },
             operator_core::AppInfo {
                 bundle_id: Some("com.demo.notes".into()),
-                name: "com.demo.notes".into(),
-                pid: None,
+                name: "Notes".into(),
+                pid: Some(101),
                 is_running: true,
             },
         ])
@@ -200,9 +196,99 @@ async fn list_apps_and_windows_queries_normalize_results_and_reuse_shell_session
         }])
     );
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn all_app_list_merges_installed_bundles_and_supports_filters() {
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        apps: vec![
+            "com.demo.mail".into(),
+            "com.demo.notes".into(),
+            "com.demo.mail".into(),
+        ],
+        windows: CorrelatedWindowList {
+            windows: vec![
+                CorrelatedWindow {
+                    window: window(7, "Draft.txt", 101, 40, 50, 600, 400),
+                    mission: Some(mission(7, "Notes", "com.demo.notes")),
+                },
+                CorrelatedWindow {
+                    window: window(12, "Browser", 103, 680, 50, 320, 480),
+                    mission: Some(mission(12, "Browser", "com.demo.browser")),
+                },
+            ],
+            focused_window_id: Some(7),
+            highlighted_window_ids: vec![7],
+            total_window_count: Some(2),
+        },
+        ..Default::default()
+    });
+
+    let apps = driver
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter::default(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("list apps --all should succeed");
+    let filtered = driver
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter {
+                    name: Some("mail".into()),
+                    bundle: None,
+                },
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("list apps --all --name should succeed");
+
+    assert_eq!(
+        apps,
+        QueryResult::Apps(vec![
+            operator_core::AppInfo {
+                bundle_id: Some("com.demo.browser".into()),
+                name: "Browser".into(),
+                pid: Some(103),
+                is_running: true,
+            },
+            operator_core::AppInfo {
+                bundle_id: Some("com.demo.mail".into()),
+                name: "com.demo.mail".into(),
+                pid: None,
+                is_running: false,
+            },
+            operator_core::AppInfo {
+                bundle_id: Some("com.demo.notes".into()),
+                name: "Notes".into(),
+                pid: Some(101),
+                is_running: true,
+            },
+        ])
+    );
+    assert_eq!(
+        filtered,
+        QueryResult::Apps(vec![operator_core::AppInfo {
+            bundle_id: Some("com.demo.mail".into()),
+            name: "com.demo.mail".into(),
+            pid: None,
+            is_running: false,
+        }])
+    );
+    assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]

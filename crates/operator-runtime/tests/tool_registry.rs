@@ -685,6 +685,72 @@ async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tre
 }
 
 #[tokio::test]
+async fn list_apps_tool_defaults_filtered_harmony_queries_to_all_mode() {
+    let mut config = RuntimeConfig {
+        default_timeout_ms: 250,
+        default_target: "harmony-pc".into(),
+        ..RuntimeConfig::default()
+    };
+    config.targets.insert(
+        "harmony-pc".into(),
+        NamedTargetConfig {
+            platform: "harmony".into(),
+            driver: "harmony.hdc".into(),
+            driver_config: Default::default(),
+        },
+    );
+
+    let driver = Arc::new(MockPlatformDriver::with_driver_id(
+        "harmony",
+        "harmony.hdc",
+        CapabilitySet::new([Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(QueryResult::Apps(vec![AppInfo {
+        bundle_id: Some("com.huawei.hmos.notepad".into()),
+        name: "com.huawei.hmos.notepad".into(),
+        pid: None,
+        is_running: false,
+    }])));
+
+    let runtime = RuntimeBuilder::new(config)
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    let apps = runtime
+        .tools()
+        .invoke("list-apps", json!({ "name": "note" }))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        apps["apps"][0]["bundle_id"],
+        json!("com.huawei.hmos.notepad")
+    );
+
+    let calls = driver.query_calls().await;
+    assert_eq!(
+        calls,
+        vec![(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter {
+                    name: Some("note".into()),
+                    bundle: None,
+                },
+            },
+            ExecContext {
+                target: "harmony-pc".into(),
+                session: None,
+                timeout_ms: Some(250),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
 async fn action_tools_support_harmony_pointer_and_keyboard_surface_without_inspect_tree() {
     let mut config = RuntimeConfig {
         default_timeout_ms: 250,

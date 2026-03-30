@@ -4,7 +4,7 @@ use operator_core::{
 };
 
 use crate::{
-    normalize::{normalize_apps, normalize_windows},
+    normalize::{normalize_all_apps, normalize_running_apps, normalize_windows},
     HarmonyHdcWorker,
 };
 
@@ -14,22 +14,17 @@ pub(crate) async fn query(
     capabilities: CapabilitySet,
 ) -> Result<QueryResult, OperatorError> {
     match req {
-        QueryRequest::ListApps {
-            mode: AppListMode::Running,
-            filter,
-        } => {
-            let report = worker.query_apps().await?;
-            Ok(QueryResult::Apps(filter_app_infos(
-                normalize_apps(report.bundles, report.current_app),
-                &filter,
-            )))
+        QueryRequest::ListApps { mode, filter } => {
+            let apps = match mode {
+                AppListMode::Running => normalize_running_apps(worker.query_windows().await?),
+                AppListMode::All => {
+                    let report = worker.query_apps().await?;
+                    let windows = worker.query_windows().await?;
+                    normalize_all_apps(report.bundles, windows)
+                }
+            };
+            Ok(QueryResult::Apps(filter_app_infos(apps, &filter)))
         }
-        QueryRequest::ListApps {
-            mode: AppListMode::All,
-            ..
-        } => Err(OperatorError::Platform(
-            "app list --all is not supported for Harmony targets".into(),
-        )),
         QueryRequest::ListWindows { app } => Ok(QueryResult::Windows(normalize_windows(
             worker.query_windows().await?,
             app.as_deref(),

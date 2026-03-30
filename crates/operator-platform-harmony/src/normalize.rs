@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use hmdriver_rs::{CorrelatedWindow, CorrelatedWindowList, CurrentApp, WindowRect};
 use operator_core::{ActionTargetSelector, AppInfo, OperatorError, Point, Rect, WindowInfo};
@@ -9,27 +9,17 @@ pub(crate) struct ResolvedActionTarget {
     pub(crate) window: Option<WindowInfo>,
 }
 
-pub(crate) fn normalize_apps(
-    bundles: Vec<String>,
-    current_app: Option<CurrentApp>,
-) -> Vec<AppInfo> {
-    let mut unique = BTreeSet::new();
-    for bundle in bundles {
-        insert_non_empty(&mut unique, bundle);
-    }
-    if let Some(current_app) = current_app {
-        insert_non_empty(&mut unique, current_app.bundle_name);
-    }
+pub(crate) fn normalize_running_apps(windows: CorrelatedWindowList) -> Vec<AppInfo> {
+    normalize_app_records(running_app_records_from_windows(windows))
+}
 
-    unique
-        .into_iter()
-        .map(|bundle| AppInfo {
-            bundle_id: Some(bundle.clone()),
-            name: bundle,
-            pid: None,
-            is_running: true,
-        })
-        .collect()
+pub(crate) fn normalize_all_apps(
+    bundles: Vec<String>,
+    windows: CorrelatedWindowList,
+) -> Vec<AppInfo> {
+    let mut apps = running_app_records_from_windows(windows);
+    apps.extend(installed_app_records(bundles));
+    normalize_app_records(apps)
 }
 
 pub(crate) fn normalize_windows(
@@ -229,13 +219,6 @@ fn rect_from_window(rect: WindowRect) -> Option<Rect> {
     })
 }
 
-fn insert_non_empty(set: &mut BTreeSet<String>, value: String) {
-    let value = value.trim();
-    if !value.is_empty() {
-        set.insert(value.to_string());
-    }
-}
-
 fn non_empty(value: String) -> Option<String> {
     let value = value.trim();
     if value.is_empty() {
@@ -254,6 +237,117 @@ struct NormalizedWindowCandidate {
     app: Option<AppInfo>,
     pid: Option<u32>,
     window: WindowInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AppRecord {
+    bundle_id: Option<String>,
+    name: String,
+    pid: Option<u32>,
+    is_running: bool,
+}
+
+fn running_app_records_from_windows(windows: CorrelatedWindowList) -> Vec<AppRecord> {
+    normalized_window_candidates(windows, None)
+        .into_iter()
+        .filter_map(|candidate| candidate.app)
+        .filter(is_listable_app_info)
+        .map(|app| AppRecord {
+            bundle_id: app.bundle_id,
+            name: app.name,
+            pid: app.pid,
+            is_running: true,
+        })
+        .collect()
+}
+
+fn installed_app_records(bundles: Vec<String>) -> Vec<AppRecord> {
+    bundles
+        .into_iter()
+        .filter_map(|bundle| {
+            let bundle = bundle.trim();
+            if bundle.is_empty() {
+                return None;
+            }
+
+            Some(AppRecord {
+                bundle_id: Some(bundle.to_string()),
+                name: bundle.to_string(),
+                pid: None,
+                is_running: false,
+            })
+        })
+        .collect()
+}
+
+fn normalize_app_records(apps: Vec<AppRecord>) -> Vec<AppInfo> {
+    let mut deduped = BTreeMap::new();
+
+    for app in apps {
+        let key = app_identity_key(&app);
+        deduped
+            .entry(key)
+            .and_modify(|existing| merge_app_record(existing, &app))
+            .or_insert(app);
+    }
+
+    let mut normalized = deduped
+        .into_values()
+        .map(|record| AppInfo {
+            bundle_id: record.bundle_id,
+            name: record.name,
+            pid: record.pid,
+            is_running: record.is_running,
+        })
+        .collect::<Vec<_>>();
+    normalized.sort_by(|left, right| {
+        left.name
+            .to_ascii_lowercase()
+            .cmp(&right.name.to_ascii_lowercase())
+            .then_with(|| right.is_running.cmp(&left.is_running))
+            .then_with(|| left.pid.cmp(&right.pid))
+            .then_with(|| left.bundle_id.cmp(&right.bundle_id))
+    });
+    normalized
+}
+
+fn app_identity_key(app: &AppRecord) -> String {
+    app.bundle_id
+        .as_deref()
+        .map(|bundle| format!("bundle:{}", bundle.to_ascii_lowercase()))
+        .unwrap_or_else(|| format!("name:{}", app.name.to_ascii_lowercase()))
+}
+
+fn merge_app_record(existing: &mut AppRecord, incoming: &AppRecord) {
+    if existing.bundle_id.is_none() {
+        existing.bundle_id = incoming.bundle_id.clone();
+    }
+
+    if existing.pid.is_none() || incoming.pid < existing.pid {
+        existing.pid = incoming.pid.or(existing.pid);
+    }
+
+    existing.is_running |= incoming.is_running;
+
+    if app_display_name_score(incoming) > app_display_name_score(existing) {
+        existing.name = incoming.name.clone();
+    }
+}
+
+fn app_display_name_score(app: &AppRecord) -> u8 {
+    let name = app.name.trim();
+    if name.is_empty() || name.starts_with("pid-") {
+        return 0;
+    }
+
+    match app.bundle_id.as_deref() {
+        Some(bundle_id) if name.eq_ignore_ascii_case(bundle_id) => 1,
+        _ => 2,
+    }
+}
+
+fn is_listable_app_info(app: &AppInfo) -> bool {
+    app.bundle_id.is_some() || !app.name.starts_with("pid-")
 }
 
 fn app_info(
