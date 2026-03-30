@@ -5,10 +5,21 @@ use operator_core::{
 };
 use serde::Deserialize;
 
-use crate::apps::{is_synthetic_window_id, resolve_window_record, WindowRecord};
+use crate::{
+    apps::{is_synthetic_window_id, resolve_window_record, WindowRecord},
+    WindowTarget,
+};
 
 pub trait TreeInspector: Send + Sync {
     fn inspect(&self, surface: &Surface) -> Result<InspectResult, OperatorError>;
+
+    fn inspect_window_target(&self, target: &WindowTarget) -> Result<InspectResult, OperatorError> {
+        self.inspect(&Surface {
+            kind: SurfaceKind::Window {
+                id: target.window.id,
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,22 +33,11 @@ pub struct SystemTreeInspector;
 
 impl TreeInspector for SystemTreeInspector {
     fn inspect(&self, surface: &Surface) -> Result<InspectResult, OperatorError> {
-        let output = run_jxa(&script_for_surface(surface)?)?;
-        let roots = parse_inspection_nodes(&output)?;
+        inspect_with_root_query(&root_query(surface)?, surface_region(surface))
+    }
 
-        let mut elements = HashMap::new();
-        let mut root_ids = Vec::new();
-        for (index, node) in roots.into_iter().enumerate() {
-            let id = flatten_node(node, &format!("ax-{index}"), &mut elements);
-            root_ids.push(id);
-        }
-
-        let result = InspectResult { elements, root_ids };
-        if let SurfaceKind::Region { rect } = &surface.kind {
-            return Ok(filter_to_region(result, *rect));
-        }
-
-        Ok(result)
+    fn inspect_window_target(&self, target: &WindowTarget) -> Result<InspectResult, OperatorError> {
+        inspect_with_root_query(&root_query_for_window_target(target)?, target.window.bounds)
     }
 }
 
@@ -98,7 +98,29 @@ fn parse_inspection_nodes(json: &str) -> Result<Vec<InspectNode>, OperatorError>
     })
 }
 
-fn script_for_surface(surface: &Surface) -> Result<String, OperatorError> {
+fn inspect_with_root_query(
+    root_query: &str,
+    region: Option<Rect>,
+) -> Result<InspectResult, OperatorError> {
+    let output = run_jxa(&script_for_root_query(root_query))?;
+    let roots = parse_inspection_nodes(&output)?;
+
+    let mut elements = HashMap::new();
+    let mut root_ids = Vec::new();
+    for (index, node) in roots.into_iter().enumerate() {
+        let id = flatten_node(node, &format!("ax-{index}"), &mut elements);
+        root_ids.push(id);
+    }
+
+    let result = InspectResult { elements, root_ids };
+    if let Some(region) = region {
+        return Ok(filter_to_region(result, region));
+    }
+
+    Ok(result)
+}
+
+fn script_for_root_query(root_query: &str) -> String {
     const TEMPLATE: &str = r#"
 const systemEvents = Application("System Events");
 
@@ -152,16 +174,72 @@ const roots = __ROOT_QUERY__;
 JSON.stringify(roots.map((root) => serialize(root, 0)));
 "#;
 
-    Ok(TEMPLATE.replace("__ROOT_QUERY__", &root_query(surface)?))
+    TEMPLATE.replace("__ROOT_QUERY__", root_query)
 }
 
 fn root_query(surface: &Surface) -> Result<String, OperatorError> {
     match &surface.kind {
-        SurfaceKind::Window { id } if is_synthetic_window_id(*id) => {
-            synthetic_window_root_query(*id, &resolve_window_record(*id)?)
-        }
-        SurfaceKind::Window { id } => Ok(format!(
-            r#"(() => {{
+        SurfaceKind::Window { id } => resolve_window_root_query(*id),
+        SurfaceKind::Frontmost => Ok(frontmost_root_query()),
+        SurfaceKind::Fullscreen { .. } | SurfaceKind::Region { .. } => Ok(all_window_roots_query()),
+    }
+}
+
+fn surface_region(surface: &Surface) -> Option<Rect> {
+    match surface.kind {
+        SurfaceKind::Region { rect } => Some(rect),
+        _ => None,
+    }
+}
+
+fn root_query_for_window_target(target: &WindowTarget) -> Result<String, OperatorError> {
+    if let Some(native_id) = target.native_id {
+        return Ok(native_window_root_query(native_id));
+    }
+
+    let Some(window_index) = target.window_index else {
+        return resolve_window_root_query(target.window.id);
+    };
+
+    synthetic_window_root_query(
+        target.window.id,
+        target.pid,
+        window_index,
+        target.ax_identifier.as_deref(),
+        target.window.title.as_deref(),
+        target.window.app_name.as_deref(),
+    )
+}
+
+fn resolve_window_root_query(id: operator_core::WindowId) -> Result<String, OperatorError> {
+    if !is_synthetic_window_id(id) {
+        return Ok(native_window_root_query(id.0));
+    }
+
+    let record = resolve_window_record(id)?;
+    window_record_root_query(id, &record)
+}
+
+fn window_record_root_query(
+    id: operator_core::WindowId,
+    record: &WindowRecord,
+) -> Result<String, OperatorError> {
+    match record.id {
+        Some(native_id) => Ok(native_window_root_query(native_id)),
+        None => synthetic_window_root_query(
+            id,
+            record.pid,
+            record.window_index,
+            record.ax_identifier.as_deref(),
+            record.title.as_deref(),
+            record.app_name.as_deref(),
+        ),
+    }
+}
+
+fn native_window_root_query(window_id: u64) -> String {
+    format!(
+        r#"(() => {{
   const matches = [];
   const processes = systemEvents.applicationProcesses();
   for (const process of processes) {{
@@ -179,11 +257,8 @@ fn root_query(surface: &Surface) -> Result<String, OperatorError> {
 
   return matches.slice(0, 1);
 }})()"#,
-            window_id = id.0,
-        )),
-        SurfaceKind::Frontmost => Ok(frontmost_root_query()),
-        SurfaceKind::Fullscreen { .. } | SurfaceKind::Region { .. } => Ok(all_window_roots_query()),
-    }
+        window_id = window_id,
+    )
 }
 
 fn frontmost_root_query() -> String {
@@ -282,19 +357,22 @@ fn rects_intersect(lhs: Rect, rhs: Rect) -> bool {
 
 fn synthetic_window_root_query(
     id: operator_core::WindowId,
-    window: &WindowRecord,
+    pid: Option<u32>,
+    window_index: usize,
+    ax_identifier: Option<&str>,
+    title: Option<&str>,
+    app_name: Option<&str>,
 ) -> Result<String, OperatorError> {
-    let pid = window
-        .pid
+    let pid = pid
         .map(|pid| pid.to_string())
         .unwrap_or_else(|| "null".into());
-    let app_name = serde_json::to_string(&window.app_name).map_err(|error| {
+    let app_name = serde_json::to_string(&app_name).map_err(|error| {
         OperatorError::Platform(format!("failed to encode macOS app name: {error}"))
     })?;
-    let title = serde_json::to_string(&window.title).map_err(|error| {
+    let title = serde_json::to_string(&title).map_err(|error| {
         OperatorError::Platform(format!("failed to encode macOS window title: {error}"))
     })?;
-    let ax_identifier = serde_json::to_string(&window.ax_identifier).map_err(|error| {
+    let ax_identifier = serde_json::to_string(&ax_identifier).map_err(|error| {
         OperatorError::Platform(format!(
             "failed to encode macOS window AX identifier: {error}"
         ))
@@ -349,7 +427,7 @@ fn synthetic_window_root_query(
         app_name = app_name,
         title = title,
         ax_identifier = ax_identifier,
-        window_index = window.window_index,
+        window_index = window_index,
         window_id = id.0,
     ))
 }
@@ -394,8 +472,9 @@ mod tests {
     use operator_core::{ElementId, ElementSource, UiElement, WindowId};
 
     use super::{
-        filter_to_region, root_query, synthetic_window_root_query, InspectResult, Surface,
-        SurfaceKind, WindowRecord,
+        filter_to_region, native_window_root_query, root_query, root_query_for_window_target,
+        synthetic_window_root_query, window_record_root_query, InspectResult, Surface, SurfaceKind,
+        WindowRecord, WindowTarget,
     };
     use operator_core::Rect;
 
@@ -403,17 +482,11 @@ mod tests {
     fn synthetic_window_query_matches_pid_identifier_and_index() {
         let query = synthetic_window_root_query(
             WindowId((1 << 63) | 42),
-            &WindowRecord {
-                id: None,
-                pid: Some(512),
-                window_index: 3,
-                ax_identifier: Some("workspace.editor".into()),
-                title: Some("main.rs".into()),
-                app_name: Some("Codex".into()),
-                bounds: None,
-                is_focused: false,
-                is_minimized: false,
-            },
+            Some(512),
+            3,
+            Some("workspace.editor"),
+            Some("main.rs"),
+            Some("Codex"),
         )
         .unwrap();
 
@@ -436,6 +509,60 @@ mod tests {
         assert!(query.contains("systemEvents.applicationProcesses();"));
         assert!(query.contains("AXMinimized"));
         assert!(query.contains("return roots;"));
+    }
+
+    #[test]
+    fn native_window_query_keeps_high_bit_window_ids_native() {
+        let query = native_window_root_query((1u64 << 63) | 42);
+
+        assert!(query.contains("Number(window.id())"));
+        assert!(query.contains(&format!("{}", (1u64 << 63) | 42)));
+        assert!(!query.contains("AXIdentifier"));
+    }
+
+    #[test]
+    fn window_target_query_prefers_preserved_native_id_over_public_id_shape() {
+        let query = root_query_for_window_target(&WindowTarget {
+            window: operator_core::WindowInfo {
+                id: WindowId((1u64 << 63) | 42),
+                title: Some("main.rs".into()),
+                app_name: Some("Codex".into()),
+                bounds: None,
+                is_focused: true,
+                is_minimized: false,
+            },
+            native_id: Some(42),
+            pid: Some(512),
+            window_index: Some(3),
+            ax_identifier: Some("workspace.editor".into()),
+        })
+        .unwrap();
+
+        assert!(query.contains("Number(window.id())"));
+        assert!(query.contains("42"));
+        assert!(!query.contains("workspace.editor"));
+    }
+
+    #[test]
+    fn window_record_query_uses_synthetic_selector_when_native_id_is_missing() {
+        let query = window_record_root_query(
+            WindowId((1 << 63) | 42),
+            &WindowRecord {
+                id: None,
+                pid: Some(512),
+                window_index: 3,
+                ax_identifier: Some("workspace.editor".into()),
+                title: Some("main.rs".into()),
+                app_name: Some("Codex".into()),
+                bounds: None,
+                is_focused: false,
+                is_minimized: false,
+            },
+        )
+        .unwrap();
+
+        assert!(query.contains("const expectedIdentifier = \"workspace.editor\";"));
+        assert!(query.contains("const expectedIndex = 3;"));
     }
 
     #[test]

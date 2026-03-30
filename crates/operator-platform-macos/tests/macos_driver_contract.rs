@@ -213,7 +213,8 @@ async fn observe_frontmost_prefers_focused_window_over_tiny_auxiliary_window() {
 }
 
 #[tokio::test]
-async fn observe_frontmost_uses_frontmost_surface_for_synthetic_window_ids() {
+async fn observe_frontmost_routes_high_bit_window_ids_through_region_capture_and_window_tree_surface(
+) {
     let synthetic_window = WindowInfo {
         id: WindowId(1 << 63 | 42),
         title: Some("计算器".into()),
@@ -262,13 +263,17 @@ async fn observe_frontmost_uses_frontmost_surface_for_synthetic_window_ids() {
     assert_eq!(
         driver.capture_provider().requested_surfaces(),
         vec![Surface {
-            kind: SurfaceKind::Frontmost,
+            kind: SurfaceKind::Region {
+                rect: synthetic_window.bounds.unwrap(),
+            },
         }]
     );
     assert_eq!(
         driver.tree_inspector().requested_surfaces(),
         vec![Surface {
-            kind: SurfaceKind::Frontmost,
+            kind: SurfaceKind::Window {
+                id: synthetic_window.id,
+            },
         }]
     );
     assert_eq!(
@@ -278,11 +283,24 @@ async fn observe_frontmost_uses_frontmost_surface_for_synthetic_window_ids() {
 }
 
 #[tokio::test]
-async fn observe_frontmost_screenshot_only_bypasses_window_queries() {
+async fn observe_frontmost_screenshot_only_uses_frontmost_window_lookup() {
+    let frontmost_window = WindowInfo {
+        id: 21.into(),
+        title: Some("Calculator".into()),
+        app_name: Some("Calculator".into()),
+        bounds: Some(Rect {
+            x: 338.0,
+            y: 216.0,
+            width: 230.0,
+            height: 408.0,
+        }),
+        is_focused: true,
+        is_minimized: false,
+    };
     let driver = MacosDriver::with_observe(
         StubAppService {
             list_windows_error: Some("full window enumeration should not run".into()),
-            frontmost_windows_error: Some("frontmost window lookup should not run".into()),
+            frontmost_windows: Some(vec![frontmost_window.clone()]),
             ..Default::default()
         },
         StubPermissionReader::granted(),
@@ -315,11 +333,17 @@ async fn observe_frontmost_screenshot_only_bypasses_window_queries() {
     assert_eq!(
         driver.capture_provider().requested_surfaces(),
         vec![Surface {
-            kind: SurfaceKind::Frontmost,
+            kind: SurfaceKind::Window {
+                id: frontmost_window.id,
+            },
         }]
     );
-    assert_eq!(driver.app_service().frontmost_window_query_count(), 0);
+    assert_eq!(driver.app_service().frontmost_window_query_count(), 1);
     assert_eq!(observed.snapshot.metadata.display_scale, Some(2.0));
+    assert_eq!(
+        observed.snapshot.metadata.capture_bounds,
+        frontmost_window.bounds
+    );
 }
 
 #[tokio::test]

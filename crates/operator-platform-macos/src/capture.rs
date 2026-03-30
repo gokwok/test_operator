@@ -6,14 +6,21 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use operator_core::{ArtifactId, ImageSizePx, OperatorError, Rect, Surface, SurfaceKind};
+use operator_core::{ArtifactId, ImageSizePx, OperatorError, Rect, Surface, SurfaceKind, WindowId};
 
-use crate::apps::{is_synthetic_window_id, resolve_window_record};
+use crate::{
+    apps::{is_synthetic_window_id, resolve_window_record},
+    WindowTarget,
+};
 
 static CAPTURE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub trait CaptureProvider: Send + Sync {
     fn capture(&self, surface: &Surface) -> Result<CaptureResult, OperatorError>;
+
+    fn capture_window_target(&self, target: &WindowTarget) -> Result<CaptureResult, OperatorError> {
+        self.capture(&capture_surface_for_window_target(target))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,6 +70,22 @@ impl CaptureProvider for SystemCaptureProvider {
             image_size_px: image_size_from_path(&path),
         })
     }
+
+    fn capture_window_target(&self, target: &WindowTarget) -> Result<CaptureResult, OperatorError> {
+        let artifact_id = next_artifact_id();
+        fs::create_dir_all(&self.artifacts_dir)?;
+
+        let path = self.artifact_path(&artifact_id);
+        let capture_bounds = target.window.bounds;
+        capture_window_target_to_path(target, &path)?;
+
+        Ok(CaptureResult {
+            artifact_id,
+            display_scale: display_scale_from_path(&path),
+            capture_bounds,
+            image_size_px: image_size_from_path(&path),
+        })
+    }
 }
 
 fn default_artifacts_dir() -> PathBuf {
@@ -87,18 +110,61 @@ fn next_artifact_id() -> ArtifactId {
     ArtifactId(format!("capture-{timestamp}-{counter}.png"))
 }
 
+fn capture_surface_for_window_target(target: &WindowTarget) -> Surface {
+    if target.native_id.is_some() {
+        return Surface {
+            kind: SurfaceKind::Window {
+                id: target.window.id,
+            },
+        };
+    }
+
+    target
+        .window
+        .bounds
+        .map(|rect| Surface {
+            kind: SurfaceKind::Region { rect },
+        })
+        .unwrap_or(Surface {
+            kind: SurfaceKind::Window {
+                id: target.window.id,
+            },
+        })
+}
+
 #[cfg(target_os = "macos")]
 fn capture_to_path(
     surface: &Surface,
     capture_bounds: Option<&Rect>,
     path: &Path,
 ) -> Result<(), OperatorError> {
-    let mut command = Command::new("screencapture");
-    command.args(capture_command_arguments(surface, capture_bounds)?);
+    run_screencapture(capture_command_arguments(surface, capture_bounds)?, path)
+}
 
-    let output = command.arg(path).output().map_err(|error| {
-        OperatorError::Platform(format!("failed to invoke screencapture: {error}"))
-    })?;
+#[cfg(target_os = "macos")]
+fn capture_window_target_to_path(target: &WindowTarget, path: &Path) -> Result<(), OperatorError> {
+    run_screencapture(capture_command_arguments_for_window_target(target)?, path)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_window_target_to_path(
+    _target: &WindowTarget,
+    _path: &Path,
+) -> Result<(), OperatorError> {
+    Err(OperatorError::Platform(
+        "macOS capture is unavailable on non-macOS hosts".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn run_screencapture(args: Vec<String>, path: &Path) -> Result<(), OperatorError> {
+    let output = Command::new("screencapture")
+        .args(args)
+        .arg(path)
+        .output()
+        .map_err(|error| {
+            OperatorError::Platform(format!("failed to invoke screencapture: {error}"))
+        })?;
 
     if output.status.success() {
         return Ok(());
@@ -119,14 +185,11 @@ fn capture_bounds_for_surface(surface: &Surface) -> Result<Option<Rect>, Operato
     match &surface.kind {
         SurfaceKind::Frontmost => frontmost_window_bounds(),
         SurfaceKind::Region { rect } => Ok(Some(*rect)),
-        SurfaceKind::Window { id } if is_synthetic_window_id(*id) => {
-            let window = resolve_window_record(*id)?;
-            let bounds = window.bounds.ok_or_else(|| {
-                OperatorError::Platform(format!("window {id} has no bounds available on macOS"))
-            })?;
-            Ok(Some(bounds))
-        }
-        SurfaceKind::Fullscreen { .. } | SurfaceKind::Window { .. } => Ok(None),
+        SurfaceKind::Window { id } => match resolve_window_capture_target(*id)? {
+            WindowCaptureTarget::Native(_) => Ok(None),
+            WindowCaptureTarget::Region(bounds) => Ok(Some(bounds)),
+        },
+        SurfaceKind::Fullscreen { .. } => Ok(None),
     }
 }
 
@@ -150,16 +213,22 @@ fn capture_command_arguments(
                 args.push(rect_argument(rect));
             }
         }
-        SurfaceKind::Window { id } if is_synthetic_window_id(*id) => {
-            let rect = capture_bounds.ok_or_else(|| {
-                OperatorError::Platform(format!("window {id} has no bounds available on macOS"))
-            })?;
-            args.push("-R".into());
-            args.push(rect_argument(rect));
-        }
         SurfaceKind::Window { id } => {
-            args.push("-l".into());
-            args.push(id.0.to_string());
+            if let Some(rect) = capture_bounds {
+                args.push("-R".into());
+                args.push(rect_argument(rect));
+            } else {
+                match resolve_window_capture_target(*id)? {
+                    WindowCaptureTarget::Native(native_id) => {
+                        args.push("-l".into());
+                        args.push(native_id.to_string());
+                    }
+                    WindowCaptureTarget::Region(rect) => {
+                        args.push("-R".into());
+                        args.push(rect_argument(&rect));
+                    }
+                }
+            }
         }
         SurfaceKind::Region { rect } => {
             args.push("-R".into());
@@ -167,6 +236,29 @@ fn capture_command_arguments(
         }
     }
 
+    Ok(args)
+}
+
+#[cfg(target_os = "macos")]
+fn capture_command_arguments_for_window_target(
+    target: &WindowTarget,
+) -> Result<Vec<String>, OperatorError> {
+    let mut args = vec!["-x".to_string()];
+
+    if let Some(native_id) = target.native_id {
+        args.push("-l".into());
+        args.push(native_id.to_string());
+        return Ok(args);
+    }
+
+    let bounds = target.window.bounds.ok_or_else(|| {
+        OperatorError::Platform(format!(
+            "window {} has no bounds available on macOS",
+            target.window.id
+        ))
+    })?;
+    args.push("-R".into());
+    args.push(rect_argument(&bounds));
     Ok(args)
 }
 
@@ -211,6 +303,30 @@ end tell
         width: parse_number(parts[2], "width")?,
         height: parse_number(parts[3], "height")?,
     }))
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WindowCaptureTarget {
+    Native(u64),
+    Region(Rect),
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_window_capture_target(id: WindowId) -> Result<WindowCaptureTarget, OperatorError> {
+    if !is_synthetic_window_id(id) {
+        return Ok(WindowCaptureTarget::Native(id.0));
+    }
+
+    let window = resolve_window_record(id)?;
+    if let Some(native_id) = window.id {
+        return Ok(WindowCaptureTarget::Native(native_id));
+    }
+
+    let bounds = window.bounds.ok_or_else(|| {
+        OperatorError::Platform(format!("window {id} has no bounds available on macOS"))
+    })?;
+    Ok(WindowCaptureTarget::Region(bounds))
 }
 
 #[cfg(target_os = "macos")]
@@ -383,6 +499,59 @@ mod tests {
         .unwrap();
 
         assert_eq!(args, vec!["-x", "-R", "10,20,300,200"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn frontmost_window_capture_uses_region_bounds_when_resolved_upstream() {
+        let args = capture_command_arguments(
+            &Surface {
+                kind: SurfaceKind::Region {
+                    rect: Rect {
+                        x: 0.0,
+                        y: 33.0,
+                        width: 1470.0,
+                        height: 923.0,
+                    },
+                },
+            },
+            Some(&Rect {
+                x: 0.0,
+                y: 33.0,
+                width: 1470.0,
+                height: 923.0,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(args, vec!["-x", "-R", "0,33,1470,923"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn window_target_capture_uses_native_id_without_window_relookup() {
+        let args = capture_command_arguments_for_window_target(&WindowTarget {
+            window: operator_core::WindowInfo {
+                id: WindowId((1 << 63) | 42),
+                title: Some("Main".into()),
+                app_name: Some("Codex".into()),
+                bounds: Some(Rect {
+                    x: 0.0,
+                    y: 33.0,
+                    width: 1470.0,
+                    height: 923.0,
+                }),
+                is_focused: true,
+                is_minimized: false,
+            },
+            native_id: Some(42),
+            pid: Some(123),
+            window_index: Some(1),
+            ax_identifier: Some("cmux.main".into()),
+        })
+        .unwrap();
+
+        assert_eq!(args, vec!["-x", "-l", "42"]);
     }
 
     #[test]

@@ -9,7 +9,7 @@ mod inspect;
 mod locator;
 mod permissions;
 
-pub use apps::{AppService, SystemAppService};
+pub use apps::{AppService, SystemAppService, WindowTarget};
 pub use capture::{CaptureProvider, CaptureResult, SystemCaptureProvider};
 pub use driver::MacosDriver;
 #[cfg(feature = "action-effects")]

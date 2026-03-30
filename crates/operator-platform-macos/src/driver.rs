@@ -14,10 +14,10 @@ use operator_core::{
 };
 
 use crate::{
-    apps::is_synthetic_window_id, effects::ActionEffects, locator::resolve_locator, AppService,
-    CaptureProvider, InputSynthesizer, InspectResult, PermissionReader, SystemAppService,
-    SystemCaptureProvider, SystemInputSynthesizer, SystemPermissionReader, SystemTreeInspector,
-    TreeInspector, ACCESSIBILITY_CHECK_ID, SCREEN_RECORDING_CHECK_ID, SYSTEM_EVENTS_CHECK_ID,
+    effects::ActionEffects, locator::resolve_locator, AppService, CaptureProvider,
+    InputSynthesizer, InspectResult, PermissionReader, SystemAppService, SystemCaptureProvider,
+    SystemInputSynthesizer, SystemPermissionReader, SystemTreeInspector, TreeInspector,
+    WindowTarget, ACCESSIBILITY_CHECK_ID, SCREEN_RECORDING_CHECK_ID, SYSTEM_EVENTS_CHECK_ID,
 };
 
 static SNAPSHOT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -188,23 +188,26 @@ where
         let permissions = self.permission_reader.current_permissions()?;
         require_observe_permissions(&permissions, &req)?;
         let started = Instant::now();
-        let resolved_surface = if matches!(req.surface.kind, SurfaceKind::Frontmost)
-            && req.include_screenshot
-            && !req.include_elements
-        {
-            ResolvedObserveSurface::new(req.surface.clone(), None)
-        } else {
-            self.resolve_observe_surface(&req.surface)
-        };
+        let resolved_surface = self.resolve_observe_surface(&req.surface);
 
         let capture = if req.include_screenshot {
-            Some(self.capture_provider.capture(&resolved_surface.surface)?)
+            Some(match resolved_surface.window_target.as_ref() {
+                Some(target) => self.capture_provider.capture_window_target(target)?,
+                None => self
+                    .capture_provider
+                    .capture(&resolved_surface.capture_surface)?,
+            })
         } else {
             None
         };
 
         let inspection = if req.include_elements {
-            self.tree_inspector.inspect(&resolved_surface.surface)?
+            match resolved_surface.window_target.as_ref() {
+                Some(target) => self.tree_inspector.inspect_window_target(target)?,
+                None => self
+                    .tree_inspector
+                    .inspect(&resolved_surface.inspect_surface)?,
+            }
         } else {
             InspectResult {
                 elements: Default::default(),
@@ -857,18 +860,21 @@ where
     fn resolve_observe_surface(&self, surface: &Surface) -> ResolvedObserveSurface {
         match &surface.kind {
             SurfaceKind::Frontmost => self.resolve_frontmost_observe_surface(),
-            _ => ResolvedObserveSurface::new(surface.clone(), None),
+            _ => ResolvedObserveSurface::new(surface.clone(), surface.clone(), None),
         }
     }
 
     fn resolve_frontmost_observe_surface(&self) -> ResolvedObserveSurface {
-        if let Ok(windows) = self.app_service.list_frontmost_windows() {
-            if let Some(window) = select_observe_window(&windows) {
-                return ResolvedObserveSurface::window(window);
+        if let Ok(windows) = self.app_service.list_frontmost_window_targets() {
+            if let Some(window) = select_observe_window_target(&windows) {
+                return ResolvedObserveSurface::window_target(window);
             }
         }
 
         ResolvedObserveSurface::new(
+            Surface {
+                kind: SurfaceKind::Frontmost,
+            },
             Surface {
                 kind: SurfaceKind::Frontmost,
             },
@@ -1062,33 +1068,52 @@ struct TypeActionConfig<'a> {
 
 #[derive(Debug, Clone)]
 struct ResolvedObserveSurface {
-    surface: Surface,
+    capture_surface: Surface,
+    inspect_surface: Surface,
     capture_bounds: Option<Rect>,
+    window_target: Option<WindowTarget>,
 }
 
 impl ResolvedObserveSurface {
-    fn new(surface: Surface, capture_bounds: Option<Rect>) -> Self {
+    fn new(
+        capture_surface: Surface,
+        inspect_surface: Surface,
+        capture_bounds: Option<Rect>,
+    ) -> Self {
         Self {
-            surface,
+            capture_surface,
+            inspect_surface,
             capture_bounds,
+            window_target: None,
         }
     }
 
-    fn window(window: WindowInfo) -> Self {
-        if is_synthetic_window_id(window.id) {
-            return Self {
-                surface: Surface {
-                    kind: SurfaceKind::Frontmost,
-                },
-                capture_bounds: window.bounds,
-            };
-        }
-
-        Self {
-            surface: Surface {
-                kind: SurfaceKind::Window { id: window.id },
+    fn window_target(window_target: WindowTarget) -> Self {
+        let inspect_surface = Surface {
+            kind: SurfaceKind::Window {
+                id: window_target.window.id,
             },
-            capture_bounds: window.bounds,
+        };
+        let capture_surface = if window_target.native_id.is_some() {
+            Surface {
+                kind: SurfaceKind::Window {
+                    id: window_target.window.id,
+                },
+            }
+        } else {
+            window_target
+                .window
+                .bounds
+                .map(|bounds| Surface {
+                    kind: SurfaceKind::Region { rect: bounds },
+                })
+                .unwrap_or(inspect_surface.clone())
+        };
+        Self {
+            capture_surface,
+            inspect_surface,
+            capture_bounds: window_target.window.bounds,
+            window_target: Some(window_target),
         }
     }
 }
@@ -1190,6 +1215,34 @@ fn select_observe_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
                 .cloned()
         })
         .or_else(|| select_anchor_window(windows))
+}
+
+fn select_observe_window_target(windows: &[WindowTarget]) -> Option<WindowTarget> {
+    windows
+        .iter()
+        .filter(|window| window_has_usable_observe_bounds(&window.window))
+        .find(|window| window.window.is_focused && !window.window.is_minimized)
+        .cloned()
+        .or_else(|| {
+            windows
+                .iter()
+                .filter(|window| window_has_usable_observe_bounds(&window.window))
+                .find(|window| !window.window.is_minimized)
+                .cloned()
+        })
+        .or_else(|| {
+            windows
+                .iter()
+                .find(|window| window.window.is_focused)
+                .cloned()
+                .or_else(|| {
+                    windows
+                        .iter()
+                        .find(|window| !window.window.is_minimized)
+                        .cloned()
+                })
+                .or_else(|| windows.first().cloned())
+        })
 }
 
 fn window_has_usable_observe_bounds(window: &WindowInfo) -> bool {

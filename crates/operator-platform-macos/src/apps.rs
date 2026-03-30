@@ -10,6 +10,13 @@ use serde::Deserialize;
 pub trait AppService: Send + Sync {
     fn list_apps(&self) -> Result<Vec<AppInfo>, OperatorError>;
     fn list_windows(&self, app: Option<&str>) -> Result<Vec<WindowInfo>, OperatorError>;
+    fn list_frontmost_window_targets(&self) -> Result<Vec<WindowTarget>, OperatorError> {
+        Ok(self
+            .list_frontmost_windows()?
+            .into_iter()
+            .map(WindowTarget::from)
+            .collect())
+    }
     fn list_frontmost_windows(&self) -> Result<Vec<WindowInfo>, OperatorError> {
         if let Some(app_name) = self.get_focus()?.and_then(|focus| focus.app_name) {
             return self.list_windows(Some(&app_name));
@@ -67,6 +74,11 @@ JSON.stringify(apps);
             .into_iter()
             .map(WindowInfo::from)
             .collect())
+    }
+
+    fn list_frontmost_window_targets(&self) -> Result<Vec<WindowTarget>, OperatorError> {
+        let windows: Vec<WindowRecord> = parse_jxa_json(run_jxa(frontmost_windows_script())?)?;
+        Ok(windows.into_iter().map(WindowTarget::from).collect())
     }
 
     fn list_frontmost_windows(&self) -> Result<Vec<WindowInfo>, OperatorError> {
@@ -433,6 +445,15 @@ pub(crate) struct WindowRecord {
     pub(crate) is_minimized: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowTarget {
+    pub window: WindowInfo,
+    pub native_id: Option<u64>,
+    pub pid: Option<u32>,
+    pub window_index: Option<usize>,
+    pub ax_identifier: Option<String>,
+}
+
 impl WindowRecord {
     pub(crate) fn public_id(&self) -> WindowId {
         self.id
@@ -450,6 +471,30 @@ impl From<WindowRecord> for WindowInfo {
             bounds: value.bounds,
             is_focused: value.is_focused,
             is_minimized: value.is_minimized,
+        }
+    }
+}
+
+impl From<WindowInfo> for WindowTarget {
+    fn from(window: WindowInfo) -> Self {
+        Self {
+            native_id: (!is_synthetic_window_id(window.id)).then_some(window.id.0),
+            window,
+            pid: None,
+            window_index: None,
+            ax_identifier: None,
+        }
+    }
+}
+
+impl From<WindowRecord> for WindowTarget {
+    fn from(value: WindowRecord) -> Self {
+        Self {
+            native_id: value.id,
+            pid: value.pid,
+            window_index: Some(value.window_index),
+            ax_identifier: value.ax_identifier.clone(),
+            window: WindowInfo::from(value),
         }
     }
 }
