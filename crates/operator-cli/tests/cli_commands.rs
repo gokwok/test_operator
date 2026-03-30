@@ -406,6 +406,17 @@ fn window_list_command_maps_to_list_windows_tool() {
 }
 
 #[test]
+fn window_list_requires_app_in_cli_contract() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "window", "list"]).unwrap();
+
+    let error = cli.into_invocation().unwrap_err();
+    assert_eq!(
+        error,
+        "window list requires --app <NAME>; unfiltered window enumeration is no longer supported by the CLI"
+    );
+}
+
+#[test]
 fn mcp_help_lists_serve_subcommand() {
     let help = command_help(["operator", "mcp", "--help"]);
     assert!(help.contains("Run the Operator MCP server"));
@@ -1256,17 +1267,16 @@ fn window_list_help_snapshot_is_stable() {
     let help = command_help(["operator", "window", "list", "--help"]);
     assert_leaf_help_shape(
         &help,
-        "Usage operator window list [OPTIONS]",
+        "Usage operator window list [OPTIONS] --app <NAME>",
         "List application windows",
         &[
-            "operator window list",
             "operator window list --app TextEdit",
-            "operator --json window list",
+            "operator --json window list --app TextEdit",
         ],
     );
-    assert!(help.contains("Options"));
+    assert!(help.contains("Target (required)"));
     assert!(help.contains("--app <NAME>"));
-    assert!(help.contains("Prefer `--app <NAME>`"));
+    assert!(help.contains("requires `--app <NAME>`"));
 }
 
 #[test]

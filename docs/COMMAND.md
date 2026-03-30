@@ -319,10 +319,11 @@ operator
 - `window resize`
 - `window set-bounds`
 
-`window list` 在未指定 `--app` 时属于显式全量枚举路径：
+`window list` 的当前 northbound CLI contract 必须显式带 `--app <APP>`：
 
-- macOS 上这条路径可能明显更慢
-- 已知目标 app 时，应优先使用 `window list --app <APP>`
+- CLI 不再支持无过滤的全量窗口枚举路径
+- 这样可以把公开 shell contract 固定在按 app 的快路径上
+- 如仍需无过滤全量枚举，只允许保留为内部 runtime / driver path，不再对 CLI 调用方承诺
 
 ### Planned 系统命令
 

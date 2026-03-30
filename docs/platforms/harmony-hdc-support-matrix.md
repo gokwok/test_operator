@@ -21,7 +21,7 @@
 | `permissions` | 实机验证通过 | `hdc.connect` / `hdc.shell` / `hdc.capture` / `hdc.ui_bridge` 全部 `Granted` |
 | `capabilities` | 实机验证通过 | 返回 `AppLifecycle`、`Capture`、`KeyboardInput`、`Permissions`、`PointerInput`、`WindowQuery` |
 | `app list` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `list apps`；返回运行中 bundle 列表 |
-| `window list` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `list windows`；返回窗口列表、focus 和 bounds；结果包含系统面板窗口 |
+| `window list --app <bundle>` | 实机验证通过 | 当前 CLI contract 仅支持按 app 列窗；`OPE-132` 实机时对应旧命令为 `list windows`；返回窗口列表、focus 和 bounds；结果包含系统面板窗口 |
 | `app launch <bundle>` | 实机验证通过 | `com.huawei.hmos.notepad` 成功被拉起并切到前台 |
 | `click --app <bundle>` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `input click --app <bundle>`；成功解析目标窗口并点击中心点 |
 | `type <text> --app <bundle>` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `input type <text> --app <bundle>`；成功在前台 Notepad 目标上输入文本 |
@@ -63,7 +63,7 @@
 
 - 若目标是当前可用的视觉自动化闭环，优先使用：
   - `app list`
-  - `window list`
+  - `window list --app <bundle>`
   - `app launch`
   - `capture frontmost`
   - `click/type/press/hotkey`

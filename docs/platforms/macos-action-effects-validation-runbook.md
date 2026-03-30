@@ -88,7 +88,7 @@ OPERATOR_INTERNAL_ACTION_EFFECT_PAYLOAD='{"kind":"keyboard","label":"cmd+shift+p
 
 ```bash
 OPERATOR_HOME=/tmp/operator-ope145 target/debug/operator show --json
-OPERATOR_HOME=/tmp/operator-ope145 target/debug/operator window list --json
+OPERATOR_HOME=/tmp/operator-ope145 target/debug/operator window list --json --app TextEdit
 ```
 
 然后执行以下命令：

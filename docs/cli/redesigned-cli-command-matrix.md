@@ -57,7 +57,7 @@
 | `app relaunch` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `app` 分组 |
 | `app hide` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `app` 分组 |
 | `app unhide` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `app` 分组 |
-| `window list` | 本轮实机验证通过 | 成功返回聚焦窗口与 bounds / title |
+| `window list --app <APP>` | 本轮实机验证通过 | 当前 northbound contract 只支持按 app 列窗；成功返回目标 app 的窗口与 bounds / title |
 | `window focus` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `window` 分组 |
 | `window close` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `window` 分组 |
 | `window minimize` | 已实现，未在 OPE-140 live rerun | OPE-138 已收敛到 `window` 分组 |

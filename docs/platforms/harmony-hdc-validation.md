@@ -92,14 +92,14 @@ operator --target harmony-pc --timeout-ms 60000 --json capture frontmost
 
 ```bash
 operator --target harmony-pc --timeout-ms 60000 --json app list
-operator --target harmony-pc --timeout-ms 60000 --json window list
+operator --target harmony-pc --timeout-ms 60000 --json window list --app com.huawei.hmos.browser
 ```
 
 结果：
 
 - `OPE-132` 实机时对应旧命令分别为 `list apps` 和 `list windows`
 - `app list` 成功返回运行中的 bundle 列表
-- `window list` 成功返回窗口列表与 bounds
+- `window list --app <bundle>` 成功返回目标窗口列表与 bounds
 - 本轮在启动 Notepad 之前，前台窗口是 `com.huawei.hmos.browser` / `browser0`
 - 启动 Notepad 后，窗口 `id = 282`、`title = notepad1`、`is_focused = true`
 

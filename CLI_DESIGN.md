@@ -1017,7 +1017,6 @@ Global Runtime Flags
   -h, --help                 Print help
 
 Examples
-  operator window list
   operator window list --app TextEdit
   operator window focus --window-id 42
   operator window resize --window-id 42 --width 1280 --height 800
@@ -1028,12 +1027,12 @@ Use 'operator window <command> --help' for detailed usage.
 #### `operator window list`
 
 ```
-Usage: operator window list [OPTIONS]
+Usage: operator window list [OPTIONS] --app <NAME>
 
 List application windows
 
-Options
-  --app <NAME>   Filter by application name or bundle ID (optional)
+Target (required)
+  --app <NAME>   Application name or bundle ID to scope the query
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
@@ -1042,14 +1041,13 @@ Global Runtime Flags
   -h, --help                 Print help
 
 Examples
-  operator window list
   operator window list --app TextEdit
-  operator --json window list
+  operator --json window list --app TextEdit
 ```
 
 Current macOS note:
-- `window list` without `--app` performs a full window enumeration and may be noticeably slower.
-- Prefer `window list --app <APP>` when the target app is already known.
+- `window list` now requires `--app <APP>` in the CLI.
+- The unfiltered full-enumeration path remains internal-only and is no longer part of the public shell contract.
 
 #### `operator window focus`
 

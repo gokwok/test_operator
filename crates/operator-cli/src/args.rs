@@ -105,7 +105,7 @@ const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
     "macOS note: `app list` defaults to `--running`, but `--name` and `--bundle` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid. `--name` uses case-insensitive contains matching and `--bundle` requires an exact bundle id match.";
 const WINDOW_LIST_FOOTER: &str =
-    "macOS note: window list without --app performs a full window enumeration and may be slow. Prefer `--app <NAME>` when the target app is already known.";
+    "CLI note: `window list` now requires `--app <NAME>`. The unfiltered full-enumeration path remains internal-only and is no longer a supported shell contract.";
 
 const INPUT_CLICK_ABOUT: &str = "Click a locator, coordinates, or target";
 const INPUT_MOVE_ABOUT: &str = "Move the pointer to a locator, coordinates, or target";
@@ -501,9 +501,8 @@ const WINDOW_FOCUS_AFTER_HELP: &str = "Examples
   operator window focus --window-id 42 --verify focus";
 
 const WINDOW_LIST_AFTER_HELP: &str = "Examples
-  operator window list
   operator window list --app TextEdit
-  operator --json window list";
+  operator --json window list --app TextEdit";
 
 const WINDOW_RESIZE_AFTER_HELP: &str = "Examples
   operator window resize --window-id 42 --width 1280 --height 800
@@ -695,7 +694,7 @@ const ELEMENTS_FULLSCREEN_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry 
 
 const WINDOW_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "--app <NAME>",
-    about: "Filter by application name or bundle ID (optional)",
+    about: "Application name or bundle ID to scope the query",
 }];
 
 const APP_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[
@@ -1342,7 +1341,7 @@ const APP_QUIT_HELP_SECTIONS: &[LeafHelpSection] = &[
 ];
 
 const WINDOW_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
-    heading: "Options",
+    heading: "Target (required)",
     rows: WINDOW_LIST_OPTION_ROWS,
 }];
 
@@ -1761,14 +1760,13 @@ const APP_RELAUNCH_HELP: LeafHelp = LeafHelp {
 };
 
 const WINDOW_LIST_HELP: LeafHelp = LeafHelp {
-    usage: "operator window list [OPTIONS]",
+    usage: "operator window list [OPTIONS] --app <NAME>",
     about: WINDOW_LIST_ABOUT,
     sections: WINDOW_LIST_HELP_SECTIONS,
     include_global_runtime_flags: true,
     examples: &[
-        "operator window list",
         "operator window list --app TextEdit",
-        "operator --json window list",
+        "operator --json window list --app TextEdit",
     ],
     footer: WINDOW_LIST_FOOTER,
 };
@@ -3582,10 +3580,13 @@ struct WindowListArgs {
 
 impl WindowListArgs {
     fn into_invocation(self, common: CommonArgs) -> Result<ToolInvocation, String> {
+        let Some(app) = self.app else {
+            return Err(
+                "window list requires --app <NAME>; unfiltered window enumeration is no longer supported by the CLI".to_string(),
+            );
+        };
         let mut input = common_input(&common);
-        if let Some(app) = self.app {
-            input.insert("app".into(), Value::String(app));
-        }
+        input.insert("app".into(), Value::String(app));
         Ok(ToolInvocation {
             tool: "list-windows",
             input: Value::Object(input),
