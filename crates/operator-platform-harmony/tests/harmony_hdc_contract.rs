@@ -247,6 +247,19 @@ impl HarmonyHdcShellSession for FakeShellSession {
         Ok(Vec::new())
     }
 
+    fn list_app_labels(
+        &mut self,
+    ) -> Result<Vec<hmdriver_rs::AppLabelInfo>, operator_core::OperatorError> {
+        Ok(Vec::new())
+    }
+
+    fn filter_desktop_bundles(
+        &mut self,
+        bundles: &[String],
+    ) -> Result<Vec<String>, operator_core::OperatorError> {
+        Ok(bundles.to_vec())
+    }
+
     fn current_app(&mut self) -> Result<Option<CurrentApp>, operator_core::OperatorError> {
         Ok(None)
     }

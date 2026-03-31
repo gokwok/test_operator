@@ -9,7 +9,8 @@ use std::{
 };
 
 use hmdriver_rs::{
-    CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry, WindowRect,
+    AppLabelInfo, CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry,
+    WindowRect,
 };
 use operator_core::{
     AppListFilter, AppListMode, DriverConfig, ExecContext, ImageSizePx, PermissionStatus,
@@ -124,6 +125,11 @@ async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session(
             "com.demo.calculator".into(),
             "com.demo.notes".into(),
         ],
+        labels: vec![
+            app_label("com.demo.notes", "备忘录"),
+            app_label("com.demo.calculator", "计算器"),
+        ],
+        desktop_visible_bundles: vec!["com.demo.notes".into(), "com.demo.calculator".into()],
         windows: CorrelatedWindowList {
             windows: vec![
                 CorrelatedWindow {
@@ -166,15 +172,15 @@ async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session(
         apps,
         QueryResult::Apps(vec![
             operator_core::AppInfo {
-                bundle_id: Some("com.demo.calculator".into()),
-                name: "Calculator".into(),
-                pid: Some(102),
+                bundle_id: Some("com.demo.notes".into()),
+                name: "备忘录".into(),
+                pid: Some(101),
                 is_running: true,
             },
             operator_core::AppInfo {
-                bundle_id: Some("com.demo.notes".into()),
-                name: "Notes".into(),
-                pid: Some(101),
+                bundle_id: Some("com.demo.calculator".into()),
+                name: "计算器".into(),
+                pid: Some(102),
                 is_running: true,
             },
         ])
@@ -197,6 +203,11 @@ async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session(
     );
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
     assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        counts.filter_desktop_bundles_calls.load(Ordering::SeqCst),
+        0
+    );
     assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
     assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
 }
@@ -210,7 +221,17 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
             "com.demo.mail".into(),
             "com.demo.notes".into(),
             "com.demo.mail".into(),
+            "com.demo.storage.service".into(),
+            "com.demo.quick.widget".into(),
         ],
+        labels: vec![
+            app_label("com.demo.mail", "邮件"),
+            app_label("com.demo.notes", "备忘录"),
+            app_label("com.demo.browser", "浏览器"),
+            app_label("com.demo.storage.service", "Storage Service"),
+            app_label("com.demo.quick.widget", "桌面控件"),
+        ],
+        desktop_visible_bundles: vec!["com.demo.mail".into(), "com.demo.notes".into()],
         windows: CorrelatedWindowList {
             windows: vec![
                 CorrelatedWindow {
@@ -244,35 +265,35 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
             QueryRequest::ListApps {
                 mode: AppListMode::All,
                 filter: AppListFilter {
-                    name: Some("mail".into()),
-                    bundle: None,
+                    name: None,
+                    bundle: Some("com.demo.mail".into()),
                 },
             },
             &exec_context(),
         )
         .await
-        .expect("list apps --all --name should succeed");
+        .expect("list apps --all --bundle should succeed");
 
     assert_eq!(
         apps,
         QueryResult::Apps(vec![
             operator_core::AppInfo {
+                bundle_id: Some("com.demo.notes".into()),
+                name: "备忘录".into(),
+                pid: Some(101),
+                is_running: true,
+            },
+            operator_core::AppInfo {
                 bundle_id: Some("com.demo.browser".into()),
-                name: "Browser".into(),
+                name: "浏览器".into(),
                 pid: Some(103),
                 is_running: true,
             },
             operator_core::AppInfo {
                 bundle_id: Some("com.demo.mail".into()),
-                name: "com.demo.mail".into(),
+                name: "邮件".into(),
                 pid: None,
                 is_running: false,
-            },
-            operator_core::AppInfo {
-                bundle_id: Some("com.demo.notes".into()),
-                name: "Notes".into(),
-                pid: Some(101),
-                is_running: true,
             },
         ])
     );
@@ -280,13 +301,18 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
         filtered,
         QueryResult::Apps(vec![operator_core::AppInfo {
             bundle_id: Some("com.demo.mail".into()),
-            name: "com.demo.mail".into(),
+            name: "邮件".into(),
             pid: None,
             is_running: false,
         }])
     );
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
-    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        counts.filter_desktop_bundles_calls.load(Ordering::SeqCst),
+        2
+    );
     assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
     assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
 }
@@ -387,10 +413,19 @@ fn mission(mission_id: u32, app_name: &str, bundle_name: &str) -> MissionEntry {
     }
 }
 
+fn app_label(bundle_name: &str, label: &str) -> AppLabelInfo {
+    AppLabelInfo {
+        bundle_name: bundle_name.into(),
+        label: label.into(),
+    }
+}
+
 #[derive(Default)]
 struct CallCounts {
     shell_connects: AtomicUsize,
     list_apps_calls: AtomicUsize,
+    list_app_labels_calls: AtomicUsize,
+    filter_desktop_bundles_calls: AtomicUsize,
     current_app_calls: AtomicUsize,
     list_windows_calls: AtomicUsize,
 }
@@ -425,6 +460,8 @@ impl ProbeOutcome {
 struct FakeSessionFactory {
     counts: Arc<CallCounts>,
     apps: Vec<String>,
+    labels: Vec<AppLabelInfo>,
+    desktop_visible_bundles: Vec<String>,
     current_app: Option<CurrentApp>,
     windows: CorrelatedWindowList,
     shell_connect: ProbeOutcome,
@@ -439,6 +476,8 @@ impl Default for FakeSessionFactory {
         Self {
             counts: Arc::new(CallCounts::default()),
             apps: Vec::new(),
+            labels: Vec::new(),
+            desktop_visible_bundles: Vec::new(),
             current_app: None,
             windows: CorrelatedWindowList {
                 windows: Vec::new(),
@@ -465,6 +504,8 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
         Ok(Box::new(FakeShellSession {
             counts: Arc::clone(&self.counts),
             apps: self.apps.clone(),
+            labels: self.labels.clone(),
+            desktop_visible_bundles: self.desktop_visible_bundles.clone(),
             current_app: self.current_app.clone(),
             windows: self.windows.clone(),
             shell_probe: self.shell_probe,
@@ -486,6 +527,8 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
 struct FakeShellSession {
     counts: Arc<CallCounts>,
     apps: Vec<String>,
+    labels: Vec<AppLabelInfo>,
+    desktop_visible_bundles: Vec<String>,
     current_app: Option<CurrentApp>,
     windows: CorrelatedWindowList,
     shell_probe: ProbeOutcome,
@@ -519,6 +562,31 @@ impl HarmonyHdcShellSession for FakeShellSession {
     fn list_apps(&mut self) -> Result<Vec<String>, operator_core::OperatorError> {
         self.counts.list_apps_calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.apps.clone())
+    }
+
+    fn list_app_labels(&mut self) -> Result<Vec<AppLabelInfo>, operator_core::OperatorError> {
+        self.counts
+            .list_app_labels_calls
+            .fetch_add(1, Ordering::SeqCst);
+        Ok(self.labels.clone())
+    }
+
+    fn filter_desktop_bundles(
+        &mut self,
+        bundles: &[String],
+    ) -> Result<Vec<String>, operator_core::OperatorError> {
+        self.counts
+            .filter_desktop_bundles_calls
+            .fetch_add(1, Ordering::SeqCst);
+        Ok(bundles
+            .iter()
+            .filter(|bundle| {
+                self.desktop_visible_bundles
+                    .iter()
+                    .any(|item| item == *bundle)
+            })
+            .cloned()
+            .collect())
     }
 
     fn current_app(&mut self) -> Result<Option<CurrentApp>, operator_core::OperatorError> {

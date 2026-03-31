@@ -3,8 +3,9 @@
 日期：2026-03-27
 命令面同步：2026-03-30（按当前稳定 shell contract 回写）
 OPE-160 补充实测：2026-03-30
+OPE-161 补充实测：2026-03-30
 
-对应 Linear issue：`OPE-132`、`OPE-160`
+对应 Linear issue：`OPE-132`、`OPE-160`、`OPE-161`
 
 ## 目的
 
@@ -104,23 +105,24 @@ operator --target harmony-pc --timeout-ms 60000 --json window list --app com.hua
 - `OPE-132` 实机时对应旧命令分别为 `list apps` 和 `list windows`
 - `OPE-160` 补充实测后，`app list` 当前稳定语义为 `app list --running`
 - `app list` 成功返回带窗口的运行中 app 列表；本轮返回 5 个运行中 app
-- `app list --all` 成功返回已安装 bundle 列表，并在运行中条目上回填 `is_running = true` 与 `pid`
-- `app list --name browser` 成功返回 3 个名称包含 `browser` 的 app，其中 `com.huawei.hmos.browser` 标记为运行中
-- `app list --bundle com.huawei.hmos.browser` 成功返回单个精确 bundle 匹配项
+- `OPE-161` 后，`app list` 与 `app list --all` 都会优先显示 Harmony 提供的人类可读标签，而不是直接回落到 bundle id
+- `app list --all` 现在返回的是“带桌面入口的 GUI 可操作 app catalog”，不再直接暴露原始已安装 bundle 全量；本轮返回 61 个条目，并在运行中项上回填 `is_running = true` 与 `pid`
+- `app list --name` 现在按显示名称做包含匹配；在当前设备上使用 `--name 浏览` 可返回 `浏览器` 与 `海泰浏览器`
+- `app list --bundle com.huawei.hmos.notepad` 成功返回单个精确 bundle 匹配项，显示名为 `备忘录`
 - `window list --app <bundle>` 成功返回目标窗口列表与 bounds
 - 本轮在启动 Notepad 之前，前台窗口是 `com.huawei.hmos.browser` / `browser0`
 - 启动 Notepad 后，窗口 `id = 282`、`title = notepad1`、`is_focused = true`
 
-本轮 `OPE-160` 实测耗时：
+本轮 `OPE-161` 直跑 `target/debug/operator` 实测耗时：
 
-- `app list`：`0.506s`
-- `app list --all`：`0.868s`
-- `app list --name browser`：`0.709s`
-- `app list --bundle com.huawei.hmos.browser`：`0.574s`
+- `app list`：`1.826s`
+- `app list --all`：`1.583s`
+- `app list --name 浏览`：`1.816s`
+- `app list --bundle com.huawei.hmos.notepad`：`0.430s`
 
 结论：
 
-- 默认 `app list` 热路径显著低于 `3s` 目标，不构成当前 Harmony 自动化链路的性能瓶颈。
+- 默认 `app list`、`app list --all`、以及精确 `--bundle` 查询都低于 `3s` 目标，不构成当前 Harmony 自动化链路的性能瓶颈。
 
 注意：
 

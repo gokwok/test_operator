@@ -3,6 +3,7 @@
 日期：2026-03-27
 命令面同步：2026-03-30（按当前稳定 shell contract 回写）
 OPE-160 补充实测：2026-03-30
+OPE-161 补充实测：2026-03-30
 
 本文档区分三种状态：
 
@@ -21,10 +22,10 @@ OPE-160 补充实测：2026-03-30
 |---|---|---|
 | `permissions` | 实机验证通过 | `hdc.connect` / `hdc.shell` / `hdc.capture` / `hdc.ui_bridge` 全部 `Granted` |
 | `capabilities` | 实机验证通过 | 返回 `AppLifecycle`、`Capture`、`KeyboardInput`、`Permissions`、`PointerInput`、`WindowQuery` |
-| `app list` | 实机验证通过 | 默认等价 `app list --running`；`OPE-160` 补充实测为带窗口的运行中 app 列表，耗时 `0.506s` |
-| `app list --all` | 实机验证通过 | `OPE-160` 补充实测已支持；返回已安装 bundle 列表，并在运行中项上回填 `is_running` / `pid`，耗时 `0.868s` |
-| `app list --name <text>` | 实机验证通过 | `OPE-160` 补充实测已支持；未显式给 mode 时默认走 `--all`，按应用名大小写不敏感包含匹配，耗时 `0.709s` |
-| `app list --bundle <bundle>` | 实机验证通过 | `OPE-160` 补充实测已支持；未显式给 mode 时默认走 `--all`，按 bundle 全匹配，耗时 `0.574s` |
+| `app list` | 实机验证通过 | 默认等价 `app list --running`；`OPE-161` 补充实测为带窗口的运行中 GUI app 列表，名称优先显示 Harmony label，耗时 `1.826s` |
+| `app list --all` | 实机验证通过 | `OPE-161` 补充实测已支持；返回带桌面入口的 GUI 可操作 app catalog，而不是原始已安装 bundle 全量，并在运行中项上回填 `is_running` / `pid`，耗时 `1.583s` |
+| `app list --name <text>` | 实机验证通过 | `OPE-161` 补充实测已支持；未显式给 mode 时默认走 `--all`，按显示名称包含匹配；在当前设备上 `--name 浏览` 可返回 `浏览器` 与 `海泰浏览器`，耗时 `1.816s` |
+| `app list --bundle <bundle>` | 实机验证通过 | `OPE-161` 补充实测已支持；未显式给 mode 时默认走 `--all`，按 bundle 全匹配，显示名为本地化 label；`com.huawei.hmos.notepad` 返回 `备忘录`，耗时 `0.430s` |
 | `window list --app <bundle>` | 实机验证通过 | 当前 CLI contract 仅支持按 app 列窗；`OPE-132` 实机时对应旧命令为 `list windows`；返回窗口列表、focus 和 bounds；结果包含系统面板窗口 |
 | `app launch <bundle>` | 实机验证通过 | `com.huawei.hmos.notepad` 成功被拉起并切到前台 |
 | `click --app <bundle>` | 实机验证通过 | `OPE-132` 实机时对应旧命令为 `input click --app <bundle>`；成功解析目标窗口并点击中心点 |

@@ -9,17 +9,27 @@ pub(crate) struct ResolvedActionTarget {
     pub(crate) window: Option<WindowInfo>,
 }
 
-pub(crate) fn normalize_running_apps(windows: CorrelatedWindowList) -> Vec<AppInfo> {
-    normalize_app_records(running_app_records_from_windows(windows))
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InstalledHarmonyApp {
+    pub(crate) bundle_id: String,
+    pub(crate) name: String,
 }
 
 pub(crate) fn normalize_all_apps(
-    bundles: Vec<String>,
+    installed_apps: Vec<InstalledHarmonyApp>,
     windows: CorrelatedWindowList,
+    labels: &BTreeMap<String, String>,
 ) -> Vec<AppInfo> {
-    let mut apps = running_app_records_from_windows(windows);
-    apps.extend(installed_app_records(bundles));
+    let mut apps = running_app_records_from_windows(windows, labels);
+    apps.extend(installed_app_records(installed_apps));
     normalize_app_records(apps)
+}
+
+pub(crate) fn normalize_running_apps(
+    windows: CorrelatedWindowList,
+    labels: &BTreeMap<String, String>,
+) -> Vec<AppInfo> {
+    normalize_app_records(running_app_records_from_windows(windows, labels))
 }
 
 pub(crate) fn normalize_windows(
@@ -247,32 +257,38 @@ struct AppRecord {
     is_running: bool,
 }
 
-fn running_app_records_from_windows(windows: CorrelatedWindowList) -> Vec<AppRecord> {
+fn running_app_records_from_windows(
+    windows: CorrelatedWindowList,
+    labels: &BTreeMap<String, String>,
+) -> Vec<AppRecord> {
     normalized_window_candidates(windows, None)
         .into_iter()
         .filter_map(|candidate| candidate.app)
         .filter(is_listable_app_info)
-        .map(|app| AppRecord {
-            bundle_id: app.bundle_id,
-            name: app.name,
-            pid: app.pid,
-            is_running: true,
+        .map(|app| {
+            let name = resolved_running_app_name(&app, labels);
+            AppRecord {
+                bundle_id: app.bundle_id,
+                name,
+                pid: app.pid,
+                is_running: true,
+            }
         })
         .collect()
 }
 
-fn installed_app_records(bundles: Vec<String>) -> Vec<AppRecord> {
-    bundles
-        .into_iter()
+fn installed_app_records(apps: Vec<InstalledHarmonyApp>) -> Vec<AppRecord> {
+    apps.into_iter()
         .filter_map(|bundle| {
-            let bundle = bundle.trim();
-            if bundle.is_empty() {
+            let bundle_id = bundle.bundle_id.trim();
+            let name = bundle.name.trim();
+            if bundle_id.is_empty() || name.is_empty() {
                 return None;
             }
 
             Some(AppRecord {
-                bundle_id: Some(bundle.to_string()),
-                name: bundle.to_string(),
+                bundle_id: Some(bundle_id.to_string()),
+                name: name.to_string(),
                 pid: None,
                 is_running: false,
             })
@@ -348,6 +364,14 @@ fn app_display_name_score(app: &AppRecord) -> u8 {
 
 fn is_listable_app_info(app: &AppInfo) -> bool {
     app.bundle_id.is_some() || !app.name.starts_with("pid-")
+}
+
+fn resolved_running_app_name(app: &AppInfo, labels: &BTreeMap<String, String>) -> String {
+    app.bundle_id
+        .as_ref()
+        .and_then(|bundle| labels.get(bundle))
+        .cloned()
+        .unwrap_or_else(|| app.name.clone())
 }
 
 fn app_info(

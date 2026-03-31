@@ -12,9 +12,9 @@ use crate::protocol::DEFAULT_VERSION;
 use crate::session::{Session, SessionOptions};
 use crate::swipe::SwipeExt;
 use crate::types::{
-    AppAbilityInfo, AppVersion, Coord, CorrelatedWindow, CorrelatedWindowList, CurrentApp,
-    DeviceInfo, DisplayRotation, KeyCode, MissionEntry, MissionList, Point, ShellResult,
-    WindowDetail, WindowEntry, WindowList, WindowOffset, WindowRect, WindowScale,
+    AppAbilityInfo, AppLabelInfo, AppVersion, Coord, CorrelatedWindow, CorrelatedWindowList,
+    CurrentApp, DeviceInfo, DisplayRotation, KeyCode, MissionEntry, MissionList, Point,
+    ShellResult, WindowDetail, WindowEntry, WindowList, WindowOffset, WindowRect, WindowScale,
 };
 use crate::ui::{UiDriver, UiQuery, UiSelector, UiWindow};
 use crate::xpath::XPathNode;
@@ -48,6 +48,21 @@ impl Driver {
 
     pub fn list_apps(&mut self, _include_system_apps: bool) -> Result<Vec<String>> {
         let output = self.exec_stdout_checked("bm dump -a")?;
+        Ok(parse_app_list(&output))
+    }
+
+    pub fn list_app_labels(&mut self) -> Result<Vec<AppLabelInfo>> {
+        let output = self.exec_stdout_checked("bm dump -l -a")?;
+        parse_app_labels(&output)
+    }
+
+    pub fn filter_desktop_bundles(&mut self, bundles: &[String]) -> Result<Vec<String>> {
+        if bundles.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let command = build_filter_desktop_bundles_command(bundles, 16);
+        let output = self.exec_stdout_checked(&command)?;
         Ok(parse_app_list(&output))
     }
 
@@ -518,6 +533,17 @@ fn parse_app_list(output: &str) -> Vec<String> {
         .collect()
 }
 
+fn build_filter_desktop_bundles_command(bundles: &[String], parallelism: usize) -> String {
+    let args = bundles
+        .iter()
+        .map(|bundle| shell_escape(bundle))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "sh -c 'printf \"%s\\n\" {args} | xargs -n 1 -P {parallelism} sh -c '\\''bundle=\"$1\"; bm dump -n \"$bundle\" 2>/dev/null | grep -q \"\\\"hideDesktopIcon\\\": false\" && echo \"$bundle\"'\\'' _'"
+    )
+}
+
 fn parse_current_app(output: &str) -> Option<CurrentApp> {
     let block = output
         .split("Mission ID #")
@@ -767,6 +793,25 @@ fn parse_app_info_json(output: &str) -> Result<Value> {
         .map(|value| value + 1)
         .ok_or_else(|| HdcError::protocol("bm dump output missing json payload"))?;
     Ok(serde_json::from_str(&output[json_start..json_end])?)
+}
+
+fn parse_app_labels(output: &str) -> Result<Vec<AppLabelInfo>> {
+    let values = serde_json::from_str::<Vec<Value>>(output)?;
+    Ok(values
+        .into_iter()
+        .filter_map(|value| {
+            let bundle_name = value.get("bundleName").and_then(Value::as_str)?.trim();
+            let label = value.get("label").and_then(Value::as_str)?.trim();
+            if bundle_name.is_empty() || label.is_empty() {
+                return None;
+            }
+
+            Some(AppLabelInfo {
+                bundle_name: bundle_name.to_string(),
+                label: label.to_string(),
+            })
+        })
+        .collect())
 }
 
 fn parse_app_abilities(value: &Value) -> Vec<AppAbilityInfo> {
@@ -1087,9 +1132,10 @@ fn decode_base64_output(value: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppAbilityInfo, DriverBuilder, bracket_groups, build_press_keys_command,
-        build_right_click_command, decode_base64_output, extract_ipv4_after, normalize_velocity,
-        parse_app_abilities, parse_app_info_json, parse_app_list, parse_app_version,
+        AppAbilityInfo, AppLabelInfo, DriverBuilder, bracket_groups,
+        build_filter_desktop_bundles_command, build_press_keys_command, build_right_click_command,
+        decode_base64_output, extract_ipv4_after, normalize_velocity, parse_app_abilities,
+        parse_app_info_json, parse_app_labels, parse_app_list, parse_app_version,
         parse_current_app, parse_display_size, parse_main_ability_from_dump, parse_mission_list,
         parse_window_detail, parse_window_list, parse_wlan_ip, shell_escape,
     };
@@ -1159,6 +1205,44 @@ Mission ID #12 {
             value.get("bundleName").and_then(Value::as_str),
             Some("com.example")
         );
+    }
+
+    #[test]
+    fn parse_app_labels_reads_bundle_and_human_label_pairs() {
+        let labels = parse_app_labels(
+            r#"[
+                {"bundleName":"com.example.notes","label":"备忘录"},
+                {"bundleName":"com.example.browser","label":"浏览器"}
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            labels,
+            vec![
+                AppLabelInfo {
+                    bundle_name: "com.example.notes".into(),
+                    label: "备忘录".into(),
+                },
+                AppLabelInfo {
+                    bundle_name: "com.example.browser".into(),
+                    label: "浏览器".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn build_filter_desktop_bundles_command_uses_parallel_device_side_dump() {
+        let command = build_filter_desktop_bundles_command(
+            &["com.example.notes".into(), "com.example.browser".into()],
+            16,
+        );
+
+        assert!(command.contains("xargs -n 1 -P 16"));
+        assert!(command.contains("'com.example.notes' 'com.example.browser'"));
+        assert!(command.contains("bm dump -n \"$bundle\""));
+        assert!(command.contains("\\\"hideDesktopIcon\\\": false"));
     }
 
     #[test]

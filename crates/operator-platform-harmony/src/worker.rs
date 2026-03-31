@@ -1,11 +1,12 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
     thread,
     time::{Duration, Instant},
 };
 
-use hmdriver_rs::{CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
+use hmdriver_rs::{AppLabelInfo, CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
     ActionTargetSelector, ClickMode, DragMotion, ImageSizePx, Locator, OperatorError,
@@ -22,7 +23,9 @@ use crate::{
         unsupported_action_error, velocity_from_duration,
     },
     errors::hdc_platform_error,
-    normalize::{resolve_action_target, target_anchor_point, ResolvedActionTarget},
+    normalize::{
+        resolve_action_target, target_anchor_point, InstalledHarmonyApp, ResolvedActionTarget,
+    },
     permissions::{HarmonyPermissionSnapshot, ProbeStatus},
     HarmonyHdcConfig,
 };
@@ -36,6 +39,8 @@ pub trait HarmonyHdcShellSession: Send {
     fn display_size(&mut self) -> Result<ImageSizePx, OperatorError>;
     fn focused_window_bounds(&mut self) -> Result<Option<Rect>, OperatorError>;
     fn list_apps(&mut self) -> Result<Vec<String>, OperatorError>;
+    fn list_app_labels(&mut self) -> Result<Vec<AppLabelInfo>, OperatorError>;
+    fn filter_desktop_bundles(&mut self, bundles: &[String]) -> Result<Vec<String>, OperatorError>;
     fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError>;
     fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList, OperatorError>;
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError>;
@@ -153,6 +158,34 @@ impl HarmonyHdcWorker {
         response_rx.await.map_err(|_| worker_stopped_error())?
     }
 
+    pub(crate) async fn query_app_labels_map(
+        &self,
+    ) -> Result<BTreeMap<String, String>, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::QueryAppLabels {
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
+    pub(crate) async fn filter_desktop_bundles(
+        &self,
+        bundles: Vec<String>,
+    ) -> Result<Vec<String>, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::FilterDesktopBundles {
+                bundles,
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
     pub(crate) async fn query_windows(&self) -> Result<CorrelatedWindowList, OperatorError> {
         let (response_tx, response_rx) = oneshot::channel();
         self.sender
@@ -200,6 +233,13 @@ enum WorkerCommand {
     QueryApps {
         response: oneshot::Sender<Result<HarmonyAppQueryReport, OperatorError>>,
     },
+    QueryAppLabels {
+        response: oneshot::Sender<Result<BTreeMap<String, String>, OperatorError>>,
+    },
+    FilterDesktopBundles {
+        bundles: Vec<String>,
+        response: oneshot::Sender<Result<Vec<String>, OperatorError>>,
+    },
     QueryWindows {
         response: oneshot::Sender<Result<CorrelatedWindowList, OperatorError>>,
     },
@@ -217,7 +257,8 @@ pub(crate) struct HarmonyCaptureReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HarmonyAppQueryReport {
-    pub(crate) bundles: Vec<String>,
+    pub(crate) installed_apps: Vec<InstalledHarmonyApp>,
+    pub(crate) labels: BTreeMap<String, String>,
 }
 
 struct WorkerState {
@@ -225,6 +266,7 @@ struct WorkerState {
     session_factory: Arc<dyn HarmonyHdcSessionFactory>,
     shell_session: Option<Box<dyn HarmonyHdcShellSession>>,
     ui_session: Option<Box<dyn HarmonyHdcUiSession>>,
+    app_catalog_cache: Option<HarmonyAppQueryReport>,
 }
 
 impl WorkerState {
@@ -234,6 +276,7 @@ impl WorkerState {
             session_factory,
             shell_session: None,
             ui_session: None,
+            app_catalog_cache: None,
         }
     }
 
@@ -514,23 +557,53 @@ impl WorkerState {
     }
 
     fn query_apps(&mut self) -> Result<HarmonyAppQueryReport, OperatorError> {
-        self.ensure_shell_session()?;
+        if let Some(report) = &self.app_catalog_cache {
+            return Ok(report.clone());
+        }
 
-        let result = {
+        self.ensure_shell_session()?;
+        let labels = self.query_app_labels()?;
+        let bundles = {
             let session = self
                 .shell_session
                 .as_mut()
                 .expect("shell session should be initialized");
-            let bundles = session.list_apps()?;
-
-            Ok(HarmonyAppQueryReport { bundles })
+            session.list_apps()?
         };
 
-        if result.is_err() {
-            self.shell_session = None;
+        let mut installed_apps = BTreeMap::new();
+        for bundle in bundles {
+            let bundle = bundle.trim().to_string();
+            let Some(label) = labels.get(&bundle) else {
+                continue;
+            };
+            let label = label.trim();
+            if !looks_like_gui_catalog_entry(&bundle, label) {
+                continue;
+            }
+            installed_apps
+                .entry(bundle.clone())
+                .or_insert_with(|| InstalledHarmonyApp {
+                    bundle_id: bundle,
+                    name: label.to_string(),
+                });
         }
 
-        result
+        let desktop_bundles = self.with_shell_session(|session| {
+            let bundles = installed_apps.keys().cloned().collect::<Vec<_>>();
+            session.filter_desktop_bundles(&bundles)
+        })?;
+        let desktop_bundles = desktop_bundles.into_iter().collect::<BTreeSet<_>>();
+
+        let report = HarmonyAppQueryReport {
+            installed_apps: installed_apps
+                .into_values()
+                .filter(|app| desktop_bundles.contains(&app.bundle_id))
+                .collect(),
+            labels,
+        };
+        self.app_catalog_cache = Some(report.clone());
+        Ok(report)
     }
 
     fn query_windows(&mut self) -> Result<CorrelatedWindowList, OperatorError> {
@@ -547,6 +620,43 @@ impl WorkerState {
         }
 
         result
+    }
+
+    fn query_app_labels(&mut self) -> Result<BTreeMap<String, String>, OperatorError> {
+        if let Some(report) = &self.app_catalog_cache {
+            return Ok(report.labels.clone());
+        }
+
+        self.ensure_shell_session()?;
+        let result = {
+            let session = self
+                .shell_session
+                .as_mut()
+                .expect("shell session should be initialized");
+            session.list_app_labels()
+        };
+
+        match result {
+            Ok(labels) => Ok(labels
+                .into_iter()
+                .filter_map(|item| {
+                    let bundle = item.bundle_name.trim();
+                    let label = item.label.trim();
+                    if bundle.is_empty() || label.is_empty() {
+                        return None;
+                    }
+                    Some((bundle.to_string(), label.to_string()))
+                })
+                .collect()),
+            Err(error) => {
+                self.shell_session = None;
+                Err(error)
+            }
+        }
+    }
+
+    fn filter_desktop_bundles(&mut self, bundles: &[String]) -> Result<Vec<String>, OperatorError> {
+        self.with_shell_session(|session| session.filter_desktop_bundles(bundles))
     }
 
     fn click(
@@ -936,10 +1046,22 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
             .map_err(|error| hdc_platform_error("failed to list Harmony apps", error))
     }
 
+    fn list_app_labels(&mut self) -> Result<Vec<AppLabelInfo>, OperatorError> {
+        self.driver
+            .list_app_labels()
+            .map_err(|error| hdc_platform_error("failed to list Harmony app labels", error))
+    }
+
     fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError> {
         self.driver
             .current_app()
             .map_err(|error| hdc_platform_error("failed to read Harmony foreground app", error))
+    }
+
+    fn filter_desktop_bundles(&mut self, bundles: &[String]) -> Result<Vec<String>, OperatorError> {
+        self.driver
+            .filter_desktop_bundles(bundles)
+            .map_err(|error| hdc_platform_error("failed to filter Harmony desktop apps", error))
     }
 
     fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList, OperatorError> {
@@ -1071,6 +1193,78 @@ impl HarmonyHdcUiSession for RealHarmonyHdcUiSession {
     }
 }
 
+fn looks_like_gui_catalog_entry(bundle: &str, label: &str) -> bool {
+    let bundle = bundle.trim();
+    let label = label.trim();
+    if bundle.is_empty() || label.is_empty() {
+        return false;
+    }
+
+    if label.eq_ignore_ascii_case("label")
+        || label.eq_ignore_ascii_case(bundle)
+        || bundle
+            .rsplit('.')
+            .next()
+            .is_some_and(|segment| label.eq_ignore_ascii_case(segment))
+        || label.contains('_')
+    {
+        return false;
+    }
+
+    let bundle_lower = bundle.to_ascii_lowercase();
+    if [
+        ".data",
+        ".dataservice",
+        ".dialog",
+        ".widget",
+        ".resources",
+        ".service",
+        ".extension",
+        ".ext",
+        "data",
+        "dialog",
+        "widget",
+        "resource",
+        "service",
+        "core",
+        "systemres",
+        "sceneboard",
+        "spooler",
+        "foundation",
+        "autofill",
+        "restores",
+    ]
+    .iter()
+    .any(|needle| bundle_lower.contains(needle))
+    {
+        return false;
+    }
+
+    let label_lower = label.to_ascii_lowercase();
+    if [
+        "service",
+        "dialog",
+        "widget",
+        "storage",
+        "credentialmgr",
+        "mgr",
+        "ext",
+        "fwk",
+        "data",
+        "core",
+        "choice",
+    ]
+    .iter()
+    .any(|needle| label_lower.contains(needle))
+    {
+        return false;
+    }
+
+    !["服务", "存储", "控件", "资源"]
+        .iter()
+        .any(|needle| label.contains(needle))
+}
+
 fn worker_loop(
     config: HarmonyHdcConfig,
     session_factory: Arc<dyn HarmonyHdcSessionFactory>,
@@ -1093,6 +1287,12 @@ fn worker_loop(
             }
             WorkerCommand::QueryApps { response } => {
                 let _ = response.send(state.query_apps());
+            }
+            WorkerCommand::QueryAppLabels { response } => {
+                let _ = response.send(state.query_app_labels());
+            }
+            WorkerCommand::FilterDesktopBundles { bundles, response } => {
+                let _ = response.send(state.filter_desktop_bundles(&bundles));
             }
             WorkerCommand::QueryWindows { response } => {
                 let _ = response.send(state.query_windows());
@@ -1241,4 +1441,41 @@ fn screen_point(point: Point) -> Result<(i32, i32), OperatorError> {
     }
 
     Ok((point.x.round() as i32, point.y.round() as i32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::looks_like_gui_catalog_entry;
+
+    #[test]
+    fn gui_catalog_filter_keeps_user_facing_apps() {
+        assert!(looks_like_gui_catalog_entry(
+            "com.huawei.hmos.notepad",
+            "备忘录"
+        ));
+        assert!(looks_like_gui_catalog_entry(
+            "com.huawei.hmos.browser",
+            "浏览器"
+        ));
+    }
+
+    #[test]
+    fn gui_catalog_filter_rejects_internal_data_and_service_entries() {
+        assert!(!looks_like_gui_catalog_entry(
+            "com.ohos.medialibrary.medialibrarydata",
+            "MeidaLibraryExt"
+        ));
+        assert!(!looks_like_gui_catalog_entry(
+            "com.huawei.hmos.meetimeservice",
+            "畅连通信"
+        ));
+        assert!(!looks_like_gui_catalog_entry(
+            "com.ohos.locationdialog",
+            "蓝牙"
+        ));
+        assert!(!looks_like_gui_catalog_entry(
+            "ohos.global.systemres",
+            "系统"
+        ));
+    }
 }

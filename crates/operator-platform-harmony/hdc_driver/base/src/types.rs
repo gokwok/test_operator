@@ -108,6 +108,12 @@ pub struct AppVersion {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppLabelInfo {
+    pub bundle_name: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppAbilityInfo {
     pub name: String,
     pub module_name: String,
