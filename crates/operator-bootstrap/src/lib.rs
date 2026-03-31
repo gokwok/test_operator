@@ -1,13 +1,15 @@
 mod config_document;
 
 use std::{
+    collections::BTreeMap,
     env,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 pub use config_document::{
-    parse_target_set_expression, RuntimeConfigDocument, TargetConfigFieldPath,
+    parse_model_set_expression, parse_target_set_expression, ModelConfigFieldPath,
+    RuntimeConfigDocument, TargetConfigFieldPath,
 };
 use operator_core::{OperatorError, PlatformDriver, TargetDescriptor, TargetId};
 use operator_platform_harmony::HarmonyHdcDriverFactory;
@@ -17,6 +19,28 @@ use operator_platform_macos::{
 };
 use operator_runtime::{NamedTargetConfig, PlatformDriverFactory, PlatformRegistry, RuntimeConfig};
 use serde::Deserialize;
+
+const OPENAI_MODEL_SELECTOR: &str = "openai";
+const DOUBAO_MODEL_SELECTOR: &str = "doubao";
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BootstrapConfig {
+    pub runtime: RuntimeConfig,
+    pub agent_model: AgentModelConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AgentModelConfig {
+    pub default: Option<String>,
+    pub providers: BTreeMap<String, AgentModelProviderConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AgentModelProviderConfig {
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub model_name: Option<String>,
+}
 
 pub fn operator_home_dir() -> PathBuf {
     if let Some(path) = env::var_os("OPERATOR_HOME") {
@@ -34,6 +58,17 @@ pub fn runtime_config_path(operator_home: impl AsRef<Path>) -> PathBuf {
     operator_home.as_ref().join("config.toml")
 }
 
+pub fn load_bootstrap_config() -> Result<BootstrapConfig, OperatorError> {
+    load_bootstrap_config_from(operator_home_dir())
+}
+
+pub fn load_bootstrap_config_from(
+    operator_home: impl AsRef<Path>,
+) -> Result<BootstrapConfig, OperatorError> {
+    let path = runtime_config_path(operator_home);
+    RuntimeConfigDocument::load(path)?.to_bootstrap_config()
+}
+
 pub fn load_runtime_config() -> Result<RuntimeConfig, OperatorError> {
     load_runtime_config_from(operator_home_dir())
 }
@@ -41,8 +76,7 @@ pub fn load_runtime_config() -> Result<RuntimeConfig, OperatorError> {
 pub fn load_runtime_config_from(
     operator_home: impl AsRef<Path>,
 ) -> Result<RuntimeConfig, OperatorError> {
-    let path = runtime_config_path(operator_home);
-    RuntimeConfigDocument::load(path)?.to_runtime_config()
+    Ok(load_bootstrap_config_from(operator_home)?.runtime)
 }
 
 pub fn system_platform_registry(artifacts_dir: impl AsRef<Path>) -> PlatformRegistry {
@@ -141,6 +175,128 @@ pub(crate) fn parse_runtime_config(
     Ok(config)
 }
 
+pub(crate) fn parse_bootstrap_config(
+    contents: &str,
+    path: &Path,
+) -> Result<BootstrapConfig, OperatorError> {
+    let runtime = parse_runtime_config(contents, path)?;
+    let root = toml::from_str::<toml::Table>(contents).map_err(|error| {
+        OperatorError::Platform(format!(
+            "invalid runtime config at {}: {error}",
+            path.display()
+        ))
+    })?;
+    let agent_model = parse_agent_model_config(&root)?;
+
+    Ok(BootstrapConfig {
+        runtime,
+        agent_model,
+    })
+}
+
+fn parse_agent_model_config(root: &toml::Table) -> Result<AgentModelConfig, OperatorError> {
+    let Some(agent) = root.get("agent") else {
+        return Ok(AgentModelConfig::default());
+    };
+    let Some(agent_table) = agent.as_table() else {
+        return Ok(AgentModelConfig::default());
+    };
+    let Some(model_item) = agent_table.get("model") else {
+        return Ok(AgentModelConfig::default());
+    };
+    let Some(model_table) = model_item.as_table() else {
+        // Preserve legacy `[agent] model = "gpt-5.4"` style configs until the agent bootstrap
+        // path migrates to the new config-backed selector contract.
+        return Ok(AgentModelConfig::default());
+    };
+
+    let mut config = AgentModelConfig::default();
+    for key in model_table.keys() {
+        if key != "default" && key != "provider" {
+            return Err(OperatorError::Platform(format!(
+                "unknown agent model field `{key}`; expected `default` or `provider`"
+            )));
+        }
+    }
+
+    if let Some(default_item) = model_table.get("default") {
+        let selector = default_item.as_str().ok_or_else(|| {
+            OperatorError::Platform("agent model default selector must be a string".into())
+        })?;
+        let selector = selector.trim();
+        if selector.is_empty() {
+            return Err(OperatorError::Platform(
+                "agent model default selector must not be empty".into(),
+            ));
+        }
+        validate_supported_model_selector(selector)?;
+        config.default = Some(selector.to_owned());
+    }
+
+    if let Some(provider_item) = model_table.get("provider") {
+        let provider_table = provider_item.as_table().ok_or_else(|| {
+            OperatorError::Platform("agent model provider section must be a table".into())
+        })?;
+        for (name, item) in provider_table {
+            validate_supported_model_selector(name)?;
+            let item_table = item.as_table().ok_or_else(|| {
+                OperatorError::Platform(format!("agent model provider `{name}` must be a table"))
+            })?;
+            config
+                .providers
+                .insert(name.clone(), parse_agent_model_provider(name, item_table)?);
+        }
+    }
+
+    Ok(config)
+}
+
+fn parse_agent_model_provider(
+    name: &str,
+    table: &toml::Table,
+) -> Result<AgentModelProviderConfig, OperatorError> {
+    let mut provider = AgentModelProviderConfig::default();
+    for (field, value) in table {
+        let slot = match field.as_str() {
+            "api_key" => &mut provider.api_key,
+            "base_url" => &mut provider.base_url,
+            "model_name" => &mut provider.model_name,
+            _ => {
+                return Err(OperatorError::Platform(format!(
+                    "unknown agent model provider field `{field}` for `{name}`"
+                )))
+            }
+        };
+        let string = value.as_str().ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "agent model provider field `{name}.{field}` must be a string"
+            ))
+        })?;
+        *slot = normalized_optional_string(string);
+    }
+
+    Ok(provider)
+}
+
+pub(crate) fn validate_supported_model_selector(selector: &str) -> Result<(), OperatorError> {
+    if matches!(selector, OPENAI_MODEL_SELECTOR | DOUBAO_MODEL_SELECTOR) {
+        Ok(())
+    } else {
+        Err(OperatorError::Platform(format!(
+            "unsupported agent model selector `{selector}`; expected one of: {OPENAI_MODEL_SELECTOR}, {DOUBAO_MODEL_SELECTOR}"
+        )))
+    }
+}
+
+fn normalized_optional_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct RuntimeConfigFile {
     #[serde(default)]
@@ -174,7 +330,10 @@ struct SecuritySection {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_runtime_config_from, runtime_config_path};
+    use super::{
+        load_bootstrap_config_from, load_runtime_config_from, runtime_config_path,
+        AgentModelProviderConfig,
+    };
     use operator_core::{DriverConfig, TargetDescriptor, TargetId};
     use serde_json::json;
     use tempfile::tempdir;
@@ -282,6 +441,99 @@ endpoint = "wss://windows-lab.internal"
         let rendered = error.to_string();
         assert!(rendered.contains("invalid runtime config"));
         assert!(rendered.contains("unknown field `endpoint`"));
+    }
+
+    #[test]
+    fn load_bootstrap_config_parses_agent_model_section() {
+        let temp = tempdir().expect("tempdir");
+        let path = runtime_config_path(temp.path());
+        std::fs::write(
+            &path,
+            r#"
+[agent]
+max_steps = 50
+
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = " sk-openai "
+base_url = " https://api.openai.com/v1 "
+model_name = " gpt-5.4 "
+
+[agent.model.provider.doubao]
+api_key = ""
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+model_name = "doubao-seed-2-0-lite-260215"
+"#,
+        )
+        .expect("write config");
+
+        let config = load_bootstrap_config_from(temp.path()).expect("load bootstrap config");
+
+        assert_eq!(config.agent_model.default.as_deref(), Some("openai"));
+        assert_eq!(
+            config.agent_model.providers.get("openai"),
+            Some(&AgentModelProviderConfig {
+                api_key: Some("sk-openai".into()),
+                base_url: Some("https://api.openai.com/v1".into()),
+                model_name: Some("gpt-5.4".into()),
+            })
+        );
+        assert_eq!(
+            config.agent_model.providers.get("doubao"),
+            Some(&AgentModelProviderConfig {
+                api_key: None,
+                base_url: Some("https://ark.cn-beijing.volces.com/api/v3".into()),
+                model_name: Some("doubao-seed-2-0-lite-260215".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn load_bootstrap_config_rejects_unsupported_agent_model_provider_names() {
+        let temp = tempdir().expect("tempdir");
+        let path = runtime_config_path(temp.path());
+        std::fs::write(
+            &path,
+            r#"
+[agent.model]
+default = "openai"
+
+[agent.model.provider.anthropic]
+api_key = "sk-ant-123"
+"#,
+        )
+        .expect("write config");
+
+        let error = load_bootstrap_config_from(temp.path()).expect_err("provider name should fail");
+        assert!(error
+            .to_string()
+            .contains("unsupported agent model selector `anthropic`"));
+    }
+
+    #[test]
+    fn load_bootstrap_config_rejects_unknown_agent_model_provider_fields() {
+        let temp = tempdir().expect("tempdir");
+        let path = runtime_config_path(temp.path());
+        std::fs::write(
+            &path,
+            r#"
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = "sk-openai"
+region = "us-east-1"
+"#,
+        )
+        .expect("write config");
+
+        let error =
+            load_bootstrap_config_from(temp.path()).expect_err("provider field should fail");
+        assert!(error
+            .to_string()
+            .contains("unknown agent model provider field `region` for `openai`"));
     }
 
     #[test]

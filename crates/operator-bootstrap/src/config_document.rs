@@ -10,7 +10,10 @@ use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
 use toml_edit::{value as edit_value, DocumentMut, Item, Table};
 
-use crate::parse_runtime_config;
+use crate::{
+    parse_bootstrap_config, parse_runtime_config, validate_supported_model_selector,
+    AgentModelProviderConfig, BootstrapConfig,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetConfigFieldPath {
@@ -41,6 +44,23 @@ impl TargetConfigFieldPath {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelConfigFieldPath {
+    ApiKey,
+    BaseUrl,
+    ModelName,
+}
+
+impl ModelConfigFieldPath {
+    pub fn parse_set(path: &str) -> Result<Self, OperatorError> {
+        parse_model_path(path)
+    }
+
+    pub fn parse_unset(path: &str) -> Result<Self, OperatorError> {
+        parse_model_path(path)
+    }
+}
+
 pub fn parse_target_set_expression(
     expression: &str,
 ) -> Result<(TargetConfigFieldPath, TomlValue), OperatorError> {
@@ -50,6 +70,19 @@ pub fn parse_target_set_expression(
         ))
     })?;
     let path = TargetConfigFieldPath::parse_set(path)?;
+    let value = parse_toml_value(raw_value)?;
+    Ok((path, value))
+}
+
+pub fn parse_model_set_expression(
+    expression: &str,
+) -> Result<(ModelConfigFieldPath, TomlValue), OperatorError> {
+    let (path, raw_value) = expression.split_once('=').ok_or_else(|| {
+        OperatorError::Platform(format!(
+            "model set expression `{expression}` must use <field>=<value> syntax"
+        ))
+    })?;
+    let path = ModelConfigFieldPath::parse_set(path)?;
     let value = parse_toml_value(raw_value)?;
     Ok((path, value))
 }
@@ -78,8 +111,8 @@ impl RuntimeConfigDocument {
             ))
         })?;
 
-        // Keep read-only runtime bootstrap semantics aligned with the editable document path.
-        parse_runtime_config(&contents, &path)?;
+        // Keep read-only bootstrap semantics aligned with the editable document path.
+        parse_bootstrap_config(&contents, &path)?;
 
         Ok(Self { path, document })
     }
@@ -92,9 +125,85 @@ impl RuntimeConfigDocument {
         parse_runtime_config(&self.document.to_string(), &self.path)
     }
 
+    pub fn to_bootstrap_config(&self) -> Result<BootstrapConfig, OperatorError> {
+        parse_bootstrap_config(&self.document.to_string(), &self.path)
+    }
+
     pub fn set_default_target(&mut self, target: &TargetId) {
         let runtime = ensure_child_table(self.document.as_item_mut(), "runtime");
         runtime["default_target"] = edit_value(target.to_string());
+    }
+
+    pub fn set_default_model_selector(&mut self, selector: &str) -> Result<(), OperatorError> {
+        validate_supported_model_selector(selector)?;
+        let model = self.agent_model_table_mut();
+        model["default"] = edit_value(selector);
+        Ok(())
+    }
+
+    pub fn set_model_provider(
+        &mut self,
+        name: &str,
+        provider: &AgentModelProviderConfig,
+    ) -> Result<(), OperatorError> {
+        let table = self.model_provider_table_mut(name)?;
+        set_optional_string_field(table, "api_key", provider.api_key.as_deref());
+        set_optional_string_field(table, "base_url", provider.base_url.as_deref());
+        set_optional_string_field(table, "model_name", provider.model_name.as_deref());
+        self.prune_agent_model_tables();
+        Ok(())
+    }
+
+    pub fn set_model_provider_value(
+        &mut self,
+        name: &str,
+        path: &ModelConfigFieldPath,
+        new_value: TomlValue,
+    ) -> Result<(), OperatorError> {
+        let rendered_path = render_model_path(path);
+        let string = new_value.as_str().ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "model field `{rendered_path}` only accepts string values"
+            ))
+        })?;
+        let table = self.model_provider_table_mut(name)?;
+        table[rendered_path.as_str()] = edit_value(string);
+        Ok(())
+    }
+
+    pub fn unset_model_provider_value(
+        &mut self,
+        name: &str,
+        path: &ModelConfigFieldPath,
+    ) -> Result<(), OperatorError> {
+        validate_supported_model_selector(name)?;
+
+        let Some(agent_table) = self.document.as_table_mut().get_mut("agent") else {
+            return Ok(());
+        };
+        let Some(model_table) = agent_table
+            .as_table_mut()
+            .and_then(|table| table.get_mut("model"))
+        else {
+            return Ok(());
+        };
+        let Some(provider_table) = model_table
+            .as_table_mut()
+            .and_then(|table| table.get_mut("provider"))
+        else {
+            return Ok(());
+        };
+        let Some(provider_entry) = provider_table
+            .as_table_mut()
+            .and_then(|table| table.get_mut(name))
+        else {
+            return Ok(());
+        };
+        if let Some(table) = provider_entry.as_table_mut() {
+            table.remove(render_model_path(path).as_str());
+        }
+        self.prune_agent_model_tables();
+        Ok(())
     }
 
     pub fn set_named_target(
@@ -238,6 +347,46 @@ impl RuntimeConfigDocument {
         }
         target_item.as_table_mut().expect("target table")
     }
+
+    fn agent_model_table_mut(&mut self) -> &mut Table {
+        let agent = ensure_child_table(self.document.as_item_mut(), "agent");
+        if !agent.contains_key("model") || !agent["model"].is_table() {
+            agent["model"] = Item::Table(Table::new());
+        }
+        agent["model"].as_table_mut().expect("agent.model table")
+    }
+
+    fn model_provider_table_mut(&mut self, name: &str) -> Result<&mut Table, OperatorError> {
+        validate_supported_model_selector(name)?;
+        let model = self.agent_model_table_mut();
+        if !model.contains_key("provider") || !model["provider"].is_table() {
+            model["provider"] = Item::Table(Table::new());
+        }
+        let provider = model["provider"].as_table_mut().expect("provider table");
+        if !provider.contains_key(name) || !provider[name].is_table() {
+            provider[name] = Item::Table(Table::new());
+        }
+        Ok(provider[name].as_table_mut().expect("provider entry"))
+    }
+
+    fn prune_agent_model_tables(&mut self) {
+        let document = self.document.as_table_mut();
+        let Some(agent_item) = document.get_mut("agent") else {
+            return;
+        };
+        let Some(agent_table) = agent_item.as_table_mut() else {
+            return;
+        };
+        if let Some(model_item) = agent_table.get_mut("model") {
+            prune_empty_tables(model_item);
+            if model_item.as_table().is_some_and(Table::is_empty) {
+                agent_table.remove("model");
+            }
+        }
+        if agent_table.is_empty() {
+            document.remove("agent");
+        }
+    }
 }
 
 fn parse_target_path(
@@ -288,15 +437,61 @@ fn parse_target_path(
     }
 }
 
+fn parse_model_path(path: &str) -> Result<ModelConfigFieldPath, OperatorError> {
+    if path.is_empty() {
+        return Err(OperatorError::Platform(
+            "model field path cannot be empty".into(),
+        ));
+    }
+    if path.starts_with('.') || path.ends_with('.') || path.contains("..") {
+        return Err(OperatorError::Platform(format!(
+            "model field path `{path}` contains an empty segment"
+        )));
+    }
+    if path.contains('[') || path.contains(']') {
+        return Err(OperatorError::Platform(format!(
+            "model field path `{path}` must not use array index syntax"
+        )));
+    }
+
+    let segments = path.split('.').collect::<Vec<_>>();
+    if segments.iter().any(|segment| segment.is_empty()) {
+        return Err(OperatorError::Platform(format!(
+            "model field path `{path}` contains an empty segment"
+        )));
+    }
+
+    match segments.as_slice() {
+        ["api_key"] => Ok(ModelConfigFieldPath::ApiKey),
+        ["base_url"] => Ok(ModelConfigFieldPath::BaseUrl),
+        ["model_name"] => Ok(ModelConfigFieldPath::ModelName),
+        ["agent", ..] | ["provider", ..] => Err(OperatorError::Platform(format!(
+            "model field path `{path}` must be relative to a single [agent.model.provider.<name>] entry"
+        ))),
+        _ => Err(OperatorError::Platform(format!(
+            "model field path `{path}` is not part of the supported provider contract"
+        ))),
+    }
+}
+
 fn parse_toml_value(raw: &str) -> Result<TomlValue, OperatorError> {
     let mut table = toml::from_str::<toml::Table>(&format!("value = {raw}")).map_err(|error| {
         OperatorError::Platform(format!(
-            "target set value `{raw}` could not be parsed: {error}"
+            "config set value `{raw}` could not be parsed: {error}"
         ))
     })?;
     table.remove("value").ok_or_else(|| {
-        OperatorError::Platform(format!("target set value `{raw}` could not be parsed"))
+        OperatorError::Platform(format!("config set value `{raw}` could not be parsed"))
     })
+}
+
+fn set_optional_string_field(table: &mut Table, key: &str, value: Option<&str>) {
+    match value {
+        Some(value) => table[key] = edit_value(value),
+        None => {
+            table.remove(key);
+        }
+    }
 }
 
 fn ensure_child_table<'a>(item: &'a mut Item, key: &str) -> &'a mut Table {
@@ -430,14 +625,26 @@ fn render_target_path(path: &TargetConfigFieldPath) -> String {
     }
 }
 
+fn render_model_path(path: &ModelConfigFieldPath) -> String {
+    match path {
+        ModelConfigFieldPath::ApiKey => "api_key".into(),
+        ModelConfigFieldPath::BaseUrl => "base_url".into(),
+        ModelConfigFieldPath::ModelName => "model_name".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use tempfile::tempdir;
 
-    use super::{parse_target_set_expression, RuntimeConfigDocument, TargetConfigFieldPath};
+    use super::{
+        parse_model_set_expression, parse_target_set_expression, ModelConfigFieldPath,
+        RuntimeConfigDocument, TargetConfigFieldPath,
+    };
     use crate::runtime_config_path;
+    use crate::AgentModelProviderConfig;
     use operator_core::TargetId;
     use operator_runtime::NamedTargetConfig;
     use serde_json::json;
@@ -473,6 +680,20 @@ mod tests {
         let error =
             TargetConfigFieldPath::parse_unset("platform").expect_err("platform cannot be unset");
         assert!(error.to_string().contains("cannot be removed"));
+    }
+
+    #[test]
+    fn model_set_expression_parses_string_values_and_validates_paths() {
+        let (path, value) =
+            parse_model_set_expression("api_key='sk-openai-1234'").expect("parse expression");
+        assert_eq!(path, ModelConfigFieldPath::ApiKey);
+        assert_eq!(value, TomlValue::String("sk-openai-1234".into()));
+
+        let error = parse_model_set_expression("agent.model.provider.openai.api_key='value'")
+            .expect_err("absolute model path should fail");
+        assert!(error
+            .to_string()
+            .contains("must be relative to a single [agent.model.provider.<name>] entry"));
     }
 
     #[test]
@@ -547,5 +768,65 @@ model = "gpt-5.4"
         assert!(rendered.contains("description = \"Harmony lab PC\""));
         assert!(!rendered.contains("agent_path"));
         assert!(rendered.contains("addr = \"192.168.8.43:35319\""));
+    }
+
+    #[test]
+    fn runtime_config_document_updates_model_fields_without_dropping_other_sections() {
+        let temp = tempdir().expect("tempdir");
+        let path = runtime_config_path(temp.path());
+        fs::write(
+            &path,
+            r#"
+[runtime]
+default_target = "macos"
+
+[targets.macos]
+platform = "macos"
+driver = "macos.system"
+
+[agent]
+max_steps = 50
+step_timeout_ms = 30000
+"#,
+        )
+        .expect("write config");
+
+        let mut document = RuntimeConfigDocument::load(&path).expect("load doc");
+        document
+            .set_default_model_selector("openai")
+            .expect("set selector");
+        document
+            .set_model_provider(
+                "openai",
+                &AgentModelProviderConfig {
+                    api_key: Some("sk-openai-1234".into()),
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    model_name: Some("gpt-5.4".into()),
+                },
+            )
+            .expect("set provider");
+        document
+            .set_model_provider_value(
+                "doubao",
+                &ModelConfigFieldPath::BaseUrl,
+                TomlValue::String("https://ark.cn-beijing.volces.com/api/v3".into()),
+            )
+            .expect("set doubao base_url");
+        document
+            .unset_model_provider_value("doubao", &ModelConfigFieldPath::BaseUrl)
+            .expect("unset doubao field");
+        document.save().expect("save updated doc");
+
+        let rendered = fs::read_to_string(&path).expect("read saved file");
+        assert!(rendered.contains("[agent]"));
+        assert!(rendered.contains("max_steps = 50"));
+        assert!(rendered.contains("step_timeout_ms = 30000"));
+        assert!(rendered.contains("[agent.model]"));
+        assert!(rendered.contains("default = \"openai\""));
+        assert!(rendered.contains("[agent.model.provider.openai]"));
+        assert!(rendered.contains("api_key = \"sk-openai-1234\""));
+        assert!(rendered.contains("base_url = \"https://api.openai.com/v1\""));
+        assert!(rendered.contains("model_name = \"gpt-5.4\""));
+        assert!(!rendered.contains("[agent.model.provider.doubao]"));
     }
 }
