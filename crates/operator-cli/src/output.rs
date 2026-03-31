@@ -11,6 +11,8 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
     match tool {
         "observe" | "snapshot-get" => render_snapshot(output),
         "artifact-get" => render_artifact(output),
+        "target-list" => render_targets(output),
+        "target-show" => render_target(output),
         "get-focus" => render_focus(output),
         "list-apps" => render_apps(output),
         "list-windows" => render_windows(output),
@@ -82,6 +84,80 @@ fn render_focus(output: &Value) -> String {
         Some(label) if !label.is_empty() => format!("{app}\t{role}\t{label}"),
         _ => format!("{app}\t{role}"),
     }
+}
+
+fn render_targets(output: &Value) -> String {
+    let targets = output["targets"].as_array().cloned().unwrap_or_default();
+    if targets.is_empty() {
+        return "no configured targets".into();
+    }
+
+    let rendered = targets
+        .iter()
+        .map(|target| {
+            let name = target["name"].as_str().unwrap_or("<unknown>");
+            let mut heading = format!("  • {name}");
+            if target["is_default"].as_bool().unwrap_or(false) {
+                heading.push_str(" [default]");
+            }
+
+            let mut block = format!(
+                "{heading}\n    Platform: {}\n    Driver: {}",
+                target["platform"].as_str().unwrap_or("<unknown>"),
+                target["driver"].as_str().unwrap_or("<unknown>")
+            );
+            if let Some(description) = target["description"]
+                .as_str()
+                .filter(|value| !value.is_empty())
+            {
+                block.push_str(&format!("\n    Description: {description}"));
+            }
+            block
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("Targets ({}):\n{rendered}", targets.len())
+}
+
+fn render_target(output: &Value) -> String {
+    let target = &output["target"];
+    if target.is_null() {
+        return "target not found".into();
+    }
+
+    let mut lines = vec![
+        format!("Target: {}", target["name"].as_str().unwrap_or("<unknown>")),
+        format!(
+            "Default: {}",
+            if target["is_default"].as_bool().unwrap_or(false) {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+        format!(
+            "Platform: {}",
+            target["platform"].as_str().unwrap_or("<unknown>")
+        ),
+        format!(
+            "Driver: {}",
+            target["driver"].as_str().unwrap_or("<unknown>")
+        ),
+    ];
+    if let Some(description) = target["description"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("Description: {description}"));
+    }
+    let driver_config = serde_json::to_string_pretty(&target["driver_config"])
+        .expect("driver_config should serialize");
+    lines.push(format!(
+        "Driver Config:\n{}",
+        indent_block(&driver_config, "  ")
+    ));
+    lines.join("\n")
 }
 
 fn render_apps(output: &Value) -> String {
@@ -285,11 +361,18 @@ fn render_number(value: f64) -> String {
     }
 }
 
+fn indent_block(text: &str, prefix: &str) -> String {
+    text.lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{render_apps, render_permissions};
+    use super::{render_apps, render_permissions, render_target, render_targets};
 
     #[test]
     fn render_apps_uses_multiline_blocks_for_running_entries() {
@@ -404,6 +487,54 @@ mod tests {
         assert_eq!(
             render_permissions(&output),
             "Accessibility: Granted\nSystem Events: Denied\nScreen Recording: Granted\nnote: System Events access is required for macOS window queries and focus reads."
+        );
+    }
+
+    #[test]
+    fn render_targets_includes_default_marker_and_optional_description() {
+        let output = json!({
+            "targets": [
+                {
+                    "name": "harmony-pc",
+                    "is_default": true,
+                    "platform": "harmony",
+                    "driver": "harmony.hdc",
+                    "description": "Harmony lab PC"
+                },
+                {
+                    "name": "macos",
+                    "is_default": false,
+                    "platform": "macos",
+                    "driver": "macos.system",
+                    "description": null
+                }
+            ]
+        });
+
+        assert_eq!(
+            render_targets(&output),
+            "Targets (2):\n  • harmony-pc [default]\n    Platform: harmony\n    Driver: harmony.hdc\n    Description: Harmony lab PC\n  • macos\n    Platform: macos\n    Driver: macos.system"
+        );
+    }
+
+    #[test]
+    fn render_target_pretty_prints_driver_config() {
+        let output = json!({
+            "target": {
+                "name": "harmony-pc",
+                "is_default": true,
+                "platform": "harmony",
+                "driver": "harmony.hdc",
+                "description": "Harmony lab PC",
+                "driver_config": {
+                    "addr": "192.168.8.43:35319"
+                }
+            }
+        });
+
+        assert_eq!(
+            render_target(&output),
+            "Target: harmony-pc\nDefault: yes\nPlatform: harmony\nDriver: harmony.hdc\nDescription: Harmony lab PC\nDriver Config:\n  {\n    \"addr\": \"192.168.8.43:35319\"\n  }"
         );
     }
 }

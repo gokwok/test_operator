@@ -3,13 +3,21 @@
 pub(crate) mod args;
 mod output;
 
-use std::{future::Future, path::Path, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+};
 
 use operator_agent::{
     model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
 };
-use operator_bootstrap::{load_runtime_config, operator_home_dir, system_platform_registry};
-use operator_core::OperatorError;
+use operator_bootstrap::{
+    load_runtime_config, operator_home_dir, runtime_config_path, system_platform_registry,
+    RuntimeConfigDocument,
+};
+use operator_core::{OperatorError, TargetId};
 #[cfg(not(test))]
 use operator_mcp::run_stdio_server;
 use operator_runtime::{
@@ -18,10 +26,11 @@ use operator_runtime::{
 };
 use serde_json::Value;
 
-use self::args::{AgentCommand, Cli, CliExecution, ToolInvocation};
+use self::args::{AgentCommand, Cli, CliExecution, TargetCommand, ToolInvocation};
 
 type InvokeFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>>;
 type AgentFuture<'a> = Pin<Box<dyn Future<Output = Result<AgentRunResult, String>> + Send + 'a>>;
+type InspectFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>>;
 
 pub(crate) trait ToolInvoker {
     fn invoke<'a>(&'a self, tool: &'a str, input: Value) -> InvokeFuture<'a>;
@@ -29,6 +38,10 @@ pub(crate) trait ToolInvoker {
 
 pub(crate) trait AgentExecutor {
     fn run<'a>(&'a self, command: &'a AgentCommand) -> AgentFuture<'a>;
+}
+
+pub(crate) trait TargetInspector {
+    fn inspect<'a>(&'a self, command: &'a TargetCommand) -> InspectFuture<'a>;
 }
 
 struct RuntimeToolInvoker {
@@ -69,6 +82,22 @@ impl AgentExecutor for RuntimeAgentExecutor {
             let runner = AgentRunner::new(Arc::new(runtime), models, agent_config_for(command));
             runner.run(request).await.map_err(|error| error.to_string())
         })
+    }
+}
+
+struct RuntimeTargetInspector {
+    operator_home: PathBuf,
+}
+
+impl RuntimeTargetInspector {
+    fn new(operator_home: PathBuf) -> Self {
+        Self { operator_home }
+    }
+}
+
+impl TargetInspector for RuntimeTargetInspector {
+    fn inspect<'a>(&'a self, command: &'a TargetCommand) -> InspectFuture<'a> {
+        Box::pin(async move { inspect_target_command(command, &self.operator_home) })
     }
 }
 
@@ -132,6 +161,19 @@ async fn main_entry() -> i32 {
                 }
             }
         }
+        CliExecution::Target(command) => {
+            let inspector = RuntimeTargetInspector::new(operator_home_dir());
+            match run_target_with_inspector(command, &inspector).await {
+                Ok(rendered) => {
+                    println!("{rendered}");
+                    0
+                }
+                Err(error) => {
+                    eprintln!("{}", output::render_error(json_output, &error.to_string()));
+                    1
+                }
+            }
+        }
         CliExecution::Agent(_command) => {
             let executor = RuntimeAgentExecutor;
             match run_agent_with_executor(_command, &executor).await {
@@ -175,6 +217,18 @@ async fn run_agent_with_executor(
     let json_output = command.json_output;
     let result = executor.run(&command).await?;
     Ok(output::render_agent_success(&result, json_output))
+}
+
+async fn run_target_with_inspector(
+    command: TargetCommand,
+    inspector: &impl TargetInspector,
+) -> Result<String, OperatorError> {
+    let (tool, json_output) = match &command {
+        TargetCommand::List { json_output } => ("target-list", *json_output),
+        TargetCommand::Show { json_output, .. } => ("target-show", *json_output),
+    };
+    let output = inspector.inspect(&command).await?;
+    Ok(output::render_success(tool, &output, json_output))
 }
 
 async fn build_runtime(config: RuntimeConfig) -> Result<operator_runtime::Runtime, OperatorError> {
@@ -221,6 +275,47 @@ fn agent_config_for(command: &AgentCommand) -> AgentConfig {
     config
 }
 
+pub(crate) fn inspect_target_command(
+    command: &TargetCommand,
+    operator_home: impl AsRef<Path>,
+) -> Result<Value, OperatorError> {
+    let path = runtime_config_path(operator_home);
+    let document = RuntimeConfigDocument::load(&path)?;
+    let config = document.to_runtime_config()?;
+
+    match command {
+        TargetCommand::List { .. } => Ok(serde_json::json!({
+            "default_target": config.default_target.to_string(),
+            "targets": config.targets.iter().map(|(name, target)| serde_json::json!({
+                "name": name,
+                "is_default": config.default_target == TargetId(name.clone()),
+                "platform": target.platform,
+                "driver": target.driver,
+                "description": target.description,
+            })).collect::<Vec<_>>(),
+        })),
+        TargetCommand::Show { name, .. } => {
+            let selected = name
+                .clone()
+                .unwrap_or_else(|| config.default_target.to_string());
+            let target = config
+                .targets
+                .get(&selected)
+                .ok_or_else(|| OperatorError::TargetNotFound(selected.clone()))?;
+            Ok(serde_json::json!({
+                "target": {
+                    "name": selected,
+                    "is_default": config.default_target == TargetId(selected.clone()),
+                    "platform": target.platform,
+                    "driver": target.driver,
+                    "description": target.description,
+                    "driver_config": target.driver_config,
+                }
+            }))
+        }
+    }
+}
+
 #[cfg(test)]
 struct NoopAgentExecutor;
 
@@ -232,14 +327,32 @@ impl AgentExecutor for NoopAgentExecutor {
 }
 
 #[cfg(test)]
+struct NoopTargetInspector;
+
+#[cfg(test)]
+impl TargetInspector for NoopTargetInspector {
+    fn inspect<'a>(&'a self, _command: &'a TargetCommand) -> InspectFuture<'a> {
+        Box::pin(async move {
+            Err(OperatorError::Platform(
+                "unexpected target inspection in tool-only test".into(),
+            ))
+        })
+    }
+}
+
+#[cfg(test)]
 pub(crate) async fn run_with_handlers(
     cli: Cli,
     invoker: &impl ToolInvoker,
     executor: &impl AgentExecutor,
+    inspector: &impl TargetInspector,
 ) -> Result<String, CliError> {
     let execution = cli.into_execution().map_err(CliError::Argument)?;
     match execution {
         CliExecution::Tool(invocation) => run_invocation_with_invoker(invocation, invoker)
+            .await
+            .map_err(CliError::Operator),
+        CliExecution::Target(command) => run_target_with_inspector(command, inspector)
             .await
             .map_err(CliError::Operator),
         CliExecution::Agent(command) => run_agent_with_executor(command, executor)
@@ -256,7 +369,7 @@ pub(crate) async fn run_with_invoker(
     cli: Cli,
     invoker: &impl ToolInvoker,
 ) -> Result<String, CliError> {
-    run_with_handlers(cli, invoker, &NoopAgentExecutor).await
+    run_with_handlers(cli, invoker, &NoopAgentExecutor, &NoopTargetInspector).await
 }
 
 #[cfg(test)]

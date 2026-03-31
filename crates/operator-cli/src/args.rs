@@ -64,6 +64,7 @@ const ROOT_EXAMPLES: &[&str] = &[
     "operator capture frontmost",
     "operator elements window --window-id 42",
     "operator click --text Save",
+    "operator target list",
     "operator mcp serve",
 ];
 
@@ -99,6 +100,9 @@ const ELEMENTS_FULLSCREEN_FOOTER: &str =
 const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
 const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
+const TARGET_ABOUT: &str = "Inspect configured named runtime targets";
+const TARGET_LIST_ABOUT: &str = "List configured named targets";
+const TARGET_SHOW_ABOUT: &str = "Show a named target definition";
 
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
@@ -162,6 +166,10 @@ const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "artifact",
         about: ARTIFACT_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "target",
+        about: TARGET_ABOUT,
     },
 ];
 
@@ -432,6 +440,31 @@ const WINDOW_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
         "operator window resize --window-id 42 --width 1280 --height 800",
     ],
     footer: "Use 'operator window <command> --help' for detailed usage.",
+};
+
+const TARGET_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "list",
+        about: TARGET_LIST_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "show",
+        about: TARGET_SHOW_ABOUT,
+    },
+];
+
+const TARGET_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator target <COMMAND>",
+    about: TARGET_ABOUT,
+    entries_heading: "Commands",
+    commands: TARGET_GROUP_COMMANDS,
+    examples: &[
+        "operator target list",
+        "operator target show",
+        "operator target show harmony-pc",
+        "operator --json target show windows-lab",
+    ],
+    footer: "Use 'operator target <command> --help' for detailed usage.",
 };
 
 const MCP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
@@ -1157,6 +1190,79 @@ const ARTIFACT_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
     rows: ARTIFACT_ARGUMENT_ROWS,
 }];
 
+const TARGET_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Output",
+        rows: &[
+            CommandHelpEntry {
+                command: "target name",
+                about: "Name of the configured target",
+            },
+            CommandHelpEntry {
+                command: "default",
+                about: "Whether this target matches [runtime].default_target",
+            },
+            CommandHelpEntry {
+                command: "platform",
+                about: "Persisted platform identifier",
+            },
+            CommandHelpEntry {
+                command: "driver",
+                about: "Persisted driver identifier",
+            },
+            CommandHelpEntry {
+                command: "description",
+                about: "Optional human-readable description",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
+const TARGET_SHOW_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "[NAME]",
+            about: "Target name to inspect (defaults to the current default target)",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Output",
+        rows: &[
+            CommandHelpEntry {
+                command: "platform",
+                about: "Persisted platform identifier",
+            },
+            CommandHelpEntry {
+                command: "driver",
+                about: "Persisted driver identifier",
+            },
+            CommandHelpEntry {
+                command: "description",
+                about: "Optional human-readable description",
+            },
+            CommandHelpEntry {
+                command: "driver_config",
+                about: "Driver-specific persisted config map",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
 const CLICK_HELP_SECTIONS: &[LeafHelpSection] = &[
     LeafHelpSection {
         heading: "Options",
@@ -1568,6 +1674,28 @@ const ARTIFACT_HELP: LeafHelp = LeafHelp {
     examples: &[
         "operator artifact capture-1.png",
         "operator --json artifact capture-1.png",
+    ],
+    footer: "",
+};
+
+const TARGET_LIST_HELP: LeafHelp = LeafHelp {
+    usage: "operator target list [OPTIONS]",
+    about: TARGET_LIST_ABOUT,
+    sections: TARGET_LIST_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &["operator target list", "operator --json target list"],
+    footer: "",
+};
+
+const TARGET_SHOW_HELP: LeafHelp = LeafHelp {
+    usage: "operator target show [OPTIONS] [NAME]",
+    about: TARGET_SHOW_ABOUT,
+    sections: TARGET_SHOW_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator target show",
+        "operator target show harmony-pc",
+        "operator --json target show windows-lab",
     ],
     footer: "",
 };
@@ -2423,6 +2551,9 @@ impl Cli {
     pub(crate) fn into_invocation(self) -> Result<ToolInvocation, String> {
         match self.into_execution()? {
             CliExecution::Tool(invocation) => Ok(invocation),
+            CliExecution::Target(_) => {
+                Err("target command does not map to a runtime tool invocation".to_string())
+            }
             CliExecution::McpServe => {
                 Err("mcp serve does not map to a runtime tool invocation".to_string())
             }
@@ -2454,6 +2585,9 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["elements", "fullscreen", ..] => Some(styled_leaf_help(&ELEMENTS_FULLSCREEN_HELP)),
         ["snapshot", ..] => Some(styled_leaf_help(&SNAPSHOT_HELP)),
         ["artifact", ..] => Some(styled_leaf_help(&ARTIFACT_HELP)),
+        ["target"] => Some(styled_group_help(&TARGET_GROUP_HELP)),
+        ["target", "list", ..] => Some(styled_leaf_help(&TARGET_LIST_HELP)),
+        ["target", "show", ..] => Some(styled_leaf_help(&TARGET_SHOW_HELP)),
         ["show", ..] => Some(styled_leaf_help(&SHOW_HELP)),
         ["click", ..] => Some(styled_leaf_help(&CLICK_HELP)),
         ["type", ..] => Some(styled_leaf_help(&TYPE_HELP)),
@@ -2546,6 +2680,7 @@ pub(crate) struct ToolInvocation {
 #[derive(Debug)]
 pub(crate) enum CliExecution {
     Tool(ToolInvocation),
+    Target(TargetCommand),
     McpServe,
     Agent(AgentCommand),
 }
@@ -2561,6 +2696,7 @@ enum Command {
     Elements(ElementsArgs),
     Snapshot(SnapshotArgs),
     Artifact(ArtifactArgs),
+    Target(TargetArgs),
     #[command(about = SHOW_ABOUT, after_help = SHOW_AFTER_HELP)]
     Show(CommonArgs),
     #[command(about = INPUT_CLICK_ABOUT, after_help = INPUT_CLICK_AFTER_HELP)]
@@ -2595,6 +2731,7 @@ impl Command {
             Self::Elements(args) => Some(&args.common),
             Self::Snapshot(args) => Some(&args.common),
             Self::Artifact(args) => Some(&args.common),
+            Self::Target(args) => Some(&args.common),
             Self::Show(args) => Some(args),
             Self::Click(args) => Some(&args.common),
             Self::Type(args) => Some(&args.common),
@@ -2624,6 +2761,9 @@ impl Command {
             Self::Elements(args) => args.into_invocation(root_common),
             Self::Snapshot(args) => args.into_invocation(root_common),
             Self::Artifact(args) => args.into_invocation(root_common),
+            Self::Target(_) => {
+                Err("target command does not map to a runtime tool invocation".to_string())
+            }
             Self::Show(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
@@ -2646,6 +2786,7 @@ impl Command {
 
     fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
         match self {
+            Self::Target(args) => args.into_execution(root_common),
             Self::Mcp(args) => args.into_execution(root_common),
             Self::Agent(args) => args.into_execution(root_common),
             other => other.into_invocation(root_common).map(CliExecution::Tool),
@@ -2679,6 +2820,67 @@ pub(crate) struct AgentCommand {
     pub(crate) target: Option<String>,
     pub(crate) json_output: bool,
     pub(crate) timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TargetCommand {
+    List {
+        json_output: bool,
+    },
+    Show {
+        name: Option<String>,
+        json_output: bool,
+    },
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(about = TARGET_ABOUT, arg_required_else_help = true)]
+struct TargetArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: TargetSubcommand,
+}
+
+impl TargetArgs {
+    fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
+        let common = merge_common(root_common, self.common);
+        if common.target.is_some() {
+            return Err("target inspection commands do not accept --target".into());
+        }
+        if common.timeout_ms.is_some() {
+            return Err("target inspection commands do not accept --timeout-ms".into());
+        }
+
+        let command = match self.command {
+            TargetSubcommand::List(_) => TargetCommand::List {
+                json_output: common.json_output,
+            },
+            TargetSubcommand::Show(args) => TargetCommand::Show {
+                name: args.name,
+                json_output: common.json_output,
+            },
+        };
+
+        Ok(CliExecution::Target(command))
+    }
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum TargetSubcommand {
+    #[command(about = TARGET_LIST_ABOUT)]
+    List(TargetListArgs),
+    #[command(about = TARGET_SHOW_ABOUT)]
+    Show(TargetShowArgs),
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct TargetListArgs {}
+
+#[derive(Debug, Clone, Args, Default)]
+struct TargetShowArgs {
+    #[arg(help = "Target name to inspect (defaults to the current default target)")]
+    name: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -3304,6 +3506,9 @@ impl McpArgs {
     fn into_invocation(self, root_common: CommonArgs) -> Result<ToolInvocation, String> {
         match self.into_execution(root_common)? {
             CliExecution::Tool(invocation) => Ok(invocation),
+            CliExecution::Target(_) => {
+                Err("target command does not map to a runtime tool invocation".to_string())
+            }
             CliExecution::McpServe => {
                 Err("mcp serve does not map to a runtime tool invocation".to_string())
             }

@@ -6,6 +6,7 @@ use std::{
     fs,
     future::Future,
     num::NonZeroU32,
+    path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -594,6 +595,8 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Read a stored snapshot by ID"));
     assert!(help.contains("artifact"));
     assert!(help.contains("Read a stored capture artifact by ID"));
+    assert!(help.contains("target"));
+    assert!(help.contains("Inspect configured named runtime targets"));
     assert!(help.contains("capture"));
     assert!(help.contains("Take a screenshot of a surface"));
     assert!(help.contains("elements"));
@@ -618,6 +621,7 @@ fn root_help_groups_commands_by_domain() {
     assert!(!help.contains("Not yet implemented. Reserved for future agent interface commands."));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator capture frontmost"));
+    assert!(help.contains("operator target list"));
     assert!(!help.contains("operator window list"));
     assert!(help.contains("Use 'operator <command> --help' for detailed usage."));
 }
@@ -679,6 +683,35 @@ fn artifact_help_shows_direct_id_usage() {
 }
 
 #[test]
+fn target_list_help_snapshot_is_stable() {
+    let help = command_help(["operator", "target", "list", "--help"]);
+    assert!(help.contains("Usage operator target list [OPTIONS]"));
+    assert!(help.contains("List configured named targets"));
+    assert!(help.contains("Examples"));
+    assert!(help.contains("operator target list"));
+    assert!(help.contains("operator --json target list"));
+    assert!(help.contains("Output"));
+    assert!(help.contains("target name"));
+    assert!(help.contains("default"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn target_show_help_snapshot_is_stable() {
+    let help = command_help(["operator", "target", "show", "--help"]);
+    assert!(help.contains("Usage operator target show [OPTIONS] [NAME]"));
+    assert!(help.contains("Show a named target definition"));
+    assert!(help.contains("Examples"));
+    assert!(help.contains("operator target show"));
+    assert!(help.contains("operator target show harmony-pc"));
+    assert!(help.contains("operator --json target show windows-lab"));
+    assert!(help.contains("Arguments"));
+    assert!(help.contains("[NAME]"));
+    assert!(help.contains("driver_config"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
 fn type_help_shows_positional_text_and_after_key() {
     let help = command_help(["operator", "type", "--help"]);
     assert_leaf_help_shape(
@@ -717,6 +750,17 @@ fn window_help_lists_window_management_subcommands() {
     assert!(help.contains("set-bounds"));
     assert!(help.contains("Set the full position and size of a window in one operation"));
     assert!(help.contains("Use 'operator window <command> --help' for detailed usage."));
+}
+
+#[test]
+fn target_help_lists_target_inspection_subcommands() {
+    let help = command_help(["operator", "target", "--help"]);
+    assert!(help.contains("Inspect configured named runtime targets"));
+    assert!(help.contains("list"));
+    assert!(help.contains("List configured named targets"));
+    assert!(help.contains("show"));
+    assert!(help.contains("Show a named target definition"));
+    assert!(help.contains("Use 'operator target <command> --help' for detailed usage."));
 }
 
 #[test]
@@ -2555,7 +2599,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         }),
     };
 
-    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor)
+    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor, &NoopConfigInspector)
         .await
         .unwrap();
     assert_eq!(
@@ -2597,7 +2641,7 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
         }),
     };
 
-    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor)
+    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor, &NoopConfigInspector)
         .await
         .unwrap();
     let output = serde_json::from_str::<Value>(&rendered).unwrap();
@@ -2978,6 +3022,118 @@ async fn cli_run_distinguishes_known_target_with_missing_driver() {
     }
 }
 
+#[tokio::test]
+async fn target_list_reads_named_targets_from_runtime_config() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "harmony-pc"
+
+[targets.harmony-pc]
+platform = "harmony"
+driver = "harmony.hdc"
+description = "Harmony lab PC"
+
+[targets.harmony-pc.driver_config]
+addr = "192.168.8.43:35319"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "target", "list"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        rendered,
+        "Targets (2):\n  • harmony-pc [default]\n    Platform: harmony\n    Driver: harmony.hdc\n    Description: Harmony lab PC\n  • macos\n    Platform: macos\n    Driver: macos.system"
+    );
+}
+
+#[tokio::test]
+async fn target_show_defaults_to_current_default_target() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "windows-lab"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+
+[targets.windows-lab.driver_config]
+endpoint = "wss://windows-lab.internal"
+"#,
+    )
+    .expect("write config");
+
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "--json", "target", "show"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "target": {
+                "name": "windows-lab",
+                "is_default": true,
+                "platform": "windows",
+                "driver": "windows.remote",
+                "description": null,
+                "driver_config": {
+                    "endpoint": "wss://windows-lab.internal"
+                }
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn target_show_fails_for_unknown_target_name() {
+    let temp = tempdir().expect("tempdir");
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "target", "show", "missing"]).unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("unknown target should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::TargetNotFound(target)) => {
+            assert_eq!(target, "missing");
+        }
+        other => panic!("expected target-not-found error, got {other:?}"),
+    }
+}
+
 struct RecordingInvoker {
     calls: Arc<Mutex<Vec<(String, Value)>>>,
     response: Value,
@@ -2996,6 +3152,15 @@ impl cli_main::ToolInvoker for RecordingInvoker {
             .push((tool.to_string(), input.clone()));
         let response = self.response.clone();
         Box::pin(async move { Ok(response) })
+    }
+}
+
+impl RecordingInvoker {
+    fn noop() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            response: json!({}),
+        }
     }
 }
 
@@ -3027,6 +3192,43 @@ impl cli_main::AgentExecutor for RecordingAgentExecutor {
         self.calls.lock().unwrap().push(command.clone());
         let result = self.result.clone();
         Box::pin(async move { result })
+    }
+}
+
+impl RecordingAgentExecutor {
+    fn noop() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            result: Err("unexpected agent execution".into()),
+        }
+    }
+}
+
+struct ConfigInspector {
+    operator_home: PathBuf,
+}
+
+impl cli_main::TargetInspector for ConfigInspector {
+    fn inspect<'a>(
+        &'a self,
+        command: &'a cli_main::args::TargetCommand,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>> {
+        Box::pin(async move { cli_main::inspect_target_command(command, &self.operator_home) })
+    }
+}
+
+struct NoopConfigInspector;
+
+impl cli_main::TargetInspector for NoopConfigInspector {
+    fn inspect<'a>(
+        &'a self,
+        _command: &'a cli_main::args::TargetCommand,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(OperatorError::Platform(
+                "unexpected target inspection in cli test".into(),
+            ))
+        })
     }
 }
 
