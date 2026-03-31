@@ -53,11 +53,17 @@ fn render_request_text(task: &str, planner_context: &PlannerContext) -> String {
 
 fn render_target_section(planner_context: &PlannerContext) -> String {
     let target = &planner_context.target;
+    let observe_mode = if planner_context.include_elements {
+        "element_tree"
+    } else {
+        "screenshot_only"
+    };
     format!(
-        "Target\n- id: {}\n- platform: {}\n- capabilities: {}",
+        "Target\n- id: {}\n- platform: {}\n- capabilities: {}\n- observe verification mode: {}",
         target.id,
         target.platform,
-        target.capabilities_text()
+        target.capabilities_text(),
+        observe_mode
     )
 }
 
@@ -114,7 +120,11 @@ fn render_ui_state_section(planner_context: &PlannerContext) -> String {
     };
 
     let guidance = if planner_context.ui_state_stale {
-        "Do not choose `finish` until the UI is freshly verified."
+        if planner_context.include_elements {
+            "Do not choose `finish` until the UI is freshly verified by an element-inclusive observe."
+        } else {
+            "Do not choose `finish` until the UI is freshly verified by a screenshot or observe result."
+        }
     } else {
         "A `finish` decision is allowed if the task outcome is already verified."
     };

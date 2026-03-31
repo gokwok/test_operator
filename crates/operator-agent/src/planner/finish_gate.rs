@@ -156,7 +156,7 @@ fn needs_reflection(state: &AgentSessionState, recent_side_effect_limit: usize) 
 fn has_usable_observation(state: &AgentSessionState) -> bool {
     state
         .current_observation()
-        .is_some_and(|summary| summary.root_element_count > 0 && summary.element_count > 0)
+        .is_some_and(|summary| summary.is_usable(state.include_elements()))
 }
 
 fn reflection_context(

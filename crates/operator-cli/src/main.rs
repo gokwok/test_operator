@@ -375,6 +375,7 @@ fn agent_config_for(command: &AgentCommand, default_model: Option<&str>) -> Agen
     if let Some(default_model) = default_model {
         config.default_model = default_model.to_owned();
     }
+    config.include_elements = command.include_elements;
     if let Some(max_steps) = command.max_steps {
         config.max_steps = max_steps.get();
     }

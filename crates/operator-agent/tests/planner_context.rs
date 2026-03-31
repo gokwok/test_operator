@@ -149,6 +149,7 @@ async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_r
 
     assert_eq!(context.target.id, TargetId("macos".into()));
     assert_eq!(context.target.platform, "macos");
+    assert!(context.include_elements);
     assert_eq!(
         context.target.capabilities,
         vec![

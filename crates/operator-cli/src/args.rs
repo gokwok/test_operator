@@ -622,7 +622,8 @@ const MCP_SERVE_AFTER_HELP: &str = "Examples
 const AGENT_AFTER_HELP: &str = "Examples
   operator agent \"Open Notes and type hello\"
   operator agent \"Find the largest file in Downloads and move it to the Trash\"
-  operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"";
+  operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"
+  operator agent --include-elements \"Verify the frontmost UI with the accessibility tree\"";
 
 const MCP_SERVE_HELP: LeafHelp = LeafHelp {
     usage: "operator mcp serve [OPTIONS]",
@@ -643,6 +644,11 @@ const AGENT_OPTION_ROWS: &[CommandHelpEntry] = &[
         command: "--model <MODEL>",
         about:
             "Model selector to use for the agent [stable selectors: openai, doubao; compatibility aliases: gpt-5.4 -> openai, doubao-seed -> doubao]",
+    },
+    CommandHelpEntry {
+        command: "--include-elements",
+        about:
+            "Opt into element-tree observes for verification; default is screenshot-only for lower latency",
     },
     CommandHelpEntry {
         command: "--max-steps <N>",
@@ -670,6 +676,7 @@ const AGENT_HELP: LeafHelp = LeafHelp {
         "operator agent \"Open Notes and type hello\"",
         "operator agent \"Find the largest file in Downloads and move it to the Trash\"",
         "operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"",
+        "operator agent --include-elements \"Verify the frontmost UI with the accessibility tree\"",
     ],
     footer: "",
 };
@@ -3365,6 +3372,7 @@ struct CommonArgs {
 pub(crate) struct AgentCommand {
     pub(crate) task: String,
     pub(crate) model: Option<String>,
+    pub(crate) include_elements: bool,
     pub(crate) max_steps: Option<NonZeroU32>,
     pub(crate) target: Option<String>,
     pub(crate) json_output: bool,
@@ -3649,6 +3657,12 @@ struct AgentArgs {
     task: String,
     #[arg(long, help = "Model selector to use for the agent")]
     model: Option<String>,
+    #[arg(
+        long,
+        alias = "include_elements",
+        help = "Use element-tree observes for agent verification instead of screenshot-only verification"
+    )]
+    include_elements: bool,
     #[arg(long, help = "Maximum number of agent steps before stopping")]
     max_steps: Option<NonZeroU32>,
 }
@@ -3666,6 +3680,7 @@ impl AgentArgs {
         Ok(CliExecution::Agent(AgentCommand {
             task: self.task,
             model,
+            include_elements: self.include_elements,
             max_steps: self.max_steps,
             target: common.target,
             json_output: common.json_output,

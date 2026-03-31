@@ -44,6 +44,7 @@ fn planner_context() -> PlannerContext {
                 "inspect_tree".into(),
             ],
         },
+        include_elements: true,
         recent_tool_results: vec![ToolResultSummary {
             turn_index: 1,
             step_index: 1,

@@ -143,6 +143,47 @@ fn verified_side_effect_state() -> AgentSessionState {
     state
 }
 
+fn verified_screenshot_only_state() -> AgentSessionState {
+    let mut state = AgentSessionState::new(
+        SessionId("sess-finish-gate-shot-only".into()),
+        TargetId("macos".into()),
+        "Confirm the UI from a screenshot",
+    );
+    state.set_include_elements(false);
+    state.start_turn();
+    state.start_step();
+    state.push_tool_trace(
+        AgentToolResult {
+            tool_name: "observe".into(),
+            arguments: json!({
+                "surface": { "kind": "Frontmost" },
+                "include_elements": false,
+                "include_screenshot": true,
+            }),
+            output: Some(json!({
+                "snapshot": {
+                    "id": "snap-shot-only",
+                    "root_ids": [],
+                    "elements": {},
+                    "image_artifact": "capture-shot-only.png"
+                }
+            })),
+            error: None,
+            is_error: false,
+            read_only: true,
+        },
+        3,
+    );
+    state.record_visual_observation(VisualObservationSummary {
+        snapshot_id: SnapshotId("snap-shot-only".into()),
+        surface: "frontmost".into(),
+        screenshot_artifact: Some(ArtifactId("capture-shot-only.png".into())),
+        root_element_count: 0,
+        element_count: 0,
+    });
+    state
+}
+
 #[tokio::test]
 async fn finish_gate_accepts_verified_read_only_finish_without_model_reflection() {
     let finish_gate = FinishGate::new();
@@ -166,6 +207,32 @@ async fn finish_gate_accepts_verified_read_only_finish_without_model_reflection(
     assert!(
         provider.requests().is_empty(),
         "deterministic finish acceptance should not call the model"
+    );
+}
+
+#[tokio::test]
+async fn finish_gate_accepts_screenshot_only_finish_when_include_elements_is_disabled() {
+    let finish_gate = FinishGate::new();
+    let state = verified_screenshot_only_state();
+    let (model, provider) = resolved_model(
+        ProviderKind::OpenAi,
+        r#"{"verdict":"not_ok","reason":"This should never be used."}"#,
+    );
+
+    let verdict = finish_gate
+        .evaluate(&model, &state, "The screenshot confirms the UI.")
+        .await
+        .expect("deterministic ok verdict should succeed");
+
+    assert_eq!(
+        verdict,
+        FinishGateVerdict::Ok {
+            reason: "The task has a fresh usable observe result and no recent side-effect actions require extra finish reflection.".into(),
+        }
+    );
+    assert!(
+        provider.requests().is_empty(),
+        "screenshot-only finish acceptance should not call the model"
     );
 }
 

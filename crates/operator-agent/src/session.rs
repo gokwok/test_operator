@@ -163,6 +163,15 @@ impl VisualObservationSummary {
             self.snapshot_id, self.surface, self.root_element_count, self.element_count, screenshot
         )
     }
+
+    pub fn is_usable(&self, include_elements: bool) -> bool {
+        if include_elements {
+            self.root_element_count > 0 && self.element_count > 0
+        } else {
+            self.screenshot_artifact.is_some()
+                || (self.root_element_count > 0 && self.element_count > 0)
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +200,7 @@ pub struct LoopState {
     pub latest_snapshot: Option<SnapshotId>,
     pub previous_snapshot_visual: Option<ArtifactId>,
     pub latest_artifacts: Vec<ArtifactId>,
+    pub include_elements: bool,
     pub ui_state_stale: bool,
     pub consecutive_error_count: u32,
     pub last_error_fingerprint: Option<String>,
@@ -217,6 +227,7 @@ impl LoopState {
             latest_snapshot: None,
             previous_snapshot_visual: None,
             latest_artifacts: Vec::new(),
+            include_elements: true,
             ui_state_stale: false,
             consecutive_error_count: 0,
             last_error_fingerprint: None,
@@ -309,13 +320,21 @@ impl LoopState {
         self.ui_state_stale = true;
     }
 
+    pub fn set_include_elements(&mut self, include_elements: bool) {
+        self.include_elements = include_elements;
+    }
+
+    pub fn include_elements(&self) -> bool {
+        self.include_elements
+    }
+
     fn update_ui_state_staleness(&mut self, result: &AgentToolResult) {
         if result.is_error {
             return;
         }
 
         if result.tool_name == "observe" {
-            self.ui_state_stale = !observe_result_is_usable(result);
+            self.ui_state_stale = !observe_result_is_usable(result, self.include_elements);
         } else if !result.read_only {
             self.ui_state_stale = true;
         }
@@ -426,17 +445,8 @@ fn surface_name(kind: &SurfaceKind) -> String {
     }
 }
 
-fn observe_result_is_usable(result: &AgentToolResult) -> bool {
+fn observe_result_is_usable(result: &AgentToolResult, include_elements: bool) -> bool {
     if result.tool_name != "observe" || result.is_error {
-        return false;
-    }
-
-    let include_elements = result
-        .arguments
-        .get("include_elements")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if !include_elements {
         return false;
     }
 
@@ -457,8 +467,19 @@ fn observe_result_is_usable(result: &AgentToolResult) -> bool {
         .get("elements")
         .and_then(Value::as_object)
         .map_or(0, |items| items.len());
+    let screenshot_artifact = snapshot
+        .get("image_artifact")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
 
-    root_count > 0 && element_count > 0
+    VisualObservationSummary {
+        snapshot_id: SnapshotId("unknown".into()),
+        surface: "unknown".into(),
+        screenshot_artifact: screenshot_artifact.map(ArtifactId),
+        root_element_count: root_count,
+        element_count,
+    }
+    .is_usable(include_elements)
 }
 
 pub(crate) fn summarize_tool_result(result: &AgentToolResult) -> String {

@@ -33,6 +33,7 @@ impl LoopStateContextManager {
     pub fn assemble(&self, state: &AgentSessionState) -> Result<PlannerContext, AgentError> {
         Ok(PlannerContext {
             target: self.summarize_target(&state.target)?,
+            include_elements: state.include_elements(),
             recent_tool_results: self.summarize_tool_results(state),
             current_observation: state.current_observation().cloned(),
             current_visual_artifact: state.current_visual().cloned(),
@@ -79,6 +80,7 @@ impl LoopStateContextManager {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlannerContext {
     pub target: TargetSummary,
+    pub include_elements: bool,
     pub recent_tool_results: Vec<ToolResultSummary>,
     pub current_observation: Option<VisualObservationSummary>,
     pub current_visual_artifact: Option<ArtifactId>,

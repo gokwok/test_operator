@@ -1761,11 +1761,16 @@ Arguments
 Options
   --model <MODEL>          Config-backed selector to use for the agent
                            [stable values: openai, doubao]
+  --include-elements       Include accessibility elements in auto-observe and finish verification
+                           [default: false]
   --max-steps <N>          Maximum number of agent steps before stopping
 
 Notes
   - When '--model' is omitted, resolve the selector from [agent.model].default.
   - The selected selector resolves provider settings from [agent.model.provider.<name>].
+  - '--include-elements' controls whether the agent is allowed to request element-tree observes
+    for hot-path auto-observe and final verification. The default is screenshot-only verification
+    to keep observation latency and token cost lower.
   - Stable selectors are 'openai' and 'doubao'.
   - Selector-to-model mapping stays config-backed:
     - selector 'openai' usually carries provider `model_name = "gpt-5.4"`
@@ -1785,6 +1790,7 @@ Examples
   operator agent "Open Notes and type hello"
   operator agent "Find the largest file in Downloads and move it to the Trash"
   operator agent --model doubao --max-steps 10 "Summarize the frontmost window"
+  operator agent --include-elements "Inspect the frontmost window structure before deciding"
 ```
 
 ---

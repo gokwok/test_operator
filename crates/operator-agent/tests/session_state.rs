@@ -199,6 +199,48 @@ fn screenshot_only_observe_keeps_ui_state_stale() {
 }
 
 #[test]
+fn screenshot_only_observe_clears_stale_ui_when_include_elements_is_disabled() {
+    let mut state = AgentSessionState::new(
+        SessionId("sess-2c".into()),
+        TargetId("macos".into()),
+        "Observe the frontmost window",
+    );
+    state.set_include_elements(false);
+    state.start_turn();
+    state.start_step();
+    state.mark_ui_stale();
+
+    state.push_tool_trace(
+        AgentToolResult {
+            tool_name: "observe".into(),
+            arguments: json!({
+                "surface": { "kind": "Frontmost" },
+                "include_screenshot": true,
+                "include_elements": false
+            }),
+            output: Some(json!({
+                "snapshot": {
+                    "id": "snap-shot-only",
+                    "surface": { "kind": "Frontmost" },
+                    "root_ids": [],
+                    "elements": {},
+                    "image_artifact": "capture-shot-only.png"
+                }
+            })),
+            error: None,
+            is_error: false,
+            read_only: true,
+        },
+        101,
+    );
+
+    assert!(
+        !state.ui_state_stale,
+        "screenshot-only observe results should clear stale UI state when include-elements is disabled"
+    );
+}
+
+#[test]
 fn session_state_tracks_parse_attempts_notes_errors_and_terminal_status() {
     let mut state = AgentSessionState::new(
         SessionId("sess-3".into()),

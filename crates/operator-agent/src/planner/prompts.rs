@@ -17,7 +17,7 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "The runner may already provide automatic screenshot-only observe results on the hot path.\n",
     "The planner context carries current/previous visual artifact references from the in-memory loop state, not full snapshot bodies.\n",
     "Do not finish while `ui_state_stale` is true.\n",
-    "Use `observe` as a cold-path tool when you need to verify UI content or state; request `include_elements=true` because screenshot-only or empty observations do not count as verification.\n",
+    "Use `observe` as a cold-path tool when you need to verify UI content or state; follow the planner context's observe verification mode when deciding whether to request `include_elements=true`.\n",
     "Enum values and field names are case-sensitive; copy them exactly from the provided tool summaries.\n",
     "Do not invent tool results, hidden UI state, or unsupported tool arguments.\n",
     "Return exactly one JSON object and no surrounding prose.\n",

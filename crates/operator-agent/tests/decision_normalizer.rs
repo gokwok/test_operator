@@ -45,6 +45,7 @@ fn normalizer_rewrites_surface_image_pixel_coordinates_against_current_snapshot(
             decision,
             &model_config(CoordinatePolicy::SurfaceImagePixels),
             &state,
+            true,
         )
         .expect("surface image policy should rewrite image-pixel coordinates");
 
@@ -91,6 +92,7 @@ fn normalizer_rewrites_surface_normalized_coordinates_against_current_snapshot()
             decision,
             &model_config(CoordinatePolicy::SurfaceNormalized1000),
             &state,
+            true,
         )
         .expect("surface-normalized policy should rewrite coordinates");
 
@@ -138,6 +140,7 @@ fn normalizer_requires_current_snapshot_for_surface_relative_coordinates() {
             decision,
             &model_config(CoordinatePolicy::SurfaceAbsolutePixels),
             &state,
+            true,
         )
         .expect_err("surface-relative coordinates need a current observation");
 
@@ -173,6 +176,7 @@ fn normalizer_canonicalizes_snapshot_normalized_coords_to_surface_image_pixels()
             decision,
             &model_config(CoordinatePolicy::SurfaceImagePixels),
             &state,
+            true,
         )
         .expect("surface image policy should canonicalize coordinates");
 
@@ -192,6 +196,44 @@ fn normalizer_canonicalizes_snapshot_normalized_coords_to_surface_image_pixels()
                 }
             }),
             summary: "Click the clear button".into(),
+            thought: None,
+        }
+    );
+}
+
+#[test]
+fn normalizer_forces_observe_include_elements_off_when_disabled() {
+    let decision = AgentDecision::CallTool {
+        name: "observe".into(),
+        arguments: json!({
+            "surface": { "kind": "Frontmost" },
+            "include_elements": true,
+            "include_screenshot": true
+        }),
+        summary: "Verify the current UI.".into(),
+        thought: None,
+    };
+    let state = AgentSessionState::new("sess-1".into(), "macos".into(), "test");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::ScreenAbsolutePixels),
+            &state,
+            false,
+        )
+        .expect("observe normalization should succeed");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "observe".into(),
+            arguments: json!({
+                "surface": { "kind": "Frontmost" },
+                "include_elements": false,
+                "include_screenshot": true
+            }),
+            summary: "Verify the current UI.".into(),
             thought: None,
         }
     );

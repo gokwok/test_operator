@@ -169,7 +169,8 @@ async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() 
 
     let first_request = current_request_text(&requests[0].context);
     assert!(first_request.contains("- snapshot: snap-initial"));
-    assert!(first_request.contains("- stale: yes"));
+    assert!(first_request.contains("- observe verification mode: screenshot_only"));
+    assert!(first_request.contains("- stale: no"));
     assert!(first_request.contains("observe [read-only]"));
 
     assert!(driver.query_calls().await.is_empty());
@@ -257,7 +258,8 @@ async fn auto_observe_refreshes_after_successful_side_effect_tools() {
     );
     let second_request = current_request_text(&requests[1].context);
     assert!(second_request.contains("- snapshot: snap-after-click"));
-    assert!(second_request.contains("- stale: yes"));
+    assert!(second_request.contains("- observe verification mode: screenshot_only"));
+    assert!(second_request.contains("- stale: no"));
 
     assert!(driver.query_calls().await.is_empty());
     let observe_calls = driver.observe_calls().await;

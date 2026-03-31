@@ -100,7 +100,10 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
         driver.clone(),
         provider.clone(),
         session_store.clone(),
-        AgentConfig::default(),
+        AgentConfig {
+            include_elements: true,
+            ..AgentConfig::default()
+        },
     )
     .await;
 
@@ -221,7 +224,10 @@ async fn runner_replans_when_finish_gate_rejects_false_finish() {
         driver,
         provider.clone(),
         session_store,
-        AgentConfig::default(),
+        AgentConfig {
+            include_elements: true,
+            ..AgentConfig::default()
+        },
     )
     .await;
 
@@ -282,7 +288,10 @@ async fn runner_avoids_structured_output_for_doubao_planner_and_finish_gate() {
         ProviderKind::OpenAiCompatible,
         provider.clone(),
         session_store,
-        AgentConfig::default(),
+        AgentConfig {
+            include_elements: true,
+            ..AgentConfig::default()
+        },
     )
     .await;
 

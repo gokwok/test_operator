@@ -10,6 +10,7 @@ pub enum PlannerFormat {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub default_model: String,
+    pub include_elements: bool,
     pub max_steps: u32,
     pub max_parse_attempts: u32,
     pub repeated_error_limit: u32,
@@ -21,6 +22,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             default_model: "openai".into(),
+            include_elements: false,
             max_steps: 40,
             max_parse_attempts: 3,
             repeated_error_limit: 3,

@@ -22,6 +22,7 @@ impl DecisionNormalizer {
         decision: AgentDecision,
         model: &ModelConfig,
         state: &AgentSessionState,
+        include_elements: bool,
     ) -> Result<AgentDecision, AgentError> {
         let AgentDecision::CallTool {
             name,
@@ -36,7 +37,13 @@ impl DecisionNormalizer {
         let snapshot = state
             .current_observation()
             .map(|observation| observation.snapshot_id.clone());
-        let arguments = normalize_arguments(arguments, model.coordinate_policy, snapshot)?;
+        let arguments = normalize_arguments(
+            &name,
+            arguments,
+            model.coordinate_policy,
+            snapshot,
+            include_elements,
+        )?;
 
         Ok(AgentDecision::CallTool {
             name,
@@ -48,16 +55,18 @@ impl DecisionNormalizer {
 }
 
 fn normalize_arguments(
+    tool_name: &str,
     arguments: Value,
     policy: CoordinatePolicy,
     snapshot: Option<SnapshotId>,
+    include_elements: bool,
 ) -> Result<Value, AgentError> {
     if matches!(policy, CoordinatePolicy::ScreenAbsolutePixels) {
-        return Ok(arguments);
+        return normalize_tool_specific_arguments(tool_name, arguments, include_elements);
     }
 
     let Value::Object(mut object) = arguments else {
-        return Ok(arguments);
+        return normalize_tool_specific_arguments(tool_name, arguments, include_elements);
     };
 
     for key in ["locator", "from", "to"] {
@@ -69,6 +78,22 @@ fn normalize_arguments(
         }
     }
 
+    normalize_tool_specific_arguments(tool_name, Value::Object(object), include_elements)
+}
+
+fn normalize_tool_specific_arguments(
+    tool_name: &str,
+    arguments: Value,
+    include_elements: bool,
+) -> Result<Value, AgentError> {
+    if tool_name != "observe" || include_elements {
+        return Ok(arguments);
+    }
+
+    let Value::Object(mut object) = arguments else {
+        return Ok(arguments);
+    };
+    object.insert("include_elements".into(), Value::Bool(false));
     Ok(Value::Object(object))
 }
 

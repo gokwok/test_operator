@@ -60,7 +60,16 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
             .to_string(),
         r#"{"verdict":"ok","reason":"The final observe verified the task outcome."}"#.to_string(),
     ]));
-    let runner = runner_with(driver, provider, dir.path(), AgentConfig::default()).await;
+    let runner = runner_with(
+        driver,
+        provider,
+        dir.path(),
+        AgentConfig {
+            include_elements: true,
+            ..AgentConfig::default()
+        },
+    )
+    .await;
 
     let result = runner
         .run(AgentRunRequest {
@@ -102,7 +111,7 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
                 && !result.is_error
                 && result.read_only
                 && result.arguments["include_screenshot"] == true
-                && result.arguments["include_elements"] == false
+                && result.arguments["include_elements"] == true
     ));
     assert!(matches!(
         &transcript.events[4],

@@ -449,6 +449,7 @@ fn agent_help_shows_first_phase_flags_and_examples() {
     assert!(help.contains("stable selectors: openai, doubao"));
     assert!(help.contains("gpt-5.4 -> openai"));
     assert!(help.contains("doubao-seed -> doubao"));
+    assert!(help.contains("--include-elements"));
     assert!(help.contains("--max-steps <N>"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("--target <TARGET>"));
@@ -460,6 +461,9 @@ fn agent_help_shows_first_phase_flags_and_examples() {
     ));
     assert!(help.contains(
         "operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\""
+    ));
+    assert!(help.contains(
+        "operator agent --include-elements \"Verify the frontmost UI with the accessibility tree\""
     ));
 }
 
@@ -475,6 +479,7 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
         "250",
         "--model",
         "doubao-seed",
+        "--include-elements",
         "--max-steps",
         "8",
         "Summarize the frontmost window",
@@ -490,6 +495,7 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
 
     assert_eq!(command.task, "Summarize the frontmost window");
     assert_eq!(command.model.as_deref(), Some("doubao"));
+    assert!(command.include_elements);
     assert_eq!(command.max_steps, Some(NonZeroU32::new(8).unwrap()));
     assert_eq!(command.target.as_deref(), Some("macos"));
     assert_eq!(command.timeout_ms, Some(250));
@@ -512,6 +518,23 @@ fn agent_command_normalizes_compatibility_aliases_to_stable_selectors() {
     };
 
     assert_eq!(command.model.as_deref(), Some("openai"));
+}
+
+#[test]
+fn agent_command_accepts_underscore_include_elements_alias() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "--include_elements",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    let cli_main::args::CliExecution::Agent(command) = cli.into_execution().unwrap() else {
+        panic!("agent command should map to agent execution");
+    };
+
+    assert!(command.include_elements);
 }
 
 #[test]
@@ -705,6 +728,7 @@ driver = "macos.system"
         cli_main::agent_execution_for_home(&command, temp.path()).expect("agent bootstrap");
 
     assert_eq!(prepared.agent_config.default_model, "doubao");
+    assert!(!prepared.agent_config.include_elements);
     assert_eq!(prepared.selected_model, "doubao");
     let resolved = prepared
         .models
@@ -2879,6 +2903,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         "250",
         "--model",
         "doubao-seed",
+        "--include-elements",
         "--max-steps",
         "8",
         "Summarize the frontmost window",
@@ -2918,6 +2943,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].task, "Summarize the frontmost window");
     assert_eq!(recorded[0].model.as_deref(), Some("doubao"));
+    assert!(recorded[0].include_elements);
     assert_eq!(recorded[0].max_steps, Some(NonZeroU32::new(8).unwrap()));
     assert_eq!(recorded[0].target.as_deref(), Some("macos"));
     assert_eq!(recorded[0].timeout_ms, Some(250));

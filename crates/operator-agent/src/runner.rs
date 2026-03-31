@@ -68,6 +68,7 @@ impl AgentRunner {
         let session_id = next_session_id();
 
         let mut state = AgentSessionState::new(session_id.clone(), req.target.clone(), req.task);
+        state.set_include_elements(self.config.include_elements);
         self.create_runtime_session(&state).await?;
         let mut journal = SessionJournal::new(state.session_id.clone());
 
@@ -199,7 +200,7 @@ impl AgentRunner {
                 journal,
                 state,
                 "observe",
-                default_auto_observe_arguments(),
+                default_auto_observe_arguments(self.config.include_elements),
             )
             .await?;
         if result.is_error {
@@ -260,7 +261,12 @@ impl AgentRunner {
                 }
             }
 
-            let decision = self.normalizer.normalize(decision, &model.config, state)?;
+            let decision = self.normalizer.normalize(
+                decision,
+                &model.config,
+                state,
+                self.config.include_elements,
+            )?;
 
             return Ok(decision);
         }
@@ -575,11 +581,11 @@ fn should_auto_observe_after_tool(result: &AgentToolResult) -> bool {
     !result.is_error && !result.read_only
 }
 
-fn default_auto_observe_arguments() -> Value {
+fn default_auto_observe_arguments(include_elements: bool) -> Value {
     json!({
         "surface": { "kind": "Frontmost" },
         "include_screenshot": true,
-        "include_elements": false,
+        "include_elements": include_elements,
     })
 }
 
