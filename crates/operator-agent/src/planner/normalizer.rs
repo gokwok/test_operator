@@ -1,5 +1,5 @@
 use operator_core::{Point, SnapshotId};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
     model::{CoordinatePolicy, ModelConfig},
@@ -37,12 +37,16 @@ impl DecisionNormalizer {
         let snapshot = state
             .current_observation()
             .map(|observation| observation.snapshot_id.clone());
+        let frontmost_observation = state
+            .current_observation()
+            .is_some_and(|observation| observation.surface == "frontmost");
         let arguments = normalize_arguments(
             &name,
             arguments,
             model.coordinate_policy,
             snapshot,
             include_elements,
+            frontmost_observation,
         )?;
 
         Ok(AgentDecision::CallTool {
@@ -60,13 +64,24 @@ fn normalize_arguments(
     policy: CoordinatePolicy,
     snapshot: Option<SnapshotId>,
     include_elements: bool,
+    frontmost_observation: bool,
 ) -> Result<Value, AgentError> {
     if matches!(policy, CoordinatePolicy::ScreenAbsolutePixels) {
-        return normalize_tool_specific_arguments(tool_name, arguments, include_elements);
+        return normalize_tool_specific_arguments(
+            tool_name,
+            arguments,
+            include_elements,
+            frontmost_observation,
+        );
     }
 
     let Value::Object(mut object) = arguments else {
-        return normalize_tool_specific_arguments(tool_name, arguments, include_elements);
+        return normalize_tool_specific_arguments(
+            tool_name,
+            arguments,
+            include_elements,
+            frontmost_observation,
+        );
     };
 
     for key in ["locator", "from", "to"] {
@@ -78,23 +93,54 @@ fn normalize_arguments(
         }
     }
 
-    normalize_tool_specific_arguments(tool_name, Value::Object(object), include_elements)
+    normalize_tool_specific_arguments(
+        tool_name,
+        Value::Object(object),
+        include_elements,
+        frontmost_observation,
+    )
 }
 
 fn normalize_tool_specific_arguments(
     tool_name: &str,
     arguments: Value,
     include_elements: bool,
+    frontmost_observation: bool,
 ) -> Result<Value, AgentError> {
-    if tool_name != "observe" || include_elements {
-        return Ok(arguments);
-    }
-
     let Value::Object(mut object) = arguments else {
         return Ok(arguments);
     };
-    object.insert("include_elements".into(), Value::Bool(false));
+
+    if tool_name == "observe" && !include_elements {
+        object.insert("include_elements".into(), Value::Bool(false));
+    }
+
+    if frontmost_observation && supports_frontmost_direct_action(tool_name) {
+        strip_frontmost_app_selector(&mut object);
+        if !object.contains_key("target_selector") {
+            object.remove("verifications");
+        }
+    }
+
     Ok(Value::Object(object))
+}
+
+fn supports_frontmost_direct_action(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "click" | "type" | "press" | "hotkey" | "scroll" | "move" | "drag" | "swipe"
+    )
+}
+
+fn strip_frontmost_app_selector(object: &mut Map<String, Value>) {
+    let should_strip = object
+        .get("target_selector")
+        .and_then(Value::as_object)
+        .is_some_and(|selector| selector.len() == 1 && selector.contains_key("App"));
+
+    if should_strip {
+        object.remove("target_selector");
+    }
 }
 
 fn normalize_locator_value(

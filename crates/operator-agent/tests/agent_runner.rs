@@ -6,7 +6,9 @@ use operator_agent::{
     model::{Context, Message, ModelRegistry, ProviderKind, UserMessage},
     AgentConfig, AgentError, AgentRunRequest, AgentRunner,
 };
-use operator_core::{ArtifactId, Capability, CapabilitySet, OperatorError, TargetId};
+use operator_core::{
+    Action, ActionRequest, ArtifactId, Capability, CapabilitySet, OperatorError, TargetId,
+};
 use operator_runtime::{RuntimeBuilder, RuntimeConfig, SessionEvent, SessionStore};
 use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
@@ -254,6 +256,83 @@ async fn runner_replans_when_finish_gate_rejects_false_finish() {
     assert!(replanned_request.contains(
         "The task is not verified yet because there is no fresh usable observe result after the last UI change."
     ));
+}
+
+#[tokio::test]
+async fn runner_normalizes_frontmost_direct_type_before_execution() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::KeyboardInput]),
+    ));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
+    driver.push_action_result(Ok(operator_core::ActionOutcome {
+        success: true,
+        duration_ms: 8,
+        detail: Some("typed expression".into()),
+        coordinates: None,
+        target_app: None,
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }));
+    let mut after_type = test_snapshot("snap-after-type");
+    after_type.root_ids.clear();
+    after_type.elements.clear();
+    after_type.image_artifact = Some(ArtifactId("capture-after-type.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: after_type,
+    }));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"call_tool","name":"type","arguments":{"text":"777*999=","target_selector":{"App":"Calculator"},"verifications":["Focus","WindowState"]},"summary":"Type the expression into Calculator."}"#
+            .to_string(),
+        r#"{"decision":"finish","summary":"Typed the expression into Calculator."}"#.to_string(),
+        r#"{"verdict":"ok","reason":"The refreshed frontmost screenshot confirms the expression was typed."}"#
+            .to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner = runner_with(
+        driver.clone(),
+        provider,
+        session_store,
+        AgentConfig::default(),
+    )
+    .await;
+
+    let result = runner
+        .run(AgentRunRequest {
+            task: "Type 777*999= into the frontmost Calculator window.".into(),
+            target: TargetId("macos".into()),
+            model: Some("gpt-5.4".into()),
+        })
+        .await
+        .expect("runner should normalize the direct frontmost type action");
+
+    assert_eq!(result.summary, "Typed the expression into Calculator.");
+
+    let action_calls = driver.action_calls().await;
+    assert_eq!(action_calls.len(), 1);
+    assert_eq!(
+        action_calls[0].0,
+        ActionRequest {
+            action: Action::Type {
+                text: "777*999=".into(),
+                clear_before: false,
+                delay_ms: None,
+                trailing_keys: Vec::new(),
+            },
+            locator: None,
+            target_selector: None,
+            focus_policy: Default::default(),
+            verifications: Vec::new(),
+        }
+    );
 }
 
 #[tokio::test]

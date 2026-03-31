@@ -3,6 +3,7 @@ use operator_agent::{
     planner::{AgentDecision, DecisionNormalizer},
     session::AgentSessionState,
 };
+use operator_core::SurfaceKind;
 use operator_testkit::test_snapshot;
 use serde_json::json;
 
@@ -19,6 +20,14 @@ fn model_config(policy: CoordinatePolicy) -> ModelConfig {
 fn session_with_current_snapshot(snapshot_id: &str) -> AgentSessionState {
     let mut state = AgentSessionState::new("sess-1".into(), "macos".into(), "test");
     let snapshot = test_snapshot(snapshot_id);
+    state.record_observation_snapshot(&snapshot);
+    state
+}
+
+fn session_with_window_snapshot(snapshot_id: &str) -> AgentSessionState {
+    let mut state = AgentSessionState::new("sess-1".into(), "macos".into(), "test");
+    let mut snapshot = test_snapshot(snapshot_id);
+    snapshot.surface.kind = SurfaceKind::Window { id: 42.into() };
     state.record_observation_snapshot(&snapshot);
     state
 }
@@ -234,6 +243,137 @@ fn normalizer_forces_observe_include_elements_off_when_disabled() {
                 "include_screenshot": true
             }),
             summary: "Verify the current UI.".into(),
+            thought: None,
+        }
+    );
+}
+
+#[test]
+fn normalizer_drops_frontmost_app_selector_and_verifications_for_direct_type() {
+    let decision = AgentDecision::CallTool {
+        name: "type".into(),
+        arguments: json!({
+            "text": "777*999=",
+            "target_selector": {
+                "App": "Calculator"
+            },
+            "verifications": ["Focus", "WindowState"]
+        }),
+        summary: "Type the expression into Calculator.".into(),
+        thought: None,
+    };
+    let state = session_with_current_snapshot("snap-frontmost");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::ScreenAbsolutePixels),
+            &state,
+            false,
+        )
+        .expect("frontmost direct type should normalize");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "type".into(),
+            arguments: json!({
+                "text": "777*999="
+            }),
+            summary: "Type the expression into Calculator.".into(),
+            thought: None,
+        }
+    );
+}
+
+#[test]
+fn normalizer_drops_verifications_for_frontmost_click_without_selector() {
+    let decision = AgentDecision::CallTool {
+        name: "click".into(),
+        arguments: json!({
+            "locator": {
+                "SnapshotPixelCoords": {
+                    "snapshot": "older-snapshot",
+                    "point": {
+                        "x": 176.0,
+                        "y": 314.0
+                    }
+                }
+            },
+            "verifications": ["Focus", "WindowState", "Geometry"]
+        }),
+        summary: "Click the clear button.".into(),
+        thought: None,
+    };
+    let state = session_with_current_snapshot("snap-current");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::SurfaceImagePixels),
+            &state,
+            false,
+        )
+        .expect("frontmost direct click should normalize");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "click".into(),
+            arguments: json!({
+                "locator": {
+                    "SnapshotPixelCoords": {
+                        "snapshot": "snap-current",
+                        "point": {
+                            "x": 176.0,
+                            "y": 314.0,
+                        }
+                    }
+                }
+            }),
+            summary: "Click the clear button.".into(),
+            thought: None,
+        }
+    );
+}
+
+#[test]
+fn normalizer_preserves_app_selector_for_non_frontmost_observation() {
+    let decision = AgentDecision::CallTool {
+        name: "type".into(),
+        arguments: json!({
+            "text": "hello",
+            "target_selector": {
+                "App": "Notes"
+            },
+            "verifications": ["Focus"]
+        }),
+        summary: "Type into Notes.".into(),
+        thought: None,
+    };
+    let state = session_with_window_snapshot("snap-window");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::ScreenAbsolutePixels),
+            &state,
+            false,
+        )
+        .expect("non-frontmost observations should preserve explicit app targeting");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "type".into(),
+            arguments: json!({
+                "text": "hello",
+                "target_selector": {
+                    "App": "Notes"
+                },
+                "verifications": ["Focus"]
+            }),
+            summary: "Type into Notes.".into(),
             thought: None,
         }
     );
