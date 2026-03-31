@@ -3836,6 +3836,9 @@ async fn target_list_hides_implicit_default_targets_from_management_surface() {
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
     )
     .await
     .unwrap();
@@ -3904,6 +3907,9 @@ async fn target_show_fails_when_default_target_is_only_implicit() {
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -4047,6 +4053,9 @@ async fn target_use_rejects_implicit_default_target_when_not_persisted() {
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -4198,6 +4207,9 @@ discovery = true
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
