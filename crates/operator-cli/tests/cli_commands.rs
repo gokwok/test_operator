@@ -577,9 +577,9 @@ fn model_set_command_maps_repeatable_entries_to_model_execution() {
         "set",
         "openai",
         "--set",
-        "api_key='sk-live-1234'",
+        "api_key=sk-live-1234",
         "--set",
-        "model_name='gpt-5.4'",
+        "model_name=gpt-5.4",
     ])
     .unwrap();
 
@@ -592,10 +592,7 @@ fn model_set_command_maps_repeatable_entries_to_model_execution() {
         command,
         cli_main::args::ModelCommand::Set {
             name: "openai".into(),
-            entries: vec![
-                "api_key='sk-live-1234'".into(),
-                "model_name='gpt-5.4'".into()
-            ],
+            entries: vec!["api_key=sk-live-1234".into(), "model_name=gpt-5.4".into()],
             json_output: false,
         }
     );
@@ -1015,7 +1012,7 @@ fn model_set_help_snapshot_is_stable() {
     assert!(help.contains("api_key | base_url | model_name"));
     assert!(help.contains("relative field path"));
     assert!(help.contains("selector normalization"));
-    assert!(help.contains("operator model set openai --set api_key='<redacted-openai-key>'"));
+    assert!(help.contains("operator model set openai --set api_key=<redacted-openai-key>"));
     assert!(!help.contains("Global Runtime Flags"));
 }
 
@@ -3580,11 +3577,11 @@ async fn model_set_creates_provider_entry_and_returns_masked_json() {
         "set",
         "openai",
         "--set",
-        "api_key='sk-live-1234'",
+        "api_key=sk-live-1234",
         "--set",
-        "base_url='https://api.openai.com/v1'",
+        "base_url=https://api.openai.com/v1",
         "--set",
-        "model_name='gpt-5.4'",
+        "model_name=gpt-5.4",
     ])
     .unwrap();
     let rendered = cli_main::run_with_handlers(

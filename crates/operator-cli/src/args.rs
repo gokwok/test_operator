@@ -536,7 +536,7 @@ const MODEL_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
         "operator model show",
         "operator model show openai",
         "operator model use doubao",
-        "operator model set openai --set model_name='gpt-5.4'",
+        "operator model set openai --set model_name=gpt-5.4",
         "operator model unset doubao api_key",
     ],
     footer: "Use 'operator model <command> --help' for detailed usage.",
@@ -2202,9 +2202,9 @@ const MODEL_SET_HELP: LeafHelp = LeafHelp {
     sections: MODEL_SET_HELP_SECTIONS,
     include_global_runtime_flags: false,
     examples: &[
-        "operator model set openai --set api_key='<redacted-openai-key>'",
-        "operator model set openai --set base_url='https://api.openai.com/v1'",
-        "operator model set doubao --set model_name='doubao-seed-2-0-lite-260215'",
+        "operator model set openai --set api_key=<redacted-openai-key>",
+        "operator model set openai --set base_url=https://api.openai.com/v1",
+        "operator model set doubao --set model_name=doubao-seed-2-0-lite-260215",
     ],
     footer: "",
 };

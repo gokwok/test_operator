@@ -83,7 +83,8 @@ pub fn parse_model_set_expression(
         ))
     })?;
     let path = ModelConfigFieldPath::parse_set(path)?;
-    let value = parse_toml_value(raw_value)?;
+    let value =
+        parse_toml_value(raw_value).unwrap_or_else(|_| TomlValue::String(raw_value.to_string()));
     Ok((path, value))
 }
 
@@ -720,6 +721,11 @@ mod tests {
             parse_model_set_expression("api_key='sk-openai-1234'").expect("parse expression");
         assert_eq!(path, ModelConfigFieldPath::ApiKey);
         assert_eq!(value, TomlValue::String("sk-openai-1234".into()));
+
+        let (path, value) =
+            parse_model_set_expression("model_name=gpt-5.4").expect("parse bare string");
+        assert_eq!(path, ModelConfigFieldPath::ModelName);
+        assert_eq!(value, TomlValue::String("gpt-5.4".into()));
 
         let error = parse_model_set_expression("agent.model.provider.openai.api_key='value'")
             .expect_err("absolute model path should fail");
