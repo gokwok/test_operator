@@ -60,7 +60,7 @@
 - `snapshot <snapshot-id>`
 - `artifact <artifact-id>`
 - `target <subcommand>`
-- `model <subcommand>` `[planned]`
+- `model <subcommand>`
 
 ### Observe
 
@@ -110,7 +110,7 @@ operator
     set <name> --set <path=value>...
     unset <name> <path>...
     remove <name>
-  model               [planned]
+  model
     list
     show [name]
     use <name>
@@ -305,6 +305,9 @@ model_name = "doubao-seed-2-0-lite-260215"
 - `[agent.model.provider.<name>]` 当前只允许两条 provider entry：
   - `openai`
   - `doubao`
+- selector 与 provider `model_name` 的映射是 config-backed contract：
+  - `openai` selector 选择 OpenAI provider，常见 `model_name` 为 `gpt-5.4`
+  - `doubao` selector 选择 Doubao provider，常见 `model_name` 为 `doubao-seed-2-0-lite-260215`
 - provider entry 只允许以下字段：
   - `api_key`
   - `base_url`
@@ -320,11 +323,13 @@ model_name = "doubao-seed-2-0-lite-260215"
 - 当 provider entry 中的字段缺失时，后续实现允许向环境变量回退以保留兼容性：
   - OpenAI: `OPENAI_API_KEY` / `OPENAI_BASE_URL`
   - Doubao: `ARK_API_KEY` / `DOUBAO_API_KEY` / `ARK_BASE_URL` / `DOUBAO_BASE_URL`
-- `gpt-5.4` / `doubao-seed` 可以作为迁移期兼容 alias 保留在 CLI 侧，但配置文件中的权威 selector 名称仍然是 `openai` / `doubao`。
+- CLI 兼容 alias 仍然保留在 northbound shell surface：
+  - `gpt-5.4` -> `openai`
+  - `doubao-seed` -> `doubao`
 
-### `model` 子命令契约 `[planned]`
+### `model` 子命令契约
 
-`model` 命令家族已经冻结为 Core shell contract，但在当前 issue 链上仍属于 `[planned]`：
+`model` 命令家族已经落地为稳定 Core shell contract：
 
 - `model list`
 - `model show [name]`
@@ -590,7 +595,7 @@ model_name = "doubao-seed-2-0-lite-260215"
 - 只展示域命令与根级叶子命令
 - 按 `Core / Observe / Interact / System / Integration / AI` 分组
 - 列出全局运行时参数
-- 对 `paste`、`clipboard`、`open`、`model` 保留 `[planned]` 标记
+- 仅对 `paste`、`clipboard`、`open` 保留 `[planned]` 标记
 - 不展示内部 tool 名，也不展示旧命令路径
 
 ### 域 help 与叶子 help
@@ -603,11 +608,12 @@ model_name = "doubao-seed-2-0-lite-260215"
 
 - `OPE-135` 到 `OPE-139` 已完成 redesign 所需的文档、help、参数解析和命令迁移
 - `OPE-140` 已在真实 macOS 目标上完成 `capture` / `elements` / `show`、扁平交互命令、`app` / `window` 分组，以及 `mcp` / `agent` help 的人工辅助验证
+- `OPE-171` 到 `OPE-173` 已交付 config-backed `model` 命令家族，以及 `agent --model` 的 selector/help/doc 对齐
 - 最终实测 runbook、验证报告与命令矩阵见：
   - [`docs/cli/redesigned-cli-validation-runbook.md`](./cli/redesigned-cli-validation-runbook.md)
   - [`docs/cli/redesigned-cli-validation-report.md`](./cli/redesigned-cli-validation-report.md)
   - [`docs/cli/redesigned-cli-command-matrix.md`](./cli/redesigned-cli-command-matrix.md)
-- `paste`、`clipboard`、`open`、`model` 在本链条内持续保持 `[planned]`，不应被提前视为已交付能力
+- `paste`、`clipboard`、`open` 在本链条内持续保持 `[planned]`，不应被提前视为已交付能力
 
 ## 验收准则
 
@@ -615,5 +621,6 @@ model_name = "doubao-seed-2-0-lite-260215"
 
 - `docs/COMMAND.md` 与 `CLI_DESIGN.md` 中的命令树、分组命名、planned 标记保持一致
 - `capture`、`elements`、`show`、`app list`、`window list`、扁平交互命令的迁移方向清晰可查
-- `paste`、`clipboard`、`open`、`model` 被明确标注为 `[planned]`
+- `paste`、`clipboard`、`open` 被明确标注为 `[planned]`
+- `model` 命令家族和 `agent --model` wording 与 config-backed selector contract 保持一致
 - 任何后续实现 issue 都可以直接把 `CLI_DESIGN.md` 作为 help / parse 契约来源，而不会再与 `docs/COMMAND.md` 冲突

@@ -446,6 +446,9 @@ fn agent_help_shows_first_phase_flags_and_examples() {
     assert!(help.contains("Usage operator agent [OPTIONS] <TASK>"));
     assert!(help.contains("Arguments\n  <TASK>"));
     assert!(help.contains("--model <MODEL>"));
+    assert!(help.contains("stable selectors: openai, doubao"));
+    assert!(help.contains("gpt-5.4 -> openai"));
+    assert!(help.contains("doubao-seed -> doubao"));
     assert!(help.contains("--max-steps <N>"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("--target <TARGET>"));
@@ -978,6 +981,7 @@ fn model_show_help_snapshot_is_stable() {
     assert!(help.contains("Show a model selector definition"));
     assert!(help.contains("Arguments"));
     assert!(help.contains("[NAME]"));
+    assert!(help.contains("compatibility aliases are normalized first"));
     assert!(help.contains("[agent.model].default"));
     assert!(help.contains("[agent.model.provider.<name>]"));
     assert!(help.contains("operator model show"));
@@ -992,7 +996,9 @@ fn model_use_help_snapshot_is_stable() {
     assert!(help.contains("Usage operator model use [OPTIONS] <NAME>"));
     assert!(help.contains("Set the default selector for `operator agent`"));
     assert!(help.contains("<NAME>"));
-    assert!(help.contains("supported selectors"));
+    assert!(help.contains("stable selectors"));
+    assert!(help.contains("compatibility aliases"));
+    assert!(help.contains("gpt-5.4` normalizes to `openai`"));
     assert!(help.contains("operator model use openai"));
     assert!(help.contains("operator model use doubao"));
     assert!(help.contains("operator --json model use openai"));
@@ -1008,7 +1014,8 @@ fn model_set_help_snapshot_is_stable() {
     assert!(help.contains("Mutation Contract"));
     assert!(help.contains("api_key | base_url | model_name"));
     assert!(help.contains("relative field path"));
-    assert!(help.contains("operator model set openai --set api_key='sk-live-1234'"));
+    assert!(help.contains("selector normalization"));
+    assert!(help.contains("operator model set openai --set api_key='<redacted-openai-key>'"));
     assert!(!help.contains("Global Runtime Flags"));
 }
 
@@ -1021,6 +1028,7 @@ fn model_unset_help_snapshot_is_stable() {
     assert!(help.contains("api_key"));
     assert!(help.contains("base_url"));
     assert!(help.contains("model_name"));
+    assert!(help.contains("selector normalization"));
     assert!(help.contains("operator model unset openai api_key"));
     assert!(!help.contains("Global Runtime Flags"));
 }

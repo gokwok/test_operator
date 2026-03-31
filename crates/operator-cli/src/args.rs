@@ -642,7 +642,7 @@ const AGENT_OPTION_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--model <MODEL>",
         about:
-            "Model selector to use for the agent [stable values: openai, doubao; compatibility aliases: gpt-5.4, doubao-seed]",
+            "Model selector to use for the agent [stable selectors: openai, doubao; compatibility aliases: gpt-5.4 -> openai, doubao-seed -> doubao]",
     },
     CommandHelpEntry {
         command: "--max-steps <N>",
@@ -735,7 +735,8 @@ const MODEL_SHOW_HELP_SECTIONS: &[LeafHelpSection] = &[
         heading: "Arguments",
         rows: &[CommandHelpEntry {
             command: "[NAME]",
-            about: "Selector name to inspect (defaults to the configured default selector)",
+            about:
+                "Selector name to inspect (defaults to the configured default selector; compatibility aliases are normalized first)",
         }],
     },
     LeafHelpSection {
@@ -778,10 +779,17 @@ const MODEL_USE_HELP_SECTIONS: &[LeafHelpSection] = &[
     },
     LeafHelpSection {
         heading: "Notes",
-        rows: &[CommandHelpEntry {
-            command: "supported selectors",
-            about: "Stable selector names are `openai` and `doubao`",
-        }],
+        rows: &[
+            CommandHelpEntry {
+                command: "stable selectors",
+                about: "`openai` and `doubao` are the config-backed selector names",
+            },
+            CommandHelpEntry {
+                command: "compatibility aliases",
+                about:
+                    "`gpt-5.4` normalizes to `openai`, and `doubao-seed` normalizes to `doubao` before config writes",
+            },
+        ],
     },
     LeafHelpSection {
         heading: "Options",
@@ -828,6 +836,11 @@ const MODEL_SET_HELP_SECTIONS: &[LeafHelpSection] = &[
                 command: "string values only",
                 about: "All writable provider fields currently require TOML string values",
             },
+            CommandHelpEntry {
+                command: "selector normalization",
+                about:
+                    "Compatibility aliases normalize to the stable selectors `openai` and `doubao` before lookup",
+            },
         ],
     },
 ];
@@ -868,6 +881,14 @@ const MODEL_UNSET_HELP_SECTIONS: &[LeafHelpSection] = &[
         rows: &[CommandHelpEntry {
             command: "--json",
             about: "Emit machine-readable JSON output",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Notes",
+        rows: &[CommandHelpEntry {
+            command: "selector normalization",
+            about:
+                "Compatibility aliases normalize to the stable selectors `openai` and `doubao` before lookup",
         }],
     },
 ];
@@ -2181,7 +2202,7 @@ const MODEL_SET_HELP: LeafHelp = LeafHelp {
     sections: MODEL_SET_HELP_SECTIONS,
     include_global_runtime_flags: false,
     examples: &[
-        "operator model set openai --set api_key='sk-live-1234'",
+        "operator model set openai --set api_key='<redacted-openai-key>'",
         "operator model set openai --set base_url='https://api.openai.com/v1'",
         "operator model set doubao --set model_name='doubao-seed-2-0-lite-260215'",
     ],

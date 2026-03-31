@@ -1056,6 +1056,9 @@ agent model/provider 配置契约固定为：
 
 - `default` 选择 `operator agent` 在未显式传 `--model` 时使用的默认 selector。
 - 当前持久化 selector 名称是 `openai` 和 `doubao`。
+- selector 与 provider `model_name` 的关系固定为“northbound selector -> provider-specific model id”：
+  - `openai` selector 对应 OpenAI provider，默认示例 `model_name = "gpt-5.4"`
+  - `doubao` selector 对应 Doubao provider，默认示例 `model_name = "doubao-seed-2-0-lite-260215"`
 - provider entry 当前只允许三个字段：
   - `api_key`
   - `base_url`
@@ -1063,8 +1066,10 @@ agent model/provider 配置契约固定为：
 - `model_name` 是最终发往远端 provider 的真实模型 id；selector 名称是 northbound shell contract。
 - `operator agent --model <selector>` 显式覆盖 `[agent.model].default`；未传时读取配置默认值。
 - 当 provider 字段缺失时，后续 bootstrap/agent 解析允许向环境变量回退以保留兼容性。
-- `gpt-5.4` / `doubao-seed` 可以作为迁移期 CLI alias 保留，但配置文件中的权威 selector 名称仍然是 `openai` / `doubao`。
-- Core inspection surface（未来 `operator model list/show`）必须对 `api_key` 做脱敏：只保留最后 4 个可见字符，前面全部替换为 `*`。
+- CLI 兼容 alias 保留为 northbound 输入兼容层：
+  - `gpt-5.4` -> `openai`
+  - `doubao-seed` -> `doubao`
+- Core inspection surface（`operator model list/show`）必须对 `api_key` 做脱敏：只保留最后 4 个可见字符，前面全部替换为 `*`。
 
 **配置加载优先级：**
 

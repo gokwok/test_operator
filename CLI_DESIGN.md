@@ -20,7 +20,7 @@ Core
   snapshot      Read a stored snapshot by ID
   artifact      Read a stored capture artifact by ID
   target        Inspect and manage named runtime targets
-  model         Inspect and manage agent model selectors [planned]
+  model         Inspect and manage agent model selectors
 
 Observe
   capture       Take a screenshot of a surface
@@ -347,7 +347,7 @@ Examples
 
 ---
 
-### `operator model` [planned]
+### `operator model`
 
 ```
 Usage: operator model <COMMAND>
@@ -362,12 +362,12 @@ Commands
   unset    Remove provider fields from a selector
 
 Notes
-  - This command family is part of the stable Core shell surface, but remains planned until
-    the model-config implementation chain lands.
   - Persisted selector names are config-backed logical names: 'openai' and 'doubao'.
   - 'operator agent --model <selector>' resolves through these selector names.
-  - Legacy values such as 'gpt-5.4' and 'doubao-seed' may remain as temporary compatibility
-    aliases during migration, but they are not the long-term config authority.
+  - Compatibility aliases remain accepted at the CLI boundary:
+    - 'gpt-5.4' normalizes to selector 'openai'
+    - 'doubao-seed' normalizes to selector 'doubao'
+  - The selector chooses the provider entry; 'model_name' is the remote provider model id.
 
 Examples
   operator model list
@@ -377,7 +377,7 @@ Examples
   operator model unset doubao api_key
 ```
 
-#### `operator model list` [planned]
+#### `operator model list`
 
 ```
 Usage: operator model list [OPTIONS]
@@ -407,7 +407,7 @@ Examples
   operator --json model list
 ```
 
-#### `operator model show [NAME]` [planned]
+#### `operator model show [NAME]`
 
 ```
 Usage: operator model show [OPTIONS] [NAME]
@@ -440,7 +440,7 @@ Examples
   operator --json model show doubao
 ```
 
-#### `operator model use <NAME>` [planned]
+#### `operator model use <NAME>`
 
 ```
 Usage: operator model use [OPTIONS] <NAME>
@@ -451,7 +451,10 @@ Arguments
   <NAME>   Selector name to store in [agent.model].default
 
 Notes
-  Supported selector names are currently 'openai' and 'doubao'.
+  Stable selector names are currently 'openai' and 'doubao'.
+  Compatibility aliases remain accepted and normalize before writing config:
+    - 'gpt-5.4' -> 'openai'
+    - 'doubao-seed' -> 'doubao'
 
 Options
   --json   Emit machine-readable JSON output
@@ -464,7 +467,7 @@ Examples
   operator --json model use openai
 ```
 
-#### `operator model set <NAME> --set <FIELD=VALUE>...` [planned]
+#### `operator model set <NAME> --set <FIELD=VALUE>...`
 
 ```
 Usage: operator model set [OPTIONS] <NAME> --set <FIELD=VALUE>...
@@ -495,6 +498,7 @@ Mutation Contract
     - FIELD is relative to a single provider entry; dotted paths are invalid
     - 'agent.model.*', 'provider.*', and any unknown field names are invalid
     - supported provider names are currently 'openai' and 'doubao'
+    - compatibility aliases normalize to those stable selector names before lookup
 
   Typed values:
     - VALUE is parsed as a TOML value
@@ -502,12 +506,12 @@ Mutation Contract
     - null is not a supported value; use 'model unset' to remove a field
 
 Examples
-  operator model set openai --set api_key='sk-live-1234'
+  operator model set openai --set api_key='<redacted-openai-key>'
   operator model set openai --set base_url='https://api.openai.com/v1'
   operator model set doubao --set model_name='doubao-seed-2-0-lite-260215'
 ```
 
-#### `operator model unset <NAME> <FIELD>...` [planned]
+#### `operator model unset <NAME> <FIELD>...`
 
 ```
 Usage: operator model unset [OPTIONS] <NAME> <FIELD>...
@@ -525,6 +529,7 @@ Field Contract
     - model_name
 
   This command only removes provider fields from [agent.model.provider.<NAME>].
+  Compatibility aliases normalize to the stable selector names before lookup.
   Use 'model use' to change [agent.model].default instead of removing it here.
 
 Options
@@ -1761,9 +1766,14 @@ Options
 Notes
   - When '--model' is omitted, resolve the selector from [agent.model].default.
   - The selected selector resolves provider settings from [agent.model.provider.<name>].
+  - Stable selectors are 'openai' and 'doubao'.
+  - Selector-to-model mapping stays config-backed:
+    - selector 'openai' usually carries provider `model_name = "gpt-5.4"`
+    - selector 'doubao' usually carries provider `model_name = "doubao-seed-2-0-lite-260215"`
   - Missing provider fields may fall back to environment variables for backward compatibility.
-  - Legacy aliases such as 'gpt-5.4' and 'doubao-seed' may remain temporarily accepted during
-    migration, but config-backed selector names are the authority.
+  - Compatibility aliases remain accepted at the CLI boundary:
+    - 'gpt-5.4' -> 'openai'
+    - 'doubao-seed' -> 'doubao'
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
