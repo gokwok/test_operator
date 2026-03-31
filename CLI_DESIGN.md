@@ -20,6 +20,7 @@ Core
   snapshot      Read a stored snapshot by ID
   artifact      Read a stored capture artifact by ID
   target        Inspect and manage named runtime targets
+  model         Inspect and manage agent model selectors [planned]
 
 Observe
   capture       Take a screenshot of a surface
@@ -60,6 +61,7 @@ Examples
   operator elements window --window-id 42
   operator click --text Save
   operator target list
+  operator model list
   operator mcp serve
 
 Use 'operator <command> --help' for detailed usage.
@@ -341,6 +343,197 @@ Options
 Examples
   operator target remove windows-lab
   operator --json target remove staging-lab
+```
+
+---
+
+### `operator model` [planned]
+
+```
+Usage: operator model <COMMAND>
+
+Inspect and manage config-backed agent model selectors/providers
+
+Commands
+  list     List configured model selectors
+  show     Show a model selector definition
+  use      Set the default selector for 'operator agent'
+  set      Update provider fields on a selector
+  unset    Remove provider fields from a selector
+
+Notes
+  - This command family is part of the stable Core shell surface, but remains planned until
+    the model-config implementation chain lands.
+  - Persisted selector names are config-backed logical names: 'openai' and 'doubao'.
+  - 'operator agent --model <selector>' resolves through these selector names.
+  - Legacy values such as 'gpt-5.4' and 'doubao-seed' may remain as temporary compatibility
+    aliases during migration, but they are not the long-term config authority.
+
+Examples
+  operator model list
+  operator model show openai
+  operator model use doubao
+  operator model set openai --set model_name='gpt-5.4'
+  operator model unset doubao api_key
+```
+
+#### `operator model list` [planned]
+
+```
+Usage: operator model list [OPTIONS]
+
+List configured model selectors
+
+Output
+  Each entry must include:
+    - selector name
+    - whether it is the configured default selector
+    - provider kind
+    - remote model_name
+    - configured base_url
+    - masked api_key
+
+Masking
+  - api_key must never be shown in plaintext
+  - only the last 4 visible characters may remain unmasked
+  - every preceding visible character must render as '*'
+
+Options
+  --json                     Emit machine-readable JSON output
+  -h, --help                 Print help
+
+Examples
+  operator model list
+  operator --json model list
+```
+
+#### `operator model show [NAME]` [planned]
+
+```
+Usage: operator model show [OPTIONS] [NAME]
+
+Show a model selector definition
+
+Arguments
+  [NAME]   Selector name to inspect. When omitted, show the configured default selector.
+
+Output
+  The config-backed model contract is standardized as:
+    - [agent.model].default
+    - [agent.model.provider.openai]
+    - [agent.model.provider.doubao]
+
+  Provider entries may expose only:
+    - api_key
+    - base_url
+    - model_name
+
+  api_key follows the same masking rules as 'operator model list'.
+
+Options
+  --json                     Emit machine-readable JSON output
+  -h, --help                 Print help
+
+Examples
+  operator model show
+  operator model show openai
+  operator --json model show doubao
+```
+
+#### `operator model use <NAME>` [planned]
+
+```
+Usage: operator model use [OPTIONS] <NAME>
+
+Set the default agent model selector
+
+Arguments
+  <NAME>   Selector name to store in [agent.model].default
+
+Notes
+  Supported selector names are currently 'openai' and 'doubao'.
+
+Options
+  --json   Emit machine-readable JSON output
+  -h, --help
+           Print help
+
+Examples
+  operator model use openai
+  operator model use doubao
+  operator --json model use openai
+```
+
+#### `operator model set <NAME> --set <FIELD=VALUE>...` [planned]
+
+```
+Usage: operator model set [OPTIONS] <NAME> --set <FIELD=VALUE>...
+
+Update provider fields on a model selector
+
+Arguments
+  <NAME>   Selector/provider entry to create or update
+
+Options
+  --json
+          Emit machine-readable JSON output
+  --set <FIELD=VALUE>...
+          Apply one or more provider-field mutations. This option is repeatable.
+  -h, --help
+          Print help
+
+Mutation Contract
+  Persisted location:
+    - [agent.model.provider.<NAME>]
+
+  Allowed writable fields:
+    - api_key
+    - base_url
+    - model_name
+
+  Path restrictions:
+    - FIELD is relative to a single provider entry; dotted paths are invalid
+    - 'agent.model.*', 'provider.*', and any unknown field names are invalid
+    - supported provider names are currently 'openai' and 'doubao'
+
+  Typed values:
+    - VALUE is parsed as a TOML value
+    - all allowed fields currently require string values
+    - null is not a supported value; use 'model unset' to remove a field
+
+Examples
+  operator model set openai --set api_key='sk-live-1234'
+  operator model set openai --set base_url='https://api.openai.com/v1'
+  operator model set doubao --set model_name='doubao-seed-2-0-lite-260215'
+```
+
+#### `operator model unset <NAME> <FIELD>...` [planned]
+
+```
+Usage: operator model unset [OPTIONS] <NAME> <FIELD>...
+
+Remove provider fields from a model selector
+
+Arguments
+  <NAME>        Selector/provider entry to update
+  <FIELD>...    One or more provider fields to remove
+
+Field Contract
+  Allowed removable fields:
+    - api_key
+    - base_url
+    - model_name
+
+  This command only removes provider fields from [agent.model.provider.<NAME>].
+  Use 'model use' to change [agent.model].default instead of removing it here.
+
+Options
+  --json             Emit machine-readable JSON output
+  -h, --help         Print help
+
+Examples
+  operator model unset openai api_key
+  operator model unset doubao base_url model_name
 ```
 
 ---
@@ -1561,9 +1754,16 @@ Arguments
   <TASK>   Natural-language description of the task to perform
 
 Options
-  --model <MODEL>          Model to use for the agent
-                           [possible values: gpt-5.4, doubao-seed]
+  --model <MODEL>          Config-backed selector to use for the agent
+                           [stable values: openai, doubao]
   --max-steps <N>          Maximum number of agent steps before stopping
+
+Notes
+  - When '--model' is omitted, resolve the selector from [agent.model].default.
+  - The selected selector resolves provider settings from [agent.model.provider.<name>].
+  - Missing provider fields may fall back to environment variables for backward compatibility.
+  - Legacy aliases such as 'gpt-5.4' and 'doubao-seed' may remain temporarily accepted during
+    migration, but config-backed selector names are the authority.
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
@@ -1574,7 +1774,7 @@ Global Runtime Flags
 Examples
   operator agent "Open Notes and type hello"
   operator agent "Find the largest file in Downloads and move it to the Trash"
-  operator agent --model doubao-seed --max-steps 10 "Summarize the frontmost window"
+  operator agent --model doubao --max-steps 10 "Summarize the frontmost window"
 ```
 
 ---

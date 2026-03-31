@@ -985,15 +985,6 @@ snapshot_ttl_hours = 24
 max_snapshots      = 200
 default_timeout_ms = 10_000
 
-[model.openai]
-api_key  = ""
-base_url = "https://api.openai.com/v1"
-
-[model.doubao]
-# API key 优先读取环境变量 ARK_API_KEY 或 DOUBAO_API_KEY
-api_key  = ""
-base_url = ""
-
 [targets.macos]
 platform = "macos"
 driver   = "macos.system"
@@ -1029,9 +1020,21 @@ redact_sensitive_fields = true
 artifact_ttl_hours = 24
 
 [agent]
-model           = "gpt-5.4"
 max_steps       = 50
 step_timeout_ms = 30_000
+
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = ""
+base_url = "https://api.openai.com/v1"
+model_name = "gpt-5.4"
+
+[agent.model.provider.doubao]
+api_key = ""
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+model_name = "doubao-seed-2-0-lite-260215"
 ```
 
 命名 target 的标准 envelope 固定为：
@@ -1042,6 +1045,26 @@ step_timeout_ms = 30_000
 - `driver_config`
 
 除 `description` 外，target-specific 参数必须进入 `driver_config`，例如 `endpoint`、`addr`、`agent_path`；不要再把它们写成 target 表上的顶层字段。默认 Harmony 示例应保持最小 TCP 配置，只展示 `driver_config.addr = "host:port"`；高级覆盖项只作为补充示例出现。
+
+agent model/provider 配置契约固定为：
+
+- `[agent.model].default`
+- `[agent.model.provider.openai]`
+- `[agent.model.provider.doubao]`
+
+语义约束：
+
+- `default` 选择 `operator agent` 在未显式传 `--model` 时使用的默认 selector。
+- 当前持久化 selector 名称是 `openai` 和 `doubao`。
+- provider entry 当前只允许三个字段：
+  - `api_key`
+  - `base_url`
+  - `model_name`
+- `model_name` 是最终发往远端 provider 的真实模型 id；selector 名称是 northbound shell contract。
+- `operator agent --model <selector>` 显式覆盖 `[agent.model].default`；未传时读取配置默认值。
+- 当 provider 字段缺失时，后续 bootstrap/agent 解析允许向环境变量回退以保留兼容性。
+- `gpt-5.4` / `doubao-seed` 可以作为迁移期 CLI alias 保留，但配置文件中的权威 selector 名称仍然是 `openai` / `doubao`。
+- Core inspection surface（未来 `operator model list/show`）必须对 `api_key` 做脱敏：只保留最后 4 个可见字符，前面全部替换为 `*`。
 
 **配置加载优先级：**
 

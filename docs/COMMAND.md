@@ -1,6 +1,6 @@
 # Operator Command Surface
 
-日期：2026-03-28
+日期：2026-03-31
 
 ## 目的
 
@@ -19,7 +19,7 @@
 - 提供面向 agent / script 的稳定 northbound shell interface
 - 把帮助导航统一收敛到 `Core / Observe / Interact / System / Integration / AI`
 - 用少量、可探索的一级命令承载能力，而不是泄露内部 tool 名
-- 将 `capture / elements / show`、扁平交互命令和 `app / window` 家族作为下一条实现链的目标命令面
+- 将 `capture / elements / show`、扁平交互命令、`app / window` 家族，以及 config-backed `model` 家族作为稳定命令面的持续演进方向
 - 明确标记尚未实现、但已进入设计保留的命令
 
 ## 非目标
@@ -60,6 +60,7 @@
 - `snapshot <snapshot-id>`
 - `artifact <artifact-id>`
 - `target <subcommand>`
+- `model <subcommand>` `[planned]`
 
 ### Observe
 
@@ -109,6 +110,12 @@ operator
     set <name> --set <path=value>...
     unset <name> <path>...
     remove <name>
+  model               [planned]
+    list
+    show [name]
+    use <name>
+    set <name> --set <field=value>...
+    unset <name> <field>...
 
   capture
     frontmost
@@ -269,6 +276,112 @@ operator
 
 - 删除整个 `[targets.<name>]` 条目。
 - 若目标仍是当前 default target，后续实现应要求先切换 default target，再允许删除。
+
+## Agent Model 配置契约
+
+agent model/provider 配置的权威持久化位置固定为：
+
+```toml
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = "..."
+base_url = "https://api.openai.com/v1"
+model_name = "gpt-5.4"
+
+[agent.model.provider.doubao]
+api_key = "..."
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+model_name = "doubao-seed-2-0-lite-260215"
+```
+
+约束：
+
+- `default` 选择 `operator agent` 在未显式传 `--model` 时使用的默认 selector。
+- 当前稳定 selector 名称是：
+  - `openai`
+  - `doubao`
+- `[agent.model.provider.<name>]` 当前只允许两条 provider entry：
+  - `openai`
+  - `doubao`
+- provider entry 只允许以下字段：
+  - `api_key`
+  - `base_url`
+  - `model_name`
+- `model_name` 是实际发往远端 provider 的 model id，不等同于 northbound selector 名。
+- `api_key` 可持久化在 TOML 中，但 Core inspection surface 绝不能明文显示。
+
+### `operator agent --model` 与配置默认值的边界
+
+- `operator agent --model <selector>` 显式覆盖 `[agent.model].default`。
+- 未传 `--model` 时，默认 selector 来自 `[agent.model].default`。
+- 选中的 selector 再映射到 `[agent.model.provider.<selector>]` 条目。
+- 当 provider entry 中的字段缺失时，后续实现允许向环境变量回退以保留兼容性：
+  - OpenAI: `OPENAI_API_KEY` / `OPENAI_BASE_URL`
+  - Doubao: `ARK_API_KEY` / `DOUBAO_API_KEY` / `ARK_BASE_URL` / `DOUBAO_BASE_URL`
+- `gpt-5.4` / `doubao-seed` 可以作为迁移期兼容 alias 保留在 CLI 侧，但配置文件中的权威 selector 名称仍然是 `openai` / `doubao`。
+
+### `model` 子命令契约 `[planned]`
+
+`model` 命令家族已经冻结为 Core shell contract，但在当前 issue 链上仍属于 `[planned]`：
+
+- `model list`
+- `model show [name]`
+- `model use <name>`
+- `model set <name> --set <field=value>...`
+- `model unset <name> <field>...`
+
+详细 help 文案、参数块顺序和示例以 [`CLI_DESIGN.md`](../CLI_DESIGN.md) 为准。
+
+### `model list`
+
+- 列出所有已配置 selector。
+- 至少显示：
+  - selector 名称
+  - 是否为当前 default selector
+  - provider kind
+  - `model_name`
+  - `base_url`
+  - 脱敏后的 `api_key`
+
+### `model show [name]`
+
+- 展示一个 selector/provider 条目的完整标准形状。
+- 不传 `name` 时，默认展示 `[agent.model].default` 指向的 selector。
+- `api_key` 在 text / JSON 输出中都必须脱敏。
+
+### `model use <name>`
+
+- 更新 `[agent.model].default`。
+- 只改默认 selector 指针，不改 provider 字段。
+
+### `model set <name> --set ...`
+
+- `<name>` 指向单个 provider entry，即 `[agent.model.provider.<name>]`。
+- 允许写入的字段仅限：
+  - `api_key`
+  - `base_url`
+  - `model_name`
+- path 语义固定为“相对于单个 provider entry 的 field”，不允许 dotted path、绝对路径或其他顶层 key。
+- 当前支持的 provider 名称仅限 `openai` / `doubao`。
+- 所有字段值当前都应解析为字符串；删除字段使用 `model unset` 而不是 `null`。
+
+### `model unset <name> <field>...`
+
+- 从单个 provider entry 中删除一个或多个字段。
+- 允许删除的字段仅限：
+  - `api_key`
+  - `base_url`
+  - `model_name`
+- `default` 不属于 `model unset` 的可删除范围；切换默认 selector 使用 `model use`。
+
+### `api_key` 脱敏规则
+
+- `api_key` 绝不能明文显示。
+- 仅允许保留最后 4 个可见字符。
+- 其余可见字符全部替换为 `*`。
+- text 输出和 JSON 输出必须一致遵守该规则。
 
 ## Observe / Read 契约
 
@@ -433,6 +546,7 @@ operator
 
 - `mcp serve` 是唯一稳定的 MCP shell 入口
 - `agent <task>` 是唯一稳定的自然语言任务入口
+- `agent --model <selector>` 的长期权威语义由上面的 config-backed selector contract 定义
 
 根 help 中这两类命令分别归入：
 
@@ -476,7 +590,7 @@ operator
 - 只展示域命令与根级叶子命令
 - 按 `Core / Observe / Interact / System / Integration / AI` 分组
 - 列出全局运行时参数
-- 对 `paste`、`clipboard`、`open` 保留 `[planned]` 标记
+- 对 `paste`、`clipboard`、`open`、`model` 保留 `[planned]` 标记
 - 不展示内部 tool 名，也不展示旧命令路径
 
 ### 域 help 与叶子 help
@@ -493,7 +607,7 @@ operator
   - [`docs/cli/redesigned-cli-validation-runbook.md`](./cli/redesigned-cli-validation-runbook.md)
   - [`docs/cli/redesigned-cli-validation-report.md`](./cli/redesigned-cli-validation-report.md)
   - [`docs/cli/redesigned-cli-command-matrix.md`](./cli/redesigned-cli-command-matrix.md)
-- `paste`、`clipboard`、`open` 在本链条内持续保持 `[planned]`，不应被提前视为已交付能力
+- `paste`、`clipboard`、`open`、`model` 在本链条内持续保持 `[planned]`，不应被提前视为已交付能力
 
 ## 验收准则
 
@@ -501,5 +615,5 @@ operator
 
 - `docs/COMMAND.md` 与 `CLI_DESIGN.md` 中的命令树、分组命名、planned 标记保持一致
 - `capture`、`elements`、`show`、`app list`、`window list`、扁平交互命令的迁移方向清晰可查
-- `paste`、`clipboard`、`open` 被明确标注为 `[planned]`
+- `paste`、`clipboard`、`open`、`model` 被明确标注为 `[planned]`
 - 任何后续实现 issue 都可以直接把 `CLI_DESIGN.md` 作为 help / parse 契约来源，而不会再与 `docs/COMMAND.md` 冲突
