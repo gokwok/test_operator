@@ -39,10 +39,14 @@ pub(crate) async fn query(
             };
             Ok(QueryResult::Apps(filter_app_infos(apps, &filter)))
         }
-        QueryRequest::ListWindows { app } => Ok(QueryResult::Windows(normalize_windows(
-            worker.query_windows().await?,
-            app.as_deref(),
-        ))),
+        QueryRequest::ListWindows { app } => {
+            let labels = worker.query_app_labels_map().await?;
+            Ok(QueryResult::Windows(normalize_windows(
+                worker.query_windows().await?,
+                &labels,
+                app.as_deref(),
+            )))
+        }
         QueryRequest::PermissionsStatus => {
             Ok(QueryResult::Permissions(worker.permissions_report().await?))
         }

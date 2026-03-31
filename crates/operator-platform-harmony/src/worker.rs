@@ -955,7 +955,11 @@ impl WorkerState {
     ) -> Result<ResolvedActionTarget, OperatorError> {
         let windows = self.query_windows()?;
         let current_app = self.current_app()?;
-        resolve_action_target(windows, current_app, selector)
+        let labels = match selector {
+            ActionTargetSelector::App(_) => self.query_app_labels()?,
+            _ => BTreeMap::new(),
+        };
+        resolve_action_target(windows, current_app, &labels, selector)
     }
 
     fn resolve_locator_point(&mut self, locator: &Locator) -> Result<Point, OperatorError> {
@@ -1007,9 +1011,10 @@ impl WorkerState {
             return Ok(bundle);
         }
 
+        let labels = self.query_app_labels()?;
         let windows = self.query_windows()?;
         let selector = ActionTargetSelector::App(bundle_id_or_name.to_string());
-        if let Ok(target) = resolve_action_target(windows, current_app, &selector) {
+        if let Ok(target) = resolve_action_target(windows, current_app, &labels, &selector) {
             return lifecycle_target_bundle(
                 &target,
                 action_name(&Action::LaunchApp {

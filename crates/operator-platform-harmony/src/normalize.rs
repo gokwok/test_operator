@@ -35,9 +35,10 @@ pub(crate) fn normalize_running_apps(
 
 pub(crate) fn normalize_windows(
     windows: CorrelatedWindowList,
+    labels: &BTreeMap<String, String>,
     app_filter: Option<&str>,
 ) -> Vec<WindowInfo> {
-    let mut normalized = normalized_window_candidates(windows, app_filter)
+    let mut normalized = normalized_window_candidates(windows, labels, app_filter)
         .into_iter()
         .map(|candidate| candidate.window)
         .collect::<Vec<_>>();
@@ -48,26 +49,17 @@ pub(crate) fn normalize_windows(
 pub(crate) fn resolve_action_target(
     windows: CorrelatedWindowList,
     current_app: Option<CurrentApp>,
+    labels: &BTreeMap<String, String>,
     selector: &ActionTargetSelector,
 ) -> Result<ResolvedActionTarget, OperatorError> {
-    let candidates = normalized_window_candidates(windows, None);
+    let candidates = normalized_window_candidates(windows, labels, None);
 
     let resolved = match selector {
         ActionTargetSelector::App(bundle_id_or_name) => {
             let filter = normalize_match_text(bundle_id_or_name);
             let mut matches = candidates
                 .iter()
-                .filter(|candidate| {
-                    candidate
-                        .app
-                        .as_ref()
-                        .is_some_and(|app| app_matches(app, &filter))
-                        || candidate
-                            .window
-                            .app_name
-                            .as_deref()
-                            .is_some_and(|name| normalize_match_text(name) == filter)
-                })
+                .filter(|candidate| candidate_matches_app_selector(candidate, &filter, labels))
                 .cloned()
                 .collect::<Vec<_>>();
             matches.sort_by_key(|candidate| (!candidate.window.is_focused, candidate.window.id.0));
@@ -77,10 +69,12 @@ pub(crate) fn resolve_action_target(
                     app: candidate.app,
                     window: Some(candidate.window),
                 }
-            } else if current_app
-                .as_ref()
-                .is_some_and(|app| normalize_match_text(&app.bundle_name) == filter)
-            {
+            } else if current_app.as_ref().is_some_and(|app| {
+                normalize_match_text(&app.bundle_name) == filter
+                    || labels
+                        .get(&app.bundle_name)
+                        .is_some_and(|label| normalize_match_text(label) == filter)
+            }) {
                 ResolvedActionTarget {
                     app: current_app.map(current_app_info),
                     window: None,
@@ -159,6 +153,7 @@ pub(crate) fn target_anchor_point(target: &ResolvedActionTarget) -> Option<Point
 
 fn normalized_window_candidates(
     windows: CorrelatedWindowList,
+    labels: &BTreeMap<String, String>,
     app_filter: Option<&str>,
 ) -> Vec<NormalizedWindowCandidate> {
     let focused_window_id = windows.focused_window_id;
@@ -167,7 +162,7 @@ fn normalized_window_candidates(
         .windows
         .into_iter()
         .filter_map(|entry| {
-            normalize_window_candidate(entry, focused_window_id, app_filter.as_deref())
+            normalize_window_candidate(entry, focused_window_id, labels, app_filter.as_deref())
         })
         .collect::<Vec<_>>();
     normalized.sort_by_key(|candidate| candidate.window.id.0);
@@ -177,6 +172,7 @@ fn normalized_window_candidates(
 fn normalize_window_candidate(
     entry: CorrelatedWindow,
     focused_window_id: Option<u32>,
+    labels: &BTreeMap<String, String>,
     app_filter: Option<&str>,
 ) -> Option<NormalizedWindowCandidate> {
     let app_name = entry.mission.as_ref().and_then(|mission| {
@@ -194,7 +190,10 @@ fn normalize_window_candidate(
         let matches = app_name
             .as_deref()
             .is_some_and(|candidate| normalize_match_text(candidate) == filter)
-            || bundle_id.is_some_and(|candidate| normalize_match_text(candidate) == filter);
+            || bundle_id.is_some_and(|candidate| normalize_match_text(candidate) == filter)
+            || bundle_id
+                .and_then(|candidate| labels.get(candidate))
+                .is_some_and(|label| normalize_match_text(label) == filter);
         if !matches {
             return None;
         }
@@ -262,7 +261,7 @@ fn running_app_records_from_windows(
     windows: CorrelatedWindowList,
     labels: &BTreeMap<String, String>,
 ) -> Vec<AppRecord> {
-    normalized_window_candidates(windows, None)
+    normalized_window_candidates(windows, labels, None)
         .into_iter()
         .filter_map(|candidate| candidate.app)
         .filter(is_listable_app_info)
@@ -409,6 +408,28 @@ fn app_matches(app: &AppInfo, filter: &str) -> bool {
             .bundle_id
             .as_deref()
             .is_some_and(|bundle_id| normalize_match_text(bundle_id) == filter)
+}
+
+fn candidate_matches_app_selector(
+    candidate: &NormalizedWindowCandidate,
+    filter: &str,
+    labels: &BTreeMap<String, String>,
+) -> bool {
+    candidate
+        .app
+        .as_ref()
+        .is_some_and(|app| app_matches(app, filter))
+        || candidate
+            .window
+            .app_name
+            .as_deref()
+            .is_some_and(|name| normalize_match_text(name) == filter)
+        || candidate
+            .app
+            .as_ref()
+            .and_then(|app| app.bundle_id.as_deref())
+            .and_then(|bundle_id| labels.get(bundle_id))
+            .is_some_and(|label| normalize_match_text(label) == filter)
 }
 
 fn rect_center(bounds: Rect) -> Point {

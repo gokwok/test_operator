@@ -162,7 +162,7 @@ async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session(
     let windows = driver
         .query(
             QueryRequest::ListWindows {
-                app: Some("notes".into()),
+                app: Some("备忘录".into()),
             },
             &exec_context(),
         )
@@ -204,7 +204,7 @@ async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session(
     );
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
     assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 2);
     assert_eq!(
         counts.filter_desktop_bundles_calls.load(Ordering::SeqCst),
         0

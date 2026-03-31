@@ -154,7 +154,10 @@ async fn switch_quit_and_relaunch_actions_use_resolved_target_bundles() {
     let driver = build_driver(FakeSessionFactory {
         counts: Arc::clone(&counts),
         recorded_actions: Arc::clone(&actions),
-        app_labels: Vec::new(),
+        app_labels: vec![
+            app_label("com.demo.notes", "备忘录"),
+            app_label("com.demo.calculator", "计算器"),
+        ],
         current_app: Some(CurrentApp {
             bundle_name: "com.demo.notes".into(),
             ability_name: "EntryAbility".into(),
@@ -182,7 +185,7 @@ async fn switch_quit_and_relaunch_actions_use_resolved_target_bundles() {
             ActionRequest {
                 action: Action::SwitchApp,
                 locator: None,
-                target_selector: Some(ActionTargetSelector::App("calculator".into())),
+                target_selector: Some(ActionTargetSelector::App("计算器".into())),
                 focus_policy: ActionFocusPolicy::Auto,
                 verifications: Vec::new(),
             },
