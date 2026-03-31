@@ -14,8 +14,8 @@ use operator_agent::{
     model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
 };
 use operator_bootstrap::{
-    load_runtime_config, operator_home_dir, runtime_config_path, system_platform_registry,
-    RuntimeConfigDocument,
+    load_runtime_config, operator_home_dir, parse_target_set_expression, runtime_config_path,
+    system_platform_registry, RuntimeConfigDocument, TargetConfigFieldPath,
 };
 use operator_core::{OperatorError, TargetId};
 #[cfg(not(test))]
@@ -226,6 +226,10 @@ async fn run_target_with_inspector(
     let (tool, json_output) = match &command {
         TargetCommand::List { json_output } => ("target-list", *json_output),
         TargetCommand::Show { json_output, .. } => ("target-show", *json_output),
+        TargetCommand::Use { json_output, .. } => ("target-use", *json_output),
+        TargetCommand::Set { json_output, .. } => ("target-set", *json_output),
+        TargetCommand::Unset { json_output, .. } => ("target-unset", *json_output),
+        TargetCommand::Remove { json_output, .. } => ("target-remove", *json_output),
     };
     let output = inspector.inspect(&command).await?;
     Ok(output::render_success(tool, &output, json_output))
@@ -280,7 +284,7 @@ pub(crate) fn inspect_target_command(
     operator_home: impl AsRef<Path>,
 ) -> Result<Value, OperatorError> {
     let path = runtime_config_path(operator_home);
-    let document = RuntimeConfigDocument::load(&path)?;
+    let mut document = RuntimeConfigDocument::load(&path)?;
     let config = document.to_runtime_config()?;
 
     match command {
@@ -313,7 +317,95 @@ pub(crate) fn inspect_target_command(
                 }
             }))
         }
+        TargetCommand::Use { name, .. } => {
+            if !config.targets.contains_key(name) {
+                return Err(OperatorError::TargetNotFound(name.clone()));
+            }
+            document.set_default_target(&TargetId(name.clone()));
+            validate_and_save_target_document(&document)?;
+            Ok(serde_json::json!({
+                "default_target": name,
+                "message": format!("default target set to {name}"),
+            }))
+        }
+        TargetCommand::Set { name, entries, .. } => {
+            for entry in entries {
+                let (path, value) = parse_target_set_expression(entry)?;
+                document.set_target_value(name, &path, value)?;
+            }
+            let validated = validate_and_save_target_document(&document)?;
+            let target = validated
+                .targets
+                .get(name)
+                .ok_or_else(|| OperatorError::TargetNotFound(name.clone()))?;
+            Ok(serde_json::json!({
+                "target": {
+                    "name": name,
+                    "is_default": validated.default_target == TargetId(name.clone()),
+                    "platform": target.platform,
+                    "driver": target.driver,
+                    "description": target.description,
+                    "driver_config": target.driver_config,
+                },
+                "message": format!("updated target {name}"),
+            }))
+        }
+        TargetCommand::Unset { name, paths, .. } => {
+            if !config.targets.contains_key(name) {
+                return Err(OperatorError::TargetNotFound(name.clone()));
+            }
+            for path in paths {
+                let parsed = TargetConfigFieldPath::parse_unset(path)?;
+                document.unset_target_value(name, &parsed)?;
+            }
+            let validated = validate_and_save_target_document(&document)?;
+            let target = validated
+                .targets
+                .get(name)
+                .ok_or_else(|| OperatorError::TargetNotFound(name.clone()))?;
+            Ok(serde_json::json!({
+                "target": {
+                    "name": name,
+                    "is_default": validated.default_target == TargetId(name.clone()),
+                    "platform": target.platform,
+                    "driver": target.driver,
+                    "description": target.description,
+                    "driver_config": target.driver_config,
+                },
+                "message": format!("updated target {name}"),
+            }))
+        }
+        TargetCommand::Remove { name, .. } => {
+            if !config.targets.contains_key(name) {
+                return Err(OperatorError::TargetNotFound(name.clone()));
+            }
+            if config.default_target == TargetId(name.clone()) {
+                return Err(OperatorError::Platform(format!(
+                    "cannot remove target `{name}` while it is the default target"
+                )));
+            }
+            document.remove_named_target(name);
+            validate_and_save_target_document(&document)?;
+            Ok(serde_json::json!({
+                "removed_target": name,
+                "message": format!("removed target {name}"),
+            }))
+        }
     }
+}
+
+fn validate_and_save_target_document(
+    document: &RuntimeConfigDocument,
+) -> Result<operator_runtime::RuntimeConfig, OperatorError> {
+    let config = document.to_runtime_config()?;
+    if !config.targets.contains_key(&config.default_target.0) {
+        return Err(OperatorError::Platform(format!(
+            "default target `{}` is not defined under [targets]",
+            config.default_target
+        )));
+    }
+    document.save()?;
+    Ok(config)
 }
 
 #[cfg(test)]

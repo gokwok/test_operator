@@ -100,9 +100,13 @@ const ELEMENTS_FULLSCREEN_FOOTER: &str =
 const SNAPSHOT_ABOUT: &str = "Read a stored snapshot by ID";
 
 const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
-const TARGET_ABOUT: &str = "Inspect configured named runtime targets";
+const TARGET_ABOUT: &str = "Inspect and manage configured named runtime targets";
 const TARGET_LIST_ABOUT: &str = "List configured named targets";
 const TARGET_SHOW_ABOUT: &str = "Show a named target definition";
+const TARGET_USE_ABOUT: &str = "Set the runtime default target";
+const TARGET_SET_ABOUT: &str = "Update fields on a named target";
+const TARGET_UNSET_ABOUT: &str = "Remove fields from a named target";
+const TARGET_REMOVE_ABOUT: &str = "Delete a named target definition";
 
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
@@ -451,6 +455,22 @@ const TARGET_GROUP_COMMANDS: &[CommandHelpEntry] = &[
         command: "show",
         about: TARGET_SHOW_ABOUT,
     },
+    CommandHelpEntry {
+        command: "use",
+        about: TARGET_USE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "set",
+        about: TARGET_SET_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "unset",
+        about: TARGET_UNSET_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "remove",
+        about: TARGET_REMOVE_ABOUT,
+    },
 ];
 
 const TARGET_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
@@ -462,6 +482,10 @@ const TARGET_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
         "operator target list",
         "operator target show",
         "operator target show harmony-pc",
+        "operator target use harmony-pc",
+        "operator target set harmony-pc --set driver_config.addr='192.168.8.43:35319'",
+        "operator target unset harmony-pc description",
+        "operator target remove windows-lab",
         "operator --json target show windows-lab",
     ],
     footer: "Use 'operator target <command> --help' for detailed usage.",
@@ -1263,6 +1287,120 @@ const TARGET_SHOW_HELP_SECTIONS: &[LeafHelpSection] = &[
     },
 ];
 
+const TARGET_USE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "<NAME>",
+            about: "Target name to store in [runtime].default_target",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
+const TARGET_SET_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "<NAME>",
+            about: "Target name to create or update",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[
+            CommandHelpEntry {
+                command: "--set <PATH=VALUE>",
+                about: "Apply a repeatable path-based mutation",
+            },
+            CommandHelpEntry {
+                command: "--json",
+                about: "Emit machine-readable JSON output",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Writable Paths",
+        rows: &[
+            CommandHelpEntry {
+                command: "platform",
+                about: "Target platform identifier",
+            },
+            CommandHelpEntry {
+                command: "driver",
+                about: "Target driver identifier",
+            },
+            CommandHelpEntry {
+                command: "description",
+                about: "Optional human-readable description",
+            },
+            CommandHelpEntry {
+                command: "driver_config.<key>",
+                about: "Driver-specific config key or nested key path",
+            },
+        ],
+    },
+];
+
+const TARGET_UNSET_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[
+            CommandHelpEntry {
+                command: "<NAME>",
+                about: "Target name to update",
+            },
+            CommandHelpEntry {
+                command: "<PATH>...",
+                about: "One or more removable paths",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Removable Paths",
+        rows: &[
+            CommandHelpEntry {
+                command: "description",
+                about: "Remove the optional description field",
+            },
+            CommandHelpEntry {
+                command: "driver_config.<key>",
+                about: "Remove a driver-specific config key or nested key path",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
+const TARGET_REMOVE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "<NAME>",
+            about: "Target name to remove from [targets]",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
 const CLICK_HELP_SECTIONS: &[LeafHelpSection] = &[
     LeafHelpSection {
         heading: "Options",
@@ -1696,6 +1834,58 @@ const TARGET_SHOW_HELP: LeafHelp = LeafHelp {
         "operator target show",
         "operator target show harmony-pc",
         "operator --json target show windows-lab",
+    ],
+    footer: "",
+};
+
+const TARGET_USE_HELP: LeafHelp = LeafHelp {
+    usage: "operator target use [OPTIONS] <NAME>",
+    about: TARGET_USE_ABOUT,
+    sections: TARGET_USE_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator target use macos",
+        "operator target use harmony-pc",
+        "operator --json target use windows-lab",
+    ],
+    footer: "",
+};
+
+const TARGET_SET_HELP: LeafHelp = LeafHelp {
+    usage: "operator target set [OPTIONS] <NAME> --set <PATH=VALUE>...",
+    about: TARGET_SET_ABOUT,
+    sections: TARGET_SET_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator target set windows-lab --set platform='windows' --set driver='windows.remote'",
+        "operator target set harmony-pc --set description='Harmony lab PC'",
+        "operator target set harmony-pc --set driver_config.addr='192.168.8.43:35319'",
+        "operator --json target set harmony-pc --set driver_config.retry_count=3",
+    ],
+    footer: "",
+};
+
+const TARGET_UNSET_HELP: LeafHelp = LeafHelp {
+    usage: "operator target unset [OPTIONS] <NAME> <PATH>...",
+    about: TARGET_UNSET_ABOUT,
+    sections: TARGET_UNSET_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator target unset harmony-pc description",
+        "operator target unset harmony-pc driver_config.agent_path driver_config.log_level",
+        "operator --json target unset windows-lab driver_config.endpoint",
+    ],
+    footer: "",
+};
+
+const TARGET_REMOVE_HELP: LeafHelp = LeafHelp {
+    usage: "operator target remove [OPTIONS] <NAME>",
+    about: TARGET_REMOVE_ABOUT,
+    sections: TARGET_REMOVE_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator target remove windows-lab",
+        "operator --json target remove staging-lab",
     ],
     footer: "",
 };
@@ -2588,6 +2778,10 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["target"] => Some(styled_group_help(&TARGET_GROUP_HELP)),
         ["target", "list", ..] => Some(styled_leaf_help(&TARGET_LIST_HELP)),
         ["target", "show", ..] => Some(styled_leaf_help(&TARGET_SHOW_HELP)),
+        ["target", "use", ..] => Some(styled_leaf_help(&TARGET_USE_HELP)),
+        ["target", "set", ..] => Some(styled_leaf_help(&TARGET_SET_HELP)),
+        ["target", "unset", ..] => Some(styled_leaf_help(&TARGET_UNSET_HELP)),
+        ["target", "remove", ..] => Some(styled_leaf_help(&TARGET_REMOVE_HELP)),
         ["show", ..] => Some(styled_leaf_help(&SHOW_HELP)),
         ["click", ..] => Some(styled_leaf_help(&CLICK_HELP)),
         ["type", ..] => Some(styled_leaf_help(&TYPE_HELP)),
@@ -2831,6 +3025,24 @@ pub(crate) enum TargetCommand {
         name: Option<String>,
         json_output: bool,
     },
+    Use {
+        name: String,
+        json_output: bool,
+    },
+    Set {
+        name: String,
+        entries: Vec<String>,
+        json_output: bool,
+    },
+    Unset {
+        name: String,
+        paths: Vec<String>,
+        json_output: bool,
+    },
+    Remove {
+        name: String,
+        json_output: bool,
+    },
 }
 
 #[derive(Debug, Clone, Args)]
@@ -2846,10 +3058,10 @@ impl TargetArgs {
     fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
         let common = merge_common(root_common, self.common);
         if common.target.is_some() {
-            return Err("target inspection commands do not accept --target".into());
+            return Err("target commands do not accept --target".into());
         }
         if common.timeout_ms.is_some() {
-            return Err("target inspection commands do not accept --timeout-ms".into());
+            return Err("target commands do not accept --timeout-ms".into());
         }
 
         let command = match self.command {
@@ -2857,6 +3069,24 @@ impl TargetArgs {
                 json_output: common.json_output,
             },
             TargetSubcommand::Show(args) => TargetCommand::Show {
+                name: args.name,
+                json_output: common.json_output,
+            },
+            TargetSubcommand::Use(args) => TargetCommand::Use {
+                name: args.name,
+                json_output: common.json_output,
+            },
+            TargetSubcommand::Set(args) => TargetCommand::Set {
+                name: args.name,
+                entries: args.entries,
+                json_output: common.json_output,
+            },
+            TargetSubcommand::Unset(args) => TargetCommand::Unset {
+                name: args.name,
+                paths: args.paths,
+                json_output: common.json_output,
+            },
+            TargetSubcommand::Remove(args) => TargetCommand::Remove {
                 name: args.name,
                 json_output: common.json_output,
             },
@@ -2872,6 +3102,14 @@ enum TargetSubcommand {
     List(TargetListArgs),
     #[command(about = TARGET_SHOW_ABOUT)]
     Show(TargetShowArgs),
+    #[command(about = TARGET_USE_ABOUT)]
+    Use(TargetUseArgs),
+    #[command(about = TARGET_SET_ABOUT)]
+    Set(TargetSetArgs),
+    #[command(about = TARGET_UNSET_ABOUT)]
+    Unset(TargetUnsetArgs),
+    #[command(about = TARGET_REMOVE_ABOUT)]
+    Remove(TargetRemoveArgs),
 }
 
 #[derive(Debug, Clone, Args, Default)]
@@ -2881,6 +3119,38 @@ struct TargetListArgs {}
 struct TargetShowArgs {
     #[arg(help = "Target name to inspect (defaults to the current default target)")]
     name: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct TargetUseArgs {
+    #[arg(help = "Target name to store in [runtime].default_target")]
+    name: String,
+}
+
+#[derive(Debug, Clone, Args)]
+struct TargetSetArgs {
+    #[arg(help = "Target name to create or update")]
+    name: String,
+    #[arg(
+        long = "set",
+        required = true,
+        help = "Apply a repeatable path-based mutation"
+    )]
+    entries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct TargetUnsetArgs {
+    #[arg(help = "Target name to update")]
+    name: String,
+    #[arg(required = true, help = "One or more removable paths")]
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct TargetRemoveArgs {
+    #[arg(help = "Target name to remove from [targets]")]
+    name: String,
 }
 
 #[derive(Debug, Clone, Args)]

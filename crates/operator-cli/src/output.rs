@@ -13,6 +13,9 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
         "artifact-get" => render_artifact(output),
         "target-list" => render_targets(output),
         "target-show" => render_target(output),
+        "target-use" | "target-set" | "target-unset" | "target-remove" => {
+            render_target_mutation(output)
+        }
         "get-focus" => render_focus(output),
         "list-apps" => render_apps(output),
         "list-windows" => render_windows(output),
@@ -158,6 +161,15 @@ fn render_target(output: &Value) -> String {
         indent_block(&driver_config, "  ")
     ));
     lines.join("\n")
+}
+
+fn render_target_mutation(output: &Value) -> String {
+    output["message"]
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            serde_json::to_string_pretty(output).expect("mutation output should serialize")
+        })
 }
 
 fn render_apps(output: &Value) -> String {

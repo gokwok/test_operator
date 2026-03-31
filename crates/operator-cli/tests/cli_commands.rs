@@ -596,7 +596,7 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("artifact"));
     assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("target"));
-    assert!(help.contains("Inspect configured named runtime targets"));
+    assert!(help.contains("Inspect and manage configured named runtime targets"));
     assert!(help.contains("capture"));
     assert!(help.contains("Take a screenshot of a surface"));
     assert!(help.contains("elements"));
@@ -712,6 +712,53 @@ fn target_show_help_snapshot_is_stable() {
 }
 
 #[test]
+fn target_use_help_snapshot_is_stable() {
+    let help = command_help(["operator", "target", "use", "--help"]);
+    assert!(help.contains("Usage operator target use [OPTIONS] <NAME>"));
+    assert!(help.contains("Set the runtime default target"));
+    assert!(help.contains("<NAME>"));
+    assert!(help.contains("operator target use macos"));
+    assert!(help.contains("operator target use harmony-pc"));
+    assert!(help.contains("operator --json target use windows-lab"));
+    assert!(help.contains("--json"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn target_set_help_snapshot_is_stable() {
+    let help = command_help(["operator", "target", "set", "--help"]);
+    assert!(help.contains("Usage operator target set [OPTIONS] <NAME> --set <PATH=VALUE>..."));
+    assert!(help.contains("Update fields on a named target"));
+    assert!(help.contains("--set <PATH=VALUE>"));
+    assert!(help.contains("--json"));
+    assert!(help.contains("driver_config.<key>"));
+    assert!(help
+        .contains("operator target set harmony-pc --set driver_config.addr='192.168.8.43:35319'"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn target_unset_help_snapshot_is_stable() {
+    let help = command_help(["operator", "target", "unset", "--help"]);
+    assert!(help.contains("Usage operator target unset [OPTIONS] <NAME> <PATH>..."));
+    assert!(help.contains("Remove fields from a named target"));
+    assert!(help.contains("--json"));
+    assert!(help.contains("driver_config.<key>"));
+    assert!(help.contains("operator target unset harmony-pc description"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn target_remove_help_snapshot_is_stable() {
+    let help = command_help(["operator", "target", "remove", "--help"]);
+    assert!(help.contains("Usage operator target remove [OPTIONS] <NAME>"));
+    assert!(help.contains("Delete a named target definition"));
+    assert!(help.contains("--json"));
+    assert!(help.contains("operator target remove windows-lab"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
 fn type_help_shows_positional_text_and_after_key() {
     let help = command_help(["operator", "type", "--help"]);
     assert_leaf_help_shape(
@@ -755,11 +802,19 @@ fn window_help_lists_window_management_subcommands() {
 #[test]
 fn target_help_lists_target_inspection_subcommands() {
     let help = command_help(["operator", "target", "--help"]);
-    assert!(help.contains("Inspect configured named runtime targets"));
+    assert!(help.contains("Inspect and manage configured named runtime targets"));
     assert!(help.contains("list"));
     assert!(help.contains("List configured named targets"));
     assert!(help.contains("show"));
     assert!(help.contains("Show a named target definition"));
+    assert!(help.contains("use"));
+    assert!(help.contains("Set the runtime default target"));
+    assert!(help.contains("set"));
+    assert!(help.contains("Update fields on a named target"));
+    assert!(help.contains("unset"));
+    assert!(help.contains("Remove fields from a named target"));
+    assert!(help.contains("remove"));
+    assert!(help.contains("Delete a named target definition"));
     assert!(help.contains("Use 'operator target <command> --help' for detailed usage."));
 }
 
@@ -3132,6 +3187,378 @@ async fn target_show_fails_for_unknown_target_name() {
         }
         other => panic!("expected target-not-found error, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn target_commands_reject_target_and_timeout_flags() {
+    for argv in [
+        [
+            "operator",
+            "--target",
+            "macos",
+            "target",
+            "use",
+            "windows-lab",
+        ]
+        .as_slice(),
+        [
+            "operator",
+            "--timeout-ms",
+            "250",
+            "target",
+            "set",
+            "windows-lab",
+            "--set",
+            "platform='windows'",
+        ]
+        .as_slice(),
+    ] {
+        let cli = cli_main::args::Cli::try_parse_from(argv).unwrap();
+        let error = cli_main::run_with_handlers(
+            cli,
+            &RecordingInvoker::noop(),
+            &RecordingAgentExecutor::noop(),
+            &NoopConfigInspector,
+        )
+        .await
+        .expect_err("target command should reject runtime flags");
+
+        match error {
+            cli_main::CliError::Argument(message) => {
+                assert!(message.contains("target commands do not accept"));
+            }
+            other => panic!("expected argument error, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn target_use_updates_runtime_default_target() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+"#,
+    )
+    .expect("write config");
+
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "target", "use", "windows-lab"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(rendered, "default target set to windows-lab");
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(saved.contains("default_target = \"windows-lab\""));
+}
+
+#[tokio::test]
+async fn target_set_creates_named_target_and_persists_typed_values() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "--json",
+        "target",
+        "set",
+        "harmony-pc",
+        "--set",
+        "platform='harmony'",
+        "--set",
+        "driver='harmony.hdc'",
+        "--set",
+        "description='Harmony lab PC'",
+        "--set",
+        "driver_config.addr='192.168.8.43:35319'",
+        "--set",
+        "driver_config.retry_count=3",
+        "--set",
+        "driver_config.discovery.enabled=true",
+    ])
+    .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "target": {
+                "name": "harmony-pc",
+                "is_default": false,
+                "platform": "harmony",
+                "driver": "harmony.hdc",
+                "description": "Harmony lab PC",
+                "driver_config": {
+                    "addr": "192.168.8.43:35319",
+                    "retry_count": 3,
+                    "discovery": {
+                        "enabled": true
+                    }
+                }
+            },
+            "message": "updated target harmony-pc"
+        })
+    );
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(saved.contains("[targets.harmony-pc]"));
+    assert!(saved.contains("platform = \"harmony\""));
+    assert!(saved.contains("driver = \"harmony.hdc\""));
+    assert!(saved.contains("description = \"Harmony lab PC\""));
+    assert!(saved.contains("retry_count = 3"));
+    assert!(saved.contains("enabled = true"));
+}
+
+#[tokio::test]
+async fn target_set_rejects_non_standardized_paths() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "target",
+        "set",
+        "harmony-pc",
+        "--set",
+        "targets.harmony-pc.driver='harmony.hdc'",
+    ])
+    .unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("absolute target path should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+            assert!(message.contains("must be relative to a single [targets.<name>] entry"));
+        }
+        other => panic!("expected path validation error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn target_unset_removes_optional_fields_and_nested_driver_config_keys() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "harmony-pc"
+
+[targets.harmony-pc]
+platform = "harmony"
+driver = "harmony.hdc"
+description = "Harmony lab PC"
+
+[targets.harmony-pc.driver_config]
+addr = "192.168.8.43:35319"
+
+[targets.harmony-pc.driver_config.logs]
+level = "debug"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "--json",
+        "target",
+        "unset",
+        "harmony-pc",
+        "description",
+        "driver_config.logs.level",
+    ])
+    .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "target": {
+                "name": "harmony-pc",
+                "is_default": true,
+                "platform": "harmony",
+                "driver": "harmony.hdc",
+                "description": null,
+                "driver_config": {
+                    "addr": "192.168.8.43:35319"
+                }
+            },
+            "message": "updated target harmony-pc"
+        })
+    );
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(!saved.contains("description ="));
+    assert!(!saved.contains("[targets.harmony-pc.driver_config.logs]"));
+    assert!(!saved.contains("level = \"debug\""));
+    assert!(saved.contains("addr = \"192.168.8.43:35319\""));
+}
+
+#[tokio::test]
+async fn target_unset_rejects_required_fields() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "windows-lab"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "target",
+        "unset",
+        "windows-lab",
+        "platform",
+    ])
+    .unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("platform unset should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+            assert!(message.contains("cannot be removed"));
+        }
+        other => panic!("expected path validation error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn target_remove_rejects_current_default_target() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "windows-lab"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "target", "remove", "windows-lab"])
+        .unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("default target removal should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+            assert!(message
+                .contains("cannot remove target `windows-lab` while it is the default target"));
+        }
+        other => panic!("expected platform error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn target_remove_deletes_non_default_target() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[targets.windows-lab]
+platform = "windows"
+driver = "windows.remote"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "--json",
+        "target",
+        "remove",
+        "windows-lab",
+    ])
+    .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "removed_target": "windows-lab",
+            "message": "removed target windows-lab"
+        })
+    );
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(!saved.contains("[targets.windows-lab]"));
 }
 
 struct RecordingInvoker {
