@@ -16,9 +16,9 @@ use operator_agent::{
     AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
 };
 use operator_bootstrap::{
-    load_bootstrap_config_from, load_runtime_config, operator_home_dir,
+    load_bootstrap_config_from, load_runtime_config, operator_home_dir, parse_model_set_expression,
     parse_target_set_expression, runtime_config_path, system_platform_registry, AgentModelConfig,
-    RuntimeConfigDocument, TargetConfigFieldPath,
+    ModelConfigFieldPath, RuntimeConfigDocument, TargetConfigFieldPath,
 };
 use operator_core::{OperatorError, TargetId};
 #[cfg(not(test))]
@@ -286,6 +286,9 @@ async fn run_model_with_inspector(
     let (tool, json_output) = match &command {
         ModelCommand::List { json_output } => ("model-list", *json_output),
         ModelCommand::Show { json_output, .. } => ("model-show", *json_output),
+        ModelCommand::Use { json_output, .. } => ("model-use", *json_output),
+        ModelCommand::Set { json_output, .. } => ("model-set", *json_output),
+        ModelCommand::Unset { json_output, .. } => ("model-unset", *json_output),
     };
     let output = inspector.inspect(&command).await?;
     Ok(output::render_success(tool, &output, json_output))
@@ -501,7 +504,7 @@ pub(crate) fn inspect_model_command(
     operator_home: impl AsRef<Path>,
 ) -> Result<Value, OperatorError> {
     let path = runtime_config_path(operator_home);
-    let document = RuntimeConfigDocument::load(&path)?;
+    let mut document = RuntimeConfigDocument::load(&path)?;
     let bootstrap = document.to_bootstrap_config()?;
 
     match command {
@@ -529,6 +532,49 @@ pub(crate) fn inspect_model_command(
                 "model": model_payload(&selector, &bootstrap.agent_model),
             }))
         }
+        ModelCommand::Use { name, .. } => {
+            document.set_default_model_selector(name)?;
+            let validated = validate_and_save_model_document(&document)?;
+            Ok(serde_json::json!({
+                "default_selector": validated.agent_model.default,
+                "model": model_payload(name, &validated.agent_model),
+                "message": format!("default model selector set to {name}"),
+            }))
+        }
+        ModelCommand::Set { name, entries, .. } => {
+            for entry in entries {
+                let (path, value) = parse_model_set_expression(entry)?;
+                document.set_model_provider_value(name, &path, value)?;
+            }
+            let validated = validate_and_save_model_document(&document)?;
+            Ok(serde_json::json!({
+                "default_selector": validated.agent_model.default,
+                "model": model_payload(name, &validated.agent_model),
+                "message": format!("updated model selector {name}"),
+            }))
+        }
+        ModelCommand::Unset { name, paths, .. } => {
+            let removed_default_provider_entry = bootstrap.agent_model.default.as_deref()
+                == Some(name)
+                && bootstrap.agent_model.providers.contains_key(name);
+            for path in paths {
+                let parsed = ModelConfigFieldPath::parse_unset(path)?;
+                document.unset_model_provider_value(name, &parsed)?;
+            }
+            let validated = document.to_bootstrap_config()?;
+            if removed_default_provider_entry && !validated.agent_model.providers.contains_key(name)
+            {
+                return Err(OperatorError::Platform(format!(
+                    "cannot remove provider entry `{name}` while it is the configured default selector"
+                )));
+            }
+            document.save()?;
+            Ok(serde_json::json!({
+                "default_selector": validated.agent_model.default,
+                "model": model_payload(name, &validated.agent_model),
+                "message": format!("updated model selector {name}"),
+            }))
+        }
     }
 }
 
@@ -542,6 +588,14 @@ fn validate_and_save_target_document(
             config.default_target
         )));
     }
+    document.save()?;
+    Ok(config)
+}
+
+fn validate_and_save_model_document(
+    document: &RuntimeConfigDocument,
+) -> Result<operator_bootstrap::BootstrapConfig, OperatorError> {
+    let config = document.to_bootstrap_config()?;
     document.save()?;
     Ok(config)
 }

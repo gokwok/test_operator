@@ -18,6 +18,7 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
         }
         "model-list" => render_models(output),
         "model-show" => render_model(output),
+        "model-use" | "model-set" | "model-unset" => render_model_mutation(output),
         "get-focus" => render_focus(output),
         "list-apps" => render_apps(output),
         "list-windows" => render_windows(output),
@@ -184,6 +185,15 @@ fn render_target(output: &Value) -> String {
 }
 
 fn render_target_mutation(output: &Value) -> String {
+    output["message"]
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            serde_json::to_string_pretty(output).expect("mutation output should serialize")
+        })
+}
+
+fn render_model_mutation(output: &Value) -> String {
     output["message"]
         .as_str()
         .map(ToOwned::to_owned)

@@ -548,6 +548,79 @@ fn model_show_command_normalizes_alias_to_stable_selector() {
 }
 
 #[test]
+fn model_use_command_normalizes_alias_to_stable_selector() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "model", "use", "doubao-seed"]).unwrap();
+
+    let execution = cli.into_execution().unwrap();
+    let cli_main::args::CliExecution::Model(command) = execution else {
+        panic!("model use should map to model execution");
+    };
+
+    assert_eq!(
+        command,
+        cli_main::args::ModelCommand::Use {
+            name: "doubao".into(),
+            json_output: false,
+        }
+    );
+}
+
+#[test]
+fn model_set_command_maps_repeatable_entries_to_model_execution() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "model",
+        "set",
+        "openai",
+        "--set",
+        "api_key='sk-live-1234'",
+        "--set",
+        "model_name='gpt-5.4'",
+    ])
+    .unwrap();
+
+    let execution = cli.into_execution().unwrap();
+    let cli_main::args::CliExecution::Model(command) = execution else {
+        panic!("model set should map to model execution");
+    };
+
+    assert_eq!(
+        command,
+        cli_main::args::ModelCommand::Set {
+            name: "openai".into(),
+            entries: vec![
+                "api_key='sk-live-1234'".into(),
+                "model_name='gpt-5.4'".into()
+            ],
+            json_output: false,
+        }
+    );
+}
+
+#[test]
+fn model_unset_command_maps_repeatable_fields_to_model_execution() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator", "--json", "model", "unset", "openai", "api_key", "base_url",
+    ])
+    .unwrap();
+
+    let execution = cli.into_execution().unwrap();
+    let cli_main::args::CliExecution::Model(command) = execution else {
+        panic!("model unset should map to model execution");
+    };
+
+    assert_eq!(
+        command,
+        cli_main::args::ModelCommand::Unset {
+            name: "openai".into(),
+            paths: vec!["api_key".into(), "base_url".into()],
+            json_output: true,
+        }
+    );
+}
+
+#[test]
 fn agent_runtime_config_loads_named_targets_from_operator_home_and_applies_flag_overrides() {
     let temp = tempdir().expect("tempdir");
     fs::write(
@@ -874,6 +947,12 @@ fn model_help_lists_model_inspection_subcommands() {
     assert!(help.contains("List configured model selectors"));
     assert!(help.contains("show"));
     assert!(help.contains("Show a model selector definition"));
+    assert!(help.contains("use"));
+    assert!(help.contains("Set the default selector for `operator agent`"));
+    assert!(help.contains("set"));
+    assert!(help.contains("Update provider fields on a selector"));
+    assert!(help.contains("unset"));
+    assert!(help.contains("Remove provider fields from a selector"));
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Use 'operator model <command> --help' for detailed usage."));
 }
@@ -904,6 +983,45 @@ fn model_show_help_snapshot_is_stable() {
     assert!(help.contains("operator model show"));
     assert!(help.contains("operator model show openai"));
     assert!(help.contains("operator --json model show doubao"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn model_use_help_snapshot_is_stable() {
+    let help = command_help(["operator", "model", "use", "--help"]);
+    assert!(help.contains("Usage operator model use [OPTIONS] <NAME>"));
+    assert!(help.contains("Set the default selector for `operator agent`"));
+    assert!(help.contains("<NAME>"));
+    assert!(help.contains("supported selectors"));
+    assert!(help.contains("operator model use openai"));
+    assert!(help.contains("operator model use doubao"));
+    assert!(help.contains("operator --json model use openai"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn model_set_help_snapshot_is_stable() {
+    let help = command_help(["operator", "model", "set", "--help"]);
+    assert!(help.contains("Usage operator model set [OPTIONS] <NAME> --set <FIELD=VALUE>..."));
+    assert!(help.contains("Update provider fields on a selector"));
+    assert!(help.contains("--set <FIELD=VALUE>"));
+    assert!(help.contains("Mutation Contract"));
+    assert!(help.contains("api_key | base_url | model_name"));
+    assert!(help.contains("relative field path"));
+    assert!(help.contains("operator model set openai --set api_key='sk-live-1234'"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn model_unset_help_snapshot_is_stable() {
+    let help = command_help(["operator", "model", "unset", "--help"]);
+    assert!(help.contains("Usage operator model unset [OPTIONS] <NAME> <FIELD>..."));
+    assert!(help.contains("Remove provider fields from a selector"));
+    assert!(help.contains("Field Contract"));
+    assert!(help.contains("api_key"));
+    assert!(help.contains("base_url"));
+    assert!(help.contains("model_name"));
+    assert!(help.contains("operator model unset openai api_key"));
     assert!(!help.contains("Global Runtime Flags"));
 }
 
@@ -3405,6 +3523,256 @@ async fn model_commands_reject_target_and_timeout_flags() {
             }
             other => panic!("expected argument error, got {other:?}"),
         }
+    }
+}
+
+#[tokio::test]
+async fn model_use_updates_default_selector() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "openai"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "model", "use", "doubao"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(rendered, "default model selector set to doubao");
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(saved.contains("default = \"doubao\""));
+}
+
+#[tokio::test]
+async fn model_set_creates_provider_entry_and_returns_masked_json() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "--json",
+        "model",
+        "set",
+        "openai",
+        "--set",
+        "api_key='sk-live-1234'",
+        "--set",
+        "base_url='https://api.openai.com/v1'",
+        "--set",
+        "model_name='gpt-5.4'",
+    ])
+    .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "default_selector": null,
+            "model": {
+                "name": "openai",
+                "is_default": false,
+                "provider_kind": "openai",
+                "model_name": "gpt-5.4",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "********1234"
+            },
+            "message": "updated model selector openai"
+        })
+    );
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(saved.contains("[agent.model.provider.openai]"));
+    assert!(saved.contains("api_key = \"sk-live-1234\""));
+    assert!(saved.contains("base_url = \"https://api.openai.com/v1\""));
+    assert!(saved.contains("model_name = \"gpt-5.4\""));
+}
+
+#[tokio::test]
+async fn model_set_rejects_non_standardized_fields_and_non_string_values() {
+    let temp = tempdir().expect("tempdir");
+    for argv in [
+        [
+            "operator",
+            "model",
+            "set",
+            "openai",
+            "--set",
+            "agent.model.provider.openai.api_key='value'",
+        ]
+        .as_slice(),
+        [
+            "operator",
+            "model",
+            "set",
+            "openai",
+            "--set",
+            "model_name=42",
+        ]
+        .as_slice(),
+    ] {
+        let cli = cli_main::args::Cli::try_parse_from(argv).unwrap();
+        let error = cli_main::run_with_handlers(
+            cli,
+            &RecordingInvoker::noop(),
+            &RecordingAgentExecutor::noop(),
+            &ConfigInspector {
+                operator_home: temp.path().to_path_buf(),
+            },
+            &ConfigInspector {
+                operator_home: temp.path().to_path_buf(),
+            },
+        )
+        .await
+        .expect_err("invalid model set should fail");
+
+        match error {
+            cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+                assert!(
+                    message.contains(
+                        "must be relative to a single [agent.model.provider.<name>] entry"
+                    ) || message.contains("only accepts string values")
+                );
+            }
+            other => panic!("expected platform error, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn model_unset_removes_optional_fields_and_prunes_provider_table() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "doubao"
+
+[agent.model.provider.openai]
+api_key = "sk-live-1234"
+base_url = "https://api.openai.com/v1"
+
+[agent.model.provider.doubao]
+api_key = "ark-secret-5678"
+model_name = "doubao-seed-2-0-lite-260215"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator", "--json", "model", "unset", "openai", "api_key", "base_url",
+    ])
+    .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "default_selector": "doubao",
+            "model": {
+                "name": "openai",
+                "is_default": false,
+                "provider_kind": "openai",
+                "model_name": null,
+                "base_url": null,
+                "api_key": null
+            },
+            "message": "updated model selector openai"
+        })
+    );
+
+    let saved = fs::read_to_string(runtime_config_path(temp.path())).expect("read saved config");
+    assert!(!saved.contains("[agent.model.provider.openai]"));
+    assert!(saved.contains("[agent.model.provider.doubao]"));
+}
+
+#[tokio::test]
+async fn model_unset_rejects_removing_the_default_provider_entry() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = "sk-live-1234"
+"#,
+    )
+    .expect("write config");
+
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "model", "unset", "openai", "api_key"])
+            .unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("default provider entry removal should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+            assert!(message.contains(
+                "cannot remove provider entry `openai` while it is the configured default selector"
+            ));
+        }
+        other => panic!("expected platform error, got {other:?}"),
     }
 }
 

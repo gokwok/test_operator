@@ -112,6 +112,9 @@ const TARGET_REMOVE_ABOUT: &str = "Delete a named target definition";
 const MODEL_ABOUT: &str = "Inspect config-backed agent model selectors/providers";
 const MODEL_LIST_ABOUT: &str = "List configured model selectors";
 const MODEL_SHOW_ABOUT: &str = "Show a model selector definition";
+const MODEL_USE_ABOUT: &str = "Set the default selector for `operator agent`";
+const MODEL_SET_ABOUT: &str = "Update provider fields on a selector";
+const MODEL_UNSET_ABOUT: &str = "Remove provider fields from a selector";
 
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
@@ -509,6 +512,18 @@ const MODEL_GROUP_COMMANDS: &[CommandHelpEntry] = &[
         command: "show",
         about: MODEL_SHOW_ABOUT,
     },
+    CommandHelpEntry {
+        command: "use",
+        about: MODEL_USE_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "set",
+        about: MODEL_SET_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "unset",
+        about: MODEL_UNSET_ABOUT,
+    },
 ];
 
 const MODEL_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
@@ -520,7 +535,9 @@ const MODEL_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
         "operator model list",
         "operator model show",
         "operator model show openai",
-        "operator --json model show doubao",
+        "operator model use doubao",
+        "operator model set openai --set model_name='gpt-5.4'",
+        "operator model unset doubao api_key",
     ],
     footer: "Use 'operator model <command> --help' for detailed usage.",
 };
@@ -739,6 +756,110 @@ const MODEL_SHOW_HELP_SECTIONS: &[LeafHelpSection] = &[
             CommandHelpEntry {
                 command: "api_key",
                 about: "Rendered with the same masking rules as `operator model list`",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
+const MODEL_USE_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "<NAME>",
+            about: "Selector name to store in [agent.model].default",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Notes",
+        rows: &[CommandHelpEntry {
+            command: "supported selectors",
+            about: "Stable selector names are `openai` and `doubao`",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
+
+const MODEL_SET_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "<NAME>",
+            about: "Selector/provider entry to create or update",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[
+            CommandHelpEntry {
+                command: "--set <FIELD=VALUE>",
+                about: "Apply one or more provider-field mutations",
+            },
+            CommandHelpEntry {
+                command: "--json",
+                about: "Emit machine-readable JSON output",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Mutation Contract",
+        rows: &[
+            CommandHelpEntry {
+                command: "api_key | base_url | model_name",
+                about: "The only writable provider fields",
+            },
+            CommandHelpEntry {
+                command: "relative field path",
+                about: "FIELD is relative to [agent.model.provider.<name>] and must not use dotted root paths",
+            },
+            CommandHelpEntry {
+                command: "string values only",
+                about: "All writable provider fields currently require TOML string values",
+            },
+        ],
+    },
+];
+
+const MODEL_UNSET_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[
+            CommandHelpEntry {
+                command: "<NAME>",
+                about: "Selector/provider entry to update",
+            },
+            CommandHelpEntry {
+                command: "<FIELD>...",
+                about: "One or more provider fields to remove",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Field Contract",
+        rows: &[
+            CommandHelpEntry {
+                command: "api_key",
+                about: "Remove the stored provider credential",
+            },
+            CommandHelpEntry {
+                command: "base_url",
+                about: "Remove the stored endpoint override",
+            },
+            CommandHelpEntry {
+                command: "model_name",
+                about: "Remove the stored remote provider model id",
             },
         ],
     },
@@ -2041,6 +2162,45 @@ const MODEL_SHOW_HELP: LeafHelp = LeafHelp {
     footer: "",
 };
 
+const MODEL_USE_HELP: LeafHelp = LeafHelp {
+    usage: "operator model use [OPTIONS] <NAME>",
+    about: MODEL_USE_ABOUT,
+    sections: MODEL_USE_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator model use openai",
+        "operator model use doubao",
+        "operator --json model use openai",
+    ],
+    footer: "",
+};
+
+const MODEL_SET_HELP: LeafHelp = LeafHelp {
+    usage: "operator model set [OPTIONS] <NAME> --set <FIELD=VALUE>...",
+    about: MODEL_SET_ABOUT,
+    sections: MODEL_SET_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator model set openai --set api_key='sk-live-1234'",
+        "operator model set openai --set base_url='https://api.openai.com/v1'",
+        "operator model set doubao --set model_name='doubao-seed-2-0-lite-260215'",
+    ],
+    footer: "",
+};
+
+const MODEL_UNSET_HELP: LeafHelp = LeafHelp {
+    usage: "operator model unset [OPTIONS] <NAME> <FIELD>...",
+    about: MODEL_UNSET_ABOUT,
+    sections: MODEL_UNSET_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator model unset openai api_key",
+        "operator model unset doubao base_url model_name",
+        "operator --json model unset openai base_url",
+    ],
+    footer: "",
+};
+
 const CLICK_HELP: LeafHelp = LeafHelp {
     usage: "operator click [OPTIONS]",
     about: INPUT_CLICK_ABOUT,
@@ -2942,6 +3102,9 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["model"] => Some(styled_group_help(&MODEL_GROUP_HELP)),
         ["model", "list", ..] => Some(styled_leaf_help(&MODEL_LIST_HELP)),
         ["model", "show", ..] => Some(styled_leaf_help(&MODEL_SHOW_HELP)),
+        ["model", "use", ..] => Some(styled_leaf_help(&MODEL_USE_HELP)),
+        ["model", "set", ..] => Some(styled_leaf_help(&MODEL_SET_HELP)),
+        ["model", "unset", ..] => Some(styled_leaf_help(&MODEL_UNSET_HELP)),
         ["show", ..] => Some(styled_leaf_help(&SHOW_HELP)),
         ["click", ..] => Some(styled_leaf_help(&CLICK_HELP)),
         ["type", ..] => Some(styled_leaf_help(&TYPE_HELP)),
@@ -3225,6 +3388,20 @@ pub(crate) enum ModelCommand {
         name: Option<String>,
         json_output: bool,
     },
+    Use {
+        name: String,
+        json_output: bool,
+    },
+    Set {
+        name: String,
+        entries: Vec<String>,
+        json_output: bool,
+    },
+    Unset {
+        name: String,
+        paths: Vec<String>,
+        json_output: bool,
+    },
 }
 
 #[derive(Debug, Clone, Args)]
@@ -3311,6 +3488,26 @@ impl ModelArgs {
                     .map(str::to_owned),
                 json_output: common.json_output,
             },
+            ModelSubcommand::Use(args) => ModelCommand::Use {
+                name: normalize_model_selector(&args.name)
+                    .map_err(|error| error.to_string())?
+                    .to_owned(),
+                json_output: common.json_output,
+            },
+            ModelSubcommand::Set(args) => ModelCommand::Set {
+                name: normalize_model_selector(&args.name)
+                    .map_err(|error| error.to_string())?
+                    .to_owned(),
+                entries: args.entries,
+                json_output: common.json_output,
+            },
+            ModelSubcommand::Unset(args) => ModelCommand::Unset {
+                name: normalize_model_selector(&args.name)
+                    .map_err(|error| error.to_string())?
+                    .to_owned(),
+                paths: args.paths,
+                json_output: common.json_output,
+            },
         };
 
         Ok(CliExecution::Model(command))
@@ -3339,6 +3536,12 @@ enum ModelSubcommand {
     List(ModelListArgs),
     #[command(about = MODEL_SHOW_ABOUT)]
     Show(ModelShowArgs),
+    #[command(about = MODEL_USE_ABOUT)]
+    Use(ModelUseArgs),
+    #[command(about = MODEL_SET_ABOUT)]
+    Set(ModelSetArgs),
+    #[command(about = MODEL_UNSET_ABOUT)]
+    Unset(ModelUnsetArgs),
 }
 
 #[derive(Debug, Clone, Args, Default)]
@@ -3389,6 +3592,32 @@ struct ModelListArgs {}
 struct ModelShowArgs {
     #[arg(help = "Selector name to inspect (defaults to the configured default selector)")]
     name: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ModelUseArgs {
+    #[arg(help = "Selector name to store in [agent.model].default")]
+    name: String,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ModelSetArgs {
+    #[arg(help = "Selector/provider entry to create or update")]
+    name: String,
+    #[arg(
+        long = "set",
+        required = true,
+        help = "Apply one or more provider-field mutations"
+    )]
+    entries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+struct ModelUnsetArgs {
+    #[arg(help = "Selector/provider entry to update")]
+    name: String,
+    #[arg(required = true, help = "One or more provider fields to remove")]
+    paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Args)]
