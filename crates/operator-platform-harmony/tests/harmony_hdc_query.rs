@@ -273,6 +273,19 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
         )
         .await
         .expect("list apps --all --bundle should succeed");
+    let filtered_by_name = driver
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter {
+                    name: Some("browser".into()),
+                    bundle: None,
+                },
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("list apps --all --name by bundle fragment should succeed");
 
     assert_eq!(
         apps,
@@ -306,6 +319,15 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
             is_running: false,
         }])
     );
+    assert_eq!(
+        filtered_by_name,
+        QueryResult::Apps(vec![operator_core::AppInfo {
+            bundle_id: Some("com.demo.browser".into()),
+            name: "浏览器".into(),
+            pid: Some(103),
+            is_running: true,
+        }])
+    );
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
     assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 1);
     assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 1);
@@ -314,7 +336,7 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
         2
     );
     assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]

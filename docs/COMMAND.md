@@ -300,6 +300,7 @@ operator
 - `app list --name <TEXT>`：
   - 按应用名做包含匹配
   - 当前实现按大小写不敏感的 contains 规则过滤
+  - Harmony 当前还会对 bundle id 做同样的 contains 匹配，避免本地化显示名替换后无法通过英文 bundle 片段定位应用
   - 如果未显式传 `--running` 或 `--all`，则默认切到 `--all`
 - `app list --bundle <BUNDLE_ID>`：
   - 按 bundle id 做全匹配

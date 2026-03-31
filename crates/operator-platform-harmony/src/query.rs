@@ -50,7 +50,35 @@ pub(crate) async fn query(
 }
 
 fn filter_app_infos(apps: Vec<AppInfo>, filter: &AppListFilter) -> Vec<AppInfo> {
-    apps.into_iter().filter(|app| filter.matches(app)).collect()
+    apps.into_iter()
+        .filter(|app| harmony_app_matches_filter(app, filter))
+        .collect()
+}
+
+fn harmony_app_matches_filter(app: &AppInfo, filter: &AppListFilter) -> bool {
+    if let Some(name) = filter.name.as_deref() {
+        let needle = normalize_match_text(name);
+        let name_matches = normalize_match_text(&app.name).contains(&needle);
+        let bundle_matches = app
+            .bundle_id
+            .as_deref()
+            .is_some_and(|bundle_id| normalize_match_text(bundle_id).contains(&needle));
+        if !name_matches && !bundle_matches {
+            return false;
+        }
+    }
+
+    if let Some(bundle) = filter.bundle.as_deref() {
+        if app.bundle_id.as_deref() != Some(bundle) {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn normalize_match_text(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
 }
 
 async fn query_exact_bundle_app(

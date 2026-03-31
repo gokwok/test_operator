@@ -784,8 +784,9 @@ fn app_list_help_snapshot_is_stable() {
     assert!(help.contains("--bundle <BUNDLE_ID>"));
     assert!(help.contains("defaults to `--running`"));
     assert!(help.contains("switch the default view to `--all`"));
-    assert!(help.contains("currently own at least one window"));
+    assert!(help.contains("operable running apps"));
     assert!(help.contains("case-insensitive contains matching"));
+    assert!(help.contains("bundle-id fragments"));
 }
 
 #[test]

@@ -103,7 +103,7 @@ const ARTIFACT_ABOUT: &str = "Read a stored capture artifact by ID";
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "macOS note: `app list` defaults to `--running`, but `--name` and `--bundle` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps that currently own at least one window, while `--all` scans installed app bundles and marks non-running apps without a pid. `--name` uses case-insensitive contains matching and `--bundle` requires an exact bundle id match.";
+    "CLI note: `app list` defaults to `--running`, but `--name` and `--bundle` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps, while `--all` lists the target's operable app catalog and marks non-running apps without a pid. `--name` uses case-insensitive contains matching; on Harmony it also matches bundle-id fragments. `--bundle` requires an exact bundle id match.";
 const WINDOW_LIST_FOOTER: &str =
     "CLI note: `window list` now requires `--app <NAME>`. The unfiltered full-enumeration path remains internal-only and is no longer a supported shell contract.";
 
@@ -712,7 +712,7 @@ const APP_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[
 const APP_LIST_FILTER_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--name <TEXT>",
-        about: "Filter by application name using contains matching",
+        about: "Filter by application name using contains matching (Harmony also matches bundle fragments)",
     },
     CommandHelpEntry {
         command: "--bundle <BUNDLE_ID>",

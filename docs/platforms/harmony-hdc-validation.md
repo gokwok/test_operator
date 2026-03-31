@@ -107,7 +107,7 @@ operator --target harmony-pc --timeout-ms 60000 --json window list --app com.hua
 - `app list` 成功返回带窗口的运行中 app 列表；本轮返回 5 个运行中 app
 - `OPE-161` 后，`app list` 与 `app list --all` 都会优先显示 Harmony 提供的人类可读标签，而不是直接回落到 bundle id
 - `app list --all` 现在返回的是“带桌面入口的 GUI 可操作 app catalog”，不再直接暴露原始已安装 bundle 全量；本轮返回 61 个条目，并在运行中项上回填 `is_running = true` 与 `pid`
-- `app list --name` 现在按显示名称做包含匹配；在当前设备上使用 `--name 浏览` 可返回 `浏览器` 与 `海泰浏览器`
+- `app list --name` 现在同时按显示名称和 bundle id 片段做包含匹配；在当前设备上 `--name 浏览` 与 `--name browser` 都可返回 `浏览器`
 - `app list --bundle com.huawei.hmos.notepad` 成功返回单个精确 bundle 匹配项，显示名为 `备忘录`
 - `window list --app <bundle>` 成功返回目标窗口列表与 bounds
 - 本轮在启动 Notepad 之前，前台窗口是 `com.huawei.hmos.browser` / `browser0`
@@ -117,7 +117,7 @@ operator --target harmony-pc --timeout-ms 60000 --json window list --app com.hua
 
 - `app list`：`1.826s`
 - `app list --all`：`1.583s`
-- `app list --name 浏览`：`1.816s`
+- `app list --name browser`：实机确认仍低于 `3s`
 - `app list --bundle com.huawei.hmos.notepad`：`0.430s`
 
 结论：
