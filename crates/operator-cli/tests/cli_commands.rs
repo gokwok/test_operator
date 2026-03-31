@@ -2951,6 +2951,7 @@ async fn cli_run_distinguishes_known_target_with_missing_driver() {
             NamedTargetConfig {
                 platform: "windows".into(),
                 driver: "windows.remote".into(),
+                description: None,
                 driver_config: DriverConfig::new(),
             },
         )]),

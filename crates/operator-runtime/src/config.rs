@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub struct NamedTargetConfig {
     pub platform: String,
     pub driver: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(default)]
     pub driver_config: DriverConfig,
 }
@@ -33,6 +35,7 @@ fn default_named_targets() -> BTreeMap<String, NamedTargetConfig> {
         NamedTargetConfig {
             platform: "macos".into(),
             driver: "macos.system".into(),
+            description: None,
             driver_config: DriverConfig::new(),
         },
     )])

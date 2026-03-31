@@ -23,6 +23,7 @@ async fn runtime_builder_registers_multiple_drivers() {
                 NamedTargetConfig {
                     platform: "macos".into(),
                     driver: "macos.system".into(),
+                    description: None,
                     driver_config: DriverConfig::new(),
                 },
             ),
@@ -31,6 +32,7 @@ async fn runtime_builder_registers_multiple_drivers() {
                 NamedTargetConfig {
                     platform: "harmony".into(),
                     driver: "harmony.bridge".into(),
+                    description: None,
                     driver_config: DriverConfig::new(),
                 },
             ),
@@ -110,6 +112,7 @@ async fn resolve_driver_reports_driver_unavailable_for_known_target() {
             NamedTargetConfig {
                 platform: "windows".into(),
                 driver: "windows.remote".into(),
+                description: None,
                 driver_config: DriverConfig::new(),
             },
         )]),
@@ -146,6 +149,7 @@ fn target_resolver_prefers_named_targets_and_falls_back_to_legacy_syntax() {
                 NamedTargetConfig {
                     platform: "macos".into(),
                     driver: "macos.system".into(),
+                    description: None,
                     driver_config: DriverConfig::new(),
                 },
             ),
@@ -154,6 +158,7 @@ fn target_resolver_prefers_named_targets_and_falls_back_to_legacy_syntax() {
                 NamedTargetConfig {
                     platform: "windows".into(),
                     driver: "windows.remote".into(),
+                    description: None,
                     driver_config: DriverConfig::from([(
                         "endpoint".into(),
                         json!("https://windows-lab.internal"),
@@ -165,6 +170,7 @@ fn target_resolver_prefers_named_targets_and_falls_back_to_legacy_syntax() {
                 NamedTargetConfig {
                     platform: "harmony".into(),
                     driver: "harmony.node".into(),
+                    description: None,
                     driver_config: DriverConfig::from([("node".into(), json!("serial-1"))]),
                 },
             ),
@@ -243,6 +249,7 @@ async fn runtime_builder_passes_driver_config_through_factory_initialization() {
             NamedTargetConfig {
                 platform: "harmony".into(),
                 driver: "harmony.node".into(),
+                description: None,
                 driver_config: DriverConfig::from([
                     ("node".into(), json!("serial-1")),
                     ("endpoint".into(), json!("ws://127.0.0.1:9000")),
@@ -298,6 +305,7 @@ async fn resolve_driver_preserves_driver_config_validation_errors() {
             NamedTargetConfig {
                 platform: "windows".into(),
                 driver: "windows.remote".into(),
+                description: None,
                 driver_config: DriverConfig::from([(
                     "endpoint".into(),
                     json!("wss://windows-lab.internal"),

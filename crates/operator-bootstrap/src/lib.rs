@@ -1,9 +1,14 @@
+mod config_document;
+
 use std::{
-    env, fs,
+    env,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+pub use config_document::{
+    parse_target_set_expression, RuntimeConfigDocument, TargetConfigFieldPath,
+};
 use operator_core::{OperatorError, PlatformDriver, TargetDescriptor, TargetId};
 use operator_platform_harmony::HarmonyHdcDriverFactory;
 use operator_platform_macos::{
@@ -37,12 +42,7 @@ pub fn load_runtime_config_from(
     operator_home: impl AsRef<Path>,
 ) -> Result<RuntimeConfig, OperatorError> {
     let path = runtime_config_path(operator_home);
-    if !path.exists() {
-        return Ok(RuntimeConfig::default());
-    }
-
-    let contents = fs::read_to_string(&path)?;
-    parse_runtime_config(&contents, &path)
+    RuntimeConfigDocument::load(path)?.to_runtime_config()
 }
 
 pub fn system_platform_registry(artifacts_dir: impl AsRef<Path>) -> PlatformRegistry {
@@ -95,7 +95,10 @@ impl PlatformDriverFactory for MacosSystemDriverFactory {
     }
 }
 
-fn parse_runtime_config(contents: &str, path: &Path) -> Result<RuntimeConfig, OperatorError> {
+pub(crate) fn parse_runtime_config(
+    contents: &str,
+    path: &Path,
+) -> Result<RuntimeConfig, OperatorError> {
     let file = toml::from_str::<RuntimeConfigFile>(contents).map_err(|error| {
         OperatorError::Platform(format!(
             "invalid runtime config at {}: {error}",
@@ -206,6 +209,7 @@ artifact_ttl_hours = 48
 [targets.windows-lab]
 platform = "windows"
 driver = "windows.remote"
+description = "Shared Windows lab"
 
 [targets.windows-lab.driver_config]
 endpoint = "wss://windows-lab.internal"
@@ -213,6 +217,7 @@ endpoint = "wss://windows-lab.internal"
 [targets.harmony-phone]
 platform = "harmony"
 driver = "harmony.node"
+description = "Harmony phone"
 
 [targets.harmony-phone.driver_config]
 node = "phone-01"
@@ -242,11 +247,16 @@ model = "gpt-5.4"
         assert_eq!(windows_target.platform, "windows");
         assert_eq!(windows_target.driver, "windows.remote");
         assert_eq!(
+            windows_target.description.as_deref(),
+            Some("Shared Windows lab")
+        );
+        assert_eq!(
             windows_target.driver_config,
             DriverConfig::from([("endpoint".into(), json!("wss://windows-lab.internal"))])
         );
         assert_eq!(harmony_target.platform, "harmony");
         assert_eq!(harmony_target.driver, "harmony.node");
+        assert_eq!(harmony_target.description.as_deref(), Some("Harmony phone"));
         assert_eq!(
             harmony_target.driver_config,
             DriverConfig::from([("node".into(), json!("phone-01"))])

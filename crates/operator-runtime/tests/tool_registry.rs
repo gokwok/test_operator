@@ -243,6 +243,7 @@ async fn observe_tool_allows_capture_only_driver_when_elements_are_disabled() {
         NamedTargetConfig {
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
+            description: None,
             driver_config: Default::default(),
         },
     );
@@ -558,6 +559,7 @@ async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tre
         NamedTargetConfig {
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
+            description: None,
             driver_config: Default::default(),
         },
     );
@@ -696,6 +698,7 @@ async fn list_apps_tool_defaults_filtered_harmony_queries_to_all_mode() {
         NamedTargetConfig {
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
+            description: None,
             driver_config: Default::default(),
         },
     );
@@ -762,6 +765,7 @@ async fn list_apps_tool_defaults_filtered_harmony_bundle_queries_to_all_mode() {
         NamedTargetConfig {
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
+            description: None,
             driver_config: Default::default(),
         },
     );
@@ -825,6 +829,7 @@ async fn action_tools_support_harmony_pointer_and_keyboard_surface_without_inspe
         NamedTargetConfig {
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
+            description: None,
             driver_config: Default::default(),
         },
     );
@@ -1093,6 +1098,7 @@ async fn action_tools_support_harmony_app_lifecycle_surface_without_inspect_tree
         NamedTargetConfig {
             platform: "harmony".into(),
             driver: "harmony.hdc".into(),
+            description: None,
             driver_config: Default::default(),
         },
     );
