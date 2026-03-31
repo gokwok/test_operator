@@ -7,7 +7,8 @@ use std::{
 };
 
 use hmdriver_rs::{
-    CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry, WindowRect,
+    AppLabelInfo, CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry,
+    WindowRect,
 };
 use operator_core::{
     Action, ActionFocusPolicy, ActionRequest, ActionSideEffect, ActionTargetSelector, DriverConfig,
@@ -28,6 +29,7 @@ async fn launch_app_resolves_installed_bundle_ids_and_running_app_names() {
         counts: Arc::clone(&counts),
         recorded_actions: Arc::clone(&actions),
         installed_apps: vec!["com.demo.camera".into(), "com.demo.notes".into()],
+        app_labels: Vec::new(),
         current_app: Some(CurrentApp {
             bundle_name: "com.demo.notes".into(),
             ability_name: "EntryAbility".into(),
@@ -109,12 +111,50 @@ async fn launch_app_resolves_installed_bundle_ids_and_running_app_names() {
 }
 
 #[tokio::test]
+async fn launch_app_resolves_installed_display_names_from_catalog() {
+    let actions = Arc::new(Mutex::new(Vec::new()));
+    let driver = build_driver(FakeSessionFactory {
+        recorded_actions: Arc::clone(&actions),
+        installed_apps: vec!["com.demo.notes".into()],
+        app_labels: vec![app_label("com.demo.notes", "备忘录")],
+        ..Default::default()
+    });
+
+    let launched = driver
+        .act(
+            ActionRequest {
+                action: Action::LaunchApp {
+                    bundle_id_or_name: "备忘录".into(),
+                },
+                locator: None,
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("launch-app should resolve installed display names from the Harmony catalog");
+
+    assert_eq!(launched.detail.as_deref(), Some("launched com.demo.notes"));
+    assert_eq!(launched.side_effects, vec![ActionSideEffect::LaunchApp]);
+    assert_eq!(
+        actions.lock().unwrap().clone(),
+        vec![RecordedShellAction::StartApp {
+            bundle: "com.demo.notes".into(),
+            ability: None,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn switch_quit_and_relaunch_actions_use_resolved_target_bundles() {
     let actions = Arc::new(Mutex::new(Vec::new()));
     let counts = Arc::new(CallCounts::default());
     let driver = build_driver(FakeSessionFactory {
         counts: Arc::clone(&counts),
         recorded_actions: Arc::clone(&actions),
+        app_labels: Vec::new(),
         current_app: Some(CurrentApp {
             bundle_name: "com.demo.notes".into(),
             ability_name: "EntryAbility".into(),
@@ -311,6 +351,7 @@ struct FakeSessionFactory {
     counts: Arc<CallCounts>,
     recorded_actions: Arc<Mutex<Vec<RecordedShellAction>>>,
     installed_apps: Vec<String>,
+    app_labels: Vec<AppLabelInfo>,
     current_app: Option<CurrentApp>,
     windows: CorrelatedWindowList,
 }
@@ -321,6 +362,7 @@ impl Default for FakeSessionFactory {
             counts: Arc::new(CallCounts::default()),
             recorded_actions: Arc::new(Mutex::new(Vec::new())),
             installed_apps: Vec::new(),
+            app_labels: Vec::new(),
             current_app: None,
             windows: CorrelatedWindowList {
                 windows: Vec::new(),
@@ -342,6 +384,7 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
             counts: Arc::clone(&self.counts),
             recorded_actions: Arc::clone(&self.recorded_actions),
             installed_apps: self.installed_apps.clone(),
+            app_labels: self.app_labels.clone(),
             current_app: self.current_app.clone(),
             windows: self.windows.clone(),
         }))
@@ -359,6 +402,7 @@ struct FakeShellSession {
     counts: Arc<CallCounts>,
     recorded_actions: Arc<Mutex<Vec<RecordedShellAction>>>,
     installed_apps: Vec<String>,
+    app_labels: Vec<AppLabelInfo>,
     current_app: Option<CurrentApp>,
     windows: CorrelatedWindowList,
 }
@@ -394,7 +438,7 @@ impl HarmonyHdcShellSession for FakeShellSession {
     fn list_app_labels(
         &mut self,
     ) -> Result<Vec<hmdriver_rs::AppLabelInfo>, operator_core::OperatorError> {
-        Ok(Vec::new())
+        Ok(self.app_labels.clone())
     }
 
     fn filter_desktop_bundles(
@@ -477,6 +521,13 @@ impl HarmonyHdcShellSession for FakeShellSession {
 }
 
 struct FakeUiSession;
+
+fn app_label(bundle_name: &str, label: &str) -> AppLabelInfo {
+    AppLabelInfo {
+        bundle_name: bundle_name.into(),
+        label: label.into(),
+    }
+}
 
 impl HarmonyHdcUiSession for FakeUiSession {
     fn check_ready(&self) -> Result<(), operator_core::OperatorError> {

@@ -1009,18 +1009,43 @@ impl WorkerState {
 
         let windows = self.query_windows()?;
         let selector = ActionTargetSelector::App(bundle_id_or_name.to_string());
-        let target = resolve_action_target(windows, current_app, &selector).map_err(|_| {
-            OperatorError::Platform(format!(
-                "harmony.hdc could not resolve `{bundle_id_or_name}` to an installed bundle id or running app"
-            ))
-        })?;
+        if let Ok(target) = resolve_action_target(windows, current_app, &selector) {
+            return lifecycle_target_bundle(
+                &target,
+                action_name(&Action::LaunchApp {
+                    bundle_id_or_name: bundle_id_or_name.to_string(),
+                }),
+            );
+        }
 
-        lifecycle_target_bundle(
-            &target,
-            action_name(&Action::LaunchApp {
-                bundle_id_or_name: bundle_id_or_name.to_string(),
-            }),
-        )
+        if let Some(bundle) = self.resolve_installed_app_bundle_by_name(&requested)? {
+            return Ok(bundle);
+        }
+
+        Err(OperatorError::Platform(format!(
+            "harmony.hdc could not resolve `{bundle_id_or_name}` to an installed bundle id or running app"
+        )))
+    }
+
+    fn resolve_installed_app_bundle_by_name(
+        &mut self,
+        requested: &str,
+    ) -> Result<Option<String>, OperatorError> {
+        if let Some(report) = self.cached_apps()? {
+            if let Some(bundle) =
+                find_installed_app_bundle_by_name(&report.installed_apps, requested)
+            {
+                return Ok(Some(bundle));
+            }
+        }
+
+        let report = self.rebuild_app_catalog()?;
+        self.app_catalog_cache = Some(report.clone());
+        let _ = self.persist_app_catalog_cache(&report);
+        Ok(find_installed_app_bundle_by_name(
+            &report.installed_apps,
+            requested,
+        ))
     }
 
     fn with_shell_session<T>(
@@ -1506,6 +1531,16 @@ fn lifecycle_target_bundle(
 
 fn normalize_match_text(value: &str) -> String {
     value.trim().to_ascii_lowercase()
+}
+
+fn find_installed_app_bundle_by_name(
+    installed_apps: &[InstalledHarmonyApp],
+    requested: &str,
+) -> Option<String> {
+    installed_apps
+        .iter()
+        .find(|app| normalize_match_text(&app.name) == requested)
+        .map(|app| app.bundle_id.clone())
 }
 
 fn sanitize_target_id(target_id: &TargetId) -> String {
