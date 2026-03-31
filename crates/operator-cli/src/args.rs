@@ -119,7 +119,7 @@ const MODEL_UNSET_ABOUT: &str = "Remove provider fields from a selector";
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
 const APP_LIST_FOOTER: &str =
-    "CLI note: `app list` defaults to `--running`, but `--name` and `--bundle` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps, while `--all` lists the target's operable app catalog and marks non-running apps without a pid. `--name` uses case-insensitive contains matching; on Harmony it also matches bundle-id fragments. `--bundle` requires an exact bundle id match.";
+    "CLI note: `app list` defaults to `--running`, but `--name`, `--bundle`, and `--flush` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps, while `--all` lists the target's operable app catalog and marks non-running apps without a pid. `--name` uses case-insensitive contains matching; on Harmony it also matches bundle-id fragments. `--bundle` requires an exact bundle id match. On Harmony, `--flush` refreshes the target-bound app-catalog cache stored under `~/.operator`.";
 const WINDOW_LIST_FOOTER: &str =
     "CLI note: `window list` now requires `--app <NAME>`. The unfiltered full-enumeration path remains internal-only and is no longer a supported shell contract.";
 
@@ -583,6 +583,7 @@ const APP_LIST_AFTER_HELP: &str = "Examples
   operator app list
   operator app list --running
   operator app list --all
+  operator app list --flush
   operator app list --name Cod
   operator app list --running --bundle com.apple.TextEdit
   operator app list --all --bundle com.apple.TextEdit
@@ -1040,7 +1041,7 @@ const APP_LIST_OPTION_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--all",
         about:
-            "List all operable applications visible to the target (default with --name/--bundle)",
+            "List all operable applications visible to the target (default with --name/--bundle/--flush)",
     },
 ];
 
@@ -1054,6 +1055,11 @@ const APP_LIST_FILTER_ROWS: &[CommandHelpEntry] = &[
         about: "Filter by exact bundle ID",
     },
 ];
+
+const APP_LIST_CACHE_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
+    command: "--flush",
+    about: "Refresh the Harmony target-bound app catalog cache (also implies --all unless --running is explicit)",
+}];
 
 const WINDOW_FOCUS_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "--window-id <ID>",
@@ -1828,6 +1834,10 @@ const APP_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[
         heading: "Filters (optional)",
         rows: APP_LIST_FILTER_ROWS,
     },
+    LeafHelpSection {
+        heading: "Cache (optional)",
+        rows: APP_LIST_CACHE_ROWS,
+    },
 ];
 
 const APP_LAUNCH_HELP_SECTIONS: &[LeafHelpSection] = &[LeafHelpSection {
@@ -2345,6 +2355,7 @@ const APP_LIST_HELP: LeafHelp = LeafHelp {
         "operator app list",
         "operator app list --running",
         "operator app list --all",
+        "operator app list --flush",
         "operator app list --name Cod",
         "operator app list --running --bundle com.apple.TextEdit",
         "operator app list --all --bundle com.apple.TextEdit",
@@ -4586,6 +4597,8 @@ struct AppListArgs {
     #[arg(long, conflicts_with = "running")]
     all: bool,
     #[arg(long)]
+    flush: bool,
+    #[arg(long)]
     name: Option<String>,
     #[arg(long)]
     bundle: Option<String>,
@@ -4596,12 +4609,15 @@ impl AppListArgs {
         let mut input = common_input(&common);
         let mode = if self.running {
             AppListMode::Running
-        } else if self.all || self.name.is_some() || self.bundle.is_some() {
+        } else if self.all || self.flush || self.name.is_some() || self.bundle.is_some() {
             AppListMode::All
         } else {
             AppListMode::Running
         };
         insert_serialized(&mut input, "mode", mode)?;
+        if self.flush {
+            input.insert("flush".into(), Value::Bool(true));
+        }
         if let Some(name) = self.name {
             input.insert("name".into(), Value::String(name));
         }

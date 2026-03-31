@@ -1002,6 +1002,7 @@ dependencies = [
  "image",
  "operator-core",
  "operator-runtime",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",

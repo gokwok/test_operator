@@ -14,11 +14,15 @@ pub(crate) async fn query(
     capabilities: CapabilitySet,
 ) -> Result<QueryResult, OperatorError> {
     match req {
-        QueryRequest::ListApps { mode, filter } => {
+        QueryRequest::ListApps {
+            mode,
+            filter,
+            flush,
+        } => {
             if mode == AppListMode::All && filter.name.is_none() {
                 if let Some(bundle) = filter.bundle.as_deref() {
                     return Ok(QueryResult::Apps(
-                        query_exact_bundle_app(worker, bundle).await?,
+                        query_exact_bundle_app(worker, bundle, flush).await?,
                     ));
                 }
             }
@@ -28,7 +32,7 @@ pub(crate) async fn query(
                     normalize_running_apps(worker.query_windows().await?, &labels)
                 }
                 AppListMode::All => {
-                    let report = worker.query_apps().await?;
+                    let report = worker.query_apps_with_refresh(flush).await?;
                     let windows = worker.query_windows().await?;
                     normalize_all_apps(report.installed_apps, windows, &report.labels)
                 }
@@ -84,6 +88,7 @@ fn normalize_match_text(value: &str) -> String {
 async fn query_exact_bundle_app(
     worker: &HarmonyHdcWorker,
     bundle: &str,
+    flush: bool,
 ) -> Result<Vec<AppInfo>, OperatorError> {
     let labels = worker.query_app_labels_map().await?;
     let windows = worker.query_windows().await?;
@@ -95,20 +100,26 @@ async fn query_exact_bundle_app(
         return Ok(vec![app]);
     }
 
-    let Some(label) = labels.get(bundle) else {
+    let report = if flush {
+        worker.query_apps_with_refresh(true).await?
+    } else {
+        match worker.cached_apps().await? {
+            Some(report) => report,
+            None => worker.query_apps_with_refresh(false).await?,
+        }
+    };
+
+    let Some(app) = report
+        .installed_apps
+        .into_iter()
+        .find(|app| app.bundle_id == bundle)
+    else {
         return Ok(Vec::new());
     };
-    let desktop_bundles = worker
-        .filter_desktop_bundles(vec![bundle.to_string()])
-        .await?;
-    if desktop_bundles.iter().any(|candidate| candidate == bundle) {
-        return Ok(vec![AppInfo {
-            bundle_id: Some(bundle.to_string()),
-            name: label.clone(),
-            pid: None,
-            is_running: false,
-        }]);
-    }
-
-    Ok(Vec::new())
+    Ok(vec![AppInfo {
+        bundle_id: Some(app.bundle_id),
+        name: app.name,
+        pid: None,
+        is_running: false,
+    }])
 }

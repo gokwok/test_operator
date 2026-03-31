@@ -1218,6 +1218,9 @@ Filters (optional)
   --name <TEXT>              Filter by application name using contains matching
   --bundle <BUNDLE_ID>       Filter by exact bundle ID
 
+Cache (optional)
+  --flush                    Refresh the Harmony target-bound app catalog cache
+
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
   --target <TARGET>          Select the named runtime target (see `operator target list`)
@@ -1228,18 +1231,21 @@ Examples
   operator app list
   operator app list --running
   operator app list --all
+  operator app list --flush
   operator app list --name Cod
   operator app list --all --bundle com.apple.TextEdit
   operator --json app list --all
 ```
 
-Current macOS note:
+Current note:
 - `app list` defaults to `app list --running`.
-- `app list --name ...` and `app list --bundle ...` default to the `--all` view unless `--running` is passed explicitly.
+- `app list --name ...`、`app list --bundle ...`、以及 `app list --flush` default to the `--all` view unless `--running` is passed explicitly.
 - `--running` returns operable running apps on macOS that currently own at least one window, and filters out `.prohibited` background-only processes.
 - `--all` scans installed app bundles, merges them with the running set, and marks non-running apps with `is_running = false` and no `pid`.
 - `--name` uses case-insensitive contains matching on the application display name.
 - `--bundle` matches the bundle id exactly.
+- Harmony `app list --all` uses a target-bound app catalog cache stored under the operator home directory (`~/.operator` by default).
+- Harmony refreshes that cache only when it is missing locally or when `--flush` is passed.
 
 #### `operator app switch`
 

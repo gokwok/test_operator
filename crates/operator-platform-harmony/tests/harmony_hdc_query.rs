@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -153,6 +153,7 @@ async fn running_app_list_uses_window_backed_inventory_and_reuses_shell_session(
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             &exec_context(),
         )
@@ -255,6 +256,7 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
             QueryRequest::ListApps {
                 mode: AppListMode::All,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             &exec_context(),
         )
@@ -268,6 +270,7 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
                     name: None,
                     bundle: Some("com.demo.mail".into()),
                 },
+                flush: false,
             },
             &exec_context(),
         )
@@ -281,6 +284,7 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
                     name: Some("browser".into()),
                     bundle: None,
                 },
+                flush: false,
             },
             &exec_context(),
         )
@@ -333,10 +337,119 @@ async fn all_app_list_merges_installed_bundles_and_supports_filters() {
     assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 1);
     assert_eq!(
         counts.filter_desktop_bundles_calls.load(Ordering::SeqCst),
-        2
+        1
     );
     assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
     assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn all_app_list_reuses_target_bound_disk_cache_across_driver_instances() {
+    let counts = Arc::new(CallCounts::default());
+    let artifacts_dir = test_artifacts_dir();
+    let factory = FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        apps: vec!["com.demo.notes".into()],
+        labels: vec![app_label("com.demo.notes", "备忘录")],
+        desktop_visible_bundles: vec!["com.demo.notes".into()],
+        windows: CorrelatedWindowList {
+            windows: Vec::new(),
+            focused_window_id: None,
+            highlighted_window_ids: Vec::new(),
+            total_window_count: Some(0),
+        },
+        ..Default::default()
+    };
+    let first =
+        build_driver_with_artifacts_dir(factory.clone(), default_driver_config(), &artifacts_dir);
+    let second = build_driver_with_artifacts_dir(factory, default_driver_config(), &artifacts_dir);
+
+    let first_result = first
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter::default(),
+                flush: false,
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("initial all-app query should succeed");
+    let second_result = second
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter::default(),
+                flush: false,
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("cached all-app query should succeed");
+
+    assert_eq!(first_result, second_result);
+    assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        counts.filter_desktop_bundles_calls.load(Ordering::SeqCst),
+        1
+    );
+    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn all_app_list_flush_rebuilds_target_bound_disk_cache() {
+    let counts = Arc::new(CallCounts::default());
+    let artifacts_dir = test_artifacts_dir();
+    let factory = FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        apps: vec!["com.demo.notes".into()],
+        labels: vec![app_label("com.demo.notes", "备忘录")],
+        desktop_visible_bundles: vec!["com.demo.notes".into()],
+        windows: CorrelatedWindowList {
+            windows: Vec::new(),
+            focused_window_id: None,
+            highlighted_window_ids: Vec::new(),
+            total_window_count: Some(0),
+        },
+        ..Default::default()
+    };
+    let first =
+        build_driver_with_artifacts_dir(factory.clone(), default_driver_config(), &artifacts_dir);
+    let second = build_driver_with_artifacts_dir(factory, default_driver_config(), &artifacts_dir);
+
+    first
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter::default(),
+                flush: false,
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("initial all-app query should succeed");
+    second
+        .query(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter::default(),
+                flush: true,
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("flush all-app query should succeed");
+
+    assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.list_apps_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(counts.list_app_labels_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        counts.filter_desktop_bundles_calls.load(Ordering::SeqCst),
+        2
+    );
+    assert_eq!(counts.list_windows_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -359,24 +472,33 @@ async fn capabilities_query_returns_declared_capability_set() {
 }
 
 fn build_driver(factory: FakeSessionFactory) -> Arc<dyn PlatformDriver> {
-    build_driver_with_config(
-        factory,
-        DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))]),
-    )
+    build_driver_with_config(factory, default_driver_config())
 }
 
 fn build_driver_with_config(
     factory: FakeSessionFactory,
     driver_config: DriverConfig,
 ) -> Arc<dyn PlatformDriver> {
-    HarmonyHdcDriverFactory::new_with_session_factory(Arc::new(factory))
-        .build(&TargetDescriptor {
-            id: TargetId("harmony-pc".into()),
-            platform: "harmony".into(),
-            driver: "harmony.hdc".into(),
-            driver_config,
-        })
-        .expect("factory should build harmony driver")
+    let artifacts_dir = test_artifacts_dir();
+    build_driver_with_artifacts_dir(factory, driver_config, &artifacts_dir)
+}
+
+fn build_driver_with_artifacts_dir(
+    factory: FakeSessionFactory,
+    driver_config: DriverConfig,
+    artifacts_dir: &Path,
+) -> Arc<dyn PlatformDriver> {
+    HarmonyHdcDriverFactory::new_with_session_factory_and_artifacts_dir(
+        Arc::new(factory),
+        artifacts_dir,
+    )
+    .build(&TargetDescriptor {
+        id: TargetId("harmony-pc".into()),
+        platform: "harmony".into(),
+        driver: "harmony.hdc".into(),
+        driver_config,
+    })
+    .expect("factory should build harmony driver")
 }
 
 fn exec_context() -> ExecContext {
@@ -385,6 +507,22 @@ fn exec_context() -> ExecContext {
         session: None,
         timeout_ms: Some(1_000),
     }
+}
+
+fn default_driver_config() -> DriverConfig {
+    DriverConfig::from([("addr".into(), json!("192.168.8.43:35319"))])
+}
+
+fn test_artifacts_dir() -> PathBuf {
+    static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
+
+    let dir = std::env::temp_dir().join(format!(
+        "operator-harmony-query-{}-{}",
+        std::process::id(),
+        NEXT_ID.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(&dir).expect("test artifacts dir should be created");
+    dir.join("artifacts")
 }
 
 fn window(

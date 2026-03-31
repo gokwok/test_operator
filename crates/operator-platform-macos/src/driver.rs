@@ -251,7 +251,7 @@ where
         _ctx: &ExecContext,
     ) -> Result<QueryResult, OperatorError> {
         match req {
-            QueryRequest::ListApps { mode, filter } => Ok(QueryResult::Apps(filter_app_infos(
+            QueryRequest::ListApps { mode, filter, .. } => Ok(QueryResult::Apps(filter_app_infos(
                 self.app_service.list_apps(mode)?,
                 &filter,
             ))),

@@ -25,6 +25,8 @@ pub enum QueryRequest {
         mode: AppListMode,
         #[serde(default)]
         filter: AppListFilter,
+        #[serde(default)]
+        flush: bool,
     },
     ListWindows {
         app: Option<String>,

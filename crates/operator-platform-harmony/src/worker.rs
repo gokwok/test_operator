@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs,
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
     thread,
@@ -10,8 +11,9 @@ use hmdriver_rs::{AppLabelInfo, CorrelatedWindowList, CurrentApp, Driver, ShellR
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
     ActionTargetSelector, ClickMode, DragMotion, ImageSizePx, Locator, OperatorError,
-    PermissionStatus, PermissionsReport, Point, Rect, TypeTrailingKey,
+    PermissionStatus, PermissionsReport, Point, Rect, TargetId, TypeTrailingKey,
 };
+use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::sync::oneshot;
 
@@ -31,6 +33,7 @@ use crate::{
 };
 
 const SHELL_PROBE_COMMAND: &str = "echo operator >/dev/null";
+const APP_CATALOG_CACHE_VERSION: u32 = 1;
 
 pub trait HarmonyHdcShellSession: Send {
     fn exec_checked(&mut self, command: &str) -> Result<(), OperatorError>;
@@ -111,8 +114,13 @@ pub struct HarmonyHdcWorker {
 }
 
 impl HarmonyHdcWorker {
-    pub fn new(config: HarmonyHdcConfig) -> Self {
-        Self::new_with_session_factory(config, Arc::new(RealHarmonyHdcSessionFactory))
+    pub fn new(target_id: TargetId, config: HarmonyHdcConfig, cache_root: PathBuf) -> Self {
+        Self::new_with_session_factory(
+            target_id,
+            config,
+            Arc::new(RealHarmonyHdcSessionFactory),
+            cache_root,
+        )
     }
 
     pub fn config(&self) -> &HarmonyHdcConfig {
@@ -147,10 +155,25 @@ impl HarmonyHdcWorker {
         response_rx.await.map_err(|_| worker_stopped_error())?
     }
 
-    pub(crate) async fn query_apps(&self) -> Result<HarmonyAppQueryReport, OperatorError> {
+    pub(crate) async fn query_apps_with_refresh(
+        &self,
+        refresh: bool,
+    ) -> Result<HarmonyAppQueryReport, OperatorError> {
         let (response_tx, response_rx) = oneshot::channel();
         self.sender
             .send(WorkerCommand::QueryApps {
+                refresh,
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
+    pub(crate) async fn cached_apps(&self) -> Result<Option<HarmonyAppQueryReport>, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::LoadCachedApps {
                 response: response_tx,
             })
             .map_err(|_| worker_stopped_error())?;
@@ -164,21 +187,6 @@ impl HarmonyHdcWorker {
         let (response_tx, response_rx) = oneshot::channel();
         self.sender
             .send(WorkerCommand::QueryAppLabels {
-                response: response_tx,
-            })
-            .map_err(|_| worker_stopped_error())?;
-
-        response_rx.await.map_err(|_| worker_stopped_error())?
-    }
-
-    pub(crate) async fn filter_desktop_bundles(
-        &self,
-        bundles: Vec<String>,
-    ) -> Result<Vec<String>, OperatorError> {
-        let (response_tx, response_rx) = oneshot::channel();
-        self.sender
-            .send(WorkerCommand::FilterDesktopBundles {
-                bundles,
                 response: response_tx,
             })
             .map_err(|_| worker_stopped_error())?;
@@ -210,12 +218,22 @@ impl HarmonyHdcWorker {
     }
 
     pub(crate) fn new_with_session_factory(
+        target_id: TargetId,
         config: HarmonyHdcConfig,
         session_factory: Arc<dyn HarmonyHdcSessionFactory>,
+        cache_root: PathBuf,
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
         let worker_config = config.clone();
-        let _ = thread::spawn(move || worker_loop(worker_config, session_factory, receiver));
+        let _ = thread::spawn(move || {
+            worker_loop(
+                target_id,
+                worker_config,
+                session_factory,
+                cache_root,
+                receiver,
+            )
+        });
 
         Self { config, sender }
     }
@@ -231,14 +249,14 @@ enum WorkerCommand {
         response: oneshot::Sender<Result<HarmonyCaptureReport, OperatorError>>,
     },
     QueryApps {
+        refresh: bool,
         response: oneshot::Sender<Result<HarmonyAppQueryReport, OperatorError>>,
+    },
+    LoadCachedApps {
+        response: oneshot::Sender<Result<Option<HarmonyAppQueryReport>, OperatorError>>,
     },
     QueryAppLabels {
         response: oneshot::Sender<Result<BTreeMap<String, String>, OperatorError>>,
-    },
-    FilterDesktopBundles {
-        bundles: Vec<String>,
-        response: oneshot::Sender<Result<Vec<String>, OperatorError>>,
     },
     QueryWindows {
         response: oneshot::Sender<Result<CorrelatedWindowList, OperatorError>>,
@@ -255,14 +273,22 @@ pub(crate) struct HarmonyCaptureReport {
     pub(crate) focused_window_bounds: Option<Rect>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HarmonyAppQueryReport {
     pub(crate) installed_apps: Vec<InstalledHarmonyApp>,
     pub(crate) labels: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct HarmonyAppCatalogCache {
+    version: u32,
+    report: HarmonyAppQueryReport,
+}
+
 struct WorkerState {
+    target_id: TargetId,
     config: HarmonyHdcConfig,
+    cache_root: PathBuf,
     session_factory: Arc<dyn HarmonyHdcSessionFactory>,
     shell_session: Option<Box<dyn HarmonyHdcShellSession>>,
     ui_session: Option<Box<dyn HarmonyHdcUiSession>>,
@@ -270,9 +296,16 @@ struct WorkerState {
 }
 
 impl WorkerState {
-    fn new(config: HarmonyHdcConfig, session_factory: Arc<dyn HarmonyHdcSessionFactory>) -> Self {
+    fn new(
+        target_id: TargetId,
+        config: HarmonyHdcConfig,
+        session_factory: Arc<dyn HarmonyHdcSessionFactory>,
+        cache_root: PathBuf,
+    ) -> Self {
         Self {
+            target_id,
             config,
+            cache_root,
             session_factory,
             shell_session: None,
             ui_session: None,
@@ -556,11 +589,36 @@ impl WorkerState {
         Ok(outcome)
     }
 
-    fn query_apps(&mut self) -> Result<HarmonyAppQueryReport, OperatorError> {
-        if let Some(report) = &self.app_catalog_cache {
-            return Ok(report.clone());
+    fn query_apps(&mut self, refresh: bool) -> Result<HarmonyAppQueryReport, OperatorError> {
+        if !refresh {
+            if let Some(report) = &self.app_catalog_cache {
+                return Ok(report.clone());
+            }
+            if let Some(report) = self.load_app_catalog_cache() {
+                self.app_catalog_cache = Some(report.clone());
+                return Ok(report);
+            }
         }
 
+        let report = self.rebuild_app_catalog()?;
+        self.app_catalog_cache = Some(report.clone());
+        let _ = self.persist_app_catalog_cache(&report);
+        Ok(report)
+    }
+
+    fn cached_apps(&mut self) -> Result<Option<HarmonyAppQueryReport>, OperatorError> {
+        if let Some(report) = &self.app_catalog_cache {
+            return Ok(Some(report.clone()));
+        }
+
+        let report = self.load_app_catalog_cache();
+        if let Some(report) = &report {
+            self.app_catalog_cache = Some(report.clone());
+        }
+        Ok(report)
+    }
+
+    fn rebuild_app_catalog(&mut self) -> Result<HarmonyAppQueryReport, OperatorError> {
         self.ensure_shell_session()?;
         let labels = self.query_app_labels()?;
         let bundles = {
@@ -595,15 +653,43 @@ impl WorkerState {
         })?;
         let desktop_bundles = desktop_bundles.into_iter().collect::<BTreeSet<_>>();
 
-        let report = HarmonyAppQueryReport {
+        Ok(HarmonyAppQueryReport {
             installed_apps: installed_apps
                 .into_values()
                 .filter(|app| desktop_bundles.contains(&app.bundle_id))
                 .collect(),
             labels,
+        })
+    }
+
+    fn load_app_catalog_cache(&self) -> Option<HarmonyAppQueryReport> {
+        let path = self.app_catalog_cache_path();
+        let bytes = fs::read(path).ok()?;
+        let cache = serde_json::from_slice::<HarmonyAppCatalogCache>(&bytes).ok()?;
+        (cache.version == APP_CATALOG_CACHE_VERSION).then_some(cache.report)
+    }
+
+    fn persist_app_catalog_cache(
+        &self,
+        report: &HarmonyAppQueryReport,
+    ) -> Result<(), OperatorError> {
+        fs::create_dir_all(self.app_catalog_cache_dir())?;
+        let payload = HarmonyAppCatalogCache {
+            version: APP_CATALOG_CACHE_VERSION,
+            report: report.clone(),
         };
-        self.app_catalog_cache = Some(report.clone());
-        Ok(report)
+        let bytes = serde_json::to_vec_pretty(&payload)?;
+        fs::write(self.app_catalog_cache_path(), bytes)?;
+        Ok(())
+    }
+
+    fn app_catalog_cache_dir(&self) -> PathBuf {
+        self.cache_root.join("cache").join("harmony-apps")
+    }
+
+    fn app_catalog_cache_path(&self) -> PathBuf {
+        self.app_catalog_cache_dir()
+            .join(format!("{}.json", sanitize_target_id(&self.target_id)))
     }
 
     fn query_windows(&mut self) -> Result<CorrelatedWindowList, OperatorError> {
@@ -653,10 +739,6 @@ impl WorkerState {
                 Err(error)
             }
         }
-    }
-
-    fn filter_desktop_bundles(&mut self, bundles: &[String]) -> Result<Vec<String>, OperatorError> {
-        self.with_shell_session(|session| session.filter_desktop_bundles(bundles))
     }
 
     fn click(
@@ -1266,11 +1348,13 @@ fn looks_like_gui_catalog_entry(bundle: &str, label: &str) -> bool {
 }
 
 fn worker_loop(
+    target_id: TargetId,
     config: HarmonyHdcConfig,
     session_factory: Arc<dyn HarmonyHdcSessionFactory>,
+    cache_root: PathBuf,
     receiver: mpsc::Receiver<WorkerCommand>,
 ) {
-    let mut state = WorkerState::new(config, session_factory);
+    let mut state = WorkerState::new(target_id, config, session_factory, cache_root);
     while let Ok(command) = receiver.recv() {
         match command {
             WorkerCommand::CollectPermissions { response } => {
@@ -1285,14 +1369,14 @@ fn worker_loop(
                     state.capture_observe(artifact_path.as_deref(), resolve_frontmost_bounds),
                 );
             }
-            WorkerCommand::QueryApps { response } => {
-                let _ = response.send(state.query_apps());
+            WorkerCommand::QueryApps { refresh, response } => {
+                let _ = response.send(state.query_apps(refresh));
             }
             WorkerCommand::QueryAppLabels { response } => {
                 let _ = response.send(state.query_app_labels());
             }
-            WorkerCommand::FilterDesktopBundles { bundles, response } => {
-                let _ = response.send(state.filter_desktop_bundles(&bundles));
+            WorkerCommand::LoadCachedApps { response } => {
+                let _ = response.send(state.cached_apps());
             }
             WorkerCommand::QueryWindows { response } => {
                 let _ = response.send(state.query_windows());
@@ -1422,6 +1506,20 @@ fn lifecycle_target_bundle(
 
 fn normalize_match_text(value: &str) -> String {
     value.trim().to_ascii_lowercase()
+}
+
+fn sanitize_target_id(target_id: &TargetId) -> String {
+    target_id
+        .0
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn screen_point(point: Point) -> Result<(i32, i32), OperatorError> {

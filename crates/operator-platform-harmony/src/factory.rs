@@ -82,9 +82,12 @@ impl PlatformDriverFactory for HarmonyHdcDriverFactory {
                 target.id
             ))
         })?;
+        let cache_root = cache_root_from_artifacts_dir(&self.artifacts_dir);
         let worker = Arc::new(HarmonyHdcWorker::new_with_session_factory(
+            target.id.clone(),
             config,
             Arc::clone(&self.session_factory),
+            cache_root,
         ));
 
         Ok(Arc::new(
@@ -103,4 +106,14 @@ fn default_artifacts_dir() -> PathBuf {
     }
 
     PathBuf::from(".operator").join("artifacts")
+}
+
+fn cache_root_from_artifacts_dir(artifacts_dir: &Path) -> PathBuf {
+    match artifacts_dir.file_name().and_then(|name| name.to_str()) {
+        Some("artifacts") => artifacts_dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| artifacts_dir.to_path_buf()),
+        _ => artifacts_dir.to_path_buf(),
+    }
 }

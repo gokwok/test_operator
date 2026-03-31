@@ -23,10 +23,15 @@ pub struct HarmonyHdcDriver {
 }
 
 impl HarmonyHdcDriver {
-    pub fn new(_target_id: TargetId, config: HarmonyHdcConfig) -> Self {
+    pub fn new(target_id: TargetId, config: HarmonyHdcConfig) -> Self {
+        let artifacts_dir = default_artifacts_dir();
         Self {
-            worker: Arc::new(HarmonyHdcWorker::new(config)),
-            artifacts_dir: default_artifacts_dir(),
+            worker: Arc::new(HarmonyHdcWorker::new(
+                target_id,
+                config,
+                cache_root_from_artifacts_dir(&artifacts_dir),
+            )),
+            artifacts_dir,
         }
     }
 
@@ -124,4 +129,14 @@ fn default_artifacts_dir() -> PathBuf {
     }
 
     PathBuf::from(".operator").join("artifacts")
+}
+
+fn cache_root_from_artifacts_dir(artifacts_dir: &std::path::Path) -> PathBuf {
+    match artifacts_dir.file_name().and_then(|name| name.to_str()) {
+        Some("artifacts") => artifacts_dir
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| artifacts_dir.to_path_buf()),
+        _ => artifacts_dir.to_path_buf(),
+    }
 }

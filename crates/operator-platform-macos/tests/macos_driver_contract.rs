@@ -472,6 +472,7 @@ async fn list_apps_and_windows_queries_forward_to_services() {
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             &exec_context(),
         )
@@ -542,6 +543,7 @@ async fn list_apps_query_bypasses_system_events_permission_probe() {
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             &exec_context(),
         )
@@ -594,6 +596,7 @@ async fn list_apps_query_forwards_requested_mode_to_app_service() {
             QueryRequest::ListApps {
                 mode: AppListMode::All,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             &exec_context(),
         )
@@ -654,6 +657,7 @@ async fn list_apps_query_applies_name_and_bundle_filters() {
                     name: Some("Cod".into()),
                     bundle: Some("com.openai.codex".into()),
                 },
+                flush: false,
             },
             &exec_context(),
         )

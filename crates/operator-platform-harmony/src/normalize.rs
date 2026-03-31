@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use hmdriver_rs::{CorrelatedWindow, CorrelatedWindowList, CurrentApp, WindowRect};
 use operator_core::{ActionTargetSelector, AppInfo, OperatorError, Point, Rect, WindowInfo};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedActionTarget {
@@ -9,7 +10,7 @@ pub(crate) struct ResolvedActionTarget {
     pub(crate) window: Option<WindowInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct InstalledHarmonyApp {
     pub(crate) bundle_id: String,
     pub(crate) name: String,

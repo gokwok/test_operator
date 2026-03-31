@@ -525,6 +525,11 @@ model_name = "doubao-seed-2-0-lite-260215"
   - 按 bundle id 做全匹配
   - 如果未显式传 `--running` 或 `--all`，则默认切到 `--all`
   - 可与 `--running` 或 `--all` 组合使用
+- `app list --flush`：
+  - 触发 Harmony `--all` app catalog 的强制刷新
+  - 如果未显式传 `--running` 或 `--all`，则默认切到 `--all`
+  - Harmony 的 `--all` catalog 会按 target 绑定缓存到 operator home（默认 `~/.operator`）下
+  - 只有本地缓存不存在或显式传入 `--flush` 时才会重新扫描 desktop app catalog
 
 ### `window`
 

@@ -110,6 +110,7 @@ async fn list_apps(
             QueryRequest::ListApps {
                 mode: input.resolved_mode(),
                 filter: input.filter,
+                flush: input.flush,
             },
             ctx,
         )
@@ -230,6 +231,8 @@ struct ListAppsToolInput {
     #[schemars(flatten)]
     exec: ToolExecInput,
     mode: Option<AppListMode>,
+    #[serde(default)]
+    flush: bool,
     #[serde(flatten)]
     #[schemars(flatten)]
     filter: AppListFilter,
@@ -238,7 +241,7 @@ struct ListAppsToolInput {
 impl ListAppsToolInput {
     fn resolved_mode(&self) -> AppListMode {
         self.mode.unwrap_or_else(|| {
-            if self.filter.name.is_some() || self.filter.bundle.is_some() {
+            if self.flush || self.filter.name.is_some() || self.filter.bundle.is_some() {
                 AppListMode::All
             } else {
                 AppListMode::Running

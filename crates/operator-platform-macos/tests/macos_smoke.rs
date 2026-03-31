@@ -1328,6 +1328,7 @@ async fn switch_app_with_system_driver() {
             QueryRequest::ListApps {
                 mode: AppListMode::Running,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             &exec_context(),
         )

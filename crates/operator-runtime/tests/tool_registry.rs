@@ -404,6 +404,7 @@ async fn read_only_query_tools_forward_runtime_results() {
                 QueryRequest::ListApps {
                     mode: AppListMode::Running,
                     filter: AppListFilter::default(),
+                    flush: false,
                 },
                 ExecContext {
                     target: "macos".into(),
@@ -479,6 +480,7 @@ async fn list_apps_tool_forwards_explicit_all_mode() {
             QueryRequest::ListApps {
                 mode: AppListMode::All,
                 filter: AppListFilter::default(),
+                flush: false,
             },
             ExecContext {
                 target: "macos".into(),
@@ -534,6 +536,46 @@ async fn list_apps_tool_defaults_filtered_queries_to_all_mode() {
                     name: Some("Cod".into()),
                     bundle: Some("com.openai.codex".into()),
                 },
+                flush: false,
+            },
+            ExecContext {
+                target: "macos".into(),
+                session: None,
+                timeout_ms: Some(10_000),
+            },
+        )]
+    );
+}
+
+#[tokio::test]
+async fn list_apps_tool_forwards_flush_flag() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(QueryResult::Apps(Vec::new())));
+
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver.clone())
+        .build()
+        .await
+        .unwrap();
+
+    runtime
+        .tools()
+        .invoke("list-apps", json!({ "target": "macos", "flush": true }))
+        .await
+        .unwrap();
+
+    let calls = driver.query_calls().await;
+    assert_eq!(
+        calls,
+        vec![(
+            QueryRequest::ListApps {
+                mode: AppListMode::All,
+                filter: AppListFilter::default(),
+                flush: true,
             },
             ExecContext {
                 target: "macos".into(),
@@ -654,6 +696,7 @@ async fn read_only_query_tools_support_harmony_query_surface_without_inspect_tre
                 QueryRequest::ListApps {
                     mode: AppListMode::Running,
                     filter: AppListFilter::default(),
+                    flush: false,
                 },
                 ExecContext {
                     target: "harmony-pc".into(),
@@ -740,6 +783,7 @@ async fn list_apps_tool_defaults_filtered_harmony_queries_to_all_mode() {
                     name: Some("note".into()),
                     bundle: None,
                 },
+                flush: false,
             },
             ExecContext {
                 target: "harmony-pc".into(),
@@ -804,6 +848,7 @@ async fn list_apps_tool_defaults_filtered_harmony_bundle_queries_to_all_mode() {
                     name: None,
                     bundle: Some("com.huawei.hmos.notepad".into()),
                 },
+                flush: false,
             },
             ExecContext {
                 target: "harmony-pc".into(),
