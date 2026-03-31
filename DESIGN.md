@@ -997,20 +997,23 @@ base_url = ""
 [targets.macos]
 platform = "macos"
 driver   = "macos.system"
+description = "Built-in local macOS automation target"
 
 [targets.windows-lab]
 platform = "windows"
 driver   = "windows.remote"
+description = "Shared Windows lab machine"
 
 [targets.windows-lab.driver_config]
 endpoint = "wss://lab.example"
 
 [targets.harmony-phone]
 platform = "harmony"
-driver   = "harmony.node"
+driver   = "harmony.hdc"
+description = "Harmony device reachable over HDC TCP"
 
 [targets.harmony-phone.driver_config]
-node     = "phone-01"
+addr     = "192.168.8.43:35319"
 
 [mcp]
 transport      = "stdio"   # stdio | http
@@ -1031,7 +1034,14 @@ max_steps       = 50
 step_timeout_ms = 30_000
 ```
 
-target-specific 参数必须进入 `driver_config`，例如 `endpoint`、`node`；不要再把它们写成 target 表上的顶层字段。
+命名 target 的标准 envelope 固定为：
+
+- `platform`
+- `driver`
+- `description`（可选）
+- `driver_config`
+
+除 `description` 外，target-specific 参数必须进入 `driver_config`，例如 `endpoint`、`addr`、`agent_path`；不要再把它们写成 target 表上的顶层字段。默认 Harmony 示例应保持最小 TCP 配置，只展示 `driver_config.addr = "host:port"`；高级覆盖项只作为补充示例出现。
 
 **配置加载优先级：**
 
@@ -1070,8 +1080,19 @@ operator mcp serve
 - `--target` 选择命名 target，不暴露 local / remote / bridge 等连接细节
 - 所有命令支持 `--json`，输出结构与 MCP 工具结果格式兼容
 - 动作命令默认支持 `--timeout-ms` 覆盖超时
-- `Core / Observe / Query / Action / MCP / A2A` 只作为 help 分组标题，不作为真实一级命令
+- `Core / Observe / Interact / System / Integration / AI` 只作为 help 分组标题，不作为真实一级命令
 - CLI 只做参数解析和格式化输出，不包含业务逻辑
+
+`Core` 分组除 `permissions` / `capabilities` / `snapshot` / `artifact` 外，还应包含命名 target 管理家族：
+
+- `operator target list`
+- `operator target show [name]`
+- `operator target use <name>`
+- `operator target set <name> --set <path=value>...`
+- `operator target unset <name> <path>...`
+- `operator target remove <name>`
+
+这些命令只负责检查和维护 `.operator/config.toml` 中的命名 target 定义；实际自动化命令仍然只通过全局 `--target <name>` 选择执行目标，不暴露 transport 或 driver routing 语法。
 
 ---
 

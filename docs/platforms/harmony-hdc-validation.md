@@ -44,10 +44,16 @@ default_target = "harmony-pc"
 [targets.harmony-pc]
 platform = "harmony"
 driver = "harmony.hdc"
+description = "Harmony PC over HDC TCP"
 
 [targets.harmony-pc.driver_config]
 addr = "192.168.8.43:35319"
 ```
+
+说明：
+
+- 这个示例刻意保持最小 envelope，只展示 `platform`、`driver`、可选 `description` 和 `driver_config.addr`。
+- `agent_path`、日志级别等高级覆盖项不属于默认示例，应只在调试或专门文档中单独说明。
 
 ## 实测命令与结果
 

@@ -59,6 +59,7 @@
 - `capabilities`
 - `snapshot <snapshot-id>`
 - `artifact <artifact-id>`
+- `target <subcommand>` `[planned]`
 
 ### Observe
 
@@ -101,6 +102,13 @@ operator
   capabilities
   snapshot <snapshot-id>
   artifact <artifact-id>
+  target               [planned]
+    list
+    show [name]
+    use <name>
+    set <name> --set <path=value>...
+    unset <name> <path>...
+    remove <name>
 
   capture
     frontmost
@@ -175,6 +183,92 @@ operator
 - `windows.remote`
 
 用户只传 target 名称，实际解析到哪个 platform / driver / driver_config，由 runtime 配置负责。
+
+### `target` 命令家族与 `--target` 的边界
+
+- `operator target ...` 属于 `Core` 分组，用于检查和维护命名 target 配置；这是稳定 shell contract 的一部分，但当前仍处于 `[planned]`。
+- 自动化执行命令的 target 选择方式不变，仍然只通过全局 `--target <target-name>` 指定。
+- `operator target ...` 不引入新的执行 target 语法，也不让 `capture` / `click` / `app` / `window` 等命令接受 `host:port`、`bridge:*`、`local:*` 之类协议形态字符串。
+- target 管理命令的目标对象始终是 `.operator/config.toml` 中的 `[targets.<name>]` 条目，而不是 driver 内部传输层对象。
+
+## 命名 Target 配置契约
+
+`.operator/config.toml` 中每个 `[targets.<name>]` 条目的标准 envelope 固定为：
+
+- `platform`
+- `driver`
+- `description`（可选）
+- `driver_config`
+
+约束：
+
+- 除 `driver_config.*` 外，不允许把 driver-specific 字段写在 target 顶层。
+- 顶层 target 字段不是开放扩展位；后续实现应拒绝未知顶层字段，而不是静默透传。
+- `driver_config` 仍保持对 driver-specific key 的开放性，用于承载 `addr`、`agent_path`、`endpoint` 等差异化配置。
+- `harmony.hdc` 当前默认示例必须保持最小 TCP 形式：
+  - `driver = "harmony.hdc"`
+  - `[targets.<name>.driver_config]`
+  - `addr = "host:port"`
+- Harmony 的高级覆盖项只应作为补充示例出现，不能进入默认 target 示例。
+
+## `target` 子命令契约
+
+### `target list`
+
+- 列出所有已配置命名 target。
+- 至少显示：
+  - target 名称
+  - 是否为当前 default target
+  - `platform`
+  - `driver`
+  - 可选 `description`
+
+### `target show [name]`
+
+- 展示一个命名 target 的完整标准 envelope。
+- 不传 `name` 时，默认展示当前 default target。
+
+### `target use <name>`
+
+- 将 `[runtime].default_target` 切换为指定 target 名称。
+- 只修改默认 target 指针，不改动该 target 的其他字段。
+
+### `target set <name> --set ...`
+
+- 使用通用 path-based mutation，而不是为每个 driver 定制专门 flag。
+- `--set <path=value>` 可重复传入。
+- 允许写入的路径仅限：
+  - `platform`
+  - `driver`
+  - `description`
+  - `driver_config.<key>[.<nested-key>...]`
+
+路径限制：
+
+- 只有 `driver_config` 下面允许继续使用 dotted path。
+- 禁止空 path segment、前导/尾随 `.`、数组索引语法。
+- 禁止 `targets.<name>.*`、`runtime.*` 或其他未知顶层路径。
+
+值语义：
+
+- `value` 按 TOML value 解析，而不是一律当字符串。
+- 带引号值保持字符串。
+- 不带引号的 `true` / `false` / 整数 / 浮点数保留类型。
+- inline array / inline table 只允许出现在 `driver_config.*` 下。
+- 不支持 `null`；删除字段必须使用 `target unset`。
+
+### `target unset <name> <path>...`
+
+- 删除一个或多个 target 字段。
+- 允许删除的路径仅限：
+  - `description`
+  - `driver_config.<key>[.<nested-key>...]`
+- `platform` 和 `driver` 属于必填字段，不能通过 `unset` 移除。
+
+### `target remove <name>`
+
+- 删除整个 `[targets.<name>]` 条目。
+- 若目标仍是当前 default target，后续实现应要求先切换 default target，再允许删除。
 
 ## Observe / Read 契约
 

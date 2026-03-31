@@ -19,6 +19,7 @@ Core
   capabilities  Show supported surfaces and actions for the active target
   snapshot      Read a stored snapshot by ID
   artifact      Read a stored capture artifact by ID
+  target        Inspect and manage named runtime targets [planned]
 
 Observe
   capture       Take a screenshot of a surface
@@ -58,6 +59,7 @@ Examples
   operator capture frontmost
   operator elements window --window-id 42
   operator click --text Save
+  operator target list
   operator mcp serve
 
 Use 'operator <command> --help' for detailed usage.
@@ -144,6 +146,183 @@ Global Runtime Flags
 Examples
   operator artifact capture-1.png
   operator --json artifact capture-1.png
+```
+
+### `operator target`
+
+```
+Usage: operator target <COMMAND>
+
+Inspect and manage named runtime targets
+
+Commands
+  list     List configured named targets
+  show     Show a named target definition
+  use      Set the runtime default target
+  set      Update fields on a named target
+  unset    Remove fields from a named target
+  remove   Delete a named target definition
+
+Notes
+  - This command family is part of the stable Core shell surface, but remains [planned]
+    until the implementation chain under OPE-164..OPE-167 lands.
+  - Automation commands continue to select targets only by name through '--target <TARGET>'.
+    They do not accept transport-, bridge-, or protocol-shaped target syntax.
+
+Examples
+  operator target list
+  operator target show harmony-pc
+  operator target use harmony-pc
+  operator target set harmony-pc --set description='Harmony lab PC'
+  operator target unset harmony-pc description
+  operator target remove harmony-pc
+```
+
+#### `operator target list`
+
+```
+Usage: operator target list [OPTIONS]
+
+List configured named targets
+
+Output
+  Each entry must include:
+    - target name
+    - whether it is the current default target
+    - platform
+    - driver
+    - optional description
+
+Options
+  --json                     Emit machine-readable JSON output
+  -h, --help                 Print help
+
+Examples
+  operator target list
+  operator --json target list
+```
+
+#### `operator target show [NAME]`
+
+```
+Usage: operator target show [OPTIONS] [NAME]
+
+Show a named target definition
+
+Arguments
+  [NAME]   Target name to inspect. When omitted, show the current default target.
+
+Output
+  The target envelope is standardized as:
+    - platform
+    - driver
+    - optional description
+    - driver_config
+
+  No other top-level target keys are part of the editable contract.
+
+Options
+  --json                     Emit machine-readable JSON output
+  -h, --help                 Print help
+
+Examples
+  operator target show
+  operator target show windows-lab
+  operator --json target show harmony-pc
+```
+
+#### `operator target use <NAME>`
+
+```
+Usage: operator target use <NAME>
+
+Set the runtime default target
+
+Arguments
+  <NAME>   Target name to store in [runtime].default_target
+
+Examples
+  operator target use macos
+  operator target use harmony-pc
+```
+
+#### `operator target set <NAME> --set <PATH=VALUE>...`
+
+```
+Usage: operator target set <NAME> --set <PATH=VALUE>...
+
+Update fields on a named target
+
+Arguments
+  <NAME>   Target name to create or update
+
+Options
+  --set <PATH=VALUE>...
+          Apply one or more path-based mutations. This option is repeatable.
+
+Mutation Contract
+  Allowed writable paths:
+    - platform
+    - driver
+    - description
+    - driver_config.<key>[.<nested-key>...]
+
+  Path restrictions:
+    - dotted paths are required only below driver_config
+    - empty segments, leading/trailing dots, and array indexes are invalid
+    - 'targets.<name>.*', 'runtime.*', and any unknown top-level keys are invalid
+
+  Typed values:
+    - VALUE is parsed as a TOML value, not forced to string
+    - quoted values stay strings
+    - bare booleans / integers / floats stay typed
+    - inline arrays and inline tables are allowed only under driver_config.*
+    - null is not a supported value; use 'target unset' to remove a field
+
+Examples
+  operator target set windows-lab --set platform='windows' --set driver='windows.remote'
+  operator target set harmony-pc --set description='Harmony lab PC'
+  operator target set harmony-pc --set driver_config.addr='192.168.8.43:35319'
+```
+
+#### `operator target unset <NAME> <PATH>...`
+
+```
+Usage: operator target unset <NAME> <PATH>...
+
+Remove fields from a named target
+
+Arguments
+  <NAME>       Target name to update
+  <PATH>...    One or more paths to remove
+
+Path Contract
+  Allowed removable paths:
+    - description
+    - driver_config.<key>[.<nested-key>...]
+
+  Required fields such as platform and driver cannot be removed with this command.
+
+Examples
+  operator target unset harmony-pc description
+  operator target unset harmony-pc driver_config.agent_path driver_config.log_level
+```
+
+#### `operator target remove <NAME>`
+
+```
+Usage: operator target remove <NAME>
+
+Delete a named target definition
+
+Arguments
+  <NAME>   Target name to remove from [targets]
+
+Notes
+  Removing the current default target should fail until another default target is selected.
+
+Examples
+  operator target remove windows-lab
 ```
 
 ---
