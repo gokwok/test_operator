@@ -391,22 +391,28 @@ pub(crate) fn inspect_target_command(
     let path = runtime_config_path(operator_home);
     let mut document = RuntimeConfigDocument::load(&path)?;
     let config = document.to_runtime_config()?;
+    let persisted_target_names = document.persisted_target_names();
 
     match command {
         TargetCommand::List { .. } => Ok(serde_json::json!({
             "default_target": config.default_target.to_string(),
-            "targets": config.targets.iter().map(|(name, target)| serde_json::json!({
-                "name": name,
-                "is_default": config.default_target == TargetId(name.clone()),
-                "platform": target.platform,
-                "driver": target.driver,
-                "description": target.description,
-            })).collect::<Vec<_>>(),
+            "targets": persisted_target_names.iter().filter_map(|name| {
+                config.targets.get(name).map(|target| serde_json::json!({
+                    "name": name,
+                    "is_default": config.default_target == TargetId(name.clone()),
+                    "platform": target.platform,
+                    "driver": target.driver,
+                    "description": target.description,
+                }))
+            }).collect::<Vec<_>>(),
         })),
         TargetCommand::Show { name, .. } => {
             let selected = name
                 .clone()
                 .unwrap_or_else(|| config.default_target.to_string());
+            if !document.has_persisted_named_target(&selected) {
+                return Err(OperatorError::TargetNotFound(selected));
+            }
             let target = config
                 .targets
                 .get(&selected)
@@ -423,7 +429,7 @@ pub(crate) fn inspect_target_command(
             }))
         }
         TargetCommand::Use { name, .. } => {
-            if !config.targets.contains_key(name) {
+            if !document.has_persisted_named_target(name) {
                 return Err(OperatorError::TargetNotFound(name.clone()));
             }
             document.set_default_target(&TargetId(name.clone()));
@@ -456,7 +462,7 @@ pub(crate) fn inspect_target_command(
             }))
         }
         TargetCommand::Unset { name, paths, .. } => {
-            if !config.targets.contains_key(name) {
+            if !document.has_persisted_named_target(name) {
                 return Err(OperatorError::TargetNotFound(name.clone()));
             }
             for path in paths {
@@ -481,7 +487,7 @@ pub(crate) fn inspect_target_command(
             }))
         }
         TargetCommand::Remove { name, .. } => {
-            if !config.targets.contains_key(name) {
+            if !document.has_persisted_named_target(name) {
                 return Err(OperatorError::TargetNotFound(name.clone()));
             }
             if config.default_target == TargetId(name.clone()) {

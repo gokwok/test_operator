@@ -274,10 +274,16 @@ impl RuntimeConfigDocument {
                     *current = Item::Table(Table::new());
                 }
 
-                for segment in &segments[..segments.len() - 1] {
+                for (index, segment) in segments[..segments.len() - 1].iter().enumerate() {
                     let table = current.as_table_mut().expect("driver_config table");
-                    if !table.contains_key(segment) || !table[segment].is_table() {
+                    if !table.contains_key(segment) {
                         table[segment] = Item::Table(Table::new());
+                    } else if !table[segment].is_table() {
+                        return Err(OperatorError::Platform(format!(
+                            "target path `{}` conflicts with existing non-table value at `driver_config.{}`",
+                            render_target_path(path),
+                            segments[..=index].join(".")
+                        )));
                     }
                     current = &mut table[segment];
                 }
@@ -333,6 +339,32 @@ impl RuntimeConfigDocument {
 
     pub fn render(&self) -> String {
         self.document.to_string()
+    }
+
+    pub fn persisted_target_names(&self) -> Vec<String> {
+        let mut names = self
+            .document
+            .as_table()
+            .get("targets")
+            .and_then(Item::as_table)
+            .map(|targets| {
+                targets
+                    .iter()
+                    .filter(|(_, item)| item.is_table())
+                    .map(|(name, _)| name.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    pub fn has_persisted_named_target(&self, name: &str) -> bool {
+        self.document
+            .as_table()
+            .get("targets")
+            .and_then(Item::as_table)
+            .is_some_and(|targets| targets.get(name).is_some_and(Item::is_table))
     }
 
     fn named_target_item_mut(&mut self, name: &str) -> &mut Item {
@@ -828,5 +860,49 @@ step_timeout_ms = 30000
         assert!(rendered.contains("base_url = \"https://api.openai.com/v1\""));
         assert!(rendered.contains("model_name = \"gpt-5.4\""));
         assert!(!rendered.contains("[agent.model.provider.doubao]"));
+    }
+
+    #[test]
+    fn runtime_config_document_lists_only_persisted_targets() {
+        let temp = tempdir().expect("tempdir");
+        let path = runtime_config_path(temp.path());
+        let document = RuntimeConfigDocument::load(&path).expect("load missing doc");
+
+        assert!(document.persisted_target_names().is_empty());
+        assert!(!document.has_persisted_named_target("macos"));
+    }
+
+    #[test]
+    fn runtime_config_document_rejects_driver_config_path_collisions() {
+        let temp = tempdir().expect("tempdir");
+        let path = runtime_config_path(temp.path());
+        fs::write(
+            &path,
+            r#"
+[runtime]
+default_target = "harmony-pc"
+
+[targets.harmony-pc]
+platform = "harmony"
+driver = "harmony.hdc"
+
+[targets.harmony-pc.driver_config]
+discovery = true
+"#,
+        )
+        .expect("write config");
+
+        let mut document = RuntimeConfigDocument::load(&path).expect("load doc");
+        let error = document
+            .set_target_value(
+                "harmony-pc",
+                &TargetConfigFieldPath::DriverConfig(vec!["discovery".into(), "enabled".into()]),
+                TomlValue::Boolean(true),
+            )
+            .expect_err("path collision should fail");
+
+        assert!(error
+            .to_string()
+            .contains("conflicts with existing non-table value at `driver_config.discovery`"));
     }
 }
