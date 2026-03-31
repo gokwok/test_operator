@@ -355,25 +355,25 @@ async fn read_only_query_tools_forward_runtime_results() {
 
     let apps = runtime
         .tools()
-        .invoke("list-apps", json!({ "target": "local:macos" }))
+        .invoke("list-apps", json!({ "target": "macos" }))
         .await
         .unwrap();
     let windows = runtime
         .tools()
         .invoke(
             "list-windows",
-            json!({ "target": "local:macos", "app": "Calculator" }),
+            json!({ "target": "macos", "app": "Calculator" }),
         )
         .await
         .unwrap();
     let permissions = runtime
         .tools()
-        .invoke("permissions-status", json!({ "target": "local:macos" }))
+        .invoke("permissions-status", json!({ "target": "macos" }))
         .await
         .unwrap();
     let capabilities = runtime
         .tools()
-        .invoke("capabilities", json!({ "target": "local:macos" }))
+        .invoke("capabilities", json!({ "target": "macos" }))
         .await
         .unwrap();
 
@@ -406,7 +406,7 @@ async fn read_only_query_tools_forward_runtime_results() {
                     filter: AppListFilter::default(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -416,7 +416,7 @@ async fn read_only_query_tools_forward_runtime_results() {
                     app: Some("Calculator".into()),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -424,7 +424,7 @@ async fn read_only_query_tools_forward_runtime_results() {
             (
                 QueryRequest::PermissionsStatus,
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -463,10 +463,7 @@ async fn list_apps_tool_forwards_explicit_all_mode() {
 
     let apps = runtime
         .tools()
-        .invoke(
-            "list-apps",
-            json!({ "target": "local:macos", "mode": "all" }),
-        )
+        .invoke("list-apps", json!({ "target": "macos", "mode": "all" }))
         .await
         .unwrap();
 
@@ -484,7 +481,7 @@ async fn list_apps_tool_forwards_explicit_all_mode() {
                 filter: AppListFilter::default(),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -517,7 +514,7 @@ async fn list_apps_tool_defaults_filtered_queries_to_all_mode() {
         .invoke(
             "list-apps",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "name": "Cod",
                 "bundle": "com.openai.codex"
             }),
@@ -539,7 +536,7 @@ async fn list_apps_tool_defaults_filtered_queries_to_all_mode() {
                 },
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1268,7 +1265,7 @@ async fn get_focus_query_tool_forwards_runtime_results() {
 
     let focus = runtime
         .tools()
-        .invoke("get-focus", json!({ "target": "local:macos" }))
+        .invoke("get-focus", json!({ "target": "macos" }))
         .await
         .unwrap();
 
@@ -1282,7 +1279,7 @@ async fn get_focus_query_tool_forwards_runtime_results() {
         vec![(
             QueryRequest::GetFocus,
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1314,7 +1311,7 @@ async fn action_tools_are_blocked_when_side_effects_are_disabled() {
         .invoke(
             "click",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "mode": "Left"
             }),
         )
@@ -1393,7 +1390,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "click",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "mode": "Double",
                 "target_selector": {
                     "WindowTitle": "Submit Sheet"
@@ -1411,7 +1408,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "type",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "text": "hello world",
                 "clear_before": true,
                 "delay_ms": 25,
@@ -1432,7 +1429,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "scroll",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "locator": {
                     "Text": "Results"
                 },
@@ -1447,7 +1444,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "move",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "locator": {
                     "Coords": {
                         "x": 320.0,
@@ -1463,7 +1460,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "drag",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "from": {
                     "Coords": {
                         "x": 10.0,
@@ -1485,7 +1482,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "swipe",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "from": {
                     "Coords": {
                         "x": 15.0,
@@ -1509,7 +1506,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "hotkey",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "keys": ["command", "shift", "p"]
             }),
         )
@@ -1520,7 +1517,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "press",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "key": "down",
                 "count": 3
             }),
@@ -1532,7 +1529,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "launch-app",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "bundle_id_or_name": "Calculator"
             }),
         )
@@ -1543,7 +1540,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "close-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "WindowTitle": "Draft"
                 },
@@ -1557,7 +1554,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "minimize-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "App": "TextEdit"
                 },
@@ -1571,7 +1568,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "maximize-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "Pid": 101
                 },
@@ -1585,7 +1582,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "move-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "WindowId": 42
                 },
@@ -1601,7 +1598,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "resize-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "App": "TextEdit"
                 },
@@ -1617,7 +1614,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "set-window-bounds",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "Pid": 101
                 },
@@ -1635,7 +1632,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "switch-app",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "App": "TextEdit"
                 }
@@ -1648,7 +1645,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "quit-app",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "Pid": 101
                 }
@@ -1661,7 +1658,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "relaunch-app",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "WindowTitle": "Draft"
                 }
@@ -1674,7 +1671,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "hide-app",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "WindowIndex": 2
                 }
@@ -1687,7 +1684,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "unhide-app",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "WindowId": 77
                 }
@@ -1700,7 +1697,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
         .invoke(
             "focus-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "window_id": 42
             }),
         )
@@ -1753,7 +1750,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1772,7 +1769,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1789,7 +1786,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1803,7 +1800,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1821,7 +1818,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1840,7 +1837,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1856,7 +1853,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1873,7 +1870,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1889,7 +1886,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1903,7 +1900,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1917,7 +1914,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1931,7 +1928,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1945,7 +1942,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1962,7 +1959,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1983,7 +1980,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -1997,7 +1994,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -2011,7 +2008,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -2025,7 +2022,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -2039,7 +2036,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -2053,7 +2050,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -2067,7 +2064,7 @@ async fn action_tools_forward_typed_requests_to_runtime_act() {
                     verifications: Vec::new(),
                 },
                 ExecContext {
-                    target: "local:macos".into(),
+                    target: "macos".into(),
                     session: None,
                     timeout_ms: Some(10_000),
                 },
@@ -2126,7 +2123,7 @@ async fn action_tools_serialize_richer_action_outcomes() {
         .invoke(
             "move",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "locator": {
                     "Coords": {
                         "x": 320.0,
@@ -2246,7 +2243,7 @@ async fn action_tools_run_post_action_geometry_verification() {
         .invoke(
             "move-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "target_selector": {
                     "WindowId": 42
                 },
@@ -2278,7 +2275,7 @@ async fn action_tools_run_post_action_geometry_verification() {
                 verifications: vec![ActionVerification::Geometry],
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -2291,7 +2288,7 @@ async fn action_tools_run_post_action_geometry_verification() {
                 app: Some("TextEdit".into()),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -2353,7 +2350,7 @@ async fn action_tools_fail_when_post_action_focus_verification_misses_target_win
         .invoke(
             "focus-window",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "window_id": 42,
                 "verifications": ["Focus"]
             }),
@@ -2381,7 +2378,7 @@ async fn action_tools_fail_when_post_action_focus_verification_misses_target_win
                 verifications: vec![ActionVerification::Focus],
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -2394,7 +2391,7 @@ async fn action_tools_fail_when_post_action_focus_verification_misses_target_win
                 app: Some("TextEdit".into()),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -2415,7 +2412,7 @@ async fn runtime_act_rejects_unsupported_post_action_verifications() {
         .await
         .unwrap();
     let ctx = ExecContext {
-        target: "local:macos".into(),
+        target: "macos".into(),
         session: None,
         timeout_ms: Some(10_000),
     };
@@ -2753,7 +2750,7 @@ async fn drag_tool_forwards_motion_options_to_runtime_act() {
         .invoke(
             "drag",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "from": {
                     "Coords": {
                         "x": 10.0,
@@ -2792,7 +2789,7 @@ async fn drag_tool_forwards_motion_options_to_runtime_act() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -2820,7 +2817,7 @@ async fn swipe_tool_forwards_motion_options_to_runtime_act() {
         .invoke(
             "swipe",
             json!({
-                "target": "local:macos",
+                "target": "macos",
                 "from": {
                     "Coords": {
                         "x": 12.0,
@@ -2855,7 +2852,7 @@ async fn swipe_tool_forwards_motion_options_to_runtime_act() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },

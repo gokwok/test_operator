@@ -60,7 +60,7 @@ fn snapshot_and_exec_context_keep_typed_state() {
     let element_id = operator_core::ElementId("el-1".into());
     let snapshot = Snapshot {
         id: "snap-1".into(),
-        target: "local:macos".into(),
+        target: "macos".into(),
         surface: Surface {
             kind: SurfaceKind::Frontmost,
         },
@@ -92,7 +92,7 @@ fn snapshot_and_exec_context_keep_typed_state() {
     };
     let observe = ObserveResult { snapshot };
     let ctx = ExecContext {
-        target: "local:macos".into(),
+        target: "macos".into(),
         session: Some("sess-1".into()),
         timeout_ms: Some(1_000),
     };

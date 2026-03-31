@@ -30,7 +30,7 @@ async fn call_wraps_runtime_success_with_structured_output_and_exec_context() {
     let result = executor
         .call(
             &SessionId("sess-1".into()),
-            &TargetId("local:macos".into()),
+            &TargetId("macos".into()),
             "list-apps",
             json!({}),
             Some(2_500),
@@ -57,7 +57,7 @@ async fn call_wraps_runtime_success_with_structured_output_and_exec_context() {
 
     let calls = driver.query_calls().await;
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].1.target, TargetId("local:macos".into()));
+    assert_eq!(calls[0].1.target, TargetId("macos".into()));
     assert_eq!(calls[0].1.session, Some(SessionId("sess-1".into())));
     assert_eq!(calls[0].1.timeout_ms, Some(2_500));
 }
@@ -82,7 +82,7 @@ async fn call_wraps_runtime_failures_as_structured_errors() {
     let result = executor
         .call(
             &SessionId("sess-2".into()),
-            &TargetId("local:macos".into()),
+            &TargetId("macos".into()),
             "click",
             json!({}),
             None,

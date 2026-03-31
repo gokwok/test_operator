@@ -2176,7 +2176,10 @@ const WINDOW_SET_BOUNDS_HELP: LeafHelp = LeafHelp {
 fn styled_global_runtime_flags() -> String {
     let flags = [
         ("--json", "Emit machine-readable JSON output"),
-        ("--target <TARGET>", "Select the named runtime target"),
+        (
+            "--target <TARGET>",
+            "Select the named runtime target (see `operator target list`)",
+        ),
         (
             "--timeout-ms <TIMEOUT_MS>",
             "Override the runtime timeout for this command",
@@ -2990,7 +2993,11 @@ impl Command {
 
 #[derive(Debug, Clone, Default, Args)]
 struct CommonArgs {
-    #[arg(long, global = true, help = "Select the named runtime target")]
+    #[arg(
+        long,
+        global = true,
+        help = "Select the named runtime target (see `operator target list`)"
+    )]
     target: Option<String>,
     #[arg(
         long = "json",

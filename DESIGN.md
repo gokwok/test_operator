@@ -1093,6 +1093,7 @@ operator mcp serve
 - `operator target remove <name>`
 
 这些命令只负责检查和维护 `.operator/config.toml` 中的命名 target 定义；实际自动化命令仍然只通过全局 `--target <name>` 选择执行目标，不暴露 transport 或 driver routing 语法。
+legacy 协议形态字符串（如 `local:macos`、`device:harmony:...`）不再属于 northbound contract，也不再由 runtime resolver 兜底解析。
 
 ---
 

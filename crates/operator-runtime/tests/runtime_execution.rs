@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -6,13 +7,14 @@ use std::{
 use async_trait::async_trait;
 use operator_core::{
     Action, ActionFocusPolicy, ActionOutcome, ActionRequest, AppInfo, Capability, CapabilitySet,
-    ClickMode, DragMotion, ElementId, ElementSource, ExecContext, FocusInfo, HealthStatus,
-    ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionCheck,
-    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
-    Surface, SurfaceKind, UiElement,
+    ClickMode, DragMotion, DriverConfig, ElementId, ElementSource, ExecContext, FocusInfo,
+    HealthStatus, ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError,
+    PermissionCheck, PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest,
+    QueryResult, Rect, Surface, SurfaceKind, TargetId, UiElement,
 };
 use operator_runtime::{
-    AuditEvent, AuditEventKind, EventSink, RuntimeBuilder, RuntimeConfig, SnapshotStore,
+    AuditEvent, AuditEventKind, EventSink, NamedTargetConfig, RuntimeBuilder, RuntimeConfig,
+    SnapshotStore,
 };
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 
@@ -66,7 +68,7 @@ async fn runtime_rejects_missing_capabilities_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: Some("sess-1".into()),
                 timeout_ms: None,
             },
@@ -126,7 +128,7 @@ async fn runtime_persists_snapshot_after_observe() {
                 include_elements: true,
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: Some("sess-2".into()),
                 timeout_ms: Some(250),
             },
@@ -185,7 +187,7 @@ async fn runtime_allows_screenshot_only_observe_on_capture_only_driver() {
                 include_elements: false,
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -229,7 +231,7 @@ async fn runtime_allows_tree_only_observe_on_inspect_tree_only_driver() {
                 include_elements: true,
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -267,7 +269,7 @@ async fn runtime_rejects_mixed_observe_when_driver_lacks_tree_inspection() {
                 include_elements: true,
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -285,19 +287,31 @@ async fn runtime_rejects_mixed_observe_when_driver_lacks_tree_inspection() {
 
 #[tokio::test]
 async fn runtime_times_out_slow_driver_calls() {
-    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
-        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
-        .register_driver(Arc::new(SlowQueryDriver))
-        .build()
-        .await
-        .unwrap();
+    let runtime = RuntimeBuilder::new(RuntimeConfig {
+        default_target: TargetId("slow".into()),
+        targets: BTreeMap::from([(
+            "slow".into(),
+            NamedTargetConfig {
+                platform: "slow".into(),
+                driver: "slow.system".into(),
+                description: None,
+                driver_config: DriverConfig::new(),
+            },
+        )]),
+        ..RuntimeConfig::default()
+    })
+    .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+    .register_driver(Arc::new(SlowQueryDriver))
+    .build()
+    .await
+    .unwrap();
 
     let error = runtime
         .core()
         .query(
             QueryRequest::ListWindows { app: None },
             ExecContext {
-                target: "local:slow".into(),
+                target: "slow".into(),
                 session: None,
                 timeout_ms: Some(5),
             },
@@ -344,7 +358,7 @@ async fn runtime_rejects_drag_between_different_snapshots() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(100),
             },
@@ -396,7 +410,7 @@ async fn runtime_rejects_swipe_between_different_snapshots() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(100),
             },
@@ -482,7 +496,7 @@ async fn runtime_resolves_drag_snapshot_element_locators_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -577,7 +591,7 @@ async fn runtime_resolves_swipe_snapshot_element_locators_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -643,7 +657,7 @@ async fn runtime_resolves_snapshot_element_locator_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -707,7 +721,7 @@ async fn runtime_resolves_scroll_snapshot_element_locator_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -771,7 +785,7 @@ async fn runtime_resolves_snapshot_coords_locator_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -838,7 +852,7 @@ async fn runtime_resolves_snapshot_normalized_coords_locator_before_driver_call(
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -908,7 +922,7 @@ async fn runtime_resolves_snapshot_pixel_coords_locator_before_driver_call() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -964,7 +978,7 @@ async fn runtime_rejects_snapshot_coords_without_capture_bounds() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },
@@ -1044,7 +1058,7 @@ async fn runtime_focus_verification_accepts_matching_bundle_id_when_app_name_dif
                 verifications: vec![operator_core::ActionVerification::Focus],
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(250),
             },

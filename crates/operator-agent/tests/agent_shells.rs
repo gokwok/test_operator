@@ -17,12 +17,12 @@ fn agent_config_defaults_match_phase1_design() {
 fn request_and_result_shells_round_trip_through_json() {
     let request = AgentRunRequest {
         task: "Open Safari and focus the frontmost window".into(),
-        target: TargetId("local:macos".into()),
+        target: TargetId("macos".into()),
         model: Some("gpt-5.4".into()),
     };
     let result = AgentRunResult {
         session_id: SessionId("sess-1".into()),
-        target: TargetId("local:macos".into()),
+        target: TargetId("macos".into()),
         model: "gpt-5.4".into(),
         summary: "Opened Safari and focused the frontmost window.".into(),
     };

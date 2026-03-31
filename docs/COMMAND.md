@@ -59,7 +59,7 @@
 - `capabilities`
 - `snapshot <snapshot-id>`
 - `artifact <artifact-id>`
-- `target <subcommand>` `[planned]`
+- `target <subcommand>`
 
 ### Observe
 
@@ -102,7 +102,7 @@ operator
   capabilities
   snapshot <snapshot-id>
   artifact <artifact-id>
-  target               [planned]
+  target
     list
     show [name]
     use <name>
@@ -186,7 +186,7 @@ operator
 
 ### `target` 命令家族与 `--target` 的边界
 
-- `operator target ...` 属于 `Core` 分组，用于检查和维护命名 target 配置；这是稳定 shell contract 的一部分，但当前仍处于 `[planned]`。
+- `operator target ...` 属于 `Core` 分组，用于检查和维护命名 target 配置；这是稳定 shell contract 的一部分。
 - 自动化执行命令的 target 选择方式不变，仍然只通过全局 `--target <target-name>` 指定。
 - `operator target ...` 不引入新的执行 target 语法，也不让 `capture` / `click` / `app` / `window` 等命令接受 `host:port`、`bridge:*`、`local:*` 之类协议形态字符串。
 - target 管理命令的目标对象始终是 `.operator/config.toml` 中的 `[targets.<name>]` 条目，而不是 driver 内部传输层对象。

@@ -60,7 +60,7 @@ async fn observe_frontmost_with_system_driver() {
         Err(error) => panic!("observe failed: {error}"),
     };
 
-    assert_eq!(observed.snapshot.target, "local:macos".into());
+    assert_eq!(observed.snapshot.target, "macos".into());
     assert_eq!(
         observed.snapshot.surface,
         Surface {
@@ -1523,7 +1523,7 @@ async fn move_with_window_target_selector_with_system_driver() {
 
 fn exec_context() -> ExecContext {
     ExecContext {
-        target: "local:macos".into(),
+        target: "macos".into(),
         session: None,
         timeout_ms: Some(5_000),
     }

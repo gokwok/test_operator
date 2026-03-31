@@ -107,7 +107,7 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
     let result = runner
         .run(AgentRunRequest {
             task: "Observe the frontmost UI.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
@@ -228,7 +228,7 @@ async fn runner_replans_when_finish_gate_rejects_false_finish() {
     let result = runner
         .run(AgentRunRequest {
             task: "Click Save and confirm the UI after the click.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
@@ -289,7 +289,7 @@ async fn runner_avoids_structured_output_for_doubao_planner_and_finish_gate() {
     let result = runner
         .run(AgentRunRequest {
             task: "Finish from wrapped JSON without structured output after verification.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("doubao-seed".into()),
         })
         .await
@@ -343,7 +343,7 @@ async fn runner_stops_on_repeated_tool_failures() {
     let error = runner
         .run(AgentRunRequest {
             task: "Click Save.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
@@ -419,7 +419,7 @@ async fn runner_retries_invalid_planner_output_before_continuing() {
     let result = runner
         .run(AgentRunRequest {
             task: "Retry after invalid JSON.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await

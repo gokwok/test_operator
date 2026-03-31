@@ -42,7 +42,7 @@ fn observation_cache_evicts_oldest_visual_when_window_exceeds_two_entries() {
 fn loop_state_exposes_current_and_previous_visual_from_observation_cache() {
     let mut state = LoopState::new(
         SessionId("sess-loop".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Inspect the current screen",
     );
 

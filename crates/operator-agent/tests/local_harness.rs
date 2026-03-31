@@ -222,13 +222,13 @@ fn local_harness_report_surfaces_visual_references_and_timing_summaries() {
     let report = HarnessReport::new(
         AgentRunRequest {
             task: "Click Save and verify the UI.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         },
         PathBuf::from("/tmp/operator-agent-harness"),
         Some(AgentRunResult {
             session_id: SessionId("session-42".into()),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: "gpt-5.4".into(),
             summary: "Verified Save completed.".into(),
         }),

@@ -108,7 +108,7 @@ async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() 
     let error = runner
         .run(AgentRunRequest {
             task: "Inspect the first planner context and stop.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
@@ -215,7 +215,7 @@ async fn auto_observe_refreshes_after_successful_side_effect_tools() {
     let error = runner
         .run(AgentRunRequest {
             task: "Click Save and stop after the automatic refresh.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
@@ -309,7 +309,7 @@ async fn planner_request_loads_previous_and_current_screenshots_as_image_blocks(
     let error = runner
         .run(AgentRunRequest {
             task: "Click Save and inspect the refreshed screenshots.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await

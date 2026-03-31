@@ -79,7 +79,7 @@ For each run:
 ```bash
 cargo run -p operator-agent --example local_run -- \
   --model <model-name> \
-  --target local:macos \
+  --target macos \
   --state-root <state-root> \
   --task "<task text>"
 ```

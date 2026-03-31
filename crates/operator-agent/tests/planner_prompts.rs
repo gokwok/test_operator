@@ -36,7 +36,7 @@ fn assistant_message(text: &str, timestamp_ms: u64) -> Message {
 fn planner_context() -> PlannerContext {
     PlannerContext {
         target: TargetSummary {
-            id: TargetId("local:macos".into()),
+            id: TargetId("macos".into()),
             platform: "macos".into(),
             capabilities: vec![
                 "app_lifecycle".into(),

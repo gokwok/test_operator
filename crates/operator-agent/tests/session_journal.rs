@@ -113,7 +113,7 @@ async fn session_journal_flushes_buffered_events_on_fail_fast_exit() {
     let error = runner
         .run(AgentRunRequest {
             task: "Prime the planner context and fail fast.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await

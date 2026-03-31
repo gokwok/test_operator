@@ -159,7 +159,7 @@ async fn validates_against_runtime_generated_tool_schema() {
         .expect("runtime should build");
     let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
     let catalog = executor
-        .catalog(&TargetId("local:macos".into()))
+        .catalog(&TargetId("macos".into()))
         .expect("catalog should resolve");
     let validator = DecisionValidator::new(&catalog);
     let decision = AgentDecision::CallTool {

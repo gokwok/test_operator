@@ -3,7 +3,7 @@
 This document defines the target command structure, grouping, and `--help` text for the
 `operator` CLI. It supersedes the current implementation where the two diverge.
 
-Commands marked **[planned]** are not yet implemented.
+Commands still marked **[planned]** are not yet implemented.
 
 ---
 
@@ -19,7 +19,7 @@ Core
   capabilities  Show supported surfaces and actions for the active target
   snapshot      Read a stored snapshot by ID
   artifact      Read a stored capture artifact by ID
-  target        Inspect and manage named runtime targets [planned]
+  target        Inspect and manage named runtime targets
 
 Observe
   capture       Take a screenshot of a surface
@@ -51,7 +51,7 @@ AI
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -78,7 +78,7 @@ Check automation permissions and runtime readiness
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -96,7 +96,7 @@ Show supported surfaces, queries, and actions for the active target
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -117,7 +117,7 @@ Arguments
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -139,7 +139,7 @@ Arguments
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -164,8 +164,7 @@ Commands
   remove   Delete a named target definition
 
 Notes
-  - This command family is part of the stable Core shell surface, but remains [planned]
-    until the implementation chain under OPE-164..OPE-167 lands.
+  - This command family is part of the stable Core shell surface.
   - Automation commands continue to select targets only by name through '--target <TARGET>'.
     They do not accept transport-, bridge-, or protocol-shaped target syntax.
 
@@ -234,22 +233,28 @@ Examples
 #### `operator target use <NAME>`
 
 ```
-Usage: operator target use <NAME>
+Usage: operator target use [OPTIONS] <NAME>
 
 Set the runtime default target
 
 Arguments
   <NAME>   Target name to store in [runtime].default_target
 
+Options
+  --json   Emit machine-readable JSON output
+  -h, --help
+           Print help
+
 Examples
   operator target use macos
   operator target use harmony-pc
+  operator --json target use windows-lab
 ```
 
 #### `operator target set <NAME> --set <PATH=VALUE>...`
 
 ```
-Usage: operator target set <NAME> --set <PATH=VALUE>...
+Usage: operator target set [OPTIONS] <NAME> --set <PATH=VALUE>...
 
 Update fields on a named target
 
@@ -257,8 +262,12 @@ Arguments
   <NAME>   Target name to create or update
 
 Options
+  --json
+          Emit machine-readable JSON output
   --set <PATH=VALUE>...
           Apply one or more path-based mutations. This option is repeatable.
+  -h, --help
+          Print help
 
 Mutation Contract
   Allowed writable paths:
@@ -288,7 +297,7 @@ Examples
 #### `operator target unset <NAME> <PATH>...`
 
 ```
-Usage: operator target unset <NAME> <PATH>...
+Usage: operator target unset [OPTIONS] <NAME> <PATH>...
 
 Remove fields from a named target
 
@@ -303,6 +312,10 @@ Path Contract
 
   Required fields such as platform and driver cannot be removed with this command.
 
+Options
+  --json             Emit machine-readable JSON output
+  -h, --help         Print help
+
 Examples
   operator target unset harmony-pc description
   operator target unset harmony-pc driver_config.agent_path driver_config.log_level
@@ -311,7 +324,7 @@ Examples
 #### `operator target remove <NAME>`
 
 ```
-Usage: operator target remove <NAME>
+Usage: operator target remove [OPTIONS] <NAME>
 
 Delete a named target definition
 
@@ -321,8 +334,13 @@ Arguments
 Notes
   Removing the current default target should fail until another default target is selected.
 
+Options
+  --json             Emit machine-readable JSON output
+  -h, --help         Print help
+
 Examples
   operator target remove windows-lab
+  operator --json target remove staging-lab
 ```
 
 ---
@@ -344,7 +362,7 @@ Surfaces
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -366,7 +384,7 @@ Take a screenshot of the frontmost app surface
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -387,7 +405,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -411,7 +429,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -432,7 +450,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -459,7 +477,7 @@ Surfaces
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -480,7 +498,7 @@ Query the accessibility element tree for the frontmost app surface
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -501,7 +519,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -525,7 +543,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -548,7 +566,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -571,7 +589,7 @@ Show the currently focused app, window, and element
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -641,7 +659,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -687,7 +705,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -724,7 +742,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -757,7 +775,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -794,7 +812,7 @@ Target (optional, defaults to frontmost)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -838,7 +856,7 @@ Target (optional, defaults to frontmost)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -882,7 +900,7 @@ Target (optional, defaults to frontmost)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -914,7 +932,7 @@ Target (optional, defaults to frontmost)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -943,7 +961,7 @@ Target (optional, defaults to frontmost)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -974,7 +992,7 @@ Commands
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1004,7 +1022,7 @@ Filters (optional)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1044,7 +1062,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1065,7 +1083,7 @@ Arguments
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1092,7 +1110,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1116,7 +1134,7 @@ Target (pick one, required)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1139,7 +1157,7 @@ Target (pick one, required)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1162,7 +1180,7 @@ Target (pick one, required)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1191,7 +1209,7 @@ Commands
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1215,7 +1233,7 @@ Target (required)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1243,7 +1261,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1269,7 +1287,7 @@ Target (pick one, required)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1298,7 +1316,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1324,7 +1342,7 @@ Target (pick one, required)
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1357,7 +1375,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1390,7 +1408,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1425,7 +1443,7 @@ Verification
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1449,7 +1467,7 @@ Commands
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1473,7 +1491,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1499,7 +1517,7 @@ Commands
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1518,7 +1536,7 @@ Desktop or a custom integration.
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 
@@ -1549,7 +1567,7 @@ Options
 
 Global Runtime Flags
   --json                     Emit machine-readable JSON output
-  --target <TARGET>          Select the named runtime target
+  --target <TARGET>          Select the named runtime target (see `operator target list`)
   --timeout-ms <TIMEOUT_MS>  Override the runtime timeout for this command
   -h, --help                 Print help
 

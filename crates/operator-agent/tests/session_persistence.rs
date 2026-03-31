@@ -65,7 +65,7 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
     let result = runner
         .run(AgentRunRequest {
             task: "Gather context and stop.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await
@@ -153,7 +153,7 @@ async fn file_session_store_persists_terminal_error_events_without_agent_interna
     let error = runner
         .run(AgentRunRequest {
             task: "Click Save.".into(),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
         })
         .await

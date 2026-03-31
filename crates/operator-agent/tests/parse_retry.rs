@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 fn sample_state() -> AgentSessionState {
     let mut state = AgentSessionState::new(
         SessionId("sess-parse".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Inspect the UI and click Save",
     );
     state.start_turn();

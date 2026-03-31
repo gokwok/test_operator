@@ -53,7 +53,7 @@ fn resolved_model(
 fn verified_read_only_state() -> AgentSessionState {
     let mut state = AgentSessionState::new(
         SessionId("sess-finish-gate".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Open Finder and confirm the window appears",
     );
     state.start_turn();
@@ -270,7 +270,7 @@ async fn finish_gate_rejects_finish_without_a_usable_observe_result() {
     let finish_gate = FinishGate::new();
     let state = AgentSessionState::new(
         SessionId("sess-finish-gate-missing".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Confirm the desktop state",
     );
     let (model, provider) = resolved_model(

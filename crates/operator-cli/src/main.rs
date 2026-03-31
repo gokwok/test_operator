@@ -156,7 +156,10 @@ async fn main_entry() -> i32 {
                     0
                 }
                 Err(error) => {
-                    eprintln!("{}", output::render_error(json_output, &error.to_string()));
+                    eprintln!(
+                        "{}",
+                        output::render_error(json_output, &format_operator_error(&error))
+                    );
                     1
                 }
             }
@@ -169,7 +172,10 @@ async fn main_entry() -> i32 {
                     0
                 }
                 Err(error) => {
-                    eprintln!("{}", output::render_error(json_output, &error.to_string()));
+                    eprintln!(
+                        "{}",
+                        output::render_error(json_output, &format_operator_error(&error))
+                    );
                     1
                 }
             }
@@ -408,6 +414,15 @@ fn validate_and_save_target_document(
     Ok(config)
 }
 
+fn format_operator_error(error: &OperatorError) -> String {
+    match error {
+        OperatorError::TargetNotFound(target) => format!(
+            "target not found: {target}. Use 'operator target list' to inspect configured names, 'operator target show <name>' to inspect one target, or 'operator target use <name>' to change the default target."
+        ),
+        _ => error.to_string(),
+    }
+}
+
 #[cfg(test)]
 struct NoopAgentExecutor;
 
@@ -477,7 +492,7 @@ impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Argument(message) => f.write_str(message),
-            Self::Operator(error) => write!(f, "{error}"),
+            Self::Operator(error) => f.write_str(&format_operator_error(error)),
             Self::Agent(message) => f.write_str(message),
         }
     }

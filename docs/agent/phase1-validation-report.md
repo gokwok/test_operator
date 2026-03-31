@@ -42,7 +42,7 @@ Status: Complete
 OPENAI_BASE_URL=http://localhost:4000/v1 OPENAI_API_KEY=<redacted> \
 cargo run -p operator-agent --example local_run -- \
   --model gpt-5.4 \
-  --target local:macos \
+  --target macos \
   --state-root <state-root> \
   --task "<task text>"
 ```
@@ -125,7 +125,7 @@ ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3 \
 ARK_API_KEY=<redacted> \
 cargo run -p operator-agent --example local_run -- \
   --model doubao-seed \
-  --target local:macos \
+  --target macos \
   --task "<task text>"
 ```
 

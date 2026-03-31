@@ -271,7 +271,7 @@ fn permissions_command_uses_root_global_runtime_flags() {
         "operator",
         "--json",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "permissions",
@@ -285,7 +285,7 @@ fn permissions_command_uses_root_global_runtime_flags() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250
         })
     );
@@ -297,7 +297,7 @@ fn show_command_maps_common_flags_to_internal_tool() {
         "operator",
         "show",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
     ])
@@ -308,7 +308,7 @@ fn show_command_maps_common_flags_to_internal_tool() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250
         })
     );
@@ -467,7 +467,7 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
         "agent",
         "--json",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--model",
@@ -488,7 +488,7 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
     assert_eq!(command.task, "Summarize the frontmost window");
     assert_eq!(command.model.as_deref(), Some("doubao-seed"));
     assert_eq!(command.max_steps, Some(NonZeroU32::new(8).unwrap()));
-    assert_eq!(command.target.as_deref(), Some("local:macos"));
+    assert_eq!(command.target.as_deref(), Some("macos"));
     assert_eq!(command.timeout_ms, Some(250));
     assert!(command.json_output);
 }
@@ -1395,7 +1395,7 @@ fn snapshot_command_maps_positional_snapshot_id_to_tool_input() {
         "operator",
         "snapshot",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "s_123",
@@ -1407,7 +1407,7 @@ fn snapshot_command_maps_positional_snapshot_id_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "snapshot_id": "s_123"
         })
@@ -1420,7 +1420,7 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
         "operator",
         "artifact",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "capture-1.png",
@@ -1432,7 +1432,7 @@ fn artifact_get_command_maps_positional_artifact_id_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "artifact_id": "capture-1.png"
         })
@@ -1608,14 +1608,7 @@ fn legacy_flat_commands_show_grouped_replacement_hints() {
 #[test]
 fn legacy_flat_command_detection_skips_root_global_flags() {
     assert_legacy_command_migration(
-        &[
-            "operator",
-            "--json",
-            "--target",
-            "local:macos",
-            "input",
-            "click",
-        ],
+        &["operator", "--json", "--target", "macos", "input", "click"],
         "input click",
         "operator click",
     );
@@ -1627,7 +1620,7 @@ async fn click_command_maps_locator_target_focus_and_verification() {
         "operator",
         "click",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--mode",
@@ -1650,7 +1643,7 @@ async fn click_command_maps_locator_target_focus_and_verification() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "mode": "Double",
             "locator": {
@@ -1686,7 +1679,7 @@ async fn window_focus_command_maps_window_id_and_verification_to_tool_input() {
         "window",
         "focus",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--window-id",
@@ -1701,7 +1694,7 @@ async fn window_focus_command_maps_window_id_and_verification_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "window_id": 42,
             "verifications": ["Focus"]
@@ -1716,7 +1709,7 @@ async fn window_close_command_maps_target_selector_and_focus_policy() {
         "window",
         "close",
         "--target",
-        "local:macos",
+        "macos",
         "--window-title",
         "Draft",
         "--focus",
@@ -1729,7 +1722,7 @@ async fn window_close_command_maps_target_selector_and_focus_policy() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "target_selector": {
                 "WindowTitle": "Draft"
             },
@@ -1799,13 +1792,7 @@ fn window_minimize_command_only_accepts_window_state_verification() {
 #[tokio::test]
 async fn window_maximize_command_maps_pid_target_selector_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "window",
-        "maximize",
-        "--target",
-        "local:macos",
-        "--pid",
-        "101",
+        "operator", "window", "maximize", "--target", "macos", "--pid", "101",
     ])
     .unwrap();
 
@@ -1814,7 +1801,7 @@ async fn window_maximize_command_maps_pid_target_selector_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "target_selector": {
                 "Pid": 101
             },
@@ -1846,7 +1833,7 @@ async fn window_move_command_maps_coordinates_selector_focus_and_verification() 
         "window",
         "move",
         "--target",
-        "local:macos",
+        "macos",
         "--window-id",
         "42",
         "--x",
@@ -1865,7 +1852,7 @@ async fn window_move_command_maps_coordinates_selector_focus_and_verification() 
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "target_selector": {
                 "WindowId": 42
             },
@@ -1906,7 +1893,7 @@ async fn window_set_bounds_command_maps_rect_and_selector_to_tool_input() {
         "window",
         "set-bounds",
         "--target",
-        "local:macos",
+        "macos",
         "--pid",
         "101",
         "--x",
@@ -1925,7 +1912,7 @@ async fn window_set_bounds_command_maps_rect_and_selector_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "target_selector": {
                 "Pid": 101
             },
@@ -1960,7 +1947,7 @@ async fn app_launch_command_maps_positional_bundle_id_or_name_to_tool_input() {
         "app",
         "launch",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "Calculator",
@@ -1972,7 +1959,7 @@ async fn app_launch_command_maps_positional_bundle_id_or_name_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "bundle_id_or_name": "Calculator"
         })
@@ -1986,7 +1973,7 @@ async fn app_switch_command_maps_app_target_selector_to_tool_input() {
         "app",
         "switch",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--app",
@@ -1999,7 +1986,7 @@ async fn app_switch_command_maps_app_target_selector_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "target_selector": {
                 "App": "TextEdit"
@@ -2042,13 +2029,7 @@ fn app_switch_command_rejects_window_index_target_selector() {
 #[tokio::test]
 async fn app_quit_command_maps_pid_target_selector_to_tool_input() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "app",
-        "quit",
-        "--target",
-        "local:macos",
-        "--pid",
-        "101",
+        "operator", "app", "quit", "--target", "macos", "--pid", "101",
     ])
     .unwrap();
 
@@ -2057,7 +2038,7 @@ async fn app_quit_command_maps_pid_target_selector_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "target_selector": {
                 "Pid": 101
             }
@@ -2160,7 +2141,7 @@ async fn type_command_maps_app_target_selector_with_default_focus_policy() {
         "operator",
         "type",
         "--target",
-        "local:macos",
+        "macos",
         "hello operator",
         "--app",
         "TextEdit",
@@ -2172,7 +2153,7 @@ async fn type_command_maps_app_target_selector_with_default_focus_policy() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "text": "hello operator",
             "clear_before": false,
             "target_selector": {
@@ -2189,7 +2170,7 @@ async fn scroll_command_maps_locator_and_deltas_to_tool_input() {
         "operator",
         "scroll",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--delta-x",
@@ -2208,7 +2189,7 @@ async fn scroll_command_maps_locator_and_deltas_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "delta_x": 0.0,
             "delta_y": -120.0,
@@ -2263,7 +2244,7 @@ async fn move_command_maps_coordinate_locator() {
         "operator",
         "move",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--x",
@@ -2278,7 +2259,7 @@ async fn move_command_maps_coordinate_locator() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "locator": {
                 "Coords": {
@@ -2306,7 +2287,7 @@ async fn drag_command_maps_motion_options_to_tool_input() {
         "operator",
         "drag",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--from-x",
@@ -2333,7 +2314,7 @@ async fn drag_command_maps_motion_options_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "from": {
                 "Coords": {
@@ -2371,7 +2352,7 @@ async fn swipe_command_maps_motion_options_to_tool_input() {
         "operator",
         "swipe",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--from-x",
@@ -2394,7 +2375,7 @@ async fn swipe_command_maps_motion_options_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "from": {
                 "Coords": {
@@ -2431,7 +2412,7 @@ async fn hotkey_command_maps_positional_keys_to_tool_input() {
         "operator",
         "hotkey",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "command",
@@ -2445,7 +2426,7 @@ async fn hotkey_command_maps_positional_keys_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "keys": ["command", "shift", "p"]
         })
@@ -2458,7 +2439,7 @@ async fn press_command_maps_positional_key_to_tool_input() {
         "operator",
         "press",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "down",
@@ -2472,7 +2453,7 @@ async fn press_command_maps_positional_key_to_tool_input() {
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "key": "down",
             "count": 3
@@ -2502,7 +2483,7 @@ async fn type_command_maps_positional_text_after_keys_and_locator_to_tool_input(
         "operator",
         "type",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "hello world",
@@ -2523,7 +2504,7 @@ async fn type_command_maps_positional_text_after_keys_and_locator_to_tool_input(
     assert_eq!(
         invocation.input,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "timeout_ms": 250,
             "text": "hello world",
             "clear_before": true,
@@ -2539,14 +2520,7 @@ async fn type_command_maps_positional_text_after_keys_and_locator_to_tool_input(
 #[tokio::test]
 async fn cli_run_renders_move_action_for_non_json_output() {
     let cli = cli_main::args::Cli::try_parse_from([
-        "operator",
-        "move",
-        "--target",
-        "local:macos",
-        "--x",
-        "24",
-        "--y",
-        "48",
+        "operator", "move", "--target", "macos", "--x", "24", "--y", "48",
     ])
     .unwrap();
 
@@ -2570,7 +2544,7 @@ async fn cli_run_renders_move_action_for_non_json_output() {
     assert_eq!(
         recorded[0].1,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "locator": {
                 "Coords": {
                     "x": 24.0,
@@ -2589,7 +2563,7 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
         "launch",
         "--json",
         "--target",
-        "local:macos",
+        "macos",
         "Calculator",
     ])
     .unwrap();
@@ -2616,7 +2590,7 @@ async fn cli_run_forwards_tool_calls_and_renders_json_output() {
     assert_eq!(
         recorded[0].1,
         json!({
-            "target": "local:macos",
+            "target": "macos",
             "bundle_id_or_name": "Calculator"
         })
     );
@@ -2628,7 +2602,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         "operator",
         "agent",
         "--target",
-        "local:macos",
+        "macos",
         "--timeout-ms",
         "250",
         "--model",
@@ -2648,7 +2622,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         calls: Arc::clone(&calls),
         result: Ok(AgentRunResult {
             session_id: SessionId("sess-1".into()),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: "doubao-seed".into(),
             summary: "Observed the frontmost window.".into(),
         }),
@@ -2659,7 +2633,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         .unwrap();
     assert_eq!(
         rendered,
-        "session_id: sess-1\ntarget: local:macos\nmodel: doubao-seed\nsummary: Observed the frontmost window."
+        "session_id: sess-1\ntarget: macos\nmodel: doubao-seed\nsummary: Observed the frontmost window."
     );
 
     let recorded = calls.lock().unwrap();
@@ -2667,7 +2641,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
     assert_eq!(recorded[0].task, "Summarize the frontmost window");
     assert_eq!(recorded[0].model.as_deref(), Some("doubao-seed"));
     assert_eq!(recorded[0].max_steps, Some(NonZeroU32::new(8).unwrap()));
-    assert_eq!(recorded[0].target.as_deref(), Some("local:macos"));
+    assert_eq!(recorded[0].target.as_deref(), Some("macos"));
     assert_eq!(recorded[0].timeout_ms, Some(250));
     assert!(!recorded[0].json_output);
 }
@@ -2690,7 +2664,7 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
         calls: Arc::new(Mutex::new(Vec::new())),
         result: Ok(AgentRunResult {
             session_id: SessionId("sess-42".into()),
-            target: TargetId("local:macos".into()),
+            target: TargetId("macos".into()),
             model: "gpt-5.4".into(),
             summary: "Opened Notes and typed hello.".into(),
         }),
@@ -2704,7 +2678,7 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
         output,
         json!({
             "session_id": "sess-42",
-            "target": "local:macos",
+            "target": "macos",
             "model": "gpt-5.4",
             "summary": "Opened Notes and typed hello."
         })
@@ -3187,6 +3161,17 @@ async fn target_show_fails_for_unknown_target_name() {
         }
         other => panic!("expected target-not-found error, got {other:?}"),
     }
+}
+
+#[test]
+fn target_not_found_error_mentions_target_management_commands() {
+    let error = cli_main::CliError::Operator(OperatorError::TargetNotFound("local:macos".into()));
+    let rendered = error.to_string();
+
+    assert!(rendered.contains("target not found: local:macos"));
+    assert!(rendered.contains("operator target list"));
+    assert!(rendered.contains("operator target show <name>"));
+    assert!(rendered.contains("operator target use <name>"));
 }
 
 #[tokio::test]

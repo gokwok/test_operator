@@ -57,7 +57,7 @@ async fn runtime_builder_registers_multiple_drivers() {
 
     let (local_target, local_driver) = runtime
         .core()
-        .resolve_driver(&TargetId("local:macos".into()))
+        .resolve_driver(&TargetId("macos".into()))
         .unwrap();
     let (device_target, device_driver) = runtime
         .core()
@@ -140,7 +140,7 @@ async fn resolve_driver_reports_driver_unavailable_for_known_target() {
 }
 
 #[test]
-fn target_resolver_prefers_named_targets_and_falls_back_to_legacy_syntax() {
+fn target_resolver_resolves_named_targets_only() {
     let resolver = TargetResolver::new(
         TargetId("macos".into()),
         std::collections::BTreeMap::from([
@@ -211,17 +211,18 @@ fn target_resolver_prefers_named_targets_and_falls_back_to_legacy_syntax() {
             driver_config: DriverConfig::from([("node".into(), json!("serial-1"))]),
         }
     );
-    assert_eq!(
-        resolver
-            .resolve(Some(&TargetId("device:harmony:abc123".into())))
-            .unwrap(),
-        TargetDescriptor {
-            id: TargetId("device:harmony:abc123".into()),
-            platform: "harmony".into(),
-            driver: "harmony.bridge".into(),
-            driver_config: DriverConfig::from([("device_id".into(), json!("abc123"))]),
+}
+
+#[test]
+fn target_resolver_rejects_legacy_protocol_shaped_targets() {
+    let resolver = TargetResolver::new(TargetId("macos".into()), BTreeMap::new());
+
+    for target in ["local:macos", "device:harmony:abc123"] {
+        match resolver.resolve(Some(&TargetId(target.into()))) {
+            Err(OperatorError::TargetNotFound(missing)) => assert_eq!(missing, target),
+            other => panic!("expected target-not-found for {target}, got {other:?}"),
         }
-    );
+    }
 }
 
 #[test]

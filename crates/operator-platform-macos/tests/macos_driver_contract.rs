@@ -101,7 +101,7 @@ async fn observe_frontmost_returns_snapshot_with_metadata() {
         .await
         .unwrap();
 
-    assert_eq!(observed.snapshot.target, "local:macos".into());
+    assert_eq!(observed.snapshot.target, "macos".into());
     assert_eq!(observed.snapshot.surface, surface);
     assert_eq!(
         observed.snapshot.image_artifact,
@@ -3055,7 +3055,7 @@ async fn list_windows_query_requires_system_events_readiness() {
 
 fn exec_context() -> ExecContext {
     ExecContext {
-        target: "local:macos".into(),
+        target: "macos".into(),
         session: None,
         timeout_ms: Some(500),
     }

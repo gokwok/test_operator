@@ -17,7 +17,7 @@ fn model_config(policy: CoordinatePolicy) -> ModelConfig {
 }
 
 fn session_with_current_snapshot(snapshot_id: &str) -> AgentSessionState {
-    let mut state = AgentSessionState::new("sess-1".into(), "local:macos".into(), "test");
+    let mut state = AgentSessionState::new("sess-1".into(), "macos".into(), "test");
     let snapshot = test_snapshot(snapshot_id);
     state.record_observation_snapshot(&snapshot);
     state
@@ -131,7 +131,7 @@ fn normalizer_requires_current_snapshot_for_surface_relative_coordinates() {
         summary: "Click the 1 button".into(),
         thought: None,
     };
-    let state = AgentSessionState::new("sess-1".into(), "local:macos".into(), "test");
+    let state = AgentSessionState::new("sess-1".into(), "macos".into(), "test");
 
     let error = DecisionNormalizer::new()
         .normalize(

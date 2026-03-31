@@ -70,7 +70,7 @@ async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_r
 
     let mut state = AgentSessionState::new(
         SessionId("sess-ctx".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Open Finder and confirm the window appears",
     );
     state.start_turn();
@@ -147,7 +147,7 @@ async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_r
         .assemble(&state)
         .expect("context should assemble");
 
-    assert_eq!(context.target.id, TargetId("local:macos".into()));
+    assert_eq!(context.target.id, TargetId("macos".into()));
     assert_eq!(context.target.platform, "macos");
     assert_eq!(
         context.target.capabilities,
@@ -191,7 +191,7 @@ async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_r
 fn successful_action_results_mark_ui_stale_until_a_successful_observe() {
     let mut state = AgentSessionState::new(
         SessionId("sess-stale".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Click Save",
     );
     state.start_turn();

@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     io::Cursor,
     sync::Arc,
@@ -9,14 +10,14 @@ use async_trait::async_trait;
 use operator_bootstrap::{load_runtime_config_from, runtime_config_path};
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, ActionVerification, Capability, CapabilitySet, ExecContext, HealthStatus,
-    Locator, ObserveRequest, ObserveResult, OperatorError, PermissionCheck, PermissionStatus,
-    PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect, TypeTrailingKey,
-    WindowInfo,
+    ActionTargetSelector, ActionVerification, Capability, CapabilitySet, DriverConfig, ExecContext,
+    HealthStatus, Locator, ObserveRequest, ObserveResult, OperatorError, PermissionCheck,
+    PermissionStatus, PermissionsReport, PlatformDriver, Point, QueryRequest, QueryResult, Rect,
+    TargetId, TypeTrailingKey, WindowInfo,
 };
 use operator_mcp::{run_stdio_session, McpServer};
 use operator_runtime::SnapshotStore;
-use operator_runtime::{FileArtifactStore, RuntimeBuilder, RuntimeConfig};
+use operator_runtime::{FileArtifactStore, NamedTargetConfig, RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -703,7 +704,7 @@ async fn tools_call_executes_move_and_returns_structured_content() {
             "params": {
                 "name": "move",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "target_selector": {
                         "WindowIndex": 1
                     },
@@ -737,7 +738,7 @@ async fn tools_call_executes_move_and_returns_structured_content() {
                 verifications: vec![ActionVerification::Focus],
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -750,7 +751,7 @@ async fn tools_call_executes_move_and_returns_structured_content() {
                 app: Some("TextEdit".into()),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -809,7 +810,7 @@ async fn tools_call_returns_richer_action_outcomes_in_structured_content() {
             "params": {
                 "name": "move",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "locator": {
                         "Coords": {
                             "x": 320.0,
@@ -885,7 +886,7 @@ async fn tools_call_executes_type_and_returns_structured_content() {
             "params": {
                 "name": "type",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "text": "hello world",
                     "clear_before": true,
                     "delay_ms": 25,
@@ -924,7 +925,7 @@ async fn tools_call_executes_type_and_returns_structured_content() {
                 verifications: Vec::new(),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -958,7 +959,7 @@ async fn tools_call_executes_press_and_returns_structured_content() {
             "params": {
                 "name": "press",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "key": "down",
                     "count": 3
                 }
@@ -984,7 +985,7 @@ async fn tools_call_executes_press_and_returns_structured_content() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1091,7 +1092,7 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
             "params": {
                 "name": "swipe",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "from": {
                         "Coords": {
                             "x": 15.0,
@@ -1131,7 +1132,7 @@ async fn tools_call_executes_swipe_and_returns_structured_content() {
                 ..default_action_request()
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1165,7 +1166,7 @@ async fn tools_call_executes_close_window_and_returns_structured_content() {
             "params": {
                 "name": "close-window",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "target_selector": {
                         "WindowTitle": "Draft"
                     },
@@ -1192,7 +1193,7 @@ async fn tools_call_executes_close_window_and_returns_structured_content() {
                 verifications: Vec::new(),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1229,7 +1230,7 @@ async fn tools_call_executes_set_window_bounds_and_returns_structured_content() 
             "params": {
                 "name": "set-window-bounds",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "target_selector": {
                         "Pid": 101
                     },
@@ -1267,7 +1268,7 @@ async fn tools_call_executes_set_window_bounds_and_returns_structured_content() 
                 verifications: Vec::new(),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1301,7 +1302,7 @@ async fn tools_call_executes_switch_app_and_returns_structured_content() {
             "params": {
                 "name": "switch-app",
                 "arguments": {
-                    "target": "local:macos",
+                    "target": "macos",
                     "target_selector": {
                         "WindowTitle": "Draft"
                     }
@@ -1327,7 +1328,7 @@ async fn tools_call_executes_switch_app_and_returns_structured_content() {
                 verifications: Vec::new(),
             },
             ExecContext {
-                target: "local:macos".into(),
+                target: "macos".into(),
                 session: None,
                 timeout_ms: Some(10_000),
             },
@@ -1338,12 +1339,24 @@ async fn tools_call_executes_switch_app_and_returns_structured_content() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_serializes_same_target_requests() {
     let driver = Arc::new(BlockingQueryDriver::default());
-    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
-        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
-        .register_driver(driver.clone())
-        .build()
-        .await
-        .unwrap();
+    let runtime = RuntimeBuilder::new(RuntimeConfig {
+        default_target: TargetId("slow".into()),
+        targets: BTreeMap::from([(
+            "slow".into(),
+            NamedTargetConfig {
+                platform: "slow".into(),
+                driver: "slow.system".into(),
+                description: None,
+                driver_config: DriverConfig::new(),
+            },
+        )]),
+        ..RuntimeConfig::default()
+    })
+    .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+    .register_driver(driver.clone())
+    .build()
+    .await
+    .unwrap();
 
     let server = McpServer::new(runtime.tools().clone());
     initialize_server(&server);
@@ -1359,7 +1372,7 @@ async fn mcp_serializes_same_target_requests() {
                 "params": {
                     "name": "list-windows",
                     "arguments": {
-                        "target": "local:slow",
+                        "target": "slow",
                         "timeout_ms": 200
                     }
                 }
@@ -1380,7 +1393,7 @@ async fn mcp_serializes_same_target_requests() {
                 "params": {
                     "name": "list-windows",
                     "arguments": {
-                        "target": "local:slow",
+                        "target": "slow",
                         "timeout_ms": 10
                     }
                 }

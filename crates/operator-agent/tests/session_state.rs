@@ -44,12 +44,12 @@ fn sample_tool_result() -> AgentToolResult {
 fn new_session_state_starts_with_clean_tracking_fields() {
     let state = AgentSessionState::new(
         SessionId("sess-1".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Open Finder and capture the window",
     );
 
     assert_eq!(state.session_id, SessionId("sess-1".into()));
-    assert_eq!(state.target, TargetId("local:macos".into()));
+    assert_eq!(state.target, TargetId("macos".into()));
     assert_eq!(state.task, "Open Finder and capture the window");
     assert_eq!(state.status, AgentSessionStatus::Running);
     assert_eq!(state.turn_index, 0);
@@ -90,7 +90,7 @@ fn agent_message_supports_model_and_custom_transcript_entries() {
 fn session_state_records_tool_trace_and_observation_updates() {
     let mut state = AgentSessionState::new(
         SessionId("sess-2".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Observe the frontmost window",
     );
     state.start_turn();
@@ -162,7 +162,7 @@ fn session_state_records_tool_trace_and_observation_updates() {
 fn screenshot_only_observe_keeps_ui_state_stale() {
     let mut state = AgentSessionState::new(
         SessionId("sess-2b".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Observe the frontmost window",
     );
     state.start_turn();
@@ -202,7 +202,7 @@ fn screenshot_only_observe_keeps_ui_state_stale() {
 fn session_state_tracks_parse_attempts_notes_errors_and_terminal_status() {
     let mut state = AgentSessionState::new(
         SessionId("sess-3".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Click Save",
     );
     state.start_turn();
@@ -283,7 +283,7 @@ fn tool_trace_entries_keep_error_results_for_transcript_replay() {
 fn model_context_tool_results_use_compact_summaries() {
     let mut state = AgentSessionState::new(
         SessionId("sess-4".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "List windows",
     );
     let result = AgentToolResult {

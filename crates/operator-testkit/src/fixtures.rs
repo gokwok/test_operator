@@ -24,7 +24,7 @@ pub fn test_snapshot(id: &str) -> Snapshot {
 
     Snapshot {
         id: id.into(),
-        target: "local:macos".into(),
+        target: "macos".into(),
         surface: Surface {
             kind: SurfaceKind::Frontmost,
         },

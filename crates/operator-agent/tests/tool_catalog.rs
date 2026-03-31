@@ -20,7 +20,7 @@ async fn catalog_filters_tools_by_target_capability_and_preserves_runtime_schema
     let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
 
     let catalog = executor
-        .catalog(&TargetId("local:macos".into()))
+        .catalog(&TargetId("macos".into()))
         .expect("catalog should resolve for the target");
 
     let names = catalog
@@ -73,7 +73,7 @@ async fn catalog_hides_side_effect_tools_when_runtime_policy_disables_them() {
     let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
 
     let catalog = executor
-        .catalog(&TargetId("local:macos".into()))
+        .catalog(&TargetId("macos".into()))
         .expect("catalog should resolve for the target");
 
     let names = catalog
@@ -105,7 +105,7 @@ async fn planner_summary_keeps_flattened_click_arguments_visible() {
     let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
 
     let catalog = executor
-        .catalog(&TargetId("local:macos".into()))
+        .catalog(&TargetId("macos".into()))
         .expect("catalog should resolve for the target");
     let click = catalog
         .into_iter()

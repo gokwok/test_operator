@@ -7,7 +7,7 @@ use operator_core::{SessionId, TargetId};
 fn sample_state() -> AgentSessionState {
     let mut state = AgentSessionState::new(
         SessionId("sess-note".into()),
-        TargetId("local:macos".into()),
+        TargetId("macos".into()),
         "Open Finder",
     );
     state.start_turn();
