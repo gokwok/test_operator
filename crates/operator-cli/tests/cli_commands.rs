@@ -3085,8 +3085,26 @@ addr = "192.168.8.43:35319"
 
     assert_eq!(
         rendered,
-        "Targets (2):\n  • harmony-pc [default]\n    Platform: harmony\n    Driver: harmony.hdc\n    Description: Harmony lab PC\n  • macos\n    Platform: macos\n    Driver: macos.system"
+        "Targets (1):\n  • harmony-pc [default]\n    Platform: harmony\n    Driver: harmony.hdc\n    Description: Harmony lab PC"
     );
+}
+
+#[tokio::test]
+async fn target_list_hides_implicit_default_targets_from_management_surface() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "target", "list"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(rendered, "no configured targets");
 }
 
 #[tokio::test]
@@ -3137,6 +3155,29 @@ endpoint = "wss://windows-lab.internal"
             }
         })
     );
+}
+
+#[tokio::test]
+async fn target_show_fails_when_default_target_is_only_implicit() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "target", "show"]).unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("implicit default target should not be inspectable");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::TargetNotFound(target)) => {
+            assert_eq!(target, "macos");
+        }
+        other => panic!("expected target-not-found error, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -3253,6 +3294,29 @@ driver = "windows.remote"
 }
 
 #[tokio::test]
+async fn target_use_rejects_implicit_default_target_when_not_persisted() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "target", "use", "macos"]).unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("implicit target should not be mutable");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::TargetNotFound(target)) => {
+            assert_eq!(target, "macos");
+        }
+        other => panic!("expected target-not-found error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn target_set_creates_named_target_and_persists_typed_values() {
     let temp = tempdir().expect("tempdir");
     let cli = cli_main::args::Cli::try_parse_from([
@@ -3346,6 +3410,59 @@ async fn target_set_rejects_non_standardized_paths() {
         }
         other => panic!("expected path validation error, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn target_set_rejects_driver_config_path_collisions() {
+    let temp = tempdir().expect("tempdir");
+    let path = runtime_config_path(temp.path());
+    fs::write(
+        &path,
+        r#"
+[runtime]
+default_target = "harmony-pc"
+
+[targets.harmony-pc]
+platform = "harmony"
+driver = "harmony.hdc"
+
+[targets.harmony-pc.driver_config]
+discovery = true
+"#,
+    )
+    .expect("write config");
+
+    let before = fs::read_to_string(&path).expect("read initial config");
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "target",
+        "set",
+        "harmony-pc",
+        "--set",
+        "driver_config.discovery.enabled=true",
+    ])
+    .unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("path collision should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+            assert!(message
+                .contains("conflicts with existing non-table value at `driver_config.discovery`"));
+        }
+        other => panic!("expected platform error, got {other:?}"),
+    }
+
+    let after = fs::read_to_string(&path).expect("read saved config");
+    assert_eq!(after, before);
 }
 
 #[tokio::test]
