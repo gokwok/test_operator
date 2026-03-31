@@ -516,6 +516,7 @@ model_name = "doubao-seed-2-0-lite-260215"
   - 返回当前系统中所有可操作的应用列表
   - macOS 通过扫描标准 app bundle 目录并与运行中的 app 集合合并来生成结果
   - 非运行中的应用会保留 `is_running = false`，并且没有 `pid`
+  - 如果 CLI 未显式传入 `--timeout-ms`，则 shell surface 会为 all-mode `app list` 注入 `30000ms` 的 runtime timeout
 - `app list --name <TEXT>`：
   - 按应用名做包含匹配
   - 当前实现按大小写不敏感的 contains 规则过滤

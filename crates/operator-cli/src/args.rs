@@ -118,8 +118,9 @@ const MODEL_UNSET_ABOUT: &str = "Remove provider fields from a selector";
 
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
+const APP_LIST_ALL_DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const APP_LIST_FOOTER: &str =
-    "CLI note: `app list` defaults to `--running`, but `--name`, `--bundle`, and `--flush` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps, while `--all` lists the target's operable app catalog and marks non-running apps without a pid. `--name` uses case-insensitive contains matching; on Harmony it also matches bundle-id fragments. `--bundle` requires an exact bundle id match. On Harmony, `--flush` refreshes the target-bound app-catalog cache stored under `~/.operator`.";
+    "CLI note: `app list` defaults to `--running`, but `--name`, `--bundle`, and `--flush` switch the default view to `--all` unless `--running` is explicit. `--running` lists operable running apps, while `--all` lists the target's operable app catalog and marks non-running apps without a pid. `--name` uses case-insensitive contains matching; on Harmony it also matches bundle-id fragments. `--bundle` requires an exact bundle id match. Unless `--timeout-ms` is passed explicitly, CLI all-mode `app list` uses a 30000ms runtime timeout. On Harmony, `--flush` refreshes the target-bound app-catalog cache stored under `~/.operator`.";
 const WINDOW_LIST_FOOTER: &str =
     "CLI note: `window list` now requires `--app <NAME>`. The unfiltered full-enumeration path remains internal-only and is no longer a supported shell contract.";
 
@@ -4615,6 +4616,12 @@ impl AppListArgs {
             AppListMode::Running
         };
         insert_serialized(&mut input, "mode", mode)?;
+        if matches!(mode, AppListMode::All) && common.timeout_ms.is_none() {
+            input.insert(
+                "timeout_ms".into(),
+                Value::Number(APP_LIST_ALL_DEFAULT_TIMEOUT_MS.into()),
+            );
+        }
         if self.flush {
             input.insert("flush".into(), Value::Bool(true));
         }

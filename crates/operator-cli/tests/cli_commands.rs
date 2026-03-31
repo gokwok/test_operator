@@ -329,7 +329,10 @@ fn app_list_all_command_maps_to_list_apps_tool() {
 
     let invocation = cli.into_invocation().unwrap();
     assert_eq!(invocation.tool, "list-apps");
-    assert_eq!(invocation.input, json!({ "mode": "all" }));
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "all", "timeout_ms": 30000 })
+    );
 }
 
 #[test]
@@ -338,7 +341,10 @@ fn app_list_flush_command_maps_to_list_apps_tool() {
 
     let invocation = cli.into_invocation().unwrap();
     assert_eq!(invocation.tool, "list-apps");
-    assert_eq!(invocation.input, json!({ "mode": "all", "flush": true }));
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "all", "timeout_ms": 30000, "flush": true })
+    );
 }
 
 #[test]
@@ -348,7 +354,10 @@ fn app_list_name_filter_maps_to_list_apps_tool() {
 
     let invocation = cli.into_invocation().unwrap();
     assert_eq!(invocation.tool, "list-apps");
-    assert_eq!(invocation.input, json!({ "mode": "all", "name": "Cod" }));
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "all", "timeout_ms": 30000, "name": "Cod" })
+    );
 }
 
 #[test]
@@ -366,7 +375,7 @@ fn app_list_bundle_filter_maps_to_list_apps_tool() {
     assert_eq!(invocation.tool, "list-apps");
     assert_eq!(
         invocation.input,
-        json!({ "mode": "all", "bundle": "com.apple.TextEdit" })
+        json!({ "mode": "all", "timeout_ms": 30000, "bundle": "com.apple.TextEdit" })
     );
 }
 
@@ -401,6 +410,26 @@ fn app_list_running_flush_keeps_explicit_running_mode() {
     assert_eq!(
         invocation.input,
         json!({ "mode": "running", "flush": true })
+    );
+}
+
+#[test]
+fn app_list_explicit_timeout_overrides_all_mode_default() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "--timeout-ms",
+        "250",
+        "app",
+        "list",
+        "--all",
+    ])
+    .unwrap();
+
+    let invocation = cli.into_invocation().unwrap();
+    assert_eq!(invocation.tool, "list-apps");
+    assert_eq!(
+        invocation.input,
+        json!({ "mode": "all", "timeout_ms": 250 })
     );
 }
 
@@ -1207,6 +1236,7 @@ fn app_list_help_snapshot_is_stable() {
     assert!(help.contains("operable running apps"));
     assert!(help.contains("case-insensitive contains matching"));
     assert!(help.contains("bundle-id fragments"));
+    assert!(help.contains("30000ms runtime timeout"));
     assert!(help.contains("target-bound app catalog cache"));
 }
 

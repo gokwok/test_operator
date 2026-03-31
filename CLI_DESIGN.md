@@ -1240,6 +1240,7 @@ Examples
 Current note:
 - `app list` defaults to `app list --running`.
 - `app list --name ...`、`app list --bundle ...`、以及 `app list --flush` default to the `--all` view unless `--running` is passed explicitly.
+- 如果 CLI 未显式传 `--timeout-ms`，all-mode `app list` 会注入 `30000ms` 的 runtime timeout。
 - `--running` returns operable running apps on macOS that currently own at least one window, and filters out `.prohibited` background-only processes.
 - `--all` scans installed app bundles, merges them with the running set, and marks non-running apps with `is_running = false` and no `pid`.
 - `--name` uses case-insensitive contains matching on the application display name.
