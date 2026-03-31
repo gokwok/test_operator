@@ -27,6 +27,8 @@ use crate::{
         PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
         RepeatedErrorPolicy,
     },
+    progress::{AgentProgressEvent, AgentProgressReporter, NoopAgentProgressReporter},
+    session::summarize_tool_result,
     session::AgentSessionState,
     tools::{AgentToolResult, AgentToolSpec, ToolExecutor},
     AgentConfig, AgentError, AgentRunRequest, AgentRunResult,
@@ -42,6 +44,7 @@ pub struct AgentRunner {
     parser: DecisionParser,
     normalizer: DecisionNormalizer,
     finish_gate: FinishGate,
+    progress_reporter: Arc<dyn AgentProgressReporter>,
 }
 
 impl AgentRunner {
@@ -54,7 +57,16 @@ impl AgentRunner {
             parser: DecisionParser::new(),
             normalizer: DecisionNormalizer::new(),
             finish_gate: FinishGate::new(),
+            progress_reporter: Arc::new(NoopAgentProgressReporter),
         }
+    }
+
+    pub fn with_progress_reporter(
+        mut self,
+        progress_reporter: Arc<dyn AgentProgressReporter>,
+    ) -> Self {
+        self.progress_reporter = progress_reporter;
+        self
     }
 
     pub async fn run(&self, req: AgentRunRequest) -> Result<AgentRunResult, AgentError> {
@@ -71,6 +83,12 @@ impl AgentRunner {
         state.set_include_elements(self.config.include_elements);
         self.create_runtime_session(&state).await?;
         let mut journal = SessionJournal::new(state.session_id.clone());
+        self.report_progress(AgentProgressEvent::RunStarted {
+            session_id: state.session_id.clone(),
+            target: state.target.clone(),
+            model: model_name.clone(),
+            task: state.task.clone(),
+        });
 
         let result = self
             .run_loop(&model_name, &model, &mut state, &mut journal)
@@ -105,6 +123,9 @@ impl AgentRunner {
         for _ in 0..self.config.max_steps {
             state.start_turn();
             state.start_step();
+            self.report_progress(AgentProgressEvent::TurnStarted {
+                turn_index: state.turn_index,
+            });
 
             let decision = self
                 .next_decision(model, &tools, &validator, &planner_retry, journal, state)
@@ -112,8 +133,16 @@ impl AgentRunner {
 
             match decision {
                 AgentDecision::CallTool {
-                    name, arguments, ..
+                    name,
+                    arguments,
+                    summary,
+                    ..
                 } => {
+                    self.report_progress(AgentProgressEvent::PlannedTool {
+                        turn_index: state.turn_index,
+                        tool_name: name.clone(),
+                        summary,
+                    });
                     let result = self
                         .execute_tool(&executor, journal, state, &name, arguments)
                         .await?;
@@ -134,6 +163,10 @@ impl AgentRunner {
                     }
                 }
                 AgentDecision::Finish { summary } => {
+                    self.report_progress(AgentProgressEvent::FinishPlanned {
+                        turn_index: state.turn_index,
+                        summary: summary.clone(),
+                    });
                     let verdict = self
                         .finish_gate
                         .evaluate(model, state, &summary)
@@ -151,6 +184,9 @@ impl AgentRunner {
                             )
                             .await?;
                             self.flush_session_journal(journal).await?;
+                            self.report_progress(AgentProgressEvent::RunCompleted {
+                                summary: summary.clone(),
+                            });
 
                             return Ok(AgentRunResult {
                                 session_id: state.session_id.clone(),
@@ -159,7 +195,11 @@ impl AgentRunner {
                                 summary,
                             });
                         }
-                        FinishGateVerdict::NotOk { .. } => {
+                        FinishGateVerdict::NotOk { ref reason } => {
+                            self.report_progress(AgentProgressEvent::FinishGateRejected {
+                                turn_index: state.turn_index,
+                                reason: reason.clone(),
+                            });
                             self.finish_gate.record_feedback(state, &verdict);
                         }
                     }
@@ -280,6 +320,11 @@ impl AgentRunner {
         name: &str,
         arguments: Value,
     ) -> Result<AgentToolResult, AgentError> {
+        self.report_progress(AgentProgressEvent::ToolCall {
+            turn_index: state.turn_index,
+            step_index: state.step_index,
+            name: name.to_string(),
+        });
         self.append_session_event(
             journal,
             SessionEvent::ToolCall {
@@ -300,6 +345,13 @@ impl AgentRunner {
             .await?;
 
         let payload = serde_json::to_value(&result).expect("agent tool results should serialize");
+        self.report_progress(AgentProgressEvent::ToolResult {
+            turn_index: state.turn_index,
+            step_index: state.step_index,
+            name: name.to_string(),
+            summary: summarize_tool_result(&result),
+            is_error: result.is_error,
+        });
         self.append_session_event(
             journal,
             SessionEvent::ToolResult {
@@ -414,6 +466,9 @@ impl AgentRunner {
         reason: String,
     ) -> Result<T, AgentError> {
         state.fail(reason.clone());
+        self.report_progress(AgentProgressEvent::RunFailed {
+            reason: reason.clone(),
+        });
         self.append_session_event(
             journal,
             SessionEvent::Error {
@@ -433,6 +488,10 @@ impl AgentRunner {
         let session_store = self.runtime.core().sessions();
         journal.flush(session_store.as_ref()).await?;
         Ok(())
+    }
+
+    fn report_progress(&self, event: AgentProgressEvent) {
+        self.progress_reporter.report(event);
     }
 
     fn resolve_model(&self, name: &str) -> Result<ResolvedModel, AgentError> {

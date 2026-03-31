@@ -1,7 +1,9 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use operator_agent::AgentRunResult;
+use operator_agent::{AgentProgressEvent, AgentRunResult};
 use serde_json::{json, Value};
+
+const MAX_PROGRESS_TEXT_CHARS: usize = 96;
 
 pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> String {
     if json_output {
@@ -77,11 +79,138 @@ pub(crate) fn render_agent_success(result: &AgentRunResult, json_output: bool) -
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgressSection {
+    Setup,
+    Turn(u32),
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct AgentProgressRenderer {
+    current_section: Option<ProgressSection>,
+}
+
+impl AgentProgressRenderer {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn render(&mut self, event: &AgentProgressEvent) -> Option<String> {
+        let mut lines = Vec::new();
+
+        match event {
+            AgentProgressEvent::RunStarted {
+                session_id,
+                target,
+                model,
+                task,
+            } => {
+                self.current_section = None;
+                lines.push(format!(
+                    "agent {}  target={}  model={}",
+                    session_id, target, model
+                ));
+                lines.push(format!("task  {}", compact_progress_text(task)));
+            }
+            AgentProgressEvent::TurnStarted { turn_index } => {
+                self.enter_turn(&mut lines, *turn_index);
+            }
+            AgentProgressEvent::PlannedTool {
+                turn_index,
+                tool_name: _,
+                summary,
+            } => {
+                self.enter_progress_section(&mut lines, *turn_index);
+                lines.push(format!("  plan  {}", compact_progress_text(summary)));
+            }
+            AgentProgressEvent::FinishPlanned {
+                turn_index,
+                summary,
+            } => {
+                self.enter_progress_section(&mut lines, *turn_index);
+                lines.push(format!(
+                    "  plan  Finish: {}",
+                    compact_progress_text(summary)
+                ));
+            }
+            AgentProgressEvent::ToolCall {
+                turn_index,
+                step_index: _,
+                name,
+            } => {
+                self.enter_progress_section(&mut lines, *turn_index);
+                lines.push(format!("  tool  {name}"));
+            }
+            AgentProgressEvent::ToolResult {
+                turn_index,
+                step_index: _,
+                name: _,
+                summary,
+                is_error,
+            } => {
+                self.enter_progress_section(&mut lines, *turn_index);
+                let label = if *is_error { "  err   " } else { "  ok    " };
+                lines.push(format!("{label}{}", compact_progress_text(summary)));
+            }
+            AgentProgressEvent::FinishGateRejected { turn_index, reason } => {
+                self.enter_progress_section(&mut lines, *turn_index);
+                lines.push(format!("  wait  {}", compact_progress_text(reason)));
+            }
+            AgentProgressEvent::RunCompleted { summary } => {
+                lines.push(format!("  done  {}", compact_progress_text(summary)));
+            }
+            AgentProgressEvent::RunFailed { reason } => {
+                lines.push(format!("  fail  {}", compact_progress_text(reason)));
+            }
+        }
+
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    fn enter_progress_section(&mut self, lines: &mut Vec<String>, turn_index: u32) {
+        if turn_index == 0 {
+            if self.current_section != Some(ProgressSection::Setup) {
+                lines.push("setup".into());
+                self.current_section = Some(ProgressSection::Setup);
+            }
+            return;
+        }
+
+        self.enter_turn(lines, turn_index);
+    }
+
+    fn enter_turn(&mut self, lines: &mut Vec<String>, turn_index: u32) {
+        let section = ProgressSection::Turn(turn_index);
+        if self.current_section != Some(section) {
+            lines.push(format!("turn {turn_index}"));
+            self.current_section = Some(section);
+        }
+    }
+}
+
 fn render_snapshot(output: &Value) -> String {
     let snapshot = &output["snapshot"];
     let id = snapshot["id"].as_str().unwrap_or("<unknown>");
     let target = snapshot["target"].as_str().unwrap_or("<unknown>");
     format!("snapshot {id} ({target})")
+}
+
+fn compact_progress_text(text: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_progress_text(&normalized)
+}
+
+fn truncate_progress_text(text: &str) -> String {
+    let mut chars = text.chars();
+    let truncated = chars
+        .by_ref()
+        .take(MAX_PROGRESS_TEXT_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
 }
 
 fn render_artifact(output: &Value) -> String {
@@ -485,8 +614,9 @@ mod tests {
 
     use super::{
         mask_secret, render_apps, render_model, render_models, render_permissions, render_target,
-        render_targets,
+        render_targets, AgentProgressRenderer,
     };
+    use operator_agent::AgentProgressEvent;
 
     #[test]
     fn render_apps_uses_multiline_blocks_for_running_entries() {
@@ -708,5 +838,78 @@ mod tests {
             render_model(&output),
             "Model: doubao\nDefault: no\nProvider: openai_compatible\nModel Name: doubao-seed-2-0-lite-260215\nBase URL: https://ark.cn-beijing.volces.com/api/v3\nAPI Key: ********5678"
         );
+    }
+
+    #[test]
+    fn progress_renderer_prints_setup_turn_plan_tool_and_completion_lines() {
+        let mut renderer = AgentProgressRenderer::new();
+
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::RunStarted {
+                session_id: operator_core::SessionId("agent-7".into()),
+                target: operator_core::TargetId("macos".into()),
+                model: "openai".into(),
+                task: "Open Calculator and compute 114 x 9999.".into(),
+            }),
+            Some(
+                "agent agent-7  target=macos  model=openai\ntask  Open Calculator and compute 114 x 9999."
+                    .into()
+            )
+        );
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::ToolCall {
+                turn_index: 0,
+                step_index: 0,
+                name: "observe".into(),
+            }),
+            Some("setup\n  tool  observe".into())
+        );
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::TurnStarted { turn_index: 1 }),
+            Some("turn 1".into())
+        );
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::PlannedTool {
+                turn_index: 1,
+                tool_name: "launch-app".into(),
+                summary: "Launch Calculator before typing.".into(),
+            }),
+            Some("  plan  Launch Calculator before typing.".into())
+        );
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::ToolResult {
+                turn_index: 1,
+                step_index: 1,
+                name: "launch-app".into(),
+                summary: "action succeeded".into(),
+                is_error: false,
+            }),
+            Some("  ok    action succeeded".into())
+        );
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::RunCompleted {
+                summary: "The calculator now shows 1139886.".into(),
+            }),
+            Some("  done  The calculator now shows 1139886.".into())
+        );
+    }
+
+    #[test]
+    fn progress_renderer_compacts_multiline_text_and_truncates_long_messages() {
+        let mut renderer = AgentProgressRenderer::new();
+        let rendered = renderer
+            .render(&AgentProgressEvent::RunStarted {
+                session_id: operator_core::SessionId("agent-9".into()),
+                target: operator_core::TargetId("macos".into()),
+                model: "doubao".into(),
+                task: format!(
+                    "First line with spacing.\nSecond line with more text. {}",
+                    "x".repeat(120)
+                ),
+            })
+            .expect("run start should render");
+
+        assert!(rendered.contains("task  First line with spacing. Second line with more text."));
+        assert!(rendered.ends_with("..."));
     }
 }

@@ -1,10 +1,11 @@
 mod support;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use operator_agent::{
     model::{Context, Message, ModelRegistry, ProviderKind, UserMessage},
-    AgentConfig, AgentError, AgentRunRequest, AgentRunner,
+    AgentConfig, AgentError, AgentProgressEvent, AgentProgressReporter, AgentRunRequest,
+    AgentRunner,
 };
 use operator_core::{
     Action, ActionRequest, ArtifactId, Capability, CapabilitySet, OperatorError, TargetId,
@@ -74,6 +75,23 @@ fn tool_call_names(events: &[SessionEvent]) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+#[derive(Default)]
+struct RecordingProgressReporter {
+    events: Mutex<Vec<AgentProgressEvent>>,
+}
+
+impl RecordingProgressReporter {
+    fn events(&self) -> Vec<AgentProgressEvent> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl AgentProgressReporter for RecordingProgressReporter {
+    fn report(&self, event: AgentProgressEvent) {
+        self.events.lock().unwrap().push(event);
+    }
 }
 
 #[tokio::test]
@@ -174,6 +192,88 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
         "second planner request should carry the observe result: {second_planner_request}"
     );
     assert!(second_planner_request.contains("- stale: no"));
+}
+
+#[tokio::test]
+async fn runner_reports_concise_progress_events_for_turns_tools_and_completion() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::InspectTree]),
+    ));
+    let mut initial_snapshot = test_snapshot("snap-initial");
+    initial_snapshot.root_ids.clear();
+    initial_snapshot.elements.clear();
+    initial_snapshot.image_artifact = Some(ArtifactId("capture-initial.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: initial_snapshot,
+    }));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: test_snapshot("snap-progress"),
+    }));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"call_tool","name":"observe","arguments":{"surface":{"kind":"Frontmost"},"include_elements":true,"include_screenshot":false},"summary":"Capture the current UI."}"#.to_string(),
+        r#"{"decision":"finish","summary":"The current UI is captured."}"#.to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let progress = Arc::new(RecordingProgressReporter::default());
+    let runner = runner_with(
+        driver,
+        provider,
+        session_store,
+        AgentConfig {
+            include_elements: true,
+            ..AgentConfig::default()
+        },
+    )
+    .await
+    .with_progress_reporter(progress.clone());
+
+    let result = runner
+        .run(AgentRunRequest {
+            task: "Capture the frontmost UI.".into(),
+            target: TargetId("macos".into()),
+            model: Some("openai".into()),
+        })
+        .await
+        .expect("runner should succeed");
+
+    assert_eq!(result.summary, "The current UI is captured.");
+
+    let events = progress.events();
+    assert_eq!(
+        events[0],
+        AgentProgressEvent::RunStarted {
+            session_id: result.session_id.clone(),
+            target: TargetId("macos".into()),
+            model: "openai".into(),
+            task: "Capture the frontmost UI.".into(),
+        }
+    );
+    assert!(events.contains(&AgentProgressEvent::ToolCall {
+        turn_index: 0,
+        step_index: 0,
+        name: "observe".into(),
+    }));
+    assert!(events.contains(&AgentProgressEvent::TurnStarted { turn_index: 1 }));
+    assert!(events.contains(&AgentProgressEvent::PlannedTool {
+        turn_index: 1,
+        tool_name: "observe".into(),
+        summary: "Capture the current UI.".into(),
+    }));
+    assert!(events.contains(&AgentProgressEvent::ToolResult {
+        turn_index: 1,
+        step_index: 1,
+        name: "observe".into(),
+        summary: "snapshot snap-progress on frontmost (roots=1, elements=1)".into(),
+        is_error: false,
+    }));
+    assert_eq!(
+        events.last(),
+        Some(&AgentProgressEvent::RunCompleted {
+            summary: "The current UI is captured.".into(),
+        })
+    );
 }
 
 #[tokio::test]

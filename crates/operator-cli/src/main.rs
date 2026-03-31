@@ -6,14 +6,16 @@ mod output;
 use std::{
     collections::BTreeSet,
     future::Future,
+    io::{self, Write},
     path::{Path, PathBuf},
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use operator_agent::{
     model::{ModelRegistry, SelectedModelProviderConfig},
-    AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
+    AgentConfig, AgentProgressEvent, AgentProgressReporter, AgentRunRequest, AgentRunResult,
+    AgentRunner,
 };
 use operator_bootstrap::{
     load_bootstrap_config_from, load_runtime_config, operator_home_dir, parse_model_set_expression,
@@ -86,10 +88,42 @@ impl AgentExecutor for RuntimeAgentExecutor {
             let runtime = build_runtime(prepared.runtime_config)
                 .await
                 .map_err(|error| error.to_string())?;
-            let runner =
+            let mut runner =
                 AgentRunner::new(Arc::new(runtime), prepared.models, prepared.agent_config);
+            if !command.json_output {
+                runner =
+                    runner.with_progress_reporter(Arc::new(ConsoleAgentProgressReporter::new()));
+            }
             runner.run(request).await.map_err(|error| error.to_string())
         })
+    }
+}
+
+struct ConsoleAgentProgressReporter {
+    renderer: Mutex<output::AgentProgressRenderer>,
+}
+
+impl ConsoleAgentProgressReporter {
+    fn new() -> Self {
+        Self {
+            renderer: Mutex::new(output::AgentProgressRenderer::new()),
+        }
+    }
+}
+
+impl AgentProgressReporter for ConsoleAgentProgressReporter {
+    fn report(&self, event: AgentProgressEvent) {
+        let rendered = {
+            let mut renderer = self
+                .renderer
+                .lock()
+                .expect("progress renderer mutex should not be poisoned");
+            renderer.render(&event)
+        };
+
+        if let Some(rendered) = rendered {
+            let _ = writeln!(io::stderr().lock(), "{rendered}");
+        }
     }
 }
 

@@ -7,6 +7,7 @@ pub mod journal;
 pub mod model;
 pub mod planner;
 pub mod policy;
+pub mod progress;
 pub mod runner;
 pub mod session;
 pub mod tools;
@@ -27,6 +28,7 @@ pub use policy::{
     PlannerFailureStage, PlannerRetryDecision, PlannerRetryPolicy, RepeatedErrorDecision,
     RepeatedErrorPolicy,
 };
+pub use progress::{AgentProgressEvent, AgentProgressReporter, NoopAgentProgressReporter};
 pub use runner::AgentRunner;
 pub use session::{
     AgentMessage, AgentSessionState, AgentSessionStatus, LoopHistoryItem, LoopState,

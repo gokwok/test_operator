@@ -334,6 +334,19 @@ model_name = "doubao-seed-2-0-lite-260215"
 - 显式传入后，planner 可以在默认验证路径中使用 element tree；这适用于需要结构化 UI 校验的任务，但会提高 observe 延迟和 token 成本。
 - 该开关只影响 `operator agent` 的默认验证/观察策略，不改变底层 `observe` tool 本身支持 `include_elements=true` 的能力。
 
+### `operator agent` 默认进度输出
+
+- 非 `--json` 路径下，`operator agent <task>` 默认向终端输出简洁的实时进度流。
+- 进度流至少包含：
+  - session 启动上下文
+  - 轮次/turn header
+  - planner 给出的下一步 summary
+  - tool call 开始
+  - tool result 的成功/失败摘要
+  - finish gate 拒绝原因或最终完成摘要
+- 该进度流是面向人的 northbound shell UX，不保证稳定的 machine-readable 形状。
+- `--json` 仍保持静默执行并只输出最终结构化结果，不混入进度行。
+
 ### `model` 子命令契约
 
 `model` 命令家族已经落地为稳定 Core shell contract：
