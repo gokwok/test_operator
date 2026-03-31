@@ -20,7 +20,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            default_model: "gpt-5.4".into(),
+            default_model: "openai".into(),
             max_steps: 40,
             max_parse_attempts: 3,
             repeated_error_limit: 3,

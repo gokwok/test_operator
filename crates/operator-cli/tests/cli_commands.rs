@@ -456,7 +456,7 @@ fn agent_help_shows_first_phase_flags_and_examples() {
         "operator agent \"Find the largest file in Downloads and move it to the Trash\""
     ));
     assert!(help.contains(
-        "operator agent --model doubao-seed --max-steps 10 \"Summarize the frontmost window\""
+        "operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\""
     ));
 }
 
@@ -486,11 +486,29 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
     };
 
     assert_eq!(command.task, "Summarize the frontmost window");
-    assert_eq!(command.model.as_deref(), Some("doubao-seed"));
+    assert_eq!(command.model.as_deref(), Some("doubao"));
     assert_eq!(command.max_steps, Some(NonZeroU32::new(8).unwrap()));
     assert_eq!(command.target.as_deref(), Some("macos"));
     assert_eq!(command.timeout_ms, Some(250));
     assert!(command.json_output);
+}
+
+#[test]
+fn agent_command_normalizes_compatibility_aliases_to_stable_selectors() {
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "--model",
+        "gpt-5.4",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    let cli_main::args::CliExecution::Agent(command) = cli.into_execution().unwrap() else {
+        panic!("agent command should map to agent execution");
+    };
+
+    assert_eq!(command.model.as_deref(), Some("openai"));
 }
 
 #[test]
@@ -538,6 +556,57 @@ endpoint = "wss://windows-lab.internal"
         windows_target.driver_config.get("endpoint"),
         Some(&json!("wss://windows-lab.internal"))
     );
+}
+
+#[test]
+fn agent_execution_uses_config_default_selector_and_provider_settings() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "doubao"
+
+[agent.model.provider.doubao]
+api_key = "ark-config"
+base_url = "https://ark.internal/api/v3"
+model_name = "doubao-seed-2-0-lite-260215"
+
+[targets.macos]
+platform = "macos"
+driver = "macos.system"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    let cli_main::args::CliExecution::Agent(command) = cli.into_execution().unwrap() else {
+        panic!("agent command should map to agent execution");
+    };
+    let prepared =
+        cli_main::agent_execution_for_home(&command, temp.path()).expect("agent bootstrap");
+
+    assert_eq!(prepared.agent_config.default_model, "doubao");
+    assert_eq!(prepared.selected_model, "doubao");
+    let resolved = prepared
+        .models
+        .resolve("doubao")
+        .expect("configured selector should resolve");
+    assert_eq!(resolved.config.id.as_ref(), "doubao-seed-2-0-lite-260215");
+    let alias = prepared
+        .models
+        .resolve("doubao-seed")
+        .expect("compatibility alias should resolve");
+    assert_eq!(alias.config.id, resolved.config.id);
 }
 
 #[test]
@@ -2623,7 +2692,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         result: Ok(AgentRunResult {
             session_id: SessionId("sess-1".into()),
             target: TargetId("macos".into()),
-            model: "doubao-seed".into(),
+            model: "doubao".into(),
             summary: "Observed the frontmost window.".into(),
         }),
     };
@@ -2633,13 +2702,13 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         .unwrap();
     assert_eq!(
         rendered,
-        "session_id: sess-1\ntarget: macos\nmodel: doubao-seed\nsummary: Observed the frontmost window."
+        "session_id: sess-1\ntarget: macos\nmodel: doubao\nsummary: Observed the frontmost window."
     );
 
     let recorded = calls.lock().unwrap();
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].task, "Summarize the frontmost window");
-    assert_eq!(recorded[0].model.as_deref(), Some("doubao-seed"));
+    assert_eq!(recorded[0].model.as_deref(), Some("doubao"));
     assert_eq!(recorded[0].max_steps, Some(NonZeroU32::new(8).unwrap()));
     assert_eq!(recorded[0].target.as_deref(), Some("macos"));
     assert_eq!(recorded[0].timeout_ms, Some(250));
@@ -2665,7 +2734,7 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
         result: Ok(AgentRunResult {
             session_id: SessionId("sess-42".into()),
             target: TargetId("macos".into()),
-            model: "gpt-5.4".into(),
+            model: "openai".into(),
             summary: "Opened Notes and typed hello.".into(),
         }),
     };
@@ -2679,7 +2748,7 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
         json!({
             "session_id": "sess-42",
             "target": "macos",
-            "model": "gpt-5.4",
+            "model": "openai",
             "summary": "Opened Notes and typed hello."
         })
     );

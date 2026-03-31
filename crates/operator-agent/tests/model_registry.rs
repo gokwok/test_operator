@@ -3,31 +3,41 @@ mod support;
 use std::{sync::Arc, time::Duration};
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, CoordinatePolicy, DoubaoProviderConfig,
-    EnvironmentProviderBootstrap, Message, ModelConfig, ModelError, ModelEvent, ModelRegistry,
-    ModelRegistryBootstrapError, ModelRequest, OpenAiProviderConfig, ProviderKind, ReasoningLevel,
-    ToolSpec, UserMessage,
+    normalize_model_selector, CallOptions, ContentBlock, Context, CoordinatePolicy,
+    DoubaoProviderConfig, EnvironmentProviderBootstrap, Message, ModelConfig, ModelError,
+    ModelEvent, ModelRegistry, ModelRegistryBootstrapError, ModelRequest, OpenAiProviderConfig,
+    ProviderKind, ReasoningLevel, SelectedModelProviderConfig, ToolSpec, UserMessage,
 };
 use serde_json::json;
 use support::DeterministicTestProvider;
 
 #[test]
-fn default_registry_exposes_phase1_models() {
+fn default_registry_exposes_selector_models_and_compatibility_aliases() {
     let registry = ModelRegistry::new();
 
-    let gpt = registry.config("gpt-5.4").expect("gpt-5.4 should exist");
-    assert_eq!(gpt.provider, ProviderKind::OpenAi);
-    assert_eq!(gpt.id.as_ref(), "gpt-5.4");
-    assert_eq!(gpt.default_timeout_ms, Some(30_000));
-    assert_eq!(gpt.coordinate_policy, CoordinatePolicy::SurfaceImagePixels);
+    let openai = registry
+        .config("openai")
+        .expect("openai selector should exist");
+    assert_eq!(openai.provider, ProviderKind::OpenAi);
+    assert_eq!(openai.id.as_ref(), "gpt-5.4");
+    assert_eq!(openai.default_timeout_ms, Some(30_000));
     assert_eq!(
-        gpt.default_options.reasoning_level,
+        openai.default_options.reasoning_level,
         Some(ReasoningLevel::Minimal)
+    );
+    assert_eq!(
+        openai.coordinate_policy,
+        CoordinatePolicy::SurfaceImagePixels
+    );
+    assert_eq!(
+        registry.config("gpt-5.4"),
+        Some(openai),
+        "openai alias should resolve to the canonical selector config"
     );
 
     let doubao = registry
-        .config("doubao-seed")
-        .expect("doubao-seed should exist");
+        .config("doubao")
+        .expect("doubao selector should exist");
     assert_eq!(doubao.provider, ProviderKind::OpenAiCompatible);
     assert_eq!(doubao.id.as_ref(), "doubao-seed-2-0-lite-260215");
     assert_eq!(doubao.default_timeout_ms, Some(30_000));
@@ -39,6 +49,11 @@ fn default_registry_exposes_phase1_models() {
         doubao.default_options.reasoning_level,
         Some(ReasoningLevel::Minimal)
     );
+    assert_eq!(
+        registry.config("doubao-seed"),
+        Some(doubao),
+        "doubao alias should resolve to the canonical selector config"
+    );
 }
 
 #[test]
@@ -46,7 +61,7 @@ fn resolve_reports_missing_provider_for_registered_model() {
     let registry = ModelRegistry::new();
 
     assert!(matches!(
-        registry.resolve("gpt-5.4"),
+        registry.resolve("openai"),
         Err(ModelError::ProviderNotFound {
             provider: ProviderKind::OpenAi
         })
@@ -62,7 +77,7 @@ async fn resolve_returns_registered_provider_for_known_model() {
     );
 
     let resolved = registry
-        .resolve("gpt-5.4")
+        .resolve("openai")
         .expect("registered provider should resolve");
     assert_eq!(
         resolved.config,
@@ -171,6 +186,84 @@ fn environment_bootstrap_registers_configured_providers_into_model_registry() {
     ])
     .expect("environment bootstrap should register supported providers");
 
+    assert!(registry.resolve("openai").is_ok());
+    assert!(registry.resolve("doubao").is_ok());
     assert!(registry.resolve("gpt-5.4").is_ok());
     assert!(registry.resolve("doubao-seed").is_ok());
+}
+
+#[test]
+fn selector_normalization_maps_compatibility_aliases_to_stable_selectors() {
+    assert_eq!(normalize_model_selector("openai").unwrap(), "openai");
+    assert_eq!(normalize_model_selector("gpt-5.4").unwrap(), "openai");
+    assert_eq!(normalize_model_selector("doubao").unwrap(), "doubao");
+    assert_eq!(normalize_model_selector("doubao-seed").unwrap(), "doubao");
+}
+
+#[test]
+fn selector_bootstrap_uses_config_values_and_keeps_alias_mapping_explicit() {
+    let registry = ModelRegistry::from_selected_provider_config_and_env_vars(
+        "gpt-5.4",
+        &SelectedModelProviderConfig {
+            api_key: Some("sk-openai".into()),
+            base_url: Some("https://openai.internal/v1".into()),
+            model_name: Some("gpt-5.4-mini".into()),
+        },
+        std::iter::empty::<(&str, &str)>(),
+    )
+    .expect("config-backed bootstrap should resolve the canonical selector");
+
+    let selector = registry.resolve("openai").expect("openai should resolve");
+    assert_eq!(selector.config.id.as_ref(), "gpt-5.4-mini");
+    assert_eq!(
+        selector.config.coordinate_policy,
+        CoordinatePolicy::SurfaceImagePixels
+    );
+
+    let alias = registry
+        .resolve("gpt-5.4")
+        .expect("compatibility alias should resolve");
+    assert_eq!(
+        alias.config.id, selector.config.id,
+        "alias should map to the same provider-side model id as the stable selector"
+    );
+}
+
+#[test]
+fn selector_bootstrap_falls_back_to_environment_fields_for_missing_values() {
+    let registry = ModelRegistry::from_selected_provider_config_and_env_vars(
+        "doubao",
+        &SelectedModelProviderConfig {
+            api_key: None,
+            base_url: None,
+            model_name: Some("doubao-pro-32k".into()),
+        },
+        [
+            ("DOUBAO_API_KEY", "doubao-env"),
+            ("DOUBAO_BASE_URL", "https://doubao.internal/api/v3"),
+        ],
+    )
+    .expect("env fallback should bootstrap the selected provider");
+
+    let resolved = registry.resolve("doubao").expect("doubao should resolve");
+    assert_eq!(resolved.config.id.as_ref(), "doubao-pro-32k");
+    assert_eq!(
+        resolved.config.coordinate_policy,
+        CoordinatePolicy::SurfaceNormalized1000
+    );
+}
+
+#[test]
+fn selector_bootstrap_rejects_missing_credentials_for_selected_provider() {
+    let result = ModelRegistry::from_selected_provider_config_and_env_vars(
+        "openai",
+        &SelectedModelProviderConfig::default(),
+        std::iter::empty::<(&str, &str)>(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(ModelRegistryBootstrapError::MissingSelectedProviderCredentials { selector, .. })
+        if selector == "openai"
+    ));
 }

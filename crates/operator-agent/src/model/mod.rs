@@ -10,7 +10,9 @@ pub use event::{channel, DoneReason, ErrorReason, ModelEvent, ModelStream, Model
 pub use openai::{OpenAiProviderConfig, OpenAiResponsesProvider};
 pub use provider::{ModelError, ModelProvider, ModelRequest};
 pub use registry::{
-    EnvironmentProviderBootstrap, ModelRegistry, ModelRegistryBootstrapError, ResolvedModel,
+    normalize_model_selector, EnvironmentProviderBootstrap, ModelRegistry,
+    ModelRegistryBootstrapError, ResolvedModel, SelectedModelProviderConfig, CLI_MODEL_VALUES,
+    DOUBAO_MODEL_ALIAS, DOUBAO_MODEL_SELECTOR, OPENAI_MODEL_ALIAS, OPENAI_MODEL_SELECTOR,
 };
 pub use types::{
     AssistantMessage, CallOptions, ContentBlock, Context, CoordinatePolicy, Cost, Message,

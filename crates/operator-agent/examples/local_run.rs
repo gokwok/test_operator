@@ -7,10 +7,14 @@ use std::{
 
 use clap::Parser;
 use operator_agent::{
-    load_persisted_session, model::ModelRegistry, render_harness_report, AgentConfig,
-    AgentRunRequest, AgentRunner, HarnessReport,
+    load_persisted_session,
+    model::{normalize_model_selector, ModelRegistry, SelectedModelProviderConfig},
+    render_harness_report, AgentConfig, AgentRunRequest, AgentRunner, HarnessReport,
 };
-use operator_bootstrap::{load_runtime_config_from, operator_home_dir, system_platform_registry};
+use operator_bootstrap::{
+    load_bootstrap_config_from, load_runtime_config_from, operator_home_dir,
+    system_platform_registry,
+};
 use operator_core::TargetId;
 use operator_runtime::{
     FileArtifactStore, FileSessionStore, FileSnapshotStore, RuntimeBuilder, RuntimeConfig,
@@ -24,8 +28,10 @@ use operator_runtime::{
 Not a supported public CLI surface.\n\
 \n\
 Provider credentials:\n\
-  gpt-5.4      -> OPENAI_API_KEY (optional OPENAI_BASE_URL)\n\
-  doubao-seed  -> ARK_API_KEY or DOUBAO_API_KEY (optional ARK_BASE_URL or DOUBAO_BASE_URL)"
+  openai       -> [agent.model.provider.openai] or OPENAI_API_KEY / OPENAI_BASE_URL\n\
+  doubao       -> [agent.model.provider.doubao] or ARK_API_KEY / DOUBAO_API_KEY / ARK_BASE_URL / DOUBAO_BASE_URL\n\
+\n\
+Compatibility aliases `gpt-5.4` and `doubao-seed` remain accepted during migration."
 )]
 pub(crate) struct Cli {
     #[arg(long, help = "Task prompt to send into the phase-1 agent loop")]
@@ -36,8 +42,8 @@ pub(crate) struct Cli {
 
     #[arg(
         long,
-        default_value = "gpt-5.4",
-        help = "Registered phase-1 model name (gpt-5.4 or doubao-seed)"
+        default_value = "openai",
+        help = "Model selector to use (stable values: openai, doubao; compatibility aliases: gpt-5.4, doubao-seed)"
     )]
     model: String,
 
@@ -73,6 +79,9 @@ async fn main() -> ExitCode {
 
 async fn run(cli: Cli) -> Result<HarnessReport, String> {
     let operator_home = operator_home_dir();
+    let model = normalize_model_selector(&cli.model)
+        .map(str::to_owned)
+        .map_err(|error| error.to_string())?;
     let runtime_config = runtime_config_for_home(&cli, &operator_home)?;
     let state_root = cli
         .state_root
@@ -81,7 +90,7 @@ async fn run(cli: Cli) -> Result<HarnessReport, String> {
     let request = AgentRunRequest {
         task: cli.task.clone(),
         target: runtime_config.default_target.clone(),
-        model: Some(cli.model.clone()),
+        model: Some(model.clone()),
     };
 
     let session_store = Arc::new(FileSessionStore::new(&state_root));
@@ -89,7 +98,7 @@ async fn run(cli: Cli) -> Result<HarnessReport, String> {
         .await
         .map_err(|error| format!("failed to list existing sessions: {error}"))?;
     let runtime = build_runtime(&state_root, runtime_config, session_store.clone()).await?;
-    let models = configured_models()?;
+    let models = configured_models(&model, &operator_home)?;
     let runner = AgentRunner::new(Arc::new(runtime), models, AgentConfig::default());
 
     let run_result = runner.run(request.clone()).await;
@@ -108,7 +117,7 @@ async fn run(cli: Cli) -> Result<HarnessReport, String> {
 
     let (result, failure) = match run_result {
         Ok(result) => (Some(result), None),
-        Err(error) => (None, Some(augment_failure(&cli.model, error))),
+        Err(error) => (None, Some(augment_failure(&model, error))),
     };
 
     Ok(HarnessReport::new(
@@ -145,8 +154,21 @@ async fn build_runtime(
         .map_err(|error| error.to_string())
 }
 
-fn configured_models() -> Result<ModelRegistry, String> {
-    ModelRegistry::from_environment().map_err(|error| error.to_string())
+fn configured_models(model: &str, operator_home: &Path) -> Result<ModelRegistry, String> {
+    let bootstrap = load_bootstrap_config_from(operator_home).map_err(|error| error.to_string())?;
+    let provider_config = bootstrap
+        .agent_model
+        .providers
+        .get(model)
+        .map(|provider| SelectedModelProviderConfig {
+            api_key: provider.api_key.clone(),
+            base_url: provider.base_url.clone(),
+            model_name: provider.model_name.clone(),
+        })
+        .unwrap_or_default();
+
+    ModelRegistry::from_selected_provider_config(model, &provider_config)
+        .map_err(|error| error.to_string())
 }
 
 async fn session_ids(
@@ -172,11 +194,11 @@ async fn newest_session(
 
 fn augment_failure(model: &str, error: impl std::fmt::Display) -> String {
     match model {
-        "gpt-5.4" => format!(
-            "{error}. Hint: configure OPENAI_API_KEY (and optionally OPENAI_BASE_URL) for gpt-5.4."
+        "openai" => format!(
+            "{error}. Hint: configure [agent.model.provider.openai] or OPENAI_API_KEY / OPENAI_BASE_URL for openai."
         ),
-        "doubao-seed" => format!(
-            "{error}. Hint: configure ARK_API_KEY or DOUBAO_API_KEY (and optionally ARK_BASE_URL / DOUBAO_BASE_URL) for doubao-seed."
+        "doubao" => format!(
+            "{error}. Hint: configure [agent.model.provider.doubao] or ARK_API_KEY / DOUBAO_API_KEY / ARK_BASE_URL / DOUBAO_BASE_URL for doubao."
         ),
         _ => error.to_string(),
     }

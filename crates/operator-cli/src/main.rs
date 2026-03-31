@@ -11,11 +11,13 @@ use std::{
 };
 
 use operator_agent::{
-    model::ModelRegistry, AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
+    model::{ModelRegistry, SelectedModelProviderConfig},
+    AgentConfig, AgentRunRequest, AgentRunResult, AgentRunner,
 };
 use operator_bootstrap::{
-    load_runtime_config, operator_home_dir, parse_target_set_expression, runtime_config_path,
-    system_platform_registry, RuntimeConfigDocument, TargetConfigFieldPath,
+    load_bootstrap_config_from, load_runtime_config, operator_home_dir,
+    parse_target_set_expression, runtime_config_path, system_platform_registry, AgentModelConfig,
+    RuntimeConfigDocument, TargetConfigFieldPath,
 };
 use operator_core::{OperatorError, TargetId};
 #[cfg(not(test))]
@@ -69,20 +71,29 @@ struct RuntimeAgentExecutor;
 impl AgentExecutor for RuntimeAgentExecutor {
     fn run<'a>(&'a self, command: &'a AgentCommand) -> AgentFuture<'a> {
         Box::pin(async move {
-            let runtime_config = runtime_config_for(command).map_err(|error| error.to_string())?;
+            let prepared = agent_execution_for_home(command, operator_home_dir())
+                .map_err(|error| error.to_string())?;
             let request = AgentRunRequest {
                 task: command.task.clone(),
-                target: runtime_config.default_target.clone(),
+                target: prepared.runtime_config.default_target.clone(),
                 model: command.model.clone(),
             };
-            let runtime = build_runtime(runtime_config)
+            let runtime = build_runtime(prepared.runtime_config)
                 .await
                 .map_err(|error| error.to_string())?;
-            let models = ModelRegistry::from_environment().map_err(|error| error.to_string())?;
-            let runner = AgentRunner::new(Arc::new(runtime), models, agent_config_for(command));
+            let runner =
+                AgentRunner::new(Arc::new(runtime), prepared.models, prepared.agent_config);
             runner.run(request).await.map_err(|error| error.to_string())
         })
     }
+}
+
+pub(crate) struct AgentExecutionBootstrap {
+    pub(crate) runtime_config: RuntimeConfig,
+    pub(crate) agent_config: AgentConfig,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) selected_model: String,
+    pub(crate) models: ModelRegistry,
 }
 
 struct RuntimeTargetInspector {
@@ -256,10 +267,38 @@ async fn build_runtime(config: RuntimeConfig) -> Result<operator_runtime::Runtim
         .await
 }
 
-fn runtime_config_for(command: &AgentCommand) -> Result<RuntimeConfig, OperatorError> {
-    runtime_config_for_home(command, operator_home_dir())
+pub(crate) fn agent_execution_for_home(
+    command: &AgentCommand,
+    operator_home: impl AsRef<Path>,
+) -> Result<AgentExecutionBootstrap, String> {
+    let bootstrap =
+        load_bootstrap_config_from(&operator_home).map_err(|error| error.to_string())?;
+    let mut runtime_config = bootstrap.runtime;
+    if let Some(target) = &command.target {
+        runtime_config.default_target = target.clone().into();
+    }
+    if let Some(timeout_ms) = command.timeout_ms {
+        runtime_config.default_timeout_ms = timeout_ms;
+    }
+
+    let agent_config = agent_config_for(command, bootstrap.agent_model.default.as_deref());
+    let selected_model = command
+        .model
+        .clone()
+        .unwrap_or_else(|| agent_config.default_model.clone());
+    let provider_config = configured_model_provider(&bootstrap.agent_model, &selected_model);
+    let models = ModelRegistry::from_selected_provider_config(&selected_model, &provider_config)
+        .map_err(|error| error.to_string())?;
+
+    Ok(AgentExecutionBootstrap {
+        runtime_config,
+        agent_config,
+        selected_model,
+        models,
+    })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn runtime_config_for_home(
     command: &AgentCommand,
     operator_home: impl AsRef<Path>,
@@ -274,8 +313,26 @@ pub(crate) fn runtime_config_for_home(
     Ok(config)
 }
 
-fn agent_config_for(command: &AgentCommand) -> AgentConfig {
+fn configured_model_provider(
+    agent_model: &AgentModelConfig,
+    selector: &str,
+) -> SelectedModelProviderConfig {
+    agent_model
+        .providers
+        .get(selector)
+        .map(|provider| SelectedModelProviderConfig {
+            api_key: provider.api_key.clone(),
+            base_url: provider.base_url.clone(),
+            model_name: provider.model_name.clone(),
+        })
+        .unwrap_or_default()
+}
+
+fn agent_config_for(command: &AgentCommand, default_model: Option<&str>) -> AgentConfig {
     let mut config = AgentConfig::default();
+    if let Some(default_model) = default_model {
+        config.default_model = default_model.to_owned();
+    }
     if let Some(max_steps) = command.max_steps {
         config.max_steps = max_steps.get();
     }

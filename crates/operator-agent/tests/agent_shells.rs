@@ -5,7 +5,7 @@ use operator_core::{OperatorError, SessionId, TargetId};
 fn agent_config_defaults_match_phase1_design() {
     let config = AgentConfig::default();
 
-    assert_eq!(config.default_model, "gpt-5.4");
+    assert_eq!(config.default_model, "openai");
     assert_eq!(config.max_steps, 40);
     assert_eq!(config.max_parse_attempts, 3);
     assert_eq!(config.repeated_error_limit, 3);
@@ -18,12 +18,12 @@ fn request_and_result_shells_round_trip_through_json() {
     let request = AgentRunRequest {
         task: "Open Safari and focus the frontmost window".into(),
         target: TargetId("macos".into()),
-        model: Some("gpt-5.4".into()),
+        model: Some("openai".into()),
     };
     let result = AgentRunResult {
         session_id: SessionId("sess-1".into()),
         target: TargetId("macos".into()),
-        model: "gpt-5.4".into(),
+        model: "openai".into(),
         summary: "Opened Safari and focused the frontmost window.".into(),
     };
 

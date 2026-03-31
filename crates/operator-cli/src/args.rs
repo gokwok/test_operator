@@ -6,6 +6,7 @@ use clap::{
     builder::styling::{Ansi256Color, Styles},
     Args, ColorChoice, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum,
 };
+use operator_agent::model::normalize_model_selector;
 use operator_core::{
     ActionFocusPolicy, ActionTargetSelector, ActionVerification, AppListMode, ArtifactId,
     ClickMode, Locator, Point, SnapshotId, Surface, SurfaceKind, TypeTrailingKey, WindowId,
@@ -571,7 +572,7 @@ const MCP_SERVE_AFTER_HELP: &str = "Examples
 const AGENT_AFTER_HELP: &str = "Examples
   operator agent \"Open Notes and type hello\"
   operator agent \"Find the largest file in Downloads and move it to the Trash\"
-  operator agent --model doubao-seed --max-steps 10 \"Summarize the frontmost window\"";
+  operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"";
 
 const MCP_SERVE_HELP: LeafHelp = LeafHelp {
     usage: "operator mcp serve [OPTIONS]",
@@ -590,7 +591,8 @@ const AGENT_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
 const AGENT_OPTION_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--model <MODEL>",
-        about: "Model to use for the agent [possible values: gpt-5.4, doubao-seed]",
+        about:
+            "Model selector to use for the agent [stable values: openai, doubao; compatibility aliases: gpt-5.4, doubao-seed]",
     },
     CommandHelpEntry {
         command: "--max-steps <N>",
@@ -617,7 +619,7 @@ const AGENT_HELP: LeafHelp = LeafHelp {
     examples: &[
         "operator agent \"Open Notes and type hello\"",
         "operator agent \"Find the largest file in Downloads and move it to the Trash\"",
-        "operator agent --model doubao-seed --max-steps 10 \"Summarize the frontmost window\"",
+        "operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"",
     ],
     footer: "",
 };
@@ -3166,11 +3168,7 @@ struct AgentArgs {
     common: CommonArgs,
     #[arg(help = "Natural-language description of the task to perform")]
     task: String,
-    #[arg(
-        long,
-        value_parser = ["gpt-5.4", "doubao-seed"],
-        help = "Model to use for the agent"
-    )]
+    #[arg(long, help = "Model selector to use for the agent")]
     model: Option<String>,
     #[arg(long, help = "Maximum number of agent steps before stopping")]
     max_steps: Option<NonZeroU32>,
@@ -3179,9 +3177,16 @@ struct AgentArgs {
 impl AgentArgs {
     fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
         let common = merge_common(root_common, self.common);
+        let model = self
+            .model
+            .as_deref()
+            .map(normalize_model_selector)
+            .transpose()
+            .map_err(|error| error.to_string())?
+            .map(str::to_owned);
         Ok(CliExecution::Agent(AgentCommand {
             task: self.task,
-            model: self.model,
+            model,
             max_steps: self.max_steps,
             target: common.target,
             json_output: common.json_output,
