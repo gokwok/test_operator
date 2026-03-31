@@ -512,6 +512,42 @@ fn agent_command_normalizes_compatibility_aliases_to_stable_selectors() {
 }
 
 #[test]
+fn model_list_command_maps_to_model_execution() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "--json", "model", "list"]).unwrap();
+
+    assert!(cli.prefers_json());
+
+    let execution = cli.into_execution().unwrap();
+    let cli_main::args::CliExecution::Model(command) = execution else {
+        panic!("model list should map to model execution");
+    };
+
+    assert_eq!(
+        command,
+        cli_main::args::ModelCommand::List { json_output: true }
+    );
+}
+
+#[test]
+fn model_show_command_normalizes_alias_to_stable_selector() {
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "model", "show", "gpt-5.4"]).unwrap();
+
+    let execution = cli.into_execution().unwrap();
+    let cli_main::args::CliExecution::Model(command) = execution else {
+        panic!("model show should map to model execution");
+    };
+
+    assert_eq!(
+        command,
+        cli_main::args::ModelCommand::Show {
+            name: Some("openai".into()),
+            json_output: false,
+        }
+    );
+}
+
+#[test]
 fn agent_runtime_config_loads_named_targets_from_operator_home_and_applies_flag_overrides() {
     let temp = tempdir().expect("tempdir");
     fs::write(
@@ -666,6 +702,8 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Read a stored capture artifact by ID"));
     assert!(help.contains("target"));
     assert!(help.contains("Inspect and manage configured named runtime targets"));
+    assert!(help.contains("model"));
+    assert!(help.contains("Inspect config-backed agent model selectors/providers"));
     assert!(help.contains("capture"));
     assert!(help.contains("Take a screenshot of a surface"));
     assert!(help.contains("elements"));
@@ -691,6 +729,7 @@ fn root_help_groups_commands_by_domain() {
     assert!(help.contains("Global Runtime Flags"));
     assert!(help.contains("Examples\n  operator capture frontmost"));
     assert!(help.contains("operator target list"));
+    assert!(help.contains("operator model list"));
     assert!(!help.contains("operator window list"));
     assert!(help.contains("Use 'operator <command> --help' for detailed usage."));
 }
@@ -824,6 +863,47 @@ fn target_remove_help_snapshot_is_stable() {
     assert!(help.contains("Delete a named target definition"));
     assert!(help.contains("--json"));
     assert!(help.contains("operator target remove windows-lab"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn model_help_lists_model_inspection_subcommands() {
+    let help = command_help(["operator", "model", "--help"]);
+    assert!(help.contains("Inspect config-backed agent model selectors/providers"));
+    assert!(help.contains("list"));
+    assert!(help.contains("List configured model selectors"));
+    assert!(help.contains("show"));
+    assert!(help.contains("Show a model selector definition"));
+    assert!(help.contains("Global Runtime Flags"));
+    assert!(help.contains("Use 'operator model <command> --help' for detailed usage."));
+}
+
+#[test]
+fn model_list_help_snapshot_is_stable() {
+    let help = command_help(["operator", "model", "list", "--help"]);
+    assert!(help.contains("Usage operator model list [OPTIONS]"));
+    assert!(help.contains("List configured model selectors"));
+    assert!(help.contains("Output"));
+    assert!(help.contains("selector name"));
+    assert!(help.contains("provider kind"));
+    assert!(help.contains("api_key"));
+    assert!(help.contains("operator model list"));
+    assert!(help.contains("operator --json model list"));
+    assert!(!help.contains("Global Runtime Flags"));
+}
+
+#[test]
+fn model_show_help_snapshot_is_stable() {
+    let help = command_help(["operator", "model", "show", "--help"]);
+    assert!(help.contains("Usage operator model show [OPTIONS] [NAME]"));
+    assert!(help.contains("Show a model selector definition"));
+    assert!(help.contains("Arguments"));
+    assert!(help.contains("[NAME]"));
+    assert!(help.contains("[agent.model].default"));
+    assert!(help.contains("[agent.model.provider.<name>]"));
+    assert!(help.contains("operator model show"));
+    assert!(help.contains("operator model show openai"));
+    assert!(help.contains("operator --json model show doubao"));
     assert!(!help.contains("Global Runtime Flags"));
 }
 
@@ -2697,9 +2777,15 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
         }),
     };
 
-    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor, &NoopConfigInspector)
-        .await
-        .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &tool_invoker,
+        &executor,
+        &NoopConfigInspector,
+        &NoopConfigInspector,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         rendered,
         "session_id: sess-1\ntarget: macos\nmodel: doubao\nsummary: Observed the frontmost window."
@@ -2739,9 +2825,15 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
         }),
     };
 
-    let rendered = cli_main::run_with_handlers(cli, &tool_invoker, &executor, &NoopConfigInspector)
-        .await
-        .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &tool_invoker,
+        &executor,
+        &NoopConfigInspector,
+        &NoopConfigInspector,
+    )
+    .await
+    .unwrap();
     let output = serde_json::from_str::<Value>(&rendered).unwrap();
     assert_eq!(
         output,
@@ -3121,6 +3213,202 @@ async fn cli_run_distinguishes_known_target_with_missing_driver() {
 }
 
 #[tokio::test]
+async fn model_list_reads_configured_selectors_and_masks_secrets() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = "sk-openai-1234"
+base_url = "https://api.openai.com/v1"
+model_name = "gpt-5.4"
+
+[agent.model.provider.doubao]
+api_key = "ark-secret-5678"
+model_name = "doubao-seed-2-0-lite-260215"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "model", "list"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        rendered,
+        "Models (2):\n  • doubao\n    Provider: openai_compatible\n    Model: doubao-seed-2-0-lite-260215\n    Base URL: <unset>\n    API Key: ***********5678\n  • openai [default]\n    Provider: openai\n    Model: gpt-5.4\n    Base URL: https://api.openai.com/v1\n    API Key: **********1234"
+    );
+}
+
+#[tokio::test]
+async fn model_show_defaults_to_configured_default_selector() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "doubao"
+
+[agent.model.provider.doubao]
+api_key = "ark-secret-5678"
+base_url = "https://ark.cn-beijing.volces.com/api/v3"
+model_name = "doubao-seed-2-0-lite-260215"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "--json", "model", "show"]).unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "default_selector": "doubao",
+            "model": {
+                "name": "doubao",
+                "is_default": true,
+                "provider_kind": "openai_compatible",
+                "model_name": "doubao-seed-2-0-lite-260215",
+                "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+                "api_key": "***********5678"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn model_show_explicit_selector_returns_standardized_unset_shape() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+"#,
+    )
+    .expect("write config");
+
+    let cli =
+        cli_main::args::Cli::try_parse_from(["operator", "--json", "model", "show", "openai"])
+            .unwrap();
+    let rendered = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .unwrap();
+    let output = serde_json::from_str::<Value>(&rendered).expect("json output");
+
+    assert_eq!(
+        output,
+        json!({
+            "default_selector": null,
+            "model": {
+                "name": "openai",
+                "is_default": false,
+                "provider_kind": "openai",
+                "model_name": null,
+                "base_url": null,
+                "api_key": null
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn model_show_without_name_requires_configured_default_selector() {
+    let temp = tempdir().expect("tempdir");
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "model", "show"]).unwrap();
+    let error = cli_main::run_with_handlers(
+        cli,
+        &RecordingInvoker::noop(),
+        &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
+    )
+    .await
+    .expect_err("missing default selector should fail");
+
+    match error {
+        cli_main::CliError::Operator(OperatorError::Platform(message)) => {
+            assert!(message.contains("no default model selector configured"));
+            assert!(message.contains("operator model show <name>"));
+        }
+        other => panic!("expected platform error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn model_commands_reject_target_and_timeout_flags() {
+    for argv in [
+        ["operator", "--target", "macos", "model", "list"].as_slice(),
+        ["operator", "--timeout-ms", "250", "model", "show", "openai"].as_slice(),
+    ] {
+        let cli = cli_main::args::Cli::try_parse_from(argv).unwrap();
+        let error = cli_main::run_with_handlers(
+            cli,
+            &RecordingInvoker::noop(),
+            &RecordingAgentExecutor::noop(),
+            &NoopConfigInspector,
+            &NoopConfigInspector,
+        )
+        .await
+        .expect_err("model command should reject runtime flags");
+
+        match error {
+            cli_main::CliError::Argument(message) => {
+                assert!(message.contains("model commands do not accept"));
+            }
+            other => panic!("expected argument error, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
 async fn target_list_reads_named_targets_from_runtime_config() {
     let temp = tempdir().expect("tempdir");
     fs::write(
@@ -3145,6 +3433,9 @@ addr = "192.168.8.43:35319"
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3186,6 +3477,9 @@ endpoint = "wss://windows-lab.internal"
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
     )
     .await
     .unwrap();
@@ -3217,6 +3511,9 @@ async fn target_show_fails_for_unknown_target_name() {
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3273,6 +3570,7 @@ async fn target_commands_reject_target_and_timeout_flags() {
             &RecordingInvoker::noop(),
             &RecordingAgentExecutor::noop(),
             &NoopConfigInspector,
+            &NoopConfigInspector,
         )
         .await
         .expect_err("target command should reject runtime flags");
@@ -3308,6 +3606,9 @@ driver = "windows.remote"
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3348,6 +3649,9 @@ async fn target_set_creates_named_target_and_persists_typed_values() {
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3405,6 +3709,9 @@ async fn target_set_rejects_non_standardized_paths() {
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
     )
     .await
     .expect_err("absolute target path should fail");
@@ -3454,6 +3761,9 @@ level = "debug"
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3517,6 +3827,9 @@ driver = "windows.remote"
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
     )
     .await
     .expect_err("platform unset should fail");
@@ -3551,6 +3864,9 @@ driver = "windows.remote"
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3595,6 +3911,9 @@ driver = "windows.remote"
         cli,
         &RecordingInvoker::noop(),
         &RecordingAgentExecutor::noop(),
+        &ConfigInspector {
+            operator_home: temp.path().to_path_buf(),
+        },
         &ConfigInspector {
             operator_home: temp.path().to_path_buf(),
         },
@@ -3698,6 +4017,15 @@ impl cli_main::TargetInspector for ConfigInspector {
     }
 }
 
+impl cli_main::ModelInspector for ConfigInspector {
+    fn inspect<'a>(
+        &'a self,
+        command: &'a cli_main::args::ModelCommand,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>> {
+        Box::pin(async move { cli_main::inspect_model_command(command, &self.operator_home) })
+    }
+}
+
 struct NoopConfigInspector;
 
 impl cli_main::TargetInspector for NoopConfigInspector {
@@ -3708,6 +4036,19 @@ impl cli_main::TargetInspector for NoopConfigInspector {
         Box::pin(async move {
             Err(OperatorError::Platform(
                 "unexpected target inspection in cli test".into(),
+            ))
+        })
+    }
+}
+
+impl cli_main::ModelInspector for NoopConfigInspector {
+    fn inspect<'a>(
+        &'a self,
+        _command: &'a cli_main::args::ModelCommand,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(OperatorError::Platform(
+                "unexpected model inspection in cli test".into(),
             ))
         })
     }

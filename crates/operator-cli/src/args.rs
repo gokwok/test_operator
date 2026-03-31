@@ -66,6 +66,7 @@ const ROOT_EXAMPLES: &[&str] = &[
     "operator elements window --window-id 42",
     "operator click --text Save",
     "operator target list",
+    "operator model list",
     "operator mcp serve",
 ];
 
@@ -108,6 +109,9 @@ const TARGET_USE_ABOUT: &str = "Set the runtime default target";
 const TARGET_SET_ABOUT: &str = "Update fields on a named target";
 const TARGET_UNSET_ABOUT: &str = "Remove fields from a named target";
 const TARGET_REMOVE_ABOUT: &str = "Delete a named target definition";
+const MODEL_ABOUT: &str = "Inspect config-backed agent model selectors/providers";
+const MODEL_LIST_ABOUT: &str = "List configured model selectors";
+const MODEL_SHOW_ABOUT: &str = "Show a model selector definition";
 
 const APP_LIST_ABOUT: &str = "List operable applications";
 const WINDOW_LIST_ABOUT: &str = "List application windows";
@@ -175,6 +179,10 @@ const ROOT_CORE_COMMANDS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "target",
         about: TARGET_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "model",
+        about: MODEL_ABOUT,
     },
 ];
 
@@ -492,6 +500,31 @@ const TARGET_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     footer: "Use 'operator target <command> --help' for detailed usage.",
 };
 
+const MODEL_GROUP_COMMANDS: &[CommandHelpEntry] = &[
+    CommandHelpEntry {
+        command: "list",
+        about: MODEL_LIST_ABOUT,
+    },
+    CommandHelpEntry {
+        command: "show",
+        about: MODEL_SHOW_ABOUT,
+    },
+];
+
+const MODEL_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
+    usage: "operator model <COMMAND>",
+    about: MODEL_ABOUT,
+    entries_heading: "Commands",
+    commands: MODEL_GROUP_COMMANDS,
+    examples: &[
+        "operator model list",
+        "operator model show",
+        "operator model show openai",
+        "operator --json model show doubao",
+    ],
+    footer: "Use 'operator model <command> --help' for detailed usage.",
+};
+
 const MCP_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
     usage: "operator mcp [OPTIONS] <COMMAND>",
     about: MCP_ABOUT,
@@ -623,6 +656,100 @@ const AGENT_HELP: LeafHelp = LeafHelp {
     ],
     footer: "",
 };
+
+const MODEL_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Output",
+        rows: &[
+            CommandHelpEntry {
+                command: "selector name",
+                about: "Logical selector stored under [agent.model].default or [agent.model.provider.<name>]",
+            },
+            CommandHelpEntry {
+                command: "default",
+                about: "Whether this selector is the configured default for `operator agent`",
+            },
+            CommandHelpEntry {
+                command: "provider kind",
+                about: "Provider implementation kind derived from the selector",
+            },
+            CommandHelpEntry {
+                command: "model_name",
+                about: "Remote provider model id configured for this selector",
+            },
+            CommandHelpEntry {
+                command: "base_url",
+                about: "Configured provider endpoint override, if any",
+            },
+            CommandHelpEntry {
+                command: "api_key",
+                about: "Masked provider credential; only the last 4 visible characters remain",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Masking",
+        rows: &[
+            CommandHelpEntry {
+                command: "api_key",
+                about: "Never shown in plaintext",
+            },
+            CommandHelpEntry {
+                command: "last 4 chars",
+                about: "Only the last 4 visible characters may remain unmasked",
+            },
+            CommandHelpEntry {
+                command: "preceding chars",
+                about: "Every earlier visible character is rendered as `*`",
+            },
+        ],
+    },
+];
+
+const MODEL_SHOW_HELP_SECTIONS: &[LeafHelpSection] = &[
+    LeafHelpSection {
+        heading: "Arguments",
+        rows: &[CommandHelpEntry {
+            command: "[NAME]",
+            about: "Selector name to inspect (defaults to the configured default selector)",
+        }],
+    },
+    LeafHelpSection {
+        heading: "Output",
+        rows: &[
+            CommandHelpEntry {
+                command: "[agent.model].default",
+                about: "Configured default selector for `operator agent`",
+            },
+            CommandHelpEntry {
+                command: "[agent.model.provider.<name>]",
+                about: "Provider entry for the selected logical selector",
+            },
+            CommandHelpEntry {
+                command: "api_key | base_url | model_name",
+                about: "The only supported provider fields in the Core contract",
+            },
+            CommandHelpEntry {
+                command: "api_key",
+                about: "Rendered with the same masking rules as `operator model list`",
+            },
+        ],
+    },
+    LeafHelpSection {
+        heading: "Options",
+        rows: &[CommandHelpEntry {
+            command: "--json",
+            about: "Emit machine-readable JSON output",
+        }],
+    },
+];
 
 const SNAPSHOT_ARGUMENT_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
     command: "<SNAPSHOT-ID>",
@@ -1892,6 +2019,28 @@ const TARGET_REMOVE_HELP: LeafHelp = LeafHelp {
     footer: "",
 };
 
+const MODEL_LIST_HELP: LeafHelp = LeafHelp {
+    usage: "operator model list [OPTIONS]",
+    about: MODEL_LIST_ABOUT,
+    sections: MODEL_LIST_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &["operator model list", "operator --json model list"],
+    footer: "",
+};
+
+const MODEL_SHOW_HELP: LeafHelp = LeafHelp {
+    usage: "operator model show [OPTIONS] [NAME]",
+    about: MODEL_SHOW_ABOUT,
+    sections: MODEL_SHOW_HELP_SECTIONS,
+    include_global_runtime_flags: false,
+    examples: &[
+        "operator model show",
+        "operator model show openai",
+        "operator --json model show doubao",
+    ],
+    footer: "",
+};
+
 const CLICK_HELP: LeafHelp = LeafHelp {
     usage: "operator click [OPTIONS]",
     about: INPUT_CLICK_ABOUT,
@@ -2749,6 +2898,9 @@ impl Cli {
             CliExecution::Target(_) => {
                 Err("target command does not map to a runtime tool invocation".to_string())
             }
+            CliExecution::Model(_) => {
+                Err("model command does not map to a runtime tool invocation".to_string())
+            }
             CliExecution::McpServe => {
                 Err("mcp serve does not map to a runtime tool invocation".to_string())
             }
@@ -2787,6 +2939,9 @@ pub(crate) fn custom_help(args: &[OsString]) -> Option<String> {
         ["target", "set", ..] => Some(styled_leaf_help(&TARGET_SET_HELP)),
         ["target", "unset", ..] => Some(styled_leaf_help(&TARGET_UNSET_HELP)),
         ["target", "remove", ..] => Some(styled_leaf_help(&TARGET_REMOVE_HELP)),
+        ["model"] => Some(styled_group_help(&MODEL_GROUP_HELP)),
+        ["model", "list", ..] => Some(styled_leaf_help(&MODEL_LIST_HELP)),
+        ["model", "show", ..] => Some(styled_leaf_help(&MODEL_SHOW_HELP)),
         ["show", ..] => Some(styled_leaf_help(&SHOW_HELP)),
         ["click", ..] => Some(styled_leaf_help(&CLICK_HELP)),
         ["type", ..] => Some(styled_leaf_help(&TYPE_HELP)),
@@ -2880,6 +3035,7 @@ pub(crate) struct ToolInvocation {
 pub(crate) enum CliExecution {
     Tool(ToolInvocation),
     Target(TargetCommand),
+    Model(ModelCommand),
     McpServe,
     Agent(AgentCommand),
 }
@@ -2896,6 +3052,7 @@ enum Command {
     Snapshot(SnapshotArgs),
     Artifact(ArtifactArgs),
     Target(TargetArgs),
+    Model(ModelArgs),
     #[command(about = SHOW_ABOUT, after_help = SHOW_AFTER_HELP)]
     Show(CommonArgs),
     #[command(about = INPUT_CLICK_ABOUT, after_help = INPUT_CLICK_AFTER_HELP)]
@@ -2931,6 +3088,7 @@ impl Command {
             Self::Snapshot(args) => Some(&args.common),
             Self::Artifact(args) => Some(&args.common),
             Self::Target(args) => Some(&args.common),
+            Self::Model(args) => Some(&args.common),
             Self::Show(args) => Some(args),
             Self::Click(args) => Some(&args.common),
             Self::Type(args) => Some(&args.common),
@@ -2963,6 +3121,9 @@ impl Command {
             Self::Target(_) => {
                 Err("target command does not map to a runtime tool invocation".to_string())
             }
+            Self::Model(_) => {
+                Err("model command does not map to a runtime tool invocation".to_string())
+            }
             Self::Show(common) => {
                 invoke_without_specific_input("get-focus", merge_common(root_common, common))
             }
@@ -2986,6 +3147,7 @@ impl Command {
     fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
         match self {
             Self::Target(args) => args.into_execution(root_common),
+            Self::Model(args) => args.into_execution(root_common),
             Self::Mcp(args) => args.into_execution(root_common),
             Self::Agent(args) => args.into_execution(root_common),
             other => other.into_invocation(root_common).map(CliExecution::Tool),
@@ -3054,6 +3216,17 @@ pub(crate) enum TargetCommand {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ModelCommand {
+    List {
+        json_output: bool,
+    },
+    Show {
+        name: Option<String>,
+        json_output: bool,
+    },
+}
+
 #[derive(Debug, Clone, Args)]
 #[command(about = TARGET_ABOUT, arg_required_else_help = true)]
 struct TargetArgs {
@@ -3105,6 +3278,45 @@ impl TargetArgs {
     }
 }
 
+#[derive(Debug, Clone, Args)]
+#[command(about = MODEL_ABOUT, arg_required_else_help = true)]
+struct ModelArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[command(subcommand)]
+    command: ModelSubcommand,
+}
+
+impl ModelArgs {
+    fn into_execution(self, root_common: CommonArgs) -> Result<CliExecution, String> {
+        let common = merge_common(root_common, self.common);
+        if common.target.is_some() {
+            return Err("model commands do not accept --target".into());
+        }
+        if common.timeout_ms.is_some() {
+            return Err("model commands do not accept --timeout-ms".into());
+        }
+
+        let command = match self.command {
+            ModelSubcommand::List(_) => ModelCommand::List {
+                json_output: common.json_output,
+            },
+            ModelSubcommand::Show(args) => ModelCommand::Show {
+                name: args
+                    .name
+                    .as_deref()
+                    .map(normalize_model_selector)
+                    .transpose()
+                    .map_err(|error| error.to_string())?
+                    .map(str::to_owned),
+                json_output: common.json_output,
+            },
+        };
+
+        Ok(CliExecution::Model(command))
+    }
+}
+
 #[derive(Debug, Clone, Subcommand)]
 enum TargetSubcommand {
     #[command(about = TARGET_LIST_ABOUT)]
@@ -3119,6 +3331,14 @@ enum TargetSubcommand {
     Unset(TargetUnsetArgs),
     #[command(about = TARGET_REMOVE_ABOUT)]
     Remove(TargetRemoveArgs),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum ModelSubcommand {
+    #[command(about = MODEL_LIST_ABOUT)]
+    List(ModelListArgs),
+    #[command(about = MODEL_SHOW_ABOUT)]
+    Show(ModelShowArgs),
 }
 
 #[derive(Debug, Clone, Args, Default)]
@@ -3160,6 +3380,15 @@ struct TargetUnsetArgs {
 struct TargetRemoveArgs {
     #[arg(help = "Target name to remove from [targets]")]
     name: String,
+}
+
+#[derive(Debug, Clone, Args, Default)]
+struct ModelListArgs {}
+
+#[derive(Debug, Clone, Args, Default)]
+struct ModelShowArgs {
+    #[arg(help = "Selector name to inspect (defaults to the configured default selector)")]
+    name: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -3790,6 +4019,9 @@ impl McpArgs {
             CliExecution::Tool(invocation) => Ok(invocation),
             CliExecution::Target(_) => {
                 Err("target command does not map to a runtime tool invocation".to_string())
+            }
+            CliExecution::Model(_) => {
+                Err("model command does not map to a runtime tool invocation".to_string())
             }
             CliExecution::McpServe => {
                 Err("mcp serve does not map to a runtime tool invocation".to_string())

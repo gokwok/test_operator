@@ -4,6 +4,7 @@ pub(crate) mod args;
 mod output;
 
 use std::{
+    collections::BTreeSet,
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
@@ -28,7 +29,7 @@ use operator_runtime::{
 };
 use serde_json::Value;
 
-use self::args::{AgentCommand, Cli, CliExecution, TargetCommand, ToolInvocation};
+use self::args::{AgentCommand, Cli, CliExecution, ModelCommand, TargetCommand, ToolInvocation};
 
 type InvokeFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, OperatorError>> + Send + 'a>>;
 type AgentFuture<'a> = Pin<Box<dyn Future<Output = Result<AgentRunResult, String>> + Send + 'a>>;
@@ -44,6 +45,10 @@ pub(crate) trait AgentExecutor {
 
 pub(crate) trait TargetInspector {
     fn inspect<'a>(&'a self, command: &'a TargetCommand) -> InspectFuture<'a>;
+}
+
+pub(crate) trait ModelInspector {
+    fn inspect<'a>(&'a self, command: &'a ModelCommand) -> InspectFuture<'a>;
 }
 
 struct RuntimeToolInvoker {
@@ -96,19 +101,25 @@ pub(crate) struct AgentExecutionBootstrap {
     pub(crate) models: ModelRegistry,
 }
 
-struct RuntimeTargetInspector {
+struct RuntimeConfigInspector {
     operator_home: PathBuf,
 }
 
-impl RuntimeTargetInspector {
+impl RuntimeConfigInspector {
     fn new(operator_home: PathBuf) -> Self {
         Self { operator_home }
     }
 }
 
-impl TargetInspector for RuntimeTargetInspector {
+impl TargetInspector for RuntimeConfigInspector {
     fn inspect<'a>(&'a self, command: &'a TargetCommand) -> InspectFuture<'a> {
         Box::pin(async move { inspect_target_command(command, &self.operator_home) })
+    }
+}
+
+impl ModelInspector for RuntimeConfigInspector {
+    fn inspect<'a>(&'a self, command: &'a ModelCommand) -> InspectFuture<'a> {
+        Box::pin(async move { inspect_model_command(command, &self.operator_home) })
     }
 }
 
@@ -176,8 +187,24 @@ async fn main_entry() -> i32 {
             }
         }
         CliExecution::Target(command) => {
-            let inspector = RuntimeTargetInspector::new(operator_home_dir());
+            let inspector = RuntimeConfigInspector::new(operator_home_dir());
             match run_target_with_inspector(command, &inspector).await {
+                Ok(rendered) => {
+                    println!("{rendered}");
+                    0
+                }
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        output::render_error(json_output, &format_operator_error(&error))
+                    );
+                    1
+                }
+            }
+        }
+        CliExecution::Model(command) => {
+            let inspector = RuntimeConfigInspector::new(operator_home_dir());
+            match run_model_with_inspector(command, &inspector).await {
                 Ok(rendered) => {
                     println!("{rendered}");
                     0
@@ -247,6 +274,18 @@ async fn run_target_with_inspector(
         TargetCommand::Set { json_output, .. } => ("target-set", *json_output),
         TargetCommand::Unset { json_output, .. } => ("target-unset", *json_output),
         TargetCommand::Remove { json_output, .. } => ("target-remove", *json_output),
+    };
+    let output = inspector.inspect(&command).await?;
+    Ok(output::render_success(tool, &output, json_output))
+}
+
+async fn run_model_with_inspector(
+    command: ModelCommand,
+    inspector: &impl ModelInspector,
+) -> Result<String, OperatorError> {
+    let (tool, json_output) = match &command {
+        ModelCommand::List { json_output } => ("model-list", *json_output),
+        ModelCommand::Show { json_output, .. } => ("model-show", *json_output),
     };
     let output = inspector.inspect(&command).await?;
     Ok(output::render_success(tool, &output, json_output))
@@ -457,6 +496,42 @@ pub(crate) fn inspect_target_command(
     }
 }
 
+pub(crate) fn inspect_model_command(
+    command: &ModelCommand,
+    operator_home: impl AsRef<Path>,
+) -> Result<Value, OperatorError> {
+    let path = runtime_config_path(operator_home);
+    let document = RuntimeConfigDocument::load(&path)?;
+    let bootstrap = document.to_bootstrap_config()?;
+
+    match command {
+        ModelCommand::List { .. } => {
+            let selectors = configured_model_selectors(&bootstrap.agent_model);
+            Ok(serde_json::json!({
+                "default_selector": bootstrap.agent_model.default,
+                "models": selectors
+                    .iter()
+                    .map(|selector| model_payload(selector, &bootstrap.agent_model))
+                    .collect::<Vec<_>>(),
+            }))
+        }
+        ModelCommand::Show { name, .. } => {
+            let selector = name
+                .clone()
+                .or_else(|| bootstrap.agent_model.default.clone())
+                .ok_or_else(|| {
+                    OperatorError::Platform(
+                        "no default model selector configured; use `operator model show <name>` to inspect a selector explicitly".into(),
+                    )
+                })?;
+            Ok(serde_json::json!({
+                "default_selector": bootstrap.agent_model.default,
+                "model": model_payload(&selector, &bootstrap.agent_model),
+            }))
+        }
+    }
+}
+
 fn validate_and_save_target_document(
     document: &RuntimeConfigDocument,
 ) -> Result<operator_runtime::RuntimeConfig, OperatorError> {
@@ -477,6 +552,35 @@ fn format_operator_error(error: &OperatorError) -> String {
             "target not found: {target}. Use 'operator target list' to inspect configured names, 'operator target show <name>' to inspect one target, or 'operator target use <name>' to change the default target."
         ),
         _ => error.to_string(),
+    }
+}
+
+fn configured_model_selectors(agent_model: &AgentModelConfig) -> Vec<String> {
+    let mut selectors = BTreeSet::new();
+    if let Some(default) = &agent_model.default {
+        selectors.insert(default.clone());
+    }
+    selectors.extend(agent_model.providers.keys().cloned());
+    selectors.into_iter().collect()
+}
+
+fn model_payload(selector: &str, agent_model: &AgentModelConfig) -> Value {
+    let provider = agent_model.providers.get(selector);
+    serde_json::json!({
+        "name": selector,
+        "is_default": agent_model.default.as_deref() == Some(selector),
+        "provider_kind": model_provider_kind(selector),
+        "model_name": provider.and_then(|provider| provider.model_name.clone()),
+        "base_url": provider.and_then(|provider| provider.base_url.clone()),
+        "api_key": output::mask_secret(provider.and_then(|provider| provider.api_key.as_deref())),
+    })
+}
+
+fn model_provider_kind(selector: &str) -> &'static str {
+    match selector {
+        "openai" => "openai",
+        "doubao" => "openai_compatible",
+        _ => "unknown",
     }
 }
 
@@ -505,18 +609,36 @@ impl TargetInspector for NoopTargetInspector {
 }
 
 #[cfg(test)]
+struct NoopModelInspector;
+
+#[cfg(test)]
+impl ModelInspector for NoopModelInspector {
+    fn inspect<'a>(&'a self, _command: &'a ModelCommand) -> InspectFuture<'a> {
+        Box::pin(async move {
+            Err(OperatorError::Platform(
+                "unexpected model inspection in tool-only test".into(),
+            ))
+        })
+    }
+}
+
+#[cfg(test)]
 pub(crate) async fn run_with_handlers(
     cli: Cli,
     invoker: &impl ToolInvoker,
     executor: &impl AgentExecutor,
-    inspector: &impl TargetInspector,
+    target_inspector: &impl TargetInspector,
+    model_inspector: &impl ModelInspector,
 ) -> Result<String, CliError> {
     let execution = cli.into_execution().map_err(CliError::Argument)?;
     match execution {
         CliExecution::Tool(invocation) => run_invocation_with_invoker(invocation, invoker)
             .await
             .map_err(CliError::Operator),
-        CliExecution::Target(command) => run_target_with_inspector(command, inspector)
+        CliExecution::Target(command) => run_target_with_inspector(command, target_inspector)
+            .await
+            .map_err(CliError::Operator),
+        CliExecution::Model(command) => run_model_with_inspector(command, model_inspector)
             .await
             .map_err(CliError::Operator),
         CliExecution::Agent(command) => run_agent_with_executor(command, executor)
@@ -533,7 +655,14 @@ pub(crate) async fn run_with_invoker(
     cli: Cli,
     invoker: &impl ToolInvoker,
 ) -> Result<String, CliError> {
-    run_with_handlers(cli, invoker, &NoopAgentExecutor, &NoopTargetInspector).await
+    run_with_handlers(
+        cli,
+        invoker,
+        &NoopAgentExecutor,
+        &NoopTargetInspector,
+        &NoopModelInspector,
+    )
+    .await
 }
 
 #[cfg(test)]

@@ -16,6 +16,8 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
         "target-use" | "target-set" | "target-unset" | "target-remove" => {
             render_target_mutation(output)
         }
+        "model-list" => render_models(output),
+        "model-show" => render_model(output),
         "get-focus" => render_focus(output),
         "list-apps" => render_apps(output),
         "list-windows" => render_windows(output),
@@ -29,6 +31,24 @@ pub(crate) fn render_success(tool: &str, output: &Value, json_output: bool) -> S
         }
         _ => serde_json::to_string_pretty(output).expect("tool output should be valid JSON"),
     }
+}
+
+pub(crate) fn mask_secret(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    let visible = value.chars().count();
+    if visible <= 4 {
+        return Some(value.to_owned());
+    }
+
+    let suffix = value
+        .chars()
+        .skip(visible.saturating_sub(4))
+        .collect::<String>();
+    Some(format!("{}{}", "*".repeat(visible - 4), suffix))
 }
 
 pub(crate) fn render_error(json_output: bool, message: &str) -> String {
@@ -170,6 +190,71 @@ fn render_target_mutation(output: &Value) -> String {
         .unwrap_or_else(|| {
             serde_json::to_string_pretty(output).expect("mutation output should serialize")
         })
+}
+
+fn render_models(output: &Value) -> String {
+    let models = output["models"].as_array().cloned().unwrap_or_default();
+    if models.is_empty() {
+        return "no configured models".into();
+    }
+
+    let rendered = models
+        .iter()
+        .map(|model| {
+            let name = model["name"].as_str().unwrap_or("<unknown>");
+            let mut heading = format!("  • {name}");
+            if model["is_default"].as_bool().unwrap_or(false) {
+                heading.push_str(" [default]");
+            }
+
+            format!(
+                "{heading}\n    Provider: {}\n    Model: {}\n    Base URL: {}\n    API Key: {}",
+                render_string_field(model["provider_kind"].as_str()),
+                render_string_field(model["model_name"].as_str()),
+                render_string_field(model["base_url"].as_str()),
+                render_string_field(model["api_key"].as_str()),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("Models ({}):\n{rendered}", models.len())
+}
+
+fn render_model(output: &Value) -> String {
+    let model = &output["model"];
+    if model.is_null() {
+        return "model not found".into();
+    }
+
+    [
+        format!("Model: {}", model["name"].as_str().unwrap_or("<unknown>")),
+        format!(
+            "Default: {}",
+            if model["is_default"].as_bool().unwrap_or(false) {
+                "yes"
+            } else {
+                "no"
+            }
+        ),
+        format!(
+            "Provider: {}",
+            render_string_field(model["provider_kind"].as_str())
+        ),
+        format!(
+            "Model Name: {}",
+            render_string_field(model["model_name"].as_str())
+        ),
+        format!(
+            "Base URL: {}",
+            render_string_field(model["base_url"].as_str())
+        ),
+        format!(
+            "API Key: {}",
+            render_string_field(model["api_key"].as_str())
+        ),
+    ]
+    .join("\n")
 }
 
 fn render_apps(output: &Value) -> String {
@@ -373,6 +458,10 @@ fn render_number(value: f64) -> String {
     }
 }
 
+fn render_string_field(value: Option<&str>) -> &str {
+    value.filter(|value| !value.is_empty()).unwrap_or("<unset>")
+}
+
 fn indent_block(text: &str, prefix: &str) -> String {
     text.lines()
         .map(|line| format!("{prefix}{line}"))
@@ -384,7 +473,10 @@ fn indent_block(text: &str, prefix: &str) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{render_apps, render_permissions, render_target, render_targets};
+    use super::{
+        mask_secret, render_apps, render_model, render_models, render_permissions, render_target,
+        render_targets,
+    };
 
     #[test]
     fn render_apps_uses_multiline_blocks_for_running_entries() {
@@ -547,6 +639,64 @@ mod tests {
         assert_eq!(
             render_target(&output),
             "Target: harmony-pc\nDefault: yes\nPlatform: harmony\nDriver: harmony.hdc\nDescription: Harmony lab PC\nDriver Config:\n  {\n    \"addr\": \"192.168.8.43:35319\"\n  }"
+        );
+    }
+
+    #[test]
+    fn mask_secret_keeps_only_the_last_four_visible_characters() {
+        assert_eq!(
+            mask_secret(Some("sk-openai-1234")).as_deref(),
+            Some("**********1234")
+        );
+        assert_eq!(mask_secret(Some("1234")).as_deref(), Some("1234"));
+        assert_eq!(mask_secret(Some("   ")), None);
+    }
+
+    #[test]
+    fn render_models_shows_default_marker_and_masked_secret() {
+        let output = json!({
+            "models": [
+                {
+                    "name": "openai",
+                    "is_default": true,
+                    "provider_kind": "openai",
+                    "model_name": "gpt-5.4",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "**********1234"
+                },
+                {
+                    "name": "doubao",
+                    "is_default": false,
+                    "provider_kind": "openai_compatible",
+                    "model_name": null,
+                    "base_url": null,
+                    "api_key": null
+                }
+            ]
+        });
+
+        assert_eq!(
+            render_models(&output),
+            "Models (2):\n  • openai [default]\n    Provider: openai\n    Model: gpt-5.4\n    Base URL: https://api.openai.com/v1\n    API Key: **********1234\n  • doubao\n    Provider: openai_compatible\n    Model: <unset>\n    Base URL: <unset>\n    API Key: <unset>"
+        );
+    }
+
+    #[test]
+    fn render_model_prints_standardized_selector_shape() {
+        let output = json!({
+            "model": {
+                "name": "doubao",
+                "is_default": false,
+                "provider_kind": "openai_compatible",
+                "model_name": "doubao-seed-2-0-lite-260215",
+                "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+                "api_key": "********5678"
+            }
+        });
+
+        assert_eq!(
+            render_model(&output),
+            "Model: doubao\nDefault: no\nProvider: openai_compatible\nModel Name: doubao-seed-2-0-lite-260215\nBase URL: https://ark.cn-beijing.volces.com/api/v3\nAPI Key: ********5678"
         );
     }
 }
