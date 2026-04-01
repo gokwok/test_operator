@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use operator_core::{AppInfo, ArtifactId, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId};
+use operator_core::{
+    AppInfo, ArtifactId, ImageSizePx, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -137,6 +139,8 @@ pub struct VisualObservationSummary {
     pub snapshot_id: SnapshotId,
     pub surface: String,
     pub screenshot_artifact: Option<ArtifactId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_size_px: Option<ImageSizePx>,
     pub root_element_count: usize,
     pub element_count: usize,
 }
@@ -147,6 +151,7 @@ impl VisualObservationSummary {
             snapshot_id: snapshot.id.clone(),
             surface: surface_name(&snapshot.surface.kind),
             screenshot_artifact: snapshot.image_artifact.clone(),
+            image_size_px: snapshot.metadata.image_size_px,
             root_element_count: snapshot.root_ids.len(),
             element_count: snapshot.elements.len(),
         }
@@ -414,6 +419,7 @@ impl LoopState {
             snapshot_id: snapshot_id.clone(),
             surface: "unknown".into(),
             screenshot_artifact: visual.clone(),
+            image_size_px: None,
             root_element_count: 0,
             element_count: 0,
         });
@@ -522,6 +528,7 @@ fn observe_result_is_usable(result: &AgentToolResult, include_elements: bool) ->
         snapshot_id: SnapshotId("unknown".into()),
         surface: "unknown".into(),
         screenshot_artifact: screenshot_artifact.map(ArtifactId),
+        image_size_px: None,
         root_element_count: root_count,
         element_count,
     }

@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use crate::{
-    model::{Context, Message, ToolSpec, UserMessage},
+    model::{Context, CoordinatePolicy, Message, ModelConfig, ProviderKind, ToolSpec, UserMessage},
     session::ModelContextBuffer,
     tools::AgentToolSpec,
 };
 
-use super::{PlannerContext, PlannerRenderer, PlannerVisualInput};
+use super::{
+    context::PlannerVisualSlot, renderer::PlannerRenderHints, PlannerContext, PlannerRenderer,
+    PlannerVisualInput,
+};
 
 const DEFAULT_RECENT_MESSAGES: usize = 8;
 const DEFAULT_RECENT_MESSAGE_CHARS: usize = 1600;
@@ -30,7 +33,10 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "{\"decision\":\"fail\",\"reason\":\"<why the task cannot continue>\"}",
 );
 
-fn planner_system_prompt(planner_context: &PlannerContext) -> String {
+fn planner_system_prompt(
+    planner_context: &PlannerContext,
+    openai_screenshot_grounding: bool,
+) -> String {
     let mut system = PLANNER_SYSTEM_PROMPT.to_string();
 
     if let Some(app_bootstrap) = planner_context.app_bootstrap.as_ref() {
@@ -72,6 +78,35 @@ fn planner_system_prompt(planner_context: &PlannerContext) -> String {
         }
     }
 
+    if openai_screenshot_grounding {
+        system.push_str("\nOpenAI screenshot grounding contract:");
+        if let Some(size) = planner_context
+            .current_observation
+            .as_ref()
+            .and_then(|observation| observation.image_size_px)
+        {
+            system.push_str(&format!(
+                "\n- Current screenshot pixel size: {} x {}.",
+                size.width, size.height
+            ));
+        }
+        system.push_str(
+            "\n- When using screenshot-based coordinate locators, coordinates must refer to the original pixel grid of the current screenshot image.",
+        );
+        system.push_str("\n- Origin is the top-left corner of the current screenshot: (0,0).");
+        system.push_str("\n- x increases to the right; y increases downward.");
+        system.push_str(
+            "\n- Never use normalized coordinates, percentages, or screen-global coordinates.",
+        );
+        system.push_str(
+            "\n- Before emitting a screenshot-coordinate action, first internally estimate a tight bounding box for the target in the current screenshot.",
+        );
+        system.push_str("\n- Then choose the action point from that bbox.");
+        system.push_str(
+            "\n- For circular floating buttons, prefer the bbox center or slightly above center.",
+        );
+    }
+
     system
 }
 
@@ -104,21 +139,32 @@ impl PlannerPromptBuilder {
     pub fn assemble(
         &self,
         task: &str,
+        model_config: &ModelConfig,
         planner_context: &PlannerContext,
         tools: &[AgentToolSpec],
         model_context: &ModelContextBuffer,
         visual_inputs: &[PlannerVisualInput],
     ) -> Context {
+        let openai_screenshot_grounding =
+            enable_openai_screenshot_grounding(model_config, planner_context, visual_inputs);
         let mut messages = self.recent_model_context_messages(model_context);
         messages.push(Message::User(UserMessage {
-            content: self
-                .renderer
-                .render_request(task, planner_context, visual_inputs),
+            content: self.renderer.render_request(
+                task,
+                planner_context,
+                visual_inputs,
+                PlannerRenderHints {
+                    openai_screenshot_coordinate_contract: openai_screenshot_grounding,
+                },
+            ),
             timestamp_ms: 0,
         }));
 
         Context {
-            system: Some(planner_system_prompt(planner_context)),
+            system: Some(planner_system_prompt(
+                planner_context,
+                openai_screenshot_grounding,
+            )),
             messages,
             tools: tools.iter().map(tool_spec).collect(),
         }
@@ -142,4 +188,21 @@ fn tool_spec(spec: &AgentToolSpec) -> ToolSpec {
         input_schema: serde_json::to_value(spec.planner_summary())
             .expect("planner tool summaries should serialize"),
     }
+}
+
+fn enable_openai_screenshot_grounding(
+    model_config: &ModelConfig,
+    planner_context: &PlannerContext,
+    visual_inputs: &[PlannerVisualInput],
+) -> bool {
+    model_config.provider == ProviderKind::OpenAi
+        && model_config.coordinate_policy == CoordinatePolicy::SurfaceImagePixels
+        && planner_context
+            .current_observation
+            .as_ref()
+            .and_then(|observation| observation.screenshot_artifact.as_ref())
+            .is_some()
+        && visual_inputs
+            .iter()
+            .any(|visual| visual.slot == PlannerVisualSlot::Current)
 }

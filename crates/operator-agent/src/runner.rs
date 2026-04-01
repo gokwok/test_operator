@@ -327,6 +327,7 @@ impl AgentRunner {
             let visual_inputs = self.load_planner_visuals(&planner_context).await?;
             let prompt = self.prompt_builder.assemble(
                 &state.task,
+                &model.config,
                 &planner_context,
                 tools,
                 state.model_context(),

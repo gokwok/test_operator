@@ -1,5 +1,8 @@
 use operator_agent::{
-    model::{AssistantMessage, ContentBlock, Message, StopReason, Usage, UserMessage},
+    model::{
+        AssistantMessage, CallOptions, ContentBlock, CoordinatePolicy, Message, ModelConfig,
+        ProviderKind, StopReason, Usage, UserMessage,
+    },
     planner::{
         PlannerContext, PlannerPromptBuilder, PlannerVisualInput, PlannerVisualSlot, TargetSummary,
         ToolResultSummary,
@@ -10,7 +13,7 @@ use operator_agent::{
     },
     tools::AgentToolSpec,
 };
-use operator_core::{ArtifactId, TargetId};
+use operator_core::{ArtifactId, ImageSizePx, TargetId};
 use serde_json::json;
 
 fn text_block(text: &str) -> ContentBlock {
@@ -63,6 +66,10 @@ fn planner_context() -> PlannerContext {
             root_element_count: 1,
             element_count: 2,
             screenshot_artifact: Some(ArtifactId("capture-1.png".into())),
+            image_size_px: Some(ImageSizePx {
+                width: 1260,
+                height: 2720,
+            }),
         }),
         current_visual_artifact: Some(ArtifactId("capture-1.png".into())),
         previous_visual_artifact: Some(ArtifactId("capture-prev.png".into())),
@@ -89,6 +96,26 @@ fn visual_inputs() -> Vec<PlannerVisualInput> {
             },
         },
     ]
+}
+
+fn openai_model_config() -> ModelConfig {
+    ModelConfig {
+        provider: ProviderKind::OpenAi,
+        id: "gpt-5.4".into(),
+        coordinate_policy: CoordinatePolicy::SurfaceImagePixels,
+        default_options: CallOptions::default(),
+        default_timeout_ms: Some(30_000),
+    }
+}
+
+fn compatible_model_config() -> ModelConfig {
+    ModelConfig {
+        provider: ProviderKind::OpenAiCompatible,
+        id: "doubao-seed-2-0-lite-260215".into(),
+        coordinate_policy: CoordinatePolicy::SurfaceNormalized1000,
+        default_options: CallOptions::default(),
+        default_timeout_ms: Some(30_000),
+    }
 }
 
 #[test]
@@ -136,6 +163,7 @@ fn planner_prompts_build_json_first_contract_snapshot() {
 
     let context = builder.assemble(
         "Open Finder and confirm the window appears.",
+        &compatible_model_config(),
         &planner_context(),
         &tools,
         &model_context,
@@ -164,6 +192,7 @@ fn planner_prompts_limit_recent_transcript_before_appending_current_request_snap
 
     let context = builder.assemble(
         "Retry with valid JSON.",
+        &compatible_model_config(),
         &planner_context(),
         &[],
         &model_context,
@@ -192,6 +221,7 @@ fn planner_prompts_bound_recent_transcript_by_char_budget() {
 
     let context = builder.assemble(
         "Retry with valid JSON.",
+        &compatible_model_config(),
         &planner_context(),
         &[],
         &model_context,
@@ -215,6 +245,7 @@ fn planner_prompts_bound_recent_transcript_by_char_budget() {
 fn planner_prompts_forbid_click_based_app_launching_in_system_prompt() {
     let context = PlannerPromptBuilder::new().assemble(
         "Open Notes.",
+        &compatible_model_config(),
         &planner_context(),
         &[],
         &ModelContextBuffer::new(),
@@ -265,6 +296,7 @@ fn planner_prompts_include_bootstrap_app_catalog_and_prelaunched_app_in_system_p
 
     let assembled = PlannerPromptBuilder::new().assemble(
         "Open Notes.",
+        &compatible_model_config(),
         &context,
         &[],
         &ModelContextBuffer::new(),
@@ -279,4 +311,63 @@ fn planner_prompts_include_bootstrap_app_catalog_and_prelaunched_app_in_system_p
     assert!(system.contains("Installed app catalog bootstrap (`app list --all`):"));
     assert!(system.contains("备忘录 [bundle=com.huawei.hmos.notepad] [running]"));
     assert!(system.contains("计算器 [bundle=com.huawei.hmos.calculator]"));
+}
+
+#[test]
+fn planner_prompts_include_openai_grounding_contract_and_image_size_only_for_openai() {
+    let assembled = PlannerPromptBuilder::new().assemble(
+        "Tap the yellow plus button.",
+        &openai_model_config(),
+        &planner_context(),
+        &[],
+        &ModelContextBuffer::new(),
+        &visual_inputs(),
+    );
+
+    let system = assembled
+        .system
+        .expect("planner prompt should include system text");
+    assert!(system.contains("OpenAI screenshot grounding contract:"));
+    assert!(system.contains("Current screenshot pixel size: 1260 x 2720."));
+    assert!(system
+        .contains("Never use normalized coordinates, percentages, or screen-global coordinates."));
+    assert!(system.contains("first internally estimate a tight bounding box"));
+    assert!(system.contains("prefer the bbox center or slightly above center"));
+
+    let request = serde_json::to_string(&assembled.messages)
+        .expect("rendered planner request should serialize");
+    assert!(request.contains("screenshot image_size_px: 1260 x 2720"));
+    assert!(request.contains(
+        "screenshot coordinate space: original image pixels with origin=(0,0) at the top-left"
+    ));
+}
+
+#[test]
+fn planner_prompts_do_not_include_openai_grounding_for_compatible_provider() {
+    let assembled = PlannerPromptBuilder::new().assemble(
+        "Tap the yellow plus button.",
+        &compatible_model_config(),
+        &planner_context(),
+        &[],
+        &ModelContextBuffer::new(),
+        &visual_inputs(),
+    );
+
+    let system = assembled
+        .system
+        .expect("planner prompt should include system text");
+    assert!(
+        !system.contains("OpenAI screenshot grounding contract:"),
+        "non-OpenAI providers should not receive the OpenAI grounding contract: {system}"
+    );
+    let request = serde_json::to_string(&assembled.messages)
+        .expect("rendered planner request should serialize");
+    assert!(
+        !request.contains("screenshot coordinate space: original image pixels"),
+        "non-OpenAI providers should not receive the coordinate-space hint: {request}"
+    );
+    assert!(
+        !request.contains("screenshot image_size_px: 1260 x 2720"),
+        "non-OpenAI providers should not receive OpenAI-only image-size hints: {request}"
+    );
 }

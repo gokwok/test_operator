@@ -88,6 +88,7 @@ fn verified_read_only_state() -> AgentSessionState {
         snapshot_id: SnapshotId("snap-1".into()),
         surface: "frontmost".into(),
         screenshot_artifact: Some(ArtifactId("capture-1.png".into())),
+        image_size_px: None,
         root_element_count: 1,
         element_count: 1,
     });
@@ -137,6 +138,7 @@ fn verified_side_effect_state() -> AgentSessionState {
         snapshot_id: SnapshotId("snap-2".into()),
         surface: "frontmost".into(),
         screenshot_artifact: Some(ArtifactId("capture-2.png".into())),
+        image_size_px: None,
         root_element_count: 1,
         element_count: 1,
     });
@@ -178,6 +180,7 @@ fn verified_screenshot_only_state() -> AgentSessionState {
         snapshot_id: SnapshotId("snap-shot-only".into()),
         surface: "frontmost".into(),
         screenshot_artifact: Some(ArtifactId("capture-shot-only.png".into())),
+        image_size_px: None,
         root_element_count: 0,
         element_count: 0,
     });

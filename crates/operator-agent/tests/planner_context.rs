@@ -5,7 +5,9 @@ use operator_agent::{
     session::{AgentSessionState, VisualObservationSummary},
     tools::AgentToolResult,
 };
-use operator_core::{ArtifactId, Capability, CapabilitySet, SessionId, SnapshotId, TargetId};
+use operator_core::{
+    ArtifactId, Capability, CapabilitySet, ImageSizePx, SessionId, SnapshotId, TargetId,
+};
 use operator_runtime::{RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{test_element, test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use serde_json::json;
@@ -36,6 +38,10 @@ fn observation(
         snapshot_id: SnapshotId(snapshot_id.into()),
         surface: "frontmost".into(),
         screenshot_artifact: Some(ArtifactId(artifact_id.into())),
+        image_size_px: Some(ImageSizePx {
+            width: 1260,
+            height: 2720,
+        }),
         root_element_count,
         element_count,
     }
@@ -175,6 +181,16 @@ async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_r
     assert_eq!(
         context.current_observation,
         Some(observation("snap-latest", "capture-latest.png", 1, 2))
+    );
+    assert_eq!(
+        context
+            .current_observation
+            .as_ref()
+            .and_then(|observation| observation.image_size_px),
+        Some(ImageSizePx {
+            width: 1260,
+            height: 2720,
+        })
     );
     assert_eq!(
         context.current_visual_artifact,
