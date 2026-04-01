@@ -99,6 +99,23 @@ pub(crate) fn build_inspect_result(hierarchy: Value) -> Result<InspectResult, Op
     Ok(InspectResult { elements, root_ids })
 }
 
+pub(crate) fn filter_inspect_result_to_region(
+    result: InspectResult,
+    region: Rect,
+) -> InspectResult {
+    let mut filtered = HashMap::new();
+    let root_ids = result
+        .root_ids
+        .iter()
+        .filter_map(|id| filter_element_to_region(&result.elements, &mut filtered, id, region))
+        .collect::<Vec<_>>();
+
+    InspectResult {
+        elements: filtered,
+        root_ids,
+    }
+}
+
 fn flatten_compact_node(
     node: CompactNode,
     elements: &mut HashMap<ElementId, UiElement>,
@@ -125,6 +142,32 @@ fn flatten_compact_node(
     );
 
     node.id
+}
+
+fn filter_element_to_region(
+    elements: &HashMap<ElementId, UiElement>,
+    filtered: &mut HashMap<ElementId, UiElement>,
+    id: &ElementId,
+    region: Rect,
+) -> Option<ElementId> {
+    let element = elements.get(id)?;
+    let children = element
+        .children
+        .iter()
+        .filter_map(|child| filter_element_to_region(elements, filtered, child, region))
+        .collect::<Vec<_>>();
+    let keep = element
+        .bounds
+        .is_some_and(|bounds| rects_intersect(bounds, region))
+        || !children.is_empty();
+    if !keep {
+        return None;
+    }
+
+    let mut element = element.clone();
+    element.children = children;
+    filtered.insert(id.clone(), element);
+    Some(id.clone())
 }
 
 fn compact_node(node: &HarmonyNode, path: &str) -> Vec<CompactNode> {
@@ -392,6 +435,15 @@ fn parse_bounds(value: &str) -> Option<Rect> {
     })
 }
 
+fn rects_intersect(lhs: Rect, rhs: Rect) -> bool {
+    let left = lhs.x.max(rhs.x);
+    let top = lhs.y.max(rhs.y);
+    let right = (lhs.x + lhs.width).min(rhs.x + rhs.width);
+    let bottom = (lhs.y + lhs.height).min(rhs.y + rhs.height);
+
+    left < right && top < bottom
+}
+
 fn is_visible(node: &HarmonyNode) -> bool {
     parse_bool_default(&node.attributes.visible, true)
 }
@@ -596,5 +648,60 @@ mod tests {
         assert_eq!(checkbox.role, "checkbox");
         assert_eq!(checkbox.label.as_deref(), Some("记住我"));
         assert_eq!(checkbox.value.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_filters_compact_result_to_region() {
+        let result = build_inspect_result(json!({
+            "attributes": {},
+            "children": [
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[0,0][120,80]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text",
+                            "text": "左侧",
+                            "bounds": "[20,20][60,50]"
+                        }
+                    }]
+                },
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[300,0][420,80]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text",
+                            "text": "右侧",
+                            "bounds": "[320,20][360,50]"
+                        }
+                    }]
+                }
+            ]
+        }))
+        .expect("inspect result");
+
+        let filtered = super::filter_inspect_result_to_region(
+            result,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 100.0,
+            },
+        );
+
+        assert_eq!(filtered.root_ids.len(), 1);
+        let only = filtered
+            .elements
+            .get(&filtered.root_ids[0])
+            .expect("filtered element should exist");
+        assert_eq!(only.label.as_deref(), Some("左侧"));
     }
 }

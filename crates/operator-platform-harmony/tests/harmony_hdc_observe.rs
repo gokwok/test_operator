@@ -17,7 +17,7 @@ use operator_platform_harmony::{
     HarmonyHdcUiSession,
 };
 use operator_runtime::PlatformDriverFactory;
-use serde_json::json;
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -235,6 +235,89 @@ async fn observe_fullscreen_reuses_cached_shell_session() {
     assert_eq!(counts.focused_window_calls.load(Ordering::SeqCst), 0);
 }
 
+#[tokio::test]
+async fn observe_frontmost_includes_filtered_compact_elements_when_requested() {
+    let temp = tempdir().expect("tempdir");
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(
+        FakeSessionFactory::new(
+            Arc::clone(&counts),
+            ImageSizePx {
+                width: 120,
+                height: 80,
+            },
+            Some(Rect {
+                x: 10.0,
+                y: 12.0,
+                width: 40.0,
+                height: 30.0,
+            }),
+        )
+        .with_hierarchy(json!({
+            "attributes": {},
+            "children": [
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[12,15][38,35]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text",
+                            "text": "保留",
+                            "bounds": "[14,18][28,28]"
+                        }
+                    }]
+                },
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[80,10][110,40]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text",
+                            "text": "过滤",
+                            "bounds": "[82,14][100,26]"
+                        }
+                    }]
+                }
+            ]
+        })),
+        temp.path(),
+    );
+
+    let observed = driver
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: true,
+                include_elements: true,
+            },
+            &ExecContext {
+                target: "harmony-pc".into(),
+                session: None,
+                timeout_ms: Some(500),
+            },
+        )
+        .await
+        .expect("observe should succeed");
+
+    let snapshot = observed.snapshot;
+    assert_eq!(snapshot.root_ids.len(), 1);
+    let root = snapshot
+        .elements
+        .get(&snapshot.root_ids[0])
+        .expect("filtered element should exist");
+    assert_eq!(root.role, "button");
+    assert_eq!(root.label.as_deref(), Some("保留"));
+    assert_eq!(counts.dump_hierarchy_calls.load(Ordering::SeqCst), 1);
+}
+
 fn build_driver(factory: FakeSessionFactory, artifacts_dir: &Path) -> Arc<dyn PlatformDriver> {
     HarmonyHdcDriverFactory::new_with_session_factory_and_artifacts_dir(
         Arc::new(factory),
@@ -255,6 +338,7 @@ struct CallCounts {
     capture_calls: AtomicUsize,
     display_size_calls: AtomicUsize,
     focused_window_calls: AtomicUsize,
+    dump_hierarchy_calls: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -262,6 +346,7 @@ struct FakeSessionFactory {
     counts: Arc<CallCounts>,
     image_size_px: ImageSizePx,
     focused_window_bounds: Option<Rect>,
+    hierarchy: Value,
 }
 
 impl FakeSessionFactory {
@@ -274,7 +359,16 @@ impl FakeSessionFactory {
             counts,
             image_size_px,
             focused_window_bounds,
+            hierarchy: json!({
+                "attributes": {},
+                "children": []
+            }),
         }
+    }
+
+    fn with_hierarchy(mut self, hierarchy: Value) -> Self {
+        self.hierarchy = hierarchy;
+        self
     }
 }
 
@@ -288,6 +382,7 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
             counts: Arc::clone(&self.counts),
             image_size_px: self.image_size_px,
             focused_window_bounds: self.focused_window_bounds,
+            hierarchy: self.hierarchy.clone(),
         }))
     }
 
@@ -303,6 +398,7 @@ struct FakeShellSession {
     counts: Arc<CallCounts>,
     image_size_px: ImageSizePx,
     focused_window_bounds: Option<Rect>,
+    hierarchy: Value,
 }
 
 impl HarmonyHdcShellSession for FakeShellSession {
@@ -364,6 +460,13 @@ impl HarmonyHdcShellSession for FakeShellSession {
             highlighted_window_ids: Vec::new(),
             total_window_count: Some(0),
         })
+    }
+
+    fn dump_hierarchy(&mut self) -> Result<Value, operator_core::OperatorError> {
+        self.counts
+            .dump_hierarchy_calls
+            .fetch_add(1, Ordering::SeqCst);
+        Ok(self.hierarchy.clone())
     }
 
     fn click(

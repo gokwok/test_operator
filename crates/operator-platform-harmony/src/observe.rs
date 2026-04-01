@@ -7,8 +7,8 @@ use std::{
 
 use image::ImageFormat;
 use operator_core::{
-    Capability, ExecContext, ImageSizePx, ObserveRequest, ObserveResult, OperatorError, Rect,
-    Snapshot, SnapshotMetadata, SurfaceKind,
+    ExecContext, ImageSizePx, ObserveRequest, ObserveResult, OperatorError, Rect, Snapshot,
+    SnapshotMetadata, SurfaceKind,
 };
 
 use crate::HarmonyHdcWorker;
@@ -22,12 +22,6 @@ pub(crate) async fn observe(
     req: ObserveRequest,
     ctx: &ExecContext,
 ) -> Result<ObserveResult, OperatorError> {
-    if req.include_elements {
-        return Err(OperatorError::CapabilityNotSupported(
-            Capability::InspectTree,
-        ));
-    }
-
     let started = Instant::now();
     let artifact_id = if req.include_screenshot {
         Some(next_artifact_id())
@@ -70,6 +64,15 @@ pub(crate) async fn observe(
         SurfaceKind::Fullscreen { .. } => capture.image_size_px,
         SurfaceKind::Window { .. } | SurfaceKind::Region { .. } => unreachable!(),
     });
+    let inspection = if req.include_elements {
+        let region = Some(capture_bounds);
+        worker.inspect_tree(region).await?
+    } else {
+        crate::inspect::InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        }
+    };
 
     Ok(ObserveResult {
         snapshot: Snapshot {
@@ -77,8 +80,8 @@ pub(crate) async fn observe(
             target: ctx.target.clone(),
             surface: req.surface,
             image_artifact: artifact_id,
-            elements: HashMap::new(),
-            root_ids: Vec::new(),
+            elements: inspection.elements,
+            root_ids: inspection.root_ids,
             metadata: SnapshotMetadata {
                 platform: "harmony".into(),
                 display_scale: None,
