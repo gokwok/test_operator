@@ -158,9 +158,40 @@ impl ConsoleAgentProgressReporter {
 
 impl AgentProgressReporter for ConsoleAgentProgressReporter {
     fn report(&self, event: AgentProgressEvent) {
-        // PlannedTool / FinishPlanned: buffer the thinking line.
-        // It will be the spinner message while the tool runs, then printed
-        // statically after the result arrives.
+        // TurnStarted: clear any prior spinner, flush buffered thinking, then
+        // start a fresh spinner immediately so the user sees activity during
+        // LLM inference (before PlannedTool arrives).
+        if let AgentProgressEvent::TurnStarted { turn_index } = &event {
+            self.clear_spinner();
+            self.flush_thinking();
+            // Print any blank-line separator the renderer emits.
+            let rendered = {
+                let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
+                renderer.render(&event)
+            };
+            if let Some(ref text) = rendered {
+                if !text.is_empty() {
+                    self.print_line(text);
+                }
+            }
+            // Start spinner immediately — will be updated when PlannedTool arrives.
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::with_template("  {spinner:.cyan} {msg}")
+                    .expect("spinner template is valid"),
+            );
+            pb.set_message(format!(
+                "{:>2}  {}",
+                console::style(turn_index.to_string()).dim(),
+                console::style("∘").cyan(),
+            ));
+            pb.enable_steady_tick(Duration::from_millis(80));
+            *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
+            return;
+        }
+
+        // PlannedTool / FinishPlanned: update running spinner message in-place,
+        // and buffer the full thinking line for later static printing.
         if matches!(
             &event,
             AgentProgressEvent::PlannedTool { .. } | AgentProgressEvent::FinishPlanned { .. }
@@ -169,12 +200,23 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
                 let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
                 renderer.render(&event)
             };
+            if let Some(ref text) = rendered {
+                if let Some(pb) = self
+                    .active_spinner
+                    .lock()
+                    .expect("spinner mutex poisoned")
+                    .as_ref()
+                {
+                    pb.set_message(text.trim_start().to_string());
+                }
+            }
             *self.pending_thinking.lock().expect("thinking mutex poisoned") = rendered;
             return;
         }
 
-        // ToolCall: use the buffered thinking line as the spinner message so the
-        // whole "N  ∘ thinking..." line animates while the tool runs.
+        // ToolCall: reuse the running spinner (regular turn) so the thinking
+        // line continues animating during tool execution.  For setup turns that
+        // never got a TurnStarted, start a fresh spinner.
         if let AgentProgressEvent::ToolCall { name, args, .. } = &event {
             let rendered = {
                 let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
@@ -183,15 +225,14 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
 
             // Print any section header preamble (e.g. "  setup") that precedes
             // the tool line.
-            if let Some(text) = rendered {
+            if let Some(ref text) = rendered {
                 let all: Vec<&str> = text.lines().collect();
                 if all.len() > 1 {
                     self.print_line(&all[..all.len() - 1].join("\n"));
                 }
             }
 
-            // Spinner message = thinking line (trimmed of leading indent so the
-            // template indent + spinner char sit cleanly in front of the number).
+            // Spinner message = thinking line (trimmed of leading indent).
             let thinking = self
                 .pending_thinking
                 .lock()
@@ -202,15 +243,32 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
                 None => output::tool_call_label(name, args),
             };
 
-            self.clear_spinner();
-            let pb = ProgressBar::new_spinner();
-            pb.set_style(
-                ProgressStyle::with_template("  {spinner:.cyan} {msg}")
-                    .expect("spinner template is valid"),
-            );
-            pb.set_message(spinner_msg);
-            pb.enable_steady_tick(Duration::from_millis(80));
-            *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
+            let spinner_running = self
+                .active_spinner
+                .lock()
+                .expect("spinner mutex poisoned")
+                .is_some();
+            if spinner_running {
+                // Update the existing spinner message in-place.
+                if let Some(pb) = self
+                    .active_spinner
+                    .lock()
+                    .expect("spinner mutex poisoned")
+                    .as_ref()
+                {
+                    pb.set_message(spinner_msg);
+                }
+            } else {
+                // Setup turn: start a fresh spinner.
+                let pb = ProgressBar::new_spinner();
+                pb.set_style(
+                    ProgressStyle::with_template("  {spinner:.cyan} {msg}")
+                        .expect("spinner template is valid"),
+                );
+                pb.set_message(spinner_msg);
+                pb.enable_steady_tick(Duration::from_millis(80));
+                *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
+            }
             return;
         }
 

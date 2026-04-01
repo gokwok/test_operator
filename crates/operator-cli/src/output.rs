@@ -306,14 +306,48 @@ pub(crate) fn tool_call_label(name: &str, args: &serde_json::Value) -> String {
     }
 }
 
+/// Extracts (x, y) from a normalized Locator JSON value.
+/// Supports all Locator variants produced by the normalizer:
+/// `{"Coords": {"x", "y"}}`,
+/// `{"SnapshotPixelCoords": {"snapshot", "point": {"x","y"}}}`,
+/// `{"SnapshotCoords": …}`, `{"SnapshotNormalizedCoords": …}`.
+fn extract_locator_coords(locator: &serde_json::Value) -> Option<(f64, f64)> {
+    if let Some(p) = locator.get("Coords") {
+        return Some((p["x"].as_f64()?, p["y"].as_f64()?));
+    }
+    for key in ["SnapshotPixelCoords", "SnapshotCoords", "SnapshotNormalizedCoords"] {
+        if let Some(sp) = locator.get(key) {
+            return Some((sp["point"]["x"].as_f64()?, sp["point"]["y"].as_f64()?));
+        }
+    }
+    None
+}
+
+/// Formats a Locator as a human-readable label (coords or text).
+fn format_locator(locator: &serde_json::Value) -> Option<String> {
+    if let Some((x, y)) = extract_locator_coords(locator) {
+        return Some(format!("x={} y={}", render_number(x), render_number(y)));
+    }
+    if let Some(text) = locator.get("Text").and_then(|v| v.as_str()) {
+        let preview: String = text.chars().take(30).collect();
+        let suffix = if text.chars().count() > 30 { "…" } else { "" };
+        return Some(format!("\"{preview}{suffix}\""));
+    }
+    if let Some(obj) = locator.get("Role").and_then(|v| v.as_object()) {
+        if let Some(role) = obj.get("role").and_then(|v| v.as_str()) {
+            return Some(format!("[{role}]"));
+        }
+    }
+    None
+}
+
 /// Extracts the most user-visible arguments for a given tool call.
 fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
     let s = match name {
-        // Pointer actions: show coordinates
+        // Pointer actions: show coordinates or text from the locator
         "click" | "move" => {
-            let x = args["x"].as_f64()?;
-            let y = args["y"].as_f64()?;
-            format!("x={} y={}", render_number(x), render_number(y))
+            let locator = &args["locator"];
+            format_locator(locator)?
         }
         // Text input: show the text (truncated)
         "type" => {
@@ -354,8 +388,8 @@ fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
         }
         // Scroll: direction + amount
         "scroll" => {
-            let dx = args["dx"].as_f64().unwrap_or(0.0);
-            let dy = args["dy"].as_f64().unwrap_or(0.0);
+            let dx = args["delta_x"].as_f64().unwrap_or(0.0);
+            let dy = args["delta_y"].as_f64().unwrap_or(0.0);
             let dir = if dy < 0.0 {
                 "↑"
             } else if dy > 0.0 {
@@ -367,19 +401,11 @@ fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
             };
             format!("{dir} dx={} dy={}", render_number(dx), render_number(dy))
         }
-        // Drag / swipe: from → to
+        // Drag / swipe: from → to (both are Locator values)
         "drag" | "swipe" => {
-            let fx = args["from_x"].as_f64()?;
-            let fy = args["from_y"].as_f64()?;
-            let tx = args["to_x"].as_f64()?;
-            let ty = args["to_y"].as_f64()?;
-            format!(
-                "({},{}) → ({},{})",
-                render_number(fx),
-                render_number(fy),
-                render_number(tx),
-                render_number(ty)
-            )
+            let from = format_locator(&args["from"])?;
+            let to = format_locator(&args["to"])?;
+            format!("{from} → {to}")
         }
         _ => return None,
     };
@@ -1156,7 +1182,7 @@ mod tests {
             turn_index: 1,
             step_index: 4,
             name: "click".into(),
-            args: serde_json::json!({"x": 450, "y": 320}),
+            args: serde_json::json!({"locator": {"Coords": {"x": 450, "y": 320}}}),
         });
         assert_eq!(
             renderer.render(&AgentProgressEvent::ToolResult {

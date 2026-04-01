@@ -141,6 +141,7 @@ fn planner_error_message(error: &AgentError) -> String {
         | AgentError::Config(message)
         | AgentError::ModelNotConfigured(message) => message.clone(),
         AgentError::Runtime(error) => error.to_string(),
+        AgentError::Interrupted(message) => message.clone(),
     }
 }
 
