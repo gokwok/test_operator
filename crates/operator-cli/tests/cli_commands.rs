@@ -3056,6 +3056,22 @@ async fn cli_run_executes_agent_command_and_renders_json_output() {
     );
 }
 
+#[test]
+fn cli_run_executes_agent_command_suppresses_duplicate_human_interrupt_error() {
+    assert!(!cli_main::should_render_agent_error(
+        false,
+        "agent run interrupted: received ctrl-c while the agent run was in progress",
+    ));
+    assert!(cli_main::should_render_agent_error(
+        true,
+        "agent run interrupted: received ctrl-c while the agent run was in progress",
+    ));
+    assert!(cli_main::should_render_agent_error(
+        false,
+        "planner error: tool failure loop detected",
+    ));
+}
+
 #[tokio::test]
 async fn cli_run_renders_switch_app_detail_for_non_json_output() {
     let cli =

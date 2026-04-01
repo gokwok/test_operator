@@ -161,7 +161,7 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
         // TurnStarted: clear any prior spinner, flush buffered thinking, then
         // start a fresh spinner immediately so the user sees activity during
         // LLM inference (before PlannedTool arrives).
-        if let AgentProgressEvent::TurnStarted { turn_index } = &event {
+        if let AgentProgressEvent::TurnStarted { turn_index: _ } = &event {
             self.clear_spinner();
             self.flush_thinking();
             // Print any blank-line separator the renderer emits.
@@ -431,7 +431,9 @@ async fn main_entry() -> i32 {
                     0
                 }
                 Err(error) => {
-                    eprintln!("{}", output::render_error(json_output, &error));
+                    if should_render_agent_error(json_output, &error) {
+                        eprintln!("{}", output::render_error(json_output, &error));
+                    }
                     1
                 }
             }
@@ -466,6 +468,14 @@ async fn run_agent_with_executor(
     let json_output = command.json_output;
     let result = executor.run(&command).await?;
     Ok(output::render_agent_success(&result, json_output))
+}
+
+pub(crate) fn should_render_agent_error(json_output: bool, error: &str) -> bool {
+    if json_output {
+        return true;
+    }
+
+    !error.trim_start().starts_with("agent run interrupted:")
 }
 
 async fn run_target_with_inspector(
