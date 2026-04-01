@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
 use operator_core::{
-    AppInfo, ArtifactId, ElementTreeReliability, ImageSizePx, Rect, SessionId, Snapshot,
-    SnapshotId, SurfaceKind, TargetId, UiElement,
+    AppInfo, ArtifactId, DigestOptions, ElementTreeReliability, ImageSizePx, SessionId, Snapshot,
+    SnapshotId, SurfaceKind, TargetId,
 };
+
+// Re-export digest types so downstream consumers (tests, other crates) that
+// historically imported them from this module continue to work.
+pub use operator_core::{ElementDigest, ElementDigestEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -52,7 +56,7 @@ pub struct ModelContextBuffer {
 
 const MAX_TEXT_SUMMARY_CHARS: usize = 120;
 const MAX_CONTEXT_TEXT_CHARS: usize = 240;
-const MAX_ELEMENT_DIGEST_ENTRIES: usize = 24;
+const MAX_ELEMENT_DIGEST_ENTRIES: usize = 100;
 
 impl ModelContextBuffer {
     pub fn new() -> Self {
@@ -173,7 +177,13 @@ impl VisualObservationSummary {
                 .and_then(|assessment| assessment.note.clone()),
             root_element_count: snapshot.root_ids.len(),
             element_count: snapshot.elements.len(),
-            element_digest: element_digest(snapshot),
+            element_digest: ElementDigest::from_snapshot(
+                snapshot,
+                &DigestOptions {
+                    max_entries: MAX_ELEMENT_DIGEST_ENTRIES,
+                    ..DigestOptions::default()
+                },
+            ),
         }
     }
 
@@ -212,59 +222,6 @@ impl VisualObservationSummary {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ElementDigest {
-    pub entries: Vec<ElementDigestEntry>,
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub truncated_count: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ElementDigestEntry {
-    pub element_id: String,
-    pub role: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bounds: Option<Rect>,
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub depth: usize,
-}
-
-impl ElementDigestEntry {
-    pub fn render_line(&self) -> String {
-        let mut fields = Vec::new();
-        if let Some(label) = self.label.as_deref() {
-            fields.push(format!("label={}", quoted(label)));
-        }
-        if let Some(value) = self.value.as_deref() {
-            fields.push(format!("value={}", quoted(value)));
-        }
-        if let Some(enabled) = self.enabled {
-            fields.push(format!("enabled={enabled}"));
-        }
-        if let Some(bounds) = self.bounds {
-            fields.push(format!("bounds={}", format_rect(bounds)));
-        }
-
-        let suffix = if fields.is_empty() {
-            String::new()
-        } else {
-            format!(" {}", fields.join(" "))
-        };
-        format!(
-            "{}- [{}] {}{}",
-            "  ".repeat(self.depth),
-            self.element_id,
-            self.role,
-            suffix
-        )
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoopHistoryItem {
@@ -856,87 +813,6 @@ fn summarize_preview_value(value: &Value) -> String {
 
 fn truncate(text: &str) -> String {
     truncate_to(text, MAX_TEXT_SUMMARY_CHARS)
-}
-
-fn element_digest(snapshot: &Snapshot) -> Option<ElementDigest> {
-    if snapshot.root_ids.is_empty() || snapshot.elements.is_empty() {
-        return None;
-    }
-
-    let mut entries = Vec::new();
-    for root_id in &snapshot.root_ids {
-        collect_element_digest_entries(snapshot, root_id, 0, &mut entries);
-    }
-    if entries.is_empty() {
-        return None;
-    }
-
-    let truncated_count = entries.len().saturating_sub(MAX_ELEMENT_DIGEST_ENTRIES);
-    entries.truncate(MAX_ELEMENT_DIGEST_ENTRIES);
-    Some(ElementDigest {
-        entries,
-        truncated_count,
-    })
-}
-
-fn collect_element_digest_entries(
-    snapshot: &Snapshot,
-    element_id: &operator_core::ElementId,
-    depth: usize,
-    out: &mut Vec<ElementDigestEntry>,
-) {
-    let Some(element) = snapshot.elements.get(element_id) else {
-        return;
-    };
-
-    if is_digest_worthy(element) {
-        out.push(ElementDigestEntry {
-            element_id: element.id.to_string(),
-            role: element.role.clone(),
-            label: truncate_option(element.label.as_deref(), 60),
-            value: truncate_option(element.value.as_deref(), 60),
-            enabled: element.enabled,
-            bounds: element.bounds,
-            depth,
-        });
-    }
-
-    for child_id in &element.children {
-        collect_element_digest_entries(snapshot, child_id, depth + 1, out);
-    }
-}
-
-fn is_digest_worthy(element: &UiElement) -> bool {
-    element.label.is_some()
-        || element.value.is_some()
-        || !element.children.is_empty()
-        || element.role != "generic"
-}
-
-fn truncate_option(value: Option<&str>, limit: usize) -> Option<String> {
-    value.map(|value| truncate_to(value, limit))
-}
-
-fn quoted(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "'"))
-}
-
-fn format_rect(rect: Rect) -> String {
-    format!(
-        "({},{},{},{})",
-        format_scalar(rect.x),
-        format_scalar(rect.y),
-        format_scalar(rect.width),
-        format_scalar(rect.height)
-    )
-}
-
-fn format_scalar(value: f64) -> String {
-    if value.fract().abs() < f64::EPSILON {
-        format!("{value:.0}")
-    } else {
-        format!("{value:.1}")
-    }
 }
 
 fn is_zero(value: &usize) -> bool {

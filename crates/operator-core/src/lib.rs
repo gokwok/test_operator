@@ -10,6 +10,7 @@ mod ids;
 mod locator;
 mod query;
 mod snapshot;
+mod snapshot_digest;
 mod surface;
 mod target;
 
@@ -33,5 +34,6 @@ pub use snapshot::{
     ElementSource, ElementTreeAssessment, ElementTreeReliability, ImageSizePx, Snapshot,
     SnapshotMetadata, UiElement,
 };
+pub use snapshot_digest::{DigestOptions, ElementDigest, ElementDigestEntry};
 pub use surface::{Surface, SurfaceKind};
 pub use target::{DriverConfig, TargetDescriptor};

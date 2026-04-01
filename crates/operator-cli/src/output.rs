@@ -246,14 +246,25 @@ impl AgentProgressRenderer {
 }
 
 fn render_snapshot(output: &Value) -> String {
-    let snapshot = &output["snapshot"];
-    let id = snapshot["id"].as_str().unwrap_or("<unknown>");
-    let target = snapshot["target"].as_str().unwrap_or("<unknown>");
-    let warning = snapshot["metadata"]["element_tree"]["note"]
-        .as_str()
-        .map(|note| format!(" [element tree warning: {note}]"))
-        .unwrap_or_default();
-    format!("snapshot {id} ({target}){warning}")
+    // Try to deserialize and render a rich element tree; fall back to a
+    // one-line summary when the payload cannot be parsed into a Snapshot.
+    if let Ok(snapshot) =
+        serde_json::from_value::<operator_core::Snapshot>(output["snapshot"].clone())
+    {
+        snapshot.render_element_tree(&operator_core::DigestOptions {
+            max_entries: 200,
+            ..Default::default()
+        })
+    } else {
+        let snapshot = &output["snapshot"];
+        let id = snapshot["id"].as_str().unwrap_or("<unknown>");
+        let target = snapshot["target"].as_str().unwrap_or("<unknown>");
+        let warning = snapshot["metadata"]["element_tree"]["note"]
+            .as_str()
+            .map(|note| format!(" [element tree warning: {note}]"))
+            .unwrap_or_default();
+        format!("snapshot {id} ({target}){warning}")
+    }
 }
 
 /// Layout constants for the thinking / result column alignment.
