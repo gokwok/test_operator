@@ -10,7 +10,10 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::{Arc, Mutex},
+    time::Duration,
 };
+
+use indicatif::{ProgressBar, ProgressStyle};
 
 use operator_agent::{
     model::{ModelRegistry, SelectedModelProviderConfig},
@@ -102,28 +105,83 @@ impl AgentExecutor for RuntimeAgentExecutor {
 
 struct ConsoleAgentProgressReporter {
     renderer: Mutex<output::AgentProgressRenderer>,
+    active_spinner: Mutex<Option<ProgressBar>>,
 }
 
 impl ConsoleAgentProgressReporter {
     fn new() -> Self {
         Self {
             renderer: Mutex::new(output::AgentProgressRenderer::new()),
+            active_spinner: Mutex::new(None),
+        }
+    }
+
+    /// Print a line, routing through the active spinner so it doesn't get garbled.
+    fn print_line(&self, line: &str) {
+        let guard = self.active_spinner.lock().expect("spinner mutex poisoned");
+        if let Some(pb) = guard.as_ref() {
+            pb.println(line);
+        } else {
+            let _ = writeln!(io::stderr().lock(), "{line}");
+        }
+    }
+
+    /// Stop and erase any running spinner.
+    fn clear_spinner(&self) {
+        if let Some(pb) = self
+            .active_spinner
+            .lock()
+            .expect("spinner mutex poisoned")
+            .take()
+        {
+            pb.finish_and_clear();
         }
     }
 }
 
 impl AgentProgressReporter for ConsoleAgentProgressReporter {
     fn report(&self, event: AgentProgressEvent) {
+        // ToolCall gets special treatment: the rendered output's last line is
+        // replaced by a live spinner; any preceding lines (section headers) are
+        // printed as normal static text.
+        if let AgentProgressEvent::ToolCall { name, .. } = &event {
+            // Advance renderer state and collect any section-header lines.
+            let rendered = {
+                let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
+                renderer.render(&event)
+            };
+
+            // Print everything except the tool line itself (last line).
+            if let Some(text) = rendered {
+                let mut lines = text.lines();
+                // Collect all but the last line (the tool line) as preamble.
+                let all: Vec<&str> = lines.by_ref().collect();
+                if all.len() > 1 {
+                    self.print_line(&all[..all.len() - 1].join("\n"));
+                }
+            }
+
+            // Replace the tool line with an animated spinner on stderr.
+            self.clear_spinner();
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::with_template("  {spinner:.yellow} {msg}")
+                    .expect("spinner template is valid"),
+            );
+            pb.set_message(console::style(name.clone()).bold().to_string());
+            pb.enable_steady_tick(Duration::from_millis(80));
+            *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
+            return;
+        }
+
+        // All other events: stop any running spinner first, then print.
+        self.clear_spinner();
         let rendered = {
-            let mut renderer = self
-                .renderer
-                .lock()
-                .expect("progress renderer mutex should not be poisoned");
+            let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
             renderer.render(&event)
         };
-
-        if let Some(rendered) = rendered {
-            let _ = writeln!(io::stderr().lock(), "{rendered}");
+        if let Some(text) = rendered {
+            self.print_line(&text);
         }
     }
 }
