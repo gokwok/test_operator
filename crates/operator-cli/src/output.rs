@@ -74,10 +74,9 @@ pub(crate) fn render_agent_success(result: &AgentRunResult, json_output: bool) -
             .expect("agent run result should serialize to JSON");
     }
 
-    format!(
-        "session_id: {}\ntarget: {}\nmodel: {}\nsummary: {}",
-        result.session_id, result.target, result.model, result.summary
-    )
+    // In human mode the session header and RunCompleted event already carry all
+    // this information, so we suppress the redundant trailing block.
+    String::new()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,14 +106,19 @@ impl AgentProgressRenderer {
                 task,
             } => {
                 self.current_section = None;
+                let session_id_str = session_id.to_string();
+                let short_id = abbreviate_session_id(&session_id_str);
                 lines.push(format!(
-                    "{} {}  {}  {}",
+                    "{} {}  {}",
                     style("◆").cyan().bold(),
-                    style(session_id.to_string()).bold(),
-                    style(format!("target={target}")).dim(),
+                    style(format!("target={target}")).bold(),
                     style(format!("model={model}")).dim(),
                 ));
-                lines.push(format!("  {}", compact_progress_text(task)));
+                lines.push(format!(
+                    "  {}  {}",
+                    compact_progress_text(task),
+                    style(format!("({short_id})")).dim(),
+                ));
             }
             AgentProgressEvent::TurnStarted { turn_index } => {
                 self.enter_turn(&mut lines, *turn_index);
@@ -155,11 +159,16 @@ impl AgentProgressRenderer {
             AgentProgressEvent::ToolResult {
                 turn_index,
                 step_index: _,
-                name: _,
+                name,
                 summary,
                 is_error,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
+                // Observe / snapshot calls are internal plumbing — suppress their
+                // result lines entirely to avoid technical noise in the output.
+                if is_observe_tool(name) {
+                    return None;
+                }
                 if *is_error {
                     lines.push(format!(
                         "  {} {}",
@@ -167,11 +176,17 @@ impl AgentProgressRenderer {
                         style(compact_progress_text(summary)).red()
                     ));
                 } else {
-                    lines.push(format!(
-                        "  {} {}",
-                        style("✓").green(),
-                        compact_progress_text(summary)
-                    ));
+                    // Strip the generic "result: outcome" agent summary that carries no
+                    // user-visible information; just emit a bare checkmark in that case.
+                    let display = meaningful_summary(summary);
+                    if let Some(text) = display {
+                        lines.push(format!(
+                            "  {} {}",
+                            style("✓").green(),
+                            compact_progress_text(text)
+                        ));
+                    }
+                    // If display is None the tool ran fine but has nothing worth showing.
                 }
             }
             AgentProgressEvent::FinishGateRejected { turn_index, reason } => {
@@ -229,6 +244,41 @@ fn render_snapshot(output: &Value) -> String {
     let id = snapshot["id"].as_str().unwrap_or("<unknown>");
     let target = snapshot["target"].as_str().unwrap_or("<unknown>");
     format!("snapshot {id} ({target})")
+}
+
+/// Returns true for tools whose results are internal plumbing (observe / snapshots).
+/// Their result lines add pure technical noise and are suppressed from human output.
+fn is_observe_tool(name: &str) -> bool {
+    matches!(name, "observe" | "snapshot-get")
+}
+
+/// Returns `None` when the summary carries no user-visible information
+/// (e.g. the generic `"result: outcome"` produced by action tools), otherwise
+/// strips the redundant `"result: "` prefix and returns the remaining text.
+fn meaningful_summary(summary: &str) -> Option<&str> {
+    let text = summary.strip_prefix("result: ").unwrap_or(summary).trim();
+    if text.is_empty() || text == "outcome" {
+        return None;
+    }
+    Some(text)
+}
+
+/// Abbreviates a session ID for compact display.
+/// `"agent-1775026438846-35920-1"` → `"35920-1"`
+fn abbreviate_session_id(id: &str) -> &str {
+    // Drop everything up to and including the second `-`-separated numeric group
+    // (the millisecond timestamp), leaving the pid+counter suffix that is both
+    // short and sufficient to distinguish concurrent sessions.
+    let mut dashes = 0u8;
+    for (i, ch) in id.char_indices() {
+        if ch == '-' {
+            dashes += 1;
+            if dashes == 2 {
+                return &id[i + 1..];
+            }
+        }
+    }
+    id // fallback: return whole ID if format is unexpected
 }
 
 fn compact_progress_text(text: &str) -> String {
@@ -888,8 +938,7 @@ mod tests {
                 task: "Open Calculator and compute 114 x 9999.".into(),
             }),
             Some(
-                "◆ agent-7  target=macos  model=openai\n  Open Calculator and compute 114 x 9999."
-                    .into()
+                "◆ target=macos  model=openai\n  Open Calculator and compute 114 x 9999.  (agent-7)".into()
             )
         );
         assert_eq!(
@@ -922,6 +971,28 @@ mod tests {
             }),
             Some("  ✓ action succeeded".into())
         );
+        // Observe results are suppressed entirely.
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::ToolResult {
+                turn_index: 1,
+                step_index: 2,
+                name: "observe".into(),
+                summary: "snapshot snapshot-123 (macos)".into(),
+                is_error: false,
+            }),
+            None
+        );
+        // Generic "result: outcome" summaries are suppressed.
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::ToolResult {
+                turn_index: 1,
+                step_index: 3,
+                name: "click".into(),
+                summary: "result: outcome".into(),
+                is_error: false,
+            }),
+            None
+        );
         assert_eq!(
             renderer.render(&AgentProgressEvent::RunCompleted {
                 summary: "The calculator now shows 1139886.".into(),
@@ -946,6 +1017,6 @@ mod tests {
             .expect("run start should render");
 
         assert!(rendered.contains("First line with spacing. Second line with more text."));
-        assert!(rendered.ends_with("..."));
+        assert!(rendered.contains("..."));
     }
 }

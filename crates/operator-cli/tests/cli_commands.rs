@@ -2997,7 +2997,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
     .unwrap();
     assert_eq!(
         rendered,
-        "session_id: sess-1\ntarget: macos\nmodel: doubao\nsummary: Observed the frontmost window."
+        ""
     );
 
     let recorded = calls.lock().unwrap();
