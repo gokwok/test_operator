@@ -1,5 +1,6 @@
 use std::{
     path::Path,
+    process,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -674,10 +675,11 @@ fn model_error(error: ModelError) -> AgentError {
 }
 
 fn next_session_id() -> SessionId {
-    SessionId(format!(
-        "agent-{}",
-        SESSION_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ))
+    session_id_from_parts(
+        now_ms(),
+        process::id(),
+        SESSION_COUNTER.fetch_add(1, Ordering::Relaxed),
+    )
 }
 
 fn now_ms() -> u64 {
@@ -695,6 +697,10 @@ fn tool_call_id(state: &AgentSessionState, name: &str) -> Arc<str> {
         name,
         state.tool_trace.len()
     ))
+}
+
+fn session_id_from_parts(timestamp_ms: u64, pid: u32, counter: u64) -> SessionId {
+    SessionId(format!("agent-{timestamp_ms}-{pid}-{counter}"))
 }
 
 fn snapshot_from_tool_output(output: &Value) -> Option<Snapshot> {
@@ -800,5 +806,19 @@ fn screenshot_mime(path: &Path) -> Option<&'static str> {
         "bmp" => Some("image/bmp"),
         "tif" | "tiff" => Some("image/tiff"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::session_id_from_parts;
+    use operator_core::SessionId;
+
+    #[test]
+    fn session_ids_include_time_process_and_counter_entropy() {
+        assert_eq!(
+            session_id_from_parts(1_775_016_620_588, 42_001, 7),
+            SessionId("agent-1775016620588-42001-7".into())
+        );
     }
 }

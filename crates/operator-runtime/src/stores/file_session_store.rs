@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
 use operator_core::{OperatorError, SessionId};
@@ -64,6 +67,12 @@ impl SessionStore for FileSessionStore {
         self.ensure_dir().await?;
 
         let path = self.session_path(&session.id);
+        let log_path = self.session_log_path(&session.id);
+        match fs::remove_file(&log_path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
         let bytes = serde_json::to_vec_pretty(session)?;
         fs::write(path, bytes).await?;
         Ok(())

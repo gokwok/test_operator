@@ -144,6 +144,30 @@ async fn file_session_store_round_trips_session_metadata() {
     assert!(dir.path().join("sessions").join("sess-1.jsonl").exists());
 }
 
+#[tokio::test]
+async fn file_session_store_create_resets_stale_session_log_for_reused_id() {
+    let dir = tempdir().unwrap();
+    let store = FileSessionStore::new(dir.path());
+    let session = test_session("sess-1");
+
+    store.create(&session).await.unwrap();
+    store
+        .append(
+            &session.id,
+            &SessionEvent::UserInput {
+                text: "stale event".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+    store.create(&session).await.unwrap();
+    assert!(
+        store.events(&session.id).await.unwrap().is_empty(),
+        "recreating the same session id should not keep appending into a stale jsonl log"
+    );
+}
+
 fn test_snapshot(id: &str) -> Snapshot {
     let element_id = operator_core::ElementId("el-1".into());
 
