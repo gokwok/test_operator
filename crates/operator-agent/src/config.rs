@@ -28,7 +28,7 @@ impl Default for AgentConfig {
             max_parse_attempts: 3,
             repeated_error_limit: 3,
             step_timeout_ms: 30_000,
-            observe_delay_ms: 500,
+            observe_delay_ms: 1_000,
             planner_format: PlannerFormat::Json,
         }
     }

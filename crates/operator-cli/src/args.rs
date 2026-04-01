@@ -3692,7 +3692,10 @@ struct AgentArgs {
     include_elements: bool,
     #[arg(long, help = "Maximum number of agent steps before stopping")]
     max_steps: Option<NonZeroU32>,
-    #[arg(long, help = "Delay in milliseconds between a tool call and the automatic observe (default: 500)")]
+    #[arg(
+        long,
+        help = "Delay in milliseconds between a tool call and the automatic observe (default: 1000)"
+    )]
     observe_delay_ms: Option<u64>,
 }
 

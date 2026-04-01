@@ -147,6 +147,10 @@ impl AgentRunner {
             return self.fail_run(journal, state, reason).await;
         }
 
+        if req.app.is_some() && self.supports_auto_observe(&state.target)? {
+            self.wait_for_auto_observe_settle().await;
+        }
+
         if let Some(reason) = self
             .maybe_auto_observe(&executor, journal, state, None)
             .await?
@@ -195,10 +199,7 @@ impl AgentRunner {
                     }
 
                     if should_auto_observe_after_tool(&result) {
-                        if self.config.observe_delay_ms > 0 {
-                            tokio::time::sleep(Duration::from_millis(self.config.observe_delay_ms))
-                                .await;
-                        }
+                        self.wait_for_auto_observe_settle().await;
                         if let Some(reason) = self
                             .maybe_auto_observe(&executor, journal, state, Some(name.as_str()))
                             .await?
@@ -298,6 +299,12 @@ impl AgentRunner {
         }
 
         Ok(None)
+    }
+
+    async fn wait_for_auto_observe_settle(&self) {
+        if self.config.observe_delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(self.config.observe_delay_ms)).await;
+        }
     }
 
     async fn bootstrap_app_context(

@@ -800,6 +800,45 @@ driver = "macos.system"
 }
 
 #[test]
+fn cli_parse_agent_command_defaults_observe_delay_to_1000ms() {
+    let temp = tempdir().expect("tempdir");
+    fs::write(
+        runtime_config_path(temp.path()),
+        r#"
+[runtime]
+default_target = "macos"
+
+[agent.model]
+default = "openai"
+
+[agent.model.provider.openai]
+api_key = "sk-test"
+model_name = "gpt-5.4"
+
+[targets.macos]
+platform = "macos"
+driver = "macos.system"
+"#,
+    )
+    .expect("write config");
+
+    let cli = cli_main::args::Cli::try_parse_from([
+        "operator",
+        "agent",
+        "Summarize the frontmost window",
+    ])
+    .unwrap();
+
+    let cli_main::args::CliExecution::Agent(command) = cli.into_execution().unwrap() else {
+        panic!("agent command should map to agent execution");
+    };
+    let prepared =
+        cli_main::agent_execution_for_home(&command, temp.path()).expect("agent bootstrap");
+
+    assert_eq!(prepared.agent_config.observe_delay_ms, 1_000);
+}
+
+#[test]
 fn permissions_help_shows_examples() {
     let help = command_help(["operator", "permissions", "--help"]);
     assert_leaf_help_shape(

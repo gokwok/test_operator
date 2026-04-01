@@ -1,6 +1,10 @@
 mod support;
 
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use operator_agent::{
     model::{ContentBlock, Context, Message, ModelRegistry, ProviderKind, UserMessage},
@@ -23,11 +27,21 @@ async fn runner_with(
     provider: Arc<DeterministicTestProvider>,
     session_store: Arc<InMemorySessionStore>,
 ) -> AgentRunner {
+    runner_with_config(driver, provider, session_store, AgentConfig::default()).await
+}
+
+async fn runner_with_config(
+    driver: Arc<MockPlatformDriver>,
+    provider: Arc<DeterministicTestProvider>,
+    session_store: Arc<InMemorySessionStore>,
+    config: AgentConfig,
+) -> AgentRunner {
     runner_with_snapshot_store(
         driver,
         provider,
         session_store,
         Arc::new(InMemorySnapshotStore::new()),
+        config,
     )
     .await
 }
@@ -37,6 +51,7 @@ async fn runner_with_snapshot_store(
     provider: Arc<DeterministicTestProvider>,
     session_store: Arc<InMemorySessionStore>,
     snapshot_store: Arc<InMemorySnapshotStore>,
+    config: AgentConfig,
 ) -> AgentRunner {
     let runtime = RuntimeBuilder::new(RuntimeConfig::default())
         .snapshot_store(snapshot_store)
@@ -49,7 +64,7 @@ async fn runner_with_snapshot_store(
     let mut models = ModelRegistry::new();
     models.register_provider(ProviderKind::OpenAi, provider);
 
-    AgentRunner::new(Arc::new(runtime), models, AgentConfig::default())
+    AgentRunner::new(Arc::new(runtime), models, config)
 }
 
 fn current_request_text(context: &Context) -> &str {
@@ -304,6 +319,7 @@ async fn agent_app_flag_prelaunches_the_requested_app_before_planning() {
     ]));
     let session_store = Arc::new(InMemorySessionStore::new());
     let runner = runner_with(driver.clone(), provider.clone(), session_store.clone()).await;
+    let started_at = Instant::now();
 
     let error = runner
         .run(AgentRunRequest {
@@ -320,6 +336,10 @@ async fn agent_app_flag_prelaunches_the_requested_app_before_planning() {
         }
         other => panic!("unexpected error kind: {other}"),
     }
+    assert!(
+        started_at.elapsed() >= Duration::from_millis(900),
+        "prelaunch path should wait for the default observe delay before the first observe"
+    );
 
     let session_id = session_store
         .list(Some(1))
@@ -356,6 +376,67 @@ async fn agent_app_flag_prelaunches_the_requested_app_before_planning() {
         .expect("planner request should include system prompt");
     assert!(system
         .contains("The CLI already prelaunched this app before the first planner turn: Notes"));
+}
+
+#[tokio::test]
+async fn agent_app_flag_respects_custom_observe_delay_before_first_auto_observe() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(app_list_result(&[("Notes", "com.apple.Notes", false)])));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 14,
+        detail: Some("launched Notes".into()),
+        coordinates: None,
+        target_app: Some(AppInfo {
+            bundle_id: Some("com.apple.Notes".into()),
+            name: "Notes".into(),
+            pid: None,
+            is_running: true,
+        }),
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }));
+    driver.push_observe_result(Ok(screenshot_only_snapshot(
+        "snap-notes",
+        "capture-notes.png",
+    )));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"fail","reason":"Stop after bootstrap setup."}"#.to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let config = AgentConfig {
+        observe_delay_ms: 50,
+        ..AgentConfig::default()
+    };
+    let runner = runner_with_config(driver, provider, session_store, config).await;
+    let started_at = Instant::now();
+
+    let error = runner
+        .run(AgentRunRequest {
+            task: "Open Notes and stop.".into(),
+            target: TargetId("macos".into()),
+            model: Some("gpt-5.4".into()),
+            app: Some("Notes".into()),
+        })
+        .await
+        .expect_err("runner should stop after the planned fail decision");
+
+    match error {
+        AgentError::Planner(message) => {
+            assert_eq!(message, "Stop after bootstrap setup.");
+        }
+        other => panic!("unexpected error kind: {other}"),
+    }
+
+    assert!(
+        started_at.elapsed() >= Duration::from_millis(45),
+        "prelaunch path should reuse the configured observe delay before the first observe"
+    );
 }
 
 #[tokio::test]
@@ -484,8 +565,14 @@ async fn planner_request_loads_previous_and_current_screenshots_as_image_blocks(
         r#"{"decision":"fail","reason":"Stop after refreshing the screenshots."}"#.to_string(),
     ]));
     let session_store = Arc::new(InMemorySessionStore::new());
-    let runner =
-        runner_with_snapshot_store(driver, provider.clone(), session_store, snapshot_store).await;
+    let runner = runner_with_snapshot_store(
+        driver,
+        provider.clone(),
+        session_store,
+        snapshot_store,
+        AgentConfig::default(),
+    )
+    .await;
 
     let error = runner
         .run(AgentRunRequest {
