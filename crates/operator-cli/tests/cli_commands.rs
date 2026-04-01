@@ -3034,10 +3034,7 @@ async fn cli_run_executes_agent_command_and_renders_text_output() {
     )
     .await
     .unwrap();
-    assert_eq!(
-        rendered,
-        ""
-    );
+    assert_eq!(rendered, "");
 
     let recorded = calls.lock().unwrap();
     assert_eq!(recorded.len(), 1);

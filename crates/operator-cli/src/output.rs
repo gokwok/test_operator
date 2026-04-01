@@ -154,7 +154,11 @@ impl AgentProgressRenderer {
                 // This line is consumed by the spinner in ConsoleAgentProgressReporter;
                 // rendering it here keeps the renderer testable and state consistent.
                 let label = tool_call_label(name, args);
-                lines.push(format!("  {} {}", style(&label).yellow().bold(), style("…").dim()));
+                lines.push(format!(
+                    "  {} {}",
+                    style(&label).yellow().bold(),
+                    style("…").dim()
+                ));
             }
             AgentProgressEvent::ToolResult {
                 turn_index,
@@ -315,7 +319,11 @@ fn extract_locator_coords(locator: &serde_json::Value) -> Option<(f64, f64)> {
     if let Some(p) = locator.get("Coords") {
         return Some((p["x"].as_f64()?, p["y"].as_f64()?));
     }
-    for key in ["SnapshotPixelCoords", "SnapshotCoords", "SnapshotNormalizedCoords"] {
+    for key in [
+        "SnapshotPixelCoords",
+        "SnapshotCoords",
+        "SnapshotNormalizedCoords",
+    ] {
         if let Some(sp) = locator.get(key) {
             return Some((sp["point"]["x"].as_f64()?, sp["point"]["y"].as_f64()?));
         }
@@ -377,8 +385,7 @@ fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
             keys
         }
         // App lifecycle
-        "launch-app" | "switch-app" | "quit-app" | "relaunch-app"
-        | "hide-app" | "unhide-app" => {
+        "launch-app" | "switch-app" | "quit-app" | "relaunch-app" | "hide-app" | "unhide-app" => {
             // Try bundle_id_or_name first, then bundle_id, then name
             args["bundle_id_or_name"]
                 .as_str()
