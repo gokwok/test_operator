@@ -324,6 +324,97 @@ async fn observe_frontmost_includes_filtered_compact_elements_when_requested() {
     assert_eq!(counts.dump_hierarchy_calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+async fn observe_marks_sparse_low_information_element_trees_as_unreliable() {
+    let temp = tempdir().expect("tempdir");
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(
+        FakeSessionFactory::new(
+            Arc::clone(&counts),
+            ImageSizePx {
+                width: 120,
+                height: 80,
+            },
+            Some(Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 120.0,
+                height: 80.0,
+            }),
+        )
+        .with_hierarchy(json!({
+            "attributes": {},
+            "children": [
+                {
+                    "attributes": {
+                        "type": "Stack",
+                        "bounds": "[0,0][120,80]",
+                        "id": "ContainerModalStack"
+                    }
+                },
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[80,0][93,20]",
+                        "id": "EnhanceMaximizeBtn"
+                    }
+                },
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[93,0][106,20]",
+                        "id": "EnhanceMinimizeBtn"
+                    }
+                },
+                {
+                    "attributes": {
+                        "type": "Button",
+                        "clickable": "true",
+                        "bounds": "[106,0][120,20]",
+                        "id": "EnhanceCloseBtn"
+                    }
+                }
+            ]
+        })),
+        temp.path(),
+    );
+
+    let observed = driver
+        .observe(
+            ObserveRequest {
+                surface: Surface {
+                    kind: SurfaceKind::Frontmost,
+                },
+                include_screenshot: false,
+                include_elements: true,
+            },
+            &ExecContext {
+                target: "harmony-pc".into(),
+                session: None,
+                timeout_ms: Some(500),
+            },
+        )
+        .await
+        .expect("observe should succeed");
+
+    let assessment = observed
+        .snapshot
+        .metadata
+        .element_tree
+        .expect("sparse tree should include reliability metadata");
+    assert_eq!(
+        assessment.reliability,
+        operator_core::ElementTreeReliability::Unreliable
+    );
+    assert!(assessment
+        .note
+        .as_deref()
+        .is_some_and(|note| note.contains("screenshot-only")));
+    assert_eq!(counts.dump_hierarchy_calls.load(Ordering::SeqCst), 1);
+}
+
 fn build_driver(factory: FakeSessionFactory, artifacts_dir: &Path) -> Arc<dyn PlatformDriver> {
     HarmonyHdcDriverFactory::new_with_session_factory_and_artifacts_dir(
         Arc::new(factory),

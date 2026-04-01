@@ -87,6 +87,8 @@ fn planner_context() -> PlannerContext {
                 width: 1260,
                 height: 2720,
             }),
+            element_tree_reliability: None,
+            element_tree_note: None,
             element_digest: None,
         }),
         current_visual_artifact: Some(ArtifactId("capture-1.png".into())),
@@ -105,6 +107,8 @@ fn digest_observation() -> VisualObservationSummary {
         element_count: 2,
         screenshot_artifact: Some(ArtifactId("capture-digest.png".into())),
         image_size_px: None,
+        element_tree_reliability: None,
+        element_tree_note: None,
         element_digest: Some(ElementDigest {
             entries: vec![
                 ElementDigestEntry {
@@ -178,6 +182,38 @@ fn compatible_model_config() -> ModelConfig {
         default_options: CallOptions::default(),
         default_timeout_ms: Some(30_000),
     }
+}
+
+#[test]
+fn planner_prompts_render_unreliable_element_tree_warning() {
+    let mut context = planner_context();
+    context.current_observation = Some(VisualObservationSummary {
+        snapshot_id: "snap-warning".into(),
+        surface: "frontmost".into(),
+        root_element_count: 1,
+        element_count: 4,
+        screenshot_artifact: Some(ArtifactId("capture-warning.png".into())),
+        image_size_px: None,
+        element_tree_reliability: Some(operator_core::ElementTreeReliability::Unreliable),
+        element_tree_note: Some(
+            "Harmony element tree is too sparse for reliable no-vision interaction on this screen; prefer pure-vision (screenshot-only) mode.".into(),
+        ),
+        element_digest: None,
+    });
+    context.current_visual_artifact = Some(ArtifactId("capture-warning.png".into()));
+
+    let assembled = PlannerPromptBuilder::new().assemble(
+        "Inspect the current UI.",
+        &compatible_model_config(),
+        &context,
+        &[],
+        &ModelContextBuffer::new(),
+        &[],
+    );
+    let request = current_request_text(&assembled.messages);
+
+    assert!(request.contains("element tree reliability: unreliable"));
+    assert!(request.contains("prefer pure-vision (screenshot-only) mode"));
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use operator_core::{
-    AppInfo, ArtifactId, ImageSizePx, Rect, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId,
-    UiElement,
+    AppInfo, ArtifactId, ElementTreeReliability, ImageSizePx, Rect, SessionId, Snapshot,
+    SnapshotId, SurfaceKind, TargetId, UiElement,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -143,6 +143,10 @@ pub struct VisualObservationSummary {
     pub screenshot_artifact: Option<ArtifactId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_size_px: Option<ImageSizePx>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element_tree_reliability: Option<ElementTreeReliability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element_tree_note: Option<String>,
     pub root_element_count: usize,
     pub element_count: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,6 +160,16 @@ impl VisualObservationSummary {
             surface: surface_name(&snapshot.surface.kind),
             screenshot_artifact: snapshot.image_artifact.clone(),
             image_size_px: snapshot.metadata.image_size_px,
+            element_tree_reliability: snapshot
+                .metadata
+                .element_tree
+                .as_ref()
+                .map(|assessment| assessment.reliability),
+            element_tree_note: snapshot
+                .metadata
+                .element_tree
+                .as_ref()
+                .and_then(|assessment| assessment.note.clone()),
             root_element_count: snapshot.root_ids.len(),
             element_count: snapshot.elements.len(),
             element_digest: element_digest(snapshot),
@@ -168,9 +182,19 @@ impl VisualObservationSummary {
             .as_ref()
             .map(|artifact| format!(", screenshot={artifact}"))
             .unwrap_or_default();
+        let warning = self
+            .element_tree_note
+            .as_deref()
+            .map(|note| format!(", element_tree_warning={note}"))
+            .unwrap_or_default();
         format!(
-            "snapshot {} on {} (roots={}, elements={}){}",
-            self.snapshot_id, self.surface, self.root_element_count, self.element_count, screenshot
+            "snapshot {} on {} (roots={}, elements={}){}{}",
+            self.snapshot_id,
+            self.surface,
+            self.root_element_count,
+            self.element_count,
+            screenshot,
+            warning
         )
     }
 
@@ -482,6 +506,8 @@ impl LoopState {
             surface: "unknown".into(),
             screenshot_artifact: visual.clone(),
             image_size_px: None,
+            element_tree_reliability: None,
+            element_tree_note: None,
             root_element_count: 0,
             element_count: 0,
             element_digest: None,
@@ -598,6 +624,8 @@ fn observe_result_is_usable(result: &AgentToolResult, include_elements: bool) ->
         surface: "unknown".into(),
         screenshot_artifact: screenshot_artifact.map(ArtifactId),
         image_size_px: None,
+        element_tree_reliability: None,
+        element_tree_note: None,
         root_element_count: root_count,
         element_count,
         element_digest: None,

@@ -154,7 +154,11 @@ impl AgentProgressRenderer {
                 // This line is consumed by the spinner in ConsoleAgentProgressReporter;
                 // rendering it here keeps the renderer testable and state consistent.
                 let label = tool_call_label(name, args);
-                lines.push(format!("  {} {}", style(&label).yellow().bold(), style("…").dim()));
+                lines.push(format!(
+                    "  {} {}",
+                    style(&label).yellow().bold(),
+                    style("…").dim()
+                ));
             }
             AgentProgressEvent::ToolResult {
                 turn_index,
@@ -245,7 +249,11 @@ fn render_snapshot(output: &Value) -> String {
     let snapshot = &output["snapshot"];
     let id = snapshot["id"].as_str().unwrap_or("<unknown>");
     let target = snapshot["target"].as_str().unwrap_or("<unknown>");
-    format!("snapshot {id} ({target})")
+    let warning = snapshot["metadata"]["element_tree"]["note"]
+        .as_str()
+        .map(|note| format!(" [element tree warning: {note}]"))
+        .unwrap_or_default();
+    format!("snapshot {id} ({target}){warning}")
 }
 
 /// Layout constants for the thinking / result column alignment.
@@ -343,8 +351,7 @@ fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
             keys
         }
         // App lifecycle
-        "launch-app" | "switch-app" | "quit-app" | "relaunch-app"
-        | "hide-app" | "unhide-app" => {
+        "launch-app" | "switch-app" | "quit-app" | "relaunch-app" | "hide-app" | "unhide-app" => {
             // Try bundle_id_or_name first, then bundle_id, then name
             args["bundle_id_or_name"]
                 .as_str()
@@ -856,8 +863,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        mask_secret, render_apps, render_model, render_models, render_permissions, render_target,
-        render_targets, AgentProgressRenderer,
+        mask_secret, render_apps, render_model, render_models, render_permissions, render_snapshot,
+        render_target, render_targets, AgentProgressRenderer,
     };
     use operator_agent::AgentProgressEvent;
 
@@ -1080,6 +1087,27 @@ mod tests {
         assert_eq!(
             render_model(&output),
             "Model: doubao\nDefault: no\nProvider: openai_compatible\nModel Name: doubao-seed-2-0-lite-260215\nBase URL: https://ark.cn-beijing.volces.com/api/v3\nAPI Key: ********5678"
+        );
+    }
+
+    #[test]
+    fn render_snapshot_appends_element_tree_warning_when_present() {
+        let output = json!({
+            "snapshot": {
+                "id": "snapshot-1",
+                "target": "harmony-pc",
+                "metadata": {
+                    "element_tree": {
+                        "reliability": "unreliable",
+                        "note": "Harmony element tree is too sparse for reliable no-vision interaction on this screen; prefer pure-vision (screenshot-only) mode."
+                    }
+                }
+            }
+        });
+
+        assert_eq!(
+            render_snapshot(&output),
+            "snapshot snapshot-1 (harmony-pc) [element tree warning: Harmony element tree is too sparse for reliable no-vision interaction on this screen; prefer pure-vision (screenshot-only) mode.]"
         );
     }
 

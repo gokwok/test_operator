@@ -36,6 +36,7 @@ pub fn test_snapshot(id: &str) -> Snapshot {
             display_scale: Some(2.0),
             capture_bounds: None,
             image_size_px: None,
+            element_tree: None,
             capture_duration_ms: 8,
         },
         created_at: SystemTime::UNIX_EPOCH,

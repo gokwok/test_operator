@@ -42,11 +42,27 @@ pub enum ElementSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ElementTreeAssessment {
+    pub reliability: ElementTreeReliability,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ElementTreeReliability {
+    Reliable,
+    Unreliable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SnapshotMetadata {
     pub platform: String,
     pub display_scale: Option<f32>,
     pub capture_bounds: Option<Rect>,
     pub image_size_px: Option<ImageSizePx>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element_tree: Option<ElementTreeAssessment>,
     pub capture_duration_ms: u64,
 }
 

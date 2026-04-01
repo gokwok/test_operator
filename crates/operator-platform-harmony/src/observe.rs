@@ -73,6 +73,10 @@ pub(crate) async fn observe(
             root_ids: Vec::new(),
         }
     };
+    let element_tree_assessment = req
+        .include_elements
+        .then(|| crate::inspect::assess_element_tree(&inspection))
+        .flatten();
 
     Ok(ObserveResult {
         snapshot: Snapshot {
@@ -87,6 +91,7 @@ pub(crate) async fn observe(
                 display_scale: None,
                 capture_bounds: Some(capture_bounds),
                 image_size_px,
+                element_tree: element_tree_assessment,
                 capture_duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
             },
             created_at: SystemTime::now(),

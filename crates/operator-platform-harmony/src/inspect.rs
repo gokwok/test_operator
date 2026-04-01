@@ -2,7 +2,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use operator_core::{ElementId, ElementSource, OperatorError, Rect, UiElement};
+use operator_core::{
+    ElementId, ElementSource, ElementTreeAssessment, ElementTreeReliability, OperatorError, Rect,
+    UiElement,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -143,6 +146,59 @@ pub(crate) fn filter_inspect_result_to_region(
     InspectResult {
         elements: filtered,
         root_ids,
+    }
+}
+
+pub(crate) fn assess_element_tree(result: &InspectResult) -> Option<ElementTreeAssessment> {
+    if result.root_ids.is_empty() || result.elements.is_empty() {
+        return None;
+    }
+
+    let mut meaningful_nodes = 0usize;
+    let mut meaningful_interactive_nodes = 0usize;
+    let mut textual_nodes = 0usize;
+    let mut form_nodes = 0usize;
+
+    for element in result.elements.values() {
+        if is_system_window_control(element)
+            || is_structural_noise_element(element)
+            || is_empty_structural_container(element)
+        {
+            continue;
+        }
+
+        if element.label.is_some() || element.value.is_some() || !element.children.is_empty() {
+            meaningful_nodes += 1;
+        }
+        if matches!(
+            element.role.as_str(),
+            "button" | "checkbox" | "switch" | "textbox"
+        ) {
+            meaningful_interactive_nodes += 1;
+        }
+        if matches!(element.role.as_str(), "text" | "image") {
+            textual_nodes += 1;
+        }
+        if matches!(
+            element.role.as_str(),
+            "textbox" | "checkbox" | "switch" | "list" | "scroll" | "nav" | "tabbar"
+        ) {
+            form_nodes += 1;
+        }
+    }
+
+    let looks_sparse = meaningful_nodes <= 1 && meaningful_interactive_nodes <= 1;
+    let lacks_semantic_structure = textual_nodes == 0 && form_nodes == 0;
+
+    if looks_sparse && lacks_semantic_structure {
+        Some(ElementTreeAssessment {
+            reliability: ElementTreeReliability::Unreliable,
+            note: Some(
+                "Harmony element tree is too sparse for reliable no-vision interaction on this screen; prefer pure-vision (screenshot-only) mode.".into(),
+            ),
+        })
+    } else {
+        None
     }
 }
 
@@ -1004,10 +1060,32 @@ fn humanize_identifier(id: &str, role: &str) -> Option<String> {
     Some(words.join(" "))
 }
 
+fn is_system_window_control(element: &UiElement) -> bool {
+    matches!(
+        element.label.as_deref(),
+        Some("maximize window") | Some("minimize window") | Some("close window")
+    )
+}
+
+fn is_structural_noise_element(element: &UiElement) -> bool {
+    matches!(
+        element.label.as_deref(),
+        Some("container modal stack") | Some("container modal row id")
+    )
+}
+
+fn is_empty_structural_container(element: &UiElement) -> bool {
+    matches!(
+        element.role.as_str(),
+        "window" | "group" | "nav" | "toolbar" | "tabbar" | "list" | "scroll"
+    ) && element.label.is_none()
+        && element.value.is_none()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{build_inspect_result, filter_inspect_result_to_region};
-    use operator_core::Rect;
+    use super::{assess_element_tree, build_inspect_result, filter_inspect_result_to_region};
+    use operator_core::{ElementTreeReliability, Rect};
     use serde_json::json;
 
     #[test]
@@ -1526,6 +1604,87 @@ mod tests {
             .iter()
             .filter_map(|id| result.elements.get(id))
             .all(|child| child.role != "button"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_marks_sparse_low_information_tree_as_unreliable() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,240]" },
+            "children": [{
+                "attributes": {
+                    "type": "Stack",
+                    "bounds": "[0,0][420,240]",
+                    "id": "ContainerModalStack"
+                }
+            }, {
+                "attributes": {
+                    "type": "Button",
+                    "clickable": "true",
+                    "bounds": "[320,0][360,40]",
+                    "id": "EnhanceMaximizeBtn"
+                }
+            }, {
+                "attributes": {
+                    "type": "Button",
+                    "clickable": "true",
+                    "bounds": "[360,0][400,40]",
+                    "id": "EnhanceMinimizeBtn"
+                }
+            }, {
+                "attributes": {
+                    "type": "Button",
+                    "clickable": "true",
+                    "bounds": "[400,0][420,40]",
+                    "id": "EnhanceCloseBtn"
+                }
+            }]
+        }))
+        .expect("inspect result");
+
+        let assessment = assess_element_tree(&result).expect("assessment should exist");
+        assert_eq!(assessment.reliability, ElementTreeReliability::Unreliable);
+        assert!(assessment
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("pure-vision")));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_does_not_mark_rich_navigation_tree_as_unreliable() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,240]" },
+            "children": [{
+                "attributes": {
+                    "type": "List",
+                    "scrollable": "true",
+                    "bounds": "[0,0][420,240]"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "ListItem",
+                        "clickable": "true",
+                        "bounds": "[0,0][420,76]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text",
+                            "text": "探索",
+                            "bounds": "[40,18][120,56]"
+                        }
+                    }]
+                }, {
+                    "attributes": {
+                        "type": "SearchField",
+                        "clickable": "true",
+                        "hint": "搜索内容",
+                        "bounds": "[0,90][420,150]"
+                    }
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        assert!(assess_element_tree(&result).is_none());
     }
 
     #[test]

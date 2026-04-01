@@ -42,6 +42,8 @@ fn observation(
             width: 1260,
             height: 2720,
         }),
+        element_tree_reliability: None,
+        element_tree_note: None,
         root_element_count,
         element_count,
         element_digest: None,
