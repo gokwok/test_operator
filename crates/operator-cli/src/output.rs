@@ -150,11 +150,13 @@ impl AgentProgressRenderer {
                 turn_index,
                 step_index: _,
                 name,
+                args,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
                 // This line is consumed by the spinner in ConsoleAgentProgressReporter;
                 // rendering it here keeps the renderer testable and state consistent.
-                lines.push(format!("  {} {}", style(name).yellow().bold(), style("…").dim()));
+                let label = tool_call_label(name, args);
+                lines.push(format!("  {} {}", style(&label).yellow().bold(), style("…").dim()));
             }
             AgentProgressEvent::ToolResult {
                 turn_index,
@@ -244,6 +246,95 @@ fn render_snapshot(output: &Value) -> String {
     let id = snapshot["id"].as_str().unwrap_or("<unknown>");
     let target = snapshot["target"].as_str().unwrap_or("<unknown>");
     format!("snapshot {id} ({target})")
+}
+
+/// Builds the spinner / renderer label for a tool call: `"click  x=450 y=320"`.
+/// Falls back to just the tool name when no meaningful args can be extracted.
+pub(crate) fn tool_call_label(name: &str, args: &serde_json::Value) -> String {
+    match format_tool_args(name, args) {
+        Some(formatted) => format!("{name}  {formatted}"),
+        None => name.to_string(),
+    }
+}
+
+/// Extracts the most user-visible arguments for a given tool call.
+fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
+    let s = match name {
+        // Pointer actions: show coordinates
+        "click" | "move" => {
+            let x = args["x"].as_f64()?;
+            let y = args["y"].as_f64()?;
+            format!("x={} y={}", render_number(x), render_number(y))
+        }
+        // Text input: show the text (truncated)
+        "type" => {
+            let text = args["text"].as_str()?;
+            let preview: String = text.chars().take(40).collect();
+            let suffix = if text.chars().count() > 40 { "…" } else { "" };
+            format!("\"{}{}\"", preview, suffix)
+        }
+        // Key presses
+        "press" => {
+            let key = args["key"].as_str()?;
+            let count = args["count"].as_u64().unwrap_or(1);
+            if count > 1 {
+                format!("{key} ×{count}")
+            } else {
+                key.to_string()
+            }
+        }
+        // Hotkey combos
+        "hotkey" => {
+            let keys = args["keys"]
+                .as_array()?
+                .iter()
+                .filter_map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join("+");
+            keys
+        }
+        // App lifecycle
+        "launch-app" | "switch-app" | "quit-app" | "relaunch-app"
+        | "hide-app" | "unhide-app" => {
+            // Try bundle_id_or_name first, then bundle_id, then name
+            args["bundle_id_or_name"]
+                .as_str()
+                .or_else(|| args["bundle_id"].as_str())
+                .or_else(|| args["name"].as_str())
+                .map(ToOwned::to_owned)?
+        }
+        // Scroll: direction + amount
+        "scroll" => {
+            let dx = args["dx"].as_f64().unwrap_or(0.0);
+            let dy = args["dy"].as_f64().unwrap_or(0.0);
+            let dir = if dy < 0.0 {
+                "↑"
+            } else if dy > 0.0 {
+                "↓"
+            } else if dx < 0.0 {
+                "←"
+            } else {
+                "→"
+            };
+            format!("{dir} dx={} dy={}", render_number(dx), render_number(dy))
+        }
+        // Drag / swipe: from → to
+        "drag" | "swipe" => {
+            let fx = args["from_x"].as_f64()?;
+            let fy = args["from_y"].as_f64()?;
+            let tx = args["to_x"].as_f64()?;
+            let ty = args["to_y"].as_f64()?;
+            format!(
+                "({},{}) → ({},{})",
+                render_number(fx),
+                render_number(fy),
+                render_number(tx),
+                render_number(ty)
+            )
+        }
+        _ => return None,
+    };
+    Some(s)
 }
 
 /// Returns true for tools whose results are internal plumbing (observe / snapshots).
@@ -946,6 +1037,7 @@ mod tests {
                 turn_index: 0,
                 step_index: 0,
                 name: "observe".into(),
+                args: serde_json::Value::Null,
             }),
             Some("  setup\n  observe …".into())
         );

@@ -252,11 +252,10 @@ async fn runner_reports_concise_progress_events_for_turns_tools_and_completion()
             task: "Capture the frontmost UI.".into(),
         }
     );
-    assert!(events.contains(&AgentProgressEvent::ToolCall {
-        turn_index: 0,
-        step_index: 0,
-        name: "observe".into(),
-    }));
+    assert!(events.iter().any(|e| matches!(e,
+        AgentProgressEvent::ToolCall { turn_index: 0, step_index: 0, name, .. }
+        if name == "observe"
+    )));
     assert!(events.contains(&AgentProgressEvent::TurnStarted { turn_index: 1 }));
     assert!(events.contains(&AgentProgressEvent::PlannedTool {
         turn_index: 1,

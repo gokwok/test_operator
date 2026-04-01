@@ -144,7 +144,7 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
         // ToolCall gets special treatment: the rendered output's last line is
         // replaced by a live spinner; any preceding lines (section headers) are
         // printed as normal static text.
-        if let AgentProgressEvent::ToolCall { name, .. } = &event {
+        if let AgentProgressEvent::ToolCall { name, args, .. } = &event {
             // Advance renderer state and collect any section-header lines.
             let rendered = {
                 let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
@@ -168,7 +168,8 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
                 ProgressStyle::with_template("  {spinner:.yellow} {msg}")
                     .expect("spinner template is valid"),
             );
-            pb.set_message(console::style(name.clone()).bold().to_string());
+            let label = output::tool_call_label(name, args);
+            pb.set_message(console::style(label).bold().to_string());
             pb.enable_steady_tick(Duration::from_millis(80));
             *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
             return;

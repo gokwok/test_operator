@@ -1,5 +1,6 @@
 use operator_core::{SessionId, TargetId};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
@@ -26,6 +27,7 @@ pub enum AgentProgressEvent {
         turn_index: u32,
         step_index: u32,
         name: String,
+        args: Value,
     },
     ToolResult {
         turn_index: u32,

@@ -388,6 +388,7 @@ impl AgentRunner {
             turn_index: state.turn_index,
             step_index: state.step_index,
             name: name.to_string(),
+            args: arguments.clone(),
         });
         self.append_session_event(
             journal,
