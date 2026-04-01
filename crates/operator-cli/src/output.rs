@@ -132,22 +132,16 @@ impl AgentProgressRenderer {
                 summary,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                lines.push(format!(
-                    "  {} {}",
-                    style("∘").cyan(),
-                    style(compact_progress_text(summary)).dim()
-                ));
+                let n = current_turn(&self.current_section).unwrap_or(*turn_index);
+                lines.push(thinking_line(n, summary));
             }
             AgentProgressEvent::FinishPlanned {
                 turn_index,
                 summary,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                lines.push(format!(
-                    "  {} {}",
-                    style("∘").cyan(),
-                    style(compact_progress_text(summary)).dim()
-                ));
+                let n = current_turn(&self.current_section).unwrap_or(*turn_index);
+                lines.push(thinking_line(n, summary));
             }
             AgentProgressEvent::ToolCall {
                 turn_index,
@@ -179,34 +173,19 @@ impl AgentProgressRenderer {
                 }
 
                 if *is_error {
-                    // Strip redundant "error [...]:" / "platform error:" prefixes
-                    // that add no information the user can act on.
+                    // Strip redundant "error [...]:" / "platform error:" prefixes.
                     let msg = strip_error_prefix(summary);
-                    lines.push(format!(
-                        "  {} {}",
-                        style("✗").red(),
-                        style(compact_progress_text(msg)).red()
-                    ));
+                    lines.push(result_line(false, true, compact_progress_text(msg)));
                 } else {
                     match meaningful_summary(summary) {
                         Some(text) => {
-                            // Summary is genuinely informative — show it.
-                            lines.push(format!(
-                                "  {} {}",
-                                style("✓").green(),
-                                compact_progress_text(text)
-                            ));
+                            lines.push(result_line(false, false, compact_progress_text(text)));
                         }
                         None => {
-                            // Generic "result: outcome" — fall back to showing
-                            // the tool name + args as a compact confirmation.
+                            // Generic "result: outcome" — show tool name + args instead.
                             if let Some((tool_name, tool_args)) = last_call {
                                 let label = tool_call_label(&tool_name, &tool_args);
-                                lines.push(format!(
-                                    "  {} {}",
-                                    style("✓").green(),
-                                    style(label).dim()
-                                ));
+                                lines.push(result_line(true, false, label));
                             }
                         }
                     }
@@ -215,7 +194,7 @@ impl AgentProgressRenderer {
             AgentProgressEvent::FinishGateRejected { turn_index, reason } => {
                 self.enter_progress_section(&mut lines, *turn_index);
                 lines.push(format!(
-                    "  {} {}",
+                    "      {} {}",
                     style("⏸").yellow(),
                     compact_progress_text(reason)
                 ));
@@ -256,8 +235,7 @@ impl AgentProgressRenderer {
     fn enter_turn(&mut self, lines: &mut Vec<String>, turn_index: u32) {
         let section = ProgressSection::Turn(turn_index);
         if self.current_section != Some(section) {
-            lines.push(String::new()); // breathing room between turns
-            lines.push(format!("{}", style(format!("  turn {turn_index}")).dim()));
+            lines.push(String::new()); // blank line between turns for breathing room
             self.current_section = Some(section);
         }
     }
@@ -268,6 +246,55 @@ fn render_snapshot(output: &Value) -> String {
     let id = snapshot["id"].as_str().unwrap_or("<unknown>");
     let target = snapshot["target"].as_str().unwrap_or("<unknown>");
     format!("snapshot {id} ({target})")
+}
+
+/// Layout constants for the thinking / result column alignment.
+///
+/// Thinking line:  `"  {N:>2}  ∘ {text}"`
+///   prefix width  = 2 (indent) + 2 (number) + 2 (gap) = 6 chars before the symbol.
+///
+/// Result line:    `"      {sym} {text}"`
+///   prefix width  = 6 spaces, symbol aligns with ∘.
+const RESULT_INDENT: &str = "      "; // 6 spaces
+
+/// Formats the thinking line for a turn: `"   1  ∘ text"`.
+fn thinking_line(turn_index: u32, summary: &str) -> String {
+    format!(
+        "  {:>2}  {} {}",
+        style(turn_index.to_string()).dim(),
+        style("∘").cyan(),
+        style(compact_progress_text(summary)).dim()
+    )
+}
+
+/// Formats a result line aligned under the thinking ∘ symbol.
+/// `dim_label` applies dim styling (used for fallback tool+args labels).
+fn result_line(dim_label: bool, is_error: bool, text: String) -> String {
+    if is_error {
+        format!(
+            "{}{} {}",
+            RESULT_INDENT,
+            style("✗").red(),
+            style(text).red()
+        )
+    } else if dim_label {
+        format!(
+            "{}{} {}",
+            RESULT_INDENT,
+            style("✓").green(),
+            style(text).dim()
+        )
+    } else {
+        format!("{}{} {}", RESULT_INDENT, style("✓").green(), text)
+    }
+}
+
+/// Extracts the turn index from the current section state.
+fn current_turn(section: &Option<ProgressSection>) -> Option<u32> {
+    match section {
+        Some(ProgressSection::Turn(n)) => Some(*n),
+        _ => None,
+    }
 }
 
 /// Builds the spinner / renderer label for a tool call: `"click  x=450 y=320"`.
@@ -1082,7 +1109,7 @@ mod tests {
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::TurnStarted { turn_index: 1 }),
-            Some("\n  turn 1".into())
+            Some("".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::PlannedTool {
@@ -1090,7 +1117,7 @@ mod tests {
                 tool_name: "launch-app".into(),
                 summary: "Launch Calculator before typing.".into(),
             }),
-            Some("  ∘ Launch Calculator before typing.".into())
+            Some("   1  ∘ Launch Calculator before typing.".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::ToolResult {
@@ -1100,7 +1127,7 @@ mod tests {
                 summary: "action succeeded".into(),
                 is_error: false,
             }),
-            Some("  ✓ action succeeded".into())
+            Some("      ✓ action succeeded".into())
         );
         // Observe results are suppressed entirely.
         assert_eq!(
@@ -1139,7 +1166,7 @@ mod tests {
                 summary: "result: outcome".into(),
                 is_error: false,
             }),
-            Some("  ✓ click  x=450 y=320".into())
+            Some("      ✓ click  x=450 y=320".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::RunCompleted {

@@ -106,6 +106,10 @@ impl AgentExecutor for RuntimeAgentExecutor {
 struct ConsoleAgentProgressReporter {
     renderer: Mutex<output::AgentProgressRenderer>,
     active_spinner: Mutex<Option<ProgressBar>>,
+    /// Thinking line buffered from PlannedTool / FinishPlanned.
+    /// Displayed as the spinner message while the tool runs, then printed
+    /// statically once the result arrives.
+    pending_thinking: Mutex<Option<String>>,
 }
 
 impl ConsoleAgentProgressReporter {
@@ -113,6 +117,7 @@ impl ConsoleAgentProgressReporter {
         Self {
             renderer: Mutex::new(output::AgentProgressRenderer::new()),
             active_spinner: Mutex::new(None),
+            pending_thinking: Mutex::new(None),
         }
     }
 
@@ -137,46 +142,95 @@ impl ConsoleAgentProgressReporter {
             pb.finish_and_clear();
         }
     }
+
+    /// Print and consume any buffered thinking line.
+    fn flush_thinking(&self) {
+        if let Some(line) = self
+            .pending_thinking
+            .lock()
+            .expect("thinking mutex poisoned")
+            .take()
+        {
+            self.print_line(&line);
+        }
+    }
 }
 
 impl AgentProgressReporter for ConsoleAgentProgressReporter {
     fn report(&self, event: AgentProgressEvent) {
-        // ToolCall gets special treatment: the rendered output's last line is
-        // replaced by a live spinner; any preceding lines (section headers) are
-        // printed as normal static text.
+        // PlannedTool / FinishPlanned: buffer the thinking line.
+        // It will be the spinner message while the tool runs, then printed
+        // statically after the result arrives.
+        if matches!(
+            &event,
+            AgentProgressEvent::PlannedTool { .. } | AgentProgressEvent::FinishPlanned { .. }
+        ) {
+            let rendered = {
+                let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
+                renderer.render(&event)
+            };
+            *self.pending_thinking.lock().expect("thinking mutex poisoned") = rendered;
+            return;
+        }
+
+        // ToolCall: use the buffered thinking line as the spinner message so the
+        // whole "N  ∘ thinking..." line animates while the tool runs.
         if let AgentProgressEvent::ToolCall { name, args, .. } = &event {
-            // Advance renderer state and collect any section-header lines.
             let rendered = {
                 let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
                 renderer.render(&event)
             };
 
-            // Print everything except the tool line itself (last line).
+            // Print any section header preamble (e.g. "  setup") that precedes
+            // the tool line.
             if let Some(text) = rendered {
-                let mut lines = text.lines();
-                // Collect all but the last line (the tool line) as preamble.
-                let all: Vec<&str> = lines.by_ref().collect();
+                let all: Vec<&str> = text.lines().collect();
                 if all.len() > 1 {
                     self.print_line(&all[..all.len() - 1].join("\n"));
                 }
             }
 
-            // Replace the tool line with an animated spinner on stderr.
+            // Spinner message = thinking line (trimmed of leading indent so the
+            // template indent + spinner char sit cleanly in front of the number).
+            let thinking = self
+                .pending_thinking
+                .lock()
+                .expect("thinking mutex poisoned")
+                .clone();
+            let spinner_msg = match thinking {
+                Some(ref t) => t.trim_start().to_string(),
+                None => output::tool_call_label(name, args),
+            };
+
             self.clear_spinner();
             let pb = ProgressBar::new_spinner();
             pb.set_style(
-                ProgressStyle::with_template("  {spinner:.yellow} {msg}")
+                ProgressStyle::with_template("  {spinner:.cyan} {msg}")
                     .expect("spinner template is valid"),
             );
-            let label = output::tool_call_label(name, args);
-            pb.set_message(console::style(label).bold().to_string());
+            pb.set_message(spinner_msg);
             pb.enable_steady_tick(Duration::from_millis(80));
             *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
             return;
         }
 
-        // All other events: stop any running spinner first, then print.
+        // ToolResult: stop spinner, print thinking line statically, then result.
+        if matches!(&event, AgentProgressEvent::ToolResult { .. }) {
+            self.clear_spinner();
+            self.flush_thinking();
+            let rendered = {
+                let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
+                renderer.render(&event)
+            };
+            if let Some(text) = rendered {
+                self.print_line(&text);
+            }
+            return;
+        }
+
+        // All other events: stop spinner, flush any pending thinking, then print.
         self.clear_spinner();
+        self.flush_thinking();
         let rendered = {
             let mut renderer = self.renderer.lock().expect("renderer mutex poisoned");
             renderer.render(&event)
