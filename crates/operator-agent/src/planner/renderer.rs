@@ -127,6 +127,24 @@ fn render_observation_section(
         );
     }
 
+    if let Some(digest) = observation.element_digest.as_ref() {
+        lines.push(
+            "- element digest (SnapshotElement ids; native bounds use device coordinates):".into(),
+        );
+        lines.extend(
+            digest
+                .entries
+                .iter()
+                .map(|entry| format!("  {}", entry.render_line())),
+        );
+        if digest.truncated_count > 0 {
+            lines.push(format!(
+                "  - ... {} more element digest entries omitted",
+                digest.truncated_count
+            ));
+        }
+    }
+
     lines.join("\n")
 }
 

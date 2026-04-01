@@ -709,7 +709,7 @@ async fn runner_hides_selector_locators_without_element_backed_observation() {
 }
 
 #[tokio::test]
-async fn runner_reenables_selector_locators_after_element_backed_observation() {
+async fn agent_runner_reenables_selector_locators_after_element_backed_observation() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
         CapabilitySet::new([
@@ -755,4 +755,8 @@ async fn runner_reenables_selector_locators_after_element_backed_observation() {
             || click_summary.contains("\"Role\""),
         "selector locators should return once the current observation includes elements: {click_summary}"
     );
+    let request = current_request_text(&requests[0].context);
+    assert!(request
+        .contains("element digest (SnapshotElement ids; native bounds use device coordinates):"));
+    assert!(request.contains("[el-1] AXButton label=\"Test Element el-1\" enabled=true"));
 }

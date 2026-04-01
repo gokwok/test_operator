@@ -12,6 +12,7 @@ fn observation(snapshot_id: &str, artifact_id: &str) -> VisualObservationSummary
         image_size_px: None,
         root_element_count: 0,
         element_count: 0,
+        element_digest: None,
     }
 }
 

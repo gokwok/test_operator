@@ -44,6 +44,7 @@ fn observation(
         }),
         root_element_count,
         element_count,
+        element_digest: None,
     }
 }
 
@@ -202,6 +203,56 @@ async fn planner_context_assembles_from_in_memory_visual_state_and_recent_tool_r
     );
     assert_eq!(context.notes.len(), 1);
     assert!(context.ui_state_stale);
+}
+
+#[tokio::test]
+async fn planner_context_preserves_bounded_element_digest_from_snapshot_observation() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::InspectTree, Capability::Capture]),
+    ));
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver)
+        .build()
+        .await
+        .expect("runtime should build");
+
+    let mut snapshot = test_snapshot("snap-digest");
+    snapshot
+        .elements
+        .get_mut(&"el-1".into())
+        .expect("fixture root element should exist")
+        .bounds = Some(operator_core::Rect {
+        x: 10.0,
+        y: 20.0,
+        width: 80.0,
+        height: 30.0,
+    });
+    snapshot.image_artifact = Some(ArtifactId("capture-digest.png".into()));
+
+    let mut state = AgentSessionState::new(
+        SessionId("sess-digest".into()),
+        TargetId("macos".into()),
+        "Inspect the current UI",
+    );
+    state.record_observation_snapshot(&snapshot);
+
+    let context = LoopStateContextManager::new(runtime.core())
+        .assemble(&state)
+        .expect("context should assemble");
+
+    let digest = context
+        .current_observation
+        .as_ref()
+        .and_then(|observation| observation.element_digest.as_ref())
+        .expect("element digest should be present");
+    assert_eq!(digest.entries.len(), 1);
+    assert_eq!(digest.entries[0].element_id, "el-1");
+    assert_eq!(
+        digest.entries[0].label.as_deref(),
+        Some("Test Element el-1")
+    );
 }
 
 #[test]

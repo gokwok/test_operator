@@ -91,6 +91,7 @@ fn verified_read_only_state() -> AgentSessionState {
         image_size_px: None,
         root_element_count: 1,
         element_count: 1,
+        element_digest: None,
     });
     state
 }
@@ -141,6 +142,7 @@ fn verified_side_effect_state() -> AgentSessionState {
         image_size_px: None,
         root_element_count: 1,
         element_count: 1,
+        element_digest: None,
     });
     state
 }
@@ -183,6 +185,7 @@ fn verified_screenshot_only_state() -> AgentSessionState {
         image_size_px: None,
         root_element_count: 0,
         element_count: 0,
+        element_digest: None,
     });
     state
 }

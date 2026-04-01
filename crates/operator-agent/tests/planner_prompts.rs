@@ -9,11 +9,11 @@ use operator_agent::{
     },
     session::{
         AgentMessage, BootstrapAppCatalog, BootstrapAppCatalogEntry, BootstrapAppContext,
-        ModelContextBuffer, VisualObservationSummary,
+        ElementDigest, ElementDigestEntry, ModelContextBuffer, VisualObservationSummary,
     },
     tools::AgentToolSpec,
 };
-use operator_core::{ArtifactId, ImageSizePx, TargetId};
+use operator_core::{ArtifactId, ImageSizePx, Rect, TargetId};
 use serde_json::json;
 
 fn text_block(text: &str) -> ContentBlock {
@@ -37,6 +37,23 @@ fn assistant_message(text: &str, timestamp_ms: u64) -> Message {
         error_message: None,
         timestamp_ms,
     })
+}
+
+fn current_request_text(messages: &[Message]) -> String {
+    let Message::User(UserMessage { content, .. }) = messages
+        .last()
+        .expect("planner request should append a user message")
+    else {
+        panic!("last planner message should be a user request");
+    };
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn planner_context() -> PlannerContext {
@@ -70,12 +87,57 @@ fn planner_context() -> PlannerContext {
                 width: 1260,
                 height: 2720,
             }),
+            element_digest: None,
         }),
         current_visual_artifact: Some(ArtifactId("capture-1.png".into())),
         previous_visual_artifact: Some(ArtifactId("capture-prev.png".into())),
         notes: vec!["Observe again before finishing.".into()],
         app_bootstrap: None,
         ui_state_stale: true,
+    }
+}
+
+fn digest_observation() -> VisualObservationSummary {
+    VisualObservationSummary {
+        snapshot_id: "snap-digest".into(),
+        surface: "frontmost".into(),
+        root_element_count: 1,
+        element_count: 2,
+        screenshot_artifact: Some(ArtifactId("capture-digest.png".into())),
+        image_size_px: None,
+        element_digest: Some(ElementDigest {
+            entries: vec![
+                ElementDigestEntry {
+                    element_id: "el-button".into(),
+                    role: "button".into(),
+                    label: Some("保存".into()),
+                    value: None,
+                    enabled: Some(true),
+                    bounds: Some(Rect {
+                        x: 12.0,
+                        y: 24.0,
+                        width: 88.0,
+                        height: 36.0,
+                    }),
+                    depth: 0,
+                },
+                ElementDigestEntry {
+                    element_id: "el-text".into(),
+                    role: "text".into(),
+                    label: Some("状态：已保存".into()),
+                    value: None,
+                    enabled: None,
+                    bounds: Some(Rect {
+                        x: 18.0,
+                        y: 70.0,
+                        width: 120.0,
+                        height: 20.0,
+                    }),
+                    depth: 1,
+                },
+            ],
+            truncated_count: 2,
+        }),
     }
 }
 
@@ -370,4 +432,27 @@ fn planner_prompts_do_not_include_openai_grounding_for_compatible_provider() {
         !request.contains("screenshot image_size_px: 1260 x 2720"),
         "non-OpenAI providers should not receive OpenAI-only image-size hints: {request}"
     );
+}
+
+#[test]
+fn planner_prompts_render_bounded_element_digest_lines() {
+    let mut context = planner_context();
+    context.current_observation = Some(digest_observation());
+    context.current_visual_artifact = Some(ArtifactId("capture-digest.png".into()));
+
+    let assembled = PlannerPromptBuilder::new().assemble(
+        "Inspect the current UI.",
+        &compatible_model_config(),
+        &context,
+        &[],
+        &ModelContextBuffer::new(),
+        &[],
+    );
+    let request = current_request_text(&assembled.messages);
+
+    assert!(request
+        .contains("element digest (SnapshotElement ids; native bounds use device coordinates):"));
+    assert!(request.contains("[el-button] button label=\"保存\" enabled=true bounds=(12,24,88,36)"));
+    assert!(request.contains("[el-text] text label=\"状态：已保存\""));
+    assert!(request.contains("... 2 more element digest entries omitted"));
 }
