@@ -338,6 +338,94 @@ fn normalizer_drops_verifications_for_frontmost_click_without_selector() {
 }
 
 #[test]
+fn normalizer_drops_null_selector_and_verifications_for_frontmost_click() {
+    let decision = AgentDecision::CallTool {
+        name: "click".into(),
+        arguments: json!({
+            "locator": {
+                "SnapshotPixelCoords": {
+                    "snapshot": "older-snapshot",
+                    "point": {
+                        "x": 469.0,
+                        "y": 1613.0
+                    }
+                }
+            },
+            "target_selector": null,
+            "verifications": ["Geometry"]
+        }),
+        summary: "Click the add button.".into(),
+        thought: None,
+    };
+    let state = session_with_current_snapshot("snap-current");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::SurfaceImagePixels),
+            &state,
+            false,
+        )
+        .expect("frontmost direct click should drop null selectors");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "click".into(),
+            arguments: json!({
+                "locator": {
+                    "SnapshotPixelCoords": {
+                        "snapshot": "snap-current",
+                        "point": {
+                            "x": 469.0,
+                            "y": 1613.0,
+                        }
+                    }
+                }
+            }),
+            summary: "Click the add button.".into(),
+            thought: None,
+        }
+    );
+}
+
+#[test]
+fn normalizer_drops_null_selector_and_verifications_for_frontmost_type() {
+    let decision = AgentDecision::CallTool {
+        name: "type".into(),
+        arguments: json!({
+            "text": "hello",
+            "target_selector": null,
+            "verifications": ["Focus", "WindowState"]
+        }),
+        summary: "Type into the frontmost app.".into(),
+        thought: None,
+    };
+    let state = session_with_current_snapshot("snap-current");
+
+    let normalized = DecisionNormalizer::new()
+        .normalize(
+            decision,
+            &model_config(CoordinatePolicy::ScreenAbsolutePixels),
+            &state,
+            false,
+        )
+        .expect("frontmost direct type should drop null selectors");
+
+    assert_eq!(
+        normalized,
+        AgentDecision::CallTool {
+            name: "type".into(),
+            arguments: json!({
+                "text": "hello"
+            }),
+            summary: "Type into the frontmost app.".into(),
+            thought: None,
+        }
+    );
+}
+
+#[test]
 fn normalizer_preserves_app_selector_for_non_frontmost_observation() {
     let decision = AgentDecision::CallTool {
         name: "type".into(),

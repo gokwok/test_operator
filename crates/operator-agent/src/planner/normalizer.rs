@@ -133,12 +133,13 @@ fn supports_frontmost_direct_action(tool_name: &str) -> bool {
 }
 
 fn strip_frontmost_app_selector(object: &mut Map<String, Value>) {
-    let should_strip = object
+    let should_strip_null = object.get("target_selector").is_some_and(Value::is_null);
+    let should_strip_app = object
         .get("target_selector")
         .and_then(Value::as_object)
         .is_some_and(|selector| selector.len() == 1 && selector.contains_key("App"));
 
-    if should_strip {
+    if should_strip_null || should_strip_app {
         object.remove("target_selector");
     }
 }
