@@ -10,10 +10,11 @@ use std::{
 use hmdriver_rs::{AppLabelInfo, CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, ClickMode, DragMotion, ImageSizePx, Locator, OperatorError,
+    ActionTargetSelector, Capability, ClickMode, DragMotion, ImageSizePx, Locator, OperatorError,
     PermissionStatus, PermissionsReport, Point, Rect, TargetId, TypeTrailingKey,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tempfile::NamedTempFile;
 use tokio::sync::oneshot;
 
@@ -25,6 +26,7 @@ use crate::{
         unsupported_action_error, velocity_from_duration,
     },
     errors::hdc_platform_error,
+    inspect::{build_inspect_result, filter_inspect_result_to_region, InspectResult},
     normalize::{
         resolve_action_target, target_anchor_point, InstalledHarmonyApp, ResolvedActionTarget,
     },
@@ -46,6 +48,11 @@ pub trait HarmonyHdcShellSession: Send {
     fn filter_desktop_bundles(&mut self, bundles: &[String]) -> Result<Vec<String>, OperatorError>;
     fn current_app(&mut self) -> Result<Option<CurrentApp>, OperatorError>;
     fn list_windows_with_missions(&mut self) -> Result<CorrelatedWindowList, OperatorError>;
+    fn dump_hierarchy(&mut self) -> Result<Value, OperatorError> {
+        Err(OperatorError::CapabilityNotSupported(
+            Capability::InspectTree,
+        ))
+    }
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError>;
     fn input_text(&mut self, text: &str) -> Result<(), OperatorError>;
     fn press_keys(&mut self, keys: &[u32]) -> Result<(), OperatorError>;
@@ -217,6 +224,21 @@ impl HarmonyHdcWorker {
         response_rx.await.map_err(|_| worker_stopped_error())?
     }
 
+    pub(crate) async fn inspect_tree(
+        &self,
+        region: Option<Rect>,
+    ) -> Result<InspectResult, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::InspectTree {
+                region,
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
     pub(crate) fn new_with_session_factory(
         target_id: TargetId,
         config: HarmonyHdcConfig,
@@ -260,6 +282,10 @@ enum WorkerCommand {
     },
     QueryWindows {
         response: oneshot::Sender<Result<CorrelatedWindowList, OperatorError>>,
+    },
+    InspectTree {
+        region: Option<Rect>,
+        response: oneshot::Sender<Result<InspectResult, OperatorError>>,
     },
     Act {
         request: Box<ActionRequest>,
@@ -521,6 +547,32 @@ impl WorkerState {
         }
 
         result
+    }
+
+    fn inspect_tree(&mut self, region: Option<Rect>) -> Result<InspectResult, OperatorError> {
+        self.ensure_shell_session()?;
+
+        let hierarchy = {
+            let session = self
+                .shell_session
+                .as_mut()
+                .expect("shell session should be initialized");
+            session.dump_hierarchy()
+        };
+
+        let hierarchy = match hierarchy {
+            Ok(hierarchy) => hierarchy,
+            Err(error) => {
+                self.shell_session = None;
+                return Err(error);
+            }
+        };
+
+        let result = build_inspect_result(hierarchy)?;
+        Ok(match region {
+            Some(region) => filter_inspect_result_to_region(result, region),
+            None => result,
+        })
     }
 
     fn act(&mut self, request: ActionRequest) -> Result<ActionOutcome, OperatorError> {
@@ -1188,6 +1240,12 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
             .map_err(|error| hdc_platform_error("failed to list Harmony windows", error))
     }
 
+    fn dump_hierarchy(&mut self) -> Result<Value, OperatorError> {
+        self.driver
+            .dump_hierarchy()
+            .map_err(|error| hdc_platform_error("failed to dump Harmony layout hierarchy", error))
+    }
+
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError> {
         let (x, y) = screen_point(point)?;
         match mode {
@@ -1416,6 +1474,9 @@ fn worker_loop(
             }
             WorkerCommand::QueryWindows { response } => {
                 let _ = response.send(state.query_windows());
+            }
+            WorkerCommand::InspectTree { region, response } => {
+                let _ = response.send(state.inspect_tree(region));
             }
             WorkerCommand::Act { request, response } => {
                 let _ = response.send(state.act(*request));

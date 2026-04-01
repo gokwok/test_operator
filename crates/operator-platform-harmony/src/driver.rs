@@ -111,6 +111,7 @@ impl PlatformDriver for HarmonyHdcDriver {
 fn harmony_capabilities() -> CapabilitySet {
     CapabilitySet::new([
         Capability::Capture,
+        Capability::InspectTree,
         Capability::PointerInput,
         Capability::KeyboardInput,
         Capability::AppLifecycle,

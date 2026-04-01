@@ -35,7 +35,7 @@ fn harmony_driver_declares_query_capabilities() {
     assert!(capabilities.supports(&operator_core::Capability::AppLifecycle));
     assert!(capabilities.supports(&operator_core::Capability::WindowQuery));
     assert!(capabilities.supports(&operator_core::Capability::Permissions));
-    assert!(!capabilities.supports(&operator_core::Capability::InspectTree));
+    assert!(capabilities.supports(&operator_core::Capability::InspectTree));
 }
 
 #[tokio::test]

@@ -127,6 +127,34 @@ fn render_observation_section(
         );
     }
 
+    if let Some(digest) = observation.element_digest.as_ref() {
+        lines.push(
+            "- element digest (SnapshotElement ids; native bounds use device coordinates):".into(),
+        );
+        lines.extend(
+            digest
+                .entries
+                .iter()
+                .map(|entry| format!("  {}", entry.render_line())),
+        );
+        if digest.truncated_count > 0 {
+            lines.push(format!(
+                "  - ... {} more element digest entries omitted",
+                digest.truncated_count
+            ));
+        }
+    }
+
+    if let Some(reliability) = observation.element_tree_reliability {
+        lines.push(format!(
+            "- element tree reliability: {}",
+            format_reliability(reliability)
+        ));
+    }
+    if let Some(note) = observation.element_tree_note.as_deref() {
+        lines.push(format!("- element tree note: {note}"));
+    }
+
     lines.join("\n")
 }
 
@@ -169,4 +197,11 @@ fn visual_label(slot: PlannerVisualSlot) -> &'static str {
 
 fn format_image_size(size: ImageSizePx) -> String {
     format!("{} x {}", size.width, size.height)
+}
+
+fn format_reliability(reliability: operator_core::ElementTreeReliability) -> &'static str {
+    match reliability {
+        operator_core::ElementTreeReliability::Reliable => "reliable",
+        operator_core::ElementTreeReliability::Unreliable => "unreliable",
+    }
 }

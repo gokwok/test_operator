@@ -236,6 +236,7 @@ where
                     display_scale,
                     capture_bounds,
                     image_size_px,
+                    element_tree: None,
                     capture_duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX))
                         as u64,
                 },

@@ -10,8 +10,11 @@ fn observation(snapshot_id: &str, artifact_id: &str) -> VisualObservationSummary
         surface: "frontmost".into(),
         screenshot_artifact: Some(ArtifactId(artifact_id.into())),
         image_size_px: None,
+        element_tree_reliability: None,
+        element_tree_note: None,
         root_element_count: 0,
         element_count: 0,
+        element_digest: None,
     }
 }
 
