@@ -138,6 +138,39 @@ async fn click_and_type_actions_resolve_locators_and_cover_first_phase_click_mod
 }
 
 #[tokio::test]
+async fn missing_text_locator_surfaces_as_locator_miss_instead_of_protocol_error() {
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        ..Default::default()
+    });
+
+    let error = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::Text("Missing".into())),
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect_err("missing text locator should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("harmony.hdc could not resolve locator"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(counts.ui_connects.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn press_and_hotkey_actions_focus_requested_target_before_keyboard_input() {
     let actions = Arc::new(Mutex::new(Vec::new()));
     let counts = Arc::new(CallCounts::default());

@@ -341,12 +341,9 @@ impl UiDriver {
     pub fn find_components(&self, selector: UiSelector) -> Result<Vec<UiComponent>> {
         let by = self.selector_handle(&selector)?;
         let value = self.invoke("Driver.findComponents", vec![Value::from(by)])?;
-        let array = value
-            .as_array()
-            .ok_or_else(|| HdcError::protocol("Driver.findComponents returned invalid payload"))?;
-        Ok(array
+        let handles = parse_component_handles(&value)?;
+        Ok(handles
             .iter()
-            .filter_map(Value::as_str)
             .map(|handle| UiComponent::new(self.inner.clone(), handle))
             .collect())
     }
@@ -1154,6 +1151,20 @@ fn parse_ui_event(value: &Value) -> Result<UiEvent> {
     })
 }
 
+fn parse_component_handles(value: &Value) -> Result<Vec<String>> {
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(array) => Ok(array
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect()),
+        _ => Err(HdcError::protocol(
+            "Driver.findComponents returned invalid payload",
+        )),
+    }
+}
+
 fn read_i32_field(value: &Value, key: &str) -> Result<i32> {
     let raw = value
         .get(key)
@@ -1215,6 +1226,30 @@ mod tests {
         assert_eq!(event.bundle_name, "com.example.app");
         assert_eq!(event.text, "hello");
         assert_eq!(event.kind, "Toast");
+    }
+
+    #[test]
+    fn parse_component_handles_treats_null_as_empty_match_set() {
+        let handles = super::parse_component_handles(&json!(null)).unwrap();
+        assert!(handles.is_empty());
+    }
+
+    #[test]
+    fn parse_component_handles_preserves_string_handles_from_arrays() {
+        let handles =
+            super::parse_component_handles(&json!(["UiComponent#1", "UiComponent#2"])).unwrap();
+        assert_eq!(handles, vec!["UiComponent#1", "UiComponent#2"]);
+    }
+
+    #[test]
+    fn parse_component_handles_rejects_non_array_non_null_payloads() {
+        let error = super::parse_component_handles(&json!({"unexpected": true}))
+            .expect_err("object payload should remain invalid");
+        assert!(
+            error
+                .to_string()
+                .contains("Driver.findComponents returned invalid payload")
+        );
     }
 
     #[test]
