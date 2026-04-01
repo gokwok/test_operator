@@ -77,6 +77,15 @@ fn tool_call_names(events: &[SessionEvent]) -> Vec<String> {
         .collect()
 }
 
+fn planner_tool_summary_text(context: &Context, name: &str) -> String {
+    let tool = context
+        .tools
+        .iter()
+        .find(|tool| tool.name.as_ref() == name)
+        .expect("planner request should include the expected tool");
+    serde_json::to_string(&tool.input_schema).expect("tool summary should serialize")
+}
+
 #[derive(Default)]
 struct RecordingProgressReporter {
     events: Mutex<Vec<AgentProgressEvent>>,
@@ -651,4 +660,99 @@ async fn runner_retries_invalid_planner_output_before_continuing() {
         "retry prompt should include planner feedback: {feedback_text}"
     );
     assert!(retry_request.contains("Task\nRetry after invalid JSON."));
+}
+
+#[tokio::test]
+async fn runner_hides_selector_locators_without_element_backed_observation() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::PointerInput]),
+    ));
+    let mut screenshot_only = test_snapshot("snap-harmony");
+    screenshot_only.root_ids.clear();
+    screenshot_only.elements.clear();
+    screenshot_only.image_artifact = Some(ArtifactId("capture-harmony.png".into()));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: screenshot_only,
+    }));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"finish","summary":"The current UI is already visible."}"#.to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner = runner_with(
+        driver,
+        provider.clone(),
+        session_store,
+        AgentConfig::default(),
+    )
+    .await;
+
+    runner
+        .run(AgentRunRequest {
+            task: "Inspect the current UI.".into(),
+            target: TargetId("macos".into()),
+            model: Some("gpt-5.4".into()),
+            app: None,
+        })
+        .await
+        .expect("runner should succeed");
+
+    let requests = provider.requests();
+    let click_summary = planner_tool_summary_text(&requests[0].context, "click");
+    assert!(
+        !click_summary.contains("SnapshotElement")
+            && !click_summary.contains("\"Text\"")
+            && !click_summary.contains("\"Role\""),
+        "selector locators should stay hidden without an element-backed observation: {click_summary}"
+    );
+}
+
+#[tokio::test]
+async fn runner_reenables_selector_locators_after_element_backed_observation() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([
+            Capability::Capture,
+            Capability::InspectTree,
+            Capability::PointerInput,
+        ]),
+    ));
+    driver.push_observe_result(Ok(operator_core::ObserveResult {
+        snapshot: test_snapshot("snap-elements"),
+    }));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"finish","summary":"The current UI is ready."}"#.to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner = runner_with(
+        driver,
+        provider.clone(),
+        session_store,
+        AgentConfig {
+            include_elements: true,
+            ..AgentConfig::default()
+        },
+    )
+    .await;
+
+    runner
+        .run(AgentRunRequest {
+            task: "Inspect the current desktop UI.".into(),
+            target: TargetId("macos".into()),
+            model: Some("gpt-5.4".into()),
+            app: None,
+        })
+        .await
+        .expect("runner should succeed");
+
+    let requests = provider.requests();
+    let click_summary = planner_tool_summary_text(&requests[0].context, "click");
+    assert!(
+        click_summary.contains("SnapshotElement")
+            || click_summary.contains("\"Text\"")
+            || click_summary.contains("\"Role\""),
+        "selector locators should return once the current observation includes elements: {click_summary}"
+    );
 }

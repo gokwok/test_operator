@@ -2,6 +2,17 @@ use operator_runtime::ToolSpec as RuntimeToolSpec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const LOCATOR_VARIANT_NAMES: &[&str] = &[
+    "SnapshotElement",
+    "SnapshotPixelCoords",
+    "SnapshotCoords",
+    "SnapshotNormalizedCoords",
+    "Text",
+    "Role",
+    "Coords",
+];
+const SELECTOR_LOCATOR_VARIANTS: &[&str] = &["SnapshotElement", "Text", "Role"];
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentToolSpec {
     pub name: String,
@@ -16,6 +27,19 @@ pub struct PlannerToolSummary {
     pub arguments: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolCatalogOptions {
+    pub allow_selector_locators: bool,
+}
+
+impl Default for ToolCatalogOptions {
+    fn default() -> Self {
+        Self {
+            allow_selector_locators: true,
+        }
+    }
+}
+
 impl From<RuntimeToolSpec> for AgentToolSpec {
     fn from(spec: RuntimeToolSpec) -> Self {
         Self {
@@ -28,6 +52,13 @@ impl From<RuntimeToolSpec> for AgentToolSpec {
 }
 
 impl AgentToolSpec {
+    pub fn with_catalog_options(mut self, options: ToolCatalogOptions) -> Self {
+        if !options.allow_selector_locators {
+            prune_selector_locator_variants(&mut self.input_schema);
+        }
+        self
+    }
+
     pub fn planner_summary(&self) -> PlannerToolSummary {
         let required = collect_required(&self.input_schema, &self.input_schema);
         let properties = collect_properties(&self.input_schema, &self.input_schema);
@@ -216,4 +247,66 @@ fn collect_properties(schema: &Value, root: &Value) -> std::collections::BTreeMa
     }
 
     properties
+}
+
+fn prune_selector_locator_variants(root: &mut Value) {
+    let snapshot = root.clone();
+    prune_schema_node(root, &snapshot);
+}
+
+fn prune_schema_node(schema: &mut Value, root: &Value) {
+    match schema {
+        Value::Array(items) => {
+            for item in items {
+                prune_schema_node(item, root);
+            }
+        }
+        Value::Object(map) => {
+            for key in ["oneOf", "anyOf", "allOf"] {
+                if let Some(options) = map.get_mut(key).and_then(Value::as_array_mut) {
+                    options.retain(|option| !is_disallowed_locator_variant(option, root));
+                    for option in options {
+                        prune_schema_node(option, root);
+                    }
+                }
+            }
+
+            for value in map.values_mut() {
+                prune_schema_node(value, root);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_disallowed_locator_variant(schema: &Value, root: &Value) -> bool {
+    externally_tagged_locator_variant_name(schema, root)
+        .is_some_and(|variant| SELECTOR_LOCATOR_VARIANTS.contains(&variant))
+}
+
+fn externally_tagged_locator_variant_name<'a>(
+    schema: &'a Value,
+    root: &'a Value,
+) -> Option<&'a str> {
+    let schema = resolve_schema(schema, root);
+    let object = schema.as_object()?;
+    let properties = object.get("properties")?.as_object()?;
+    if properties.len() != 1 {
+        return None;
+    }
+
+    let required = object.get("required")?.as_array()?;
+    if required.len() != 1 {
+        return None;
+    }
+
+    let (variant, _) = properties.iter().next()?;
+    let required_variant = required.first()?.as_str()?;
+    if required_variant != variant {
+        return None;
+    }
+
+    LOCATOR_VARIANT_NAMES
+        .contains(&variant.as_str())
+        .then_some(variant.as_str())
 }

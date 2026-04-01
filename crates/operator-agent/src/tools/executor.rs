@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::AgentError;
 
-use super::AgentToolSpec;
+use super::{AgentToolSpec, ToolCatalogOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentToolError {
@@ -37,6 +37,14 @@ impl ToolExecutor {
     }
 
     pub fn catalog(&self, target: &TargetId) -> Result<Vec<AgentToolSpec>, AgentError> {
+        self.catalog_with_options(target, ToolCatalogOptions::default())
+    }
+
+    pub fn catalog_with_options(
+        &self,
+        target: &TargetId,
+        options: ToolCatalogOptions,
+    ) -> Result<Vec<AgentToolSpec>, AgentError> {
         let (_, driver) = self.core.resolve_driver(target)?;
         let capabilities = driver.capabilities();
         let allow_side_effects = self.core.config().allow_side_effects;
@@ -53,6 +61,7 @@ impl ToolExecutor {
                         .all(|capability| capabilities.supports(capability))
             })
             .map(AgentToolSpec::from)
+            .map(|spec| spec.with_catalog_options(options))
             .collect())
     }
 
