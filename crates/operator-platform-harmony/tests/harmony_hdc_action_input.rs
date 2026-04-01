@@ -171,6 +171,99 @@ async fn missing_text_locator_surfaces_as_locator_miss_instead_of_protocol_error
 }
 
 #[tokio::test]
+async fn permissions_query_reuses_existing_ui_session_after_locator_actions() {
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        text_locators: vec![("Submit".into(), Point { x: 320.0, y: 240.0 })],
+        ..Default::default()
+    });
+
+    driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::Text("Submit".into())),
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("text click should establish the ui session");
+
+    let result = driver
+        .query(
+            operator_core::QueryRequest::PermissionsStatus,
+            &exec_context(),
+        )
+        .await
+        .expect("permissions query should succeed");
+
+    let operator_core::QueryResult::Permissions(report) = result else {
+        panic!("expected permissions report");
+    };
+
+    assert_eq!(
+        report.status(operator_platform_harmony::HDC_UI_BRIDGE_CHECK_ID),
+        Some(operator_core::PermissionStatus::Granted)
+    );
+    assert_eq!(counts.ui_connects.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn selector_miss_keeps_ui_session_available_for_permissions_probe() {
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        ..Default::default()
+    });
+
+    let error = driver
+        .act(
+            ActionRequest {
+                action: Action::Click {
+                    mode: ClickMode::Left,
+                },
+                locator: Some(Locator::Text("Missing".into())),
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect_err("missing text locator should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("harmony.hdc could not resolve locator"),
+        "unexpected error: {error}"
+    );
+
+    let result = driver
+        .query(
+            operator_core::QueryRequest::PermissionsStatus,
+            &exec_context(),
+        )
+        .await
+        .expect("permissions query should reuse the existing ui session");
+
+    let operator_core::QueryResult::Permissions(report) = result else {
+        panic!("expected permissions report");
+    };
+
+    assert_eq!(
+        report.status(operator_platform_harmony::HDC_UI_BRIDGE_CHECK_ID),
+        Some(operator_core::PermissionStatus::Granted)
+    );
+    assert_eq!(counts.ui_connects.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn press_and_hotkey_actions_focus_requested_target_before_keyboard_input() {
     let actions = Arc::new(Mutex::new(Vec::new()));
     let counts = Arc::new(CallCounts::default());
