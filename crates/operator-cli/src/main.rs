@@ -174,17 +174,13 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
                     self.print_line(text);
                 }
             }
-            // Start spinner immediately — will be updated when PlannedTool arrives.
+            // Start spinner immediately with no message —
+            // PlannedTool will fill it in once the model decides what to do.
             let pb = ProgressBar::new_spinner();
             pb.set_style(
-                ProgressStyle::with_template("  {spinner:.cyan} {msg}")
+                ProgressStyle::with_template("  {spinner:.cyan}")
                     .expect("spinner template is valid"),
             );
-            pb.set_message(format!(
-                "{:>2}  {}",
-                console::style(turn_index.to_string()).dim(),
-                console::style("∘").cyan(),
-            ));
             pb.enable_steady_tick(Duration::from_millis(80));
             *self.active_spinner.lock().expect("spinner mutex poisoned") = Some(pb);
             return;
@@ -210,7 +206,10 @@ impl AgentProgressReporter for ConsoleAgentProgressReporter {
                     pb.set_message(text.trim_start().to_string());
                 }
             }
-            *self.pending_thinking.lock().expect("thinking mutex poisoned") = rendered;
+            *self
+                .pending_thinking
+                .lock()
+                .expect("thinking mutex poisoned") = rendered;
             return;
         }
 
