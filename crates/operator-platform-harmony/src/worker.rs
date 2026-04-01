@@ -429,6 +429,12 @@ impl WorkerState {
     }
 
     fn probe_ui_for_permissions(&mut self, timeout: Duration) -> Result<(), OperatorError> {
+        if let Some(session) = self.ui_session.as_ref() {
+            match session.check_ready() {
+                Ok(()) => return Ok(()),
+                Err(_) => self.ui_session = None,
+            }
+        }
         let factory = Arc::clone(&self.session_factory);
         let config = self.config.clone();
         run_probe_with_timeout(timeout, "harmony ui bridge probe", move || {

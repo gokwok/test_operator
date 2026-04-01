@@ -1,6 +1,6 @@
 use operator_agent::{
     planner::{AgentDecision, DecisionValidator},
-    tools::{AgentToolSpec, ToolExecutor},
+    tools::{AgentToolSpec, ToolCatalogOptions, ToolExecutor},
 };
 use operator_core::{Capability, CapabilitySet, TargetId};
 use operator_runtime::{RuntimeBuilder, RuntimeConfig};
@@ -178,4 +178,46 @@ async fn validates_against_runtime_generated_tool_schema() {
     validator
         .validate(&decision)
         .expect("runtime-generated observe schema should validate");
+}
+
+#[tokio::test]
+async fn rejects_selector_locators_when_catalog_prunes_them() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::PointerInput]),
+    ));
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver)
+        .build()
+        .await
+        .expect("runtime should build");
+    let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
+    let catalog = executor
+        .catalog_with_options(
+            &TargetId("macos".into()),
+            ToolCatalogOptions {
+                allow_selector_locators: false,
+            },
+        )
+        .expect("catalog should resolve");
+    let validator = DecisionValidator::new(&catalog);
+    let decision = AgentDecision::CallTool {
+        name: "click".into(),
+        arguments: json!({
+            "locator": {
+                "Text": "Submit"
+            }
+        }),
+        summary: "Click the Submit control by its text.".into(),
+        thought: None,
+    };
+
+    let error = validator
+        .validate(&decision)
+        .expect_err("selector locators should be rejected after pruning");
+    assert!(
+        error.to_string().contains("schema"),
+        "unexpected error: {error}"
+    );
 }

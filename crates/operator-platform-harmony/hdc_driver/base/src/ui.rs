@@ -144,49 +144,76 @@ impl UiDriverBuilder {
     }
 
     pub fn connect(self) -> Result<UiDriver> {
-        let mut driver_builder = Driver::builder(self.target).timeout(self.timeout);
-        if let Some(key_dir) = self.key_dir {
+        let agent_payload = resolve_agent_payload(self.agent_path.clone())?;
+        attach_or_bootstrap(
+            || self.connect_attached_ui_driver(),
+            || self.connect_bootstrapped_ui_driver(&agent_payload),
+        )
+    }
+
+    fn connect_transport_driver(&self) -> Result<Driver> {
+        let mut driver_builder = Driver::builder(self.target.clone()).timeout(self.timeout);
+        if let Some(key_dir) = self.key_dir.clone() {
             driver_builder = driver_builder.key_dir(key_dir);
         }
-        if let Some(connect_key) = self.connect_key {
+        if let Some(connect_key) = self.connect_key.clone() {
             driver_builder = driver_builder.connect_key(connect_key);
         }
-        if let Some(version) = self.version {
+        if let Some(version) = self.version.clone() {
             driver_builder = driver_builder.version(version);
         }
-        let mut driver = driver_builder.connect()?;
-        let agent_payload = resolve_agent_payload(self.agent_path)?;
+        driver_builder.connect()
+    }
 
+    fn connect_attached_ui_driver(&self) -> Result<UiDriver> {
+        attach_ui_driver(self.connect_transport_driver()?, self.timeout)
+    }
+
+    fn connect_bootstrapped_ui_driver(&self, agent_payload: &AgentPayload) -> Result<UiDriver> {
+        let mut driver = self.connect_transport_driver()?;
         kill_uitest_daemon(&mut driver)?;
-        push_agent(&mut driver, &agent_payload, &self.remote_agent_path)?;
+        push_agent(&mut driver, agent_payload, &self.remote_agent_path)?;
         start_uitest_daemon(&mut driver)?;
         thread::sleep(self.startup_delay);
-
-        let local_port = free_local_port()?;
-        let forward = driver.forward_tcp(local_port, UITEST_SERVICE_PORT)?;
-        let stream = TcpStream::connect(("127.0.0.1", local_port))?;
-        stream.set_read_timeout(Some(self.timeout))?;
-        stream.set_write_timeout(Some(self.timeout))?;
-        let reader = stream.try_clone()?;
-
-        let inner = Rc::new(RefCell::new(UiSession {
-            driver,
-            _forward: forward,
-            reader,
-            writer: stream,
-        }));
-
-        let handle = {
-            let mut session = inner.borrow_mut();
-            session
-                .invoke("Driver.create", None, Vec::new())?
-                .as_str()
-                .ok_or_else(|| HdcError::protocol("Driver.create returned invalid handle"))?
-                .to_string()
-        };
-
-        Ok(UiDriver { inner, handle })
+        attach_ui_driver(driver, self.timeout)
     }
+}
+
+fn attach_or_bootstrap<T>(
+    mut attach: impl FnMut() -> Result<T>,
+    mut bootstrap: impl FnMut() -> Result<T>,
+) -> Result<T> {
+    match attach() {
+        Ok(value) => Ok(value),
+        Err(_) => bootstrap(),
+    }
+}
+
+fn attach_ui_driver(driver: Driver, timeout: Duration) -> Result<UiDriver> {
+    let local_port = free_local_port()?;
+    let forward = driver.forward_tcp(local_port, UITEST_SERVICE_PORT)?;
+    let stream = TcpStream::connect(("127.0.0.1", local_port))?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let reader = stream.try_clone()?;
+
+    let inner = Rc::new(RefCell::new(UiSession {
+        driver,
+        _forward: forward,
+        reader,
+        writer: stream,
+    }));
+
+    let handle = {
+        let mut session = inner.borrow_mut();
+        session
+            .invoke("Driver.create", None, Vec::new())?
+            .as_str()
+            .ok_or_else(|| HdcError::protocol("Driver.create returned invalid handle"))?
+            .to_string()
+    };
+
+    Ok(UiDriver { inner, handle })
 }
 
 impl UiDriver {
@@ -314,12 +341,9 @@ impl UiDriver {
     pub fn find_components(&self, selector: UiSelector) -> Result<Vec<UiComponent>> {
         let by = self.selector_handle(&selector)?;
         let value = self.invoke("Driver.findComponents", vec![Value::from(by)])?;
-        let array = value
-            .as_array()
-            .ok_or_else(|| HdcError::protocol("Driver.findComponents returned invalid payload"))?;
-        Ok(array
+        let handles = parse_component_handles(&value)?;
+        Ok(handles
             .iter()
-            .filter_map(Value::as_str)
             .map(|handle| UiComponent::new(self.inner.clone(), handle))
             .collect())
     }
@@ -1127,6 +1151,20 @@ fn parse_ui_event(value: &Value) -> Result<UiEvent> {
     })
 }
 
+fn parse_component_handles(value: &Value) -> Result<Vec<String>> {
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(array) => Ok(array
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect()),
+        _ => Err(HdcError::protocol(
+            "Driver.findComponents returned invalid payload",
+        )),
+    }
+}
+
 fn read_i32_field(value: &Value, key: &str) -> Result<i32> {
     let raw = value
         .get(key)
@@ -1188,6 +1226,57 @@ mod tests {
         assert_eq!(event.bundle_name, "com.example.app");
         assert_eq!(event.text, "hello");
         assert_eq!(event.kind, "Toast");
+    }
+
+    #[test]
+    fn parse_component_handles_treats_null_as_empty_match_set() {
+        let handles = super::parse_component_handles(&json!(null)).unwrap();
+        assert!(handles.is_empty());
+    }
+
+    #[test]
+    fn parse_component_handles_preserves_string_handles_from_arrays() {
+        let handles =
+            super::parse_component_handles(&json!(["UiComponent#1", "UiComponent#2"])).unwrap();
+        assert_eq!(handles, vec!["UiComponent#1", "UiComponent#2"]);
+    }
+
+    #[test]
+    fn parse_component_handles_rejects_non_array_non_null_payloads() {
+        let error = super::parse_component_handles(&json!({"unexpected": true}))
+            .expect_err("object payload should remain invalid");
+        assert!(
+            error
+                .to_string()
+                .contains("Driver.findComponents returned invalid payload")
+        );
+    }
+
+    #[test]
+    fn attach_or_bootstrap_skips_bootstrap_when_attach_succeeds() {
+        let mut bootstrapped = false;
+        let result = super::attach_or_bootstrap(
+            || Ok::<_, crate::error::HdcError>("attach"),
+            || {
+                bootstrapped = true;
+                Ok("bootstrap")
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result, "attach");
+        assert!(!bootstrapped);
+    }
+
+    #[test]
+    fn attach_or_bootstrap_falls_back_when_attach_fails() {
+        let result = super::attach_or_bootstrap(
+            || Err::<&str, _>(crate::error::HdcError::protocol("attach failed")),
+            || Ok("bootstrap"),
+        )
+        .unwrap();
+
+        assert_eq!(result, "bootstrap");
     }
 
     #[test]

@@ -32,7 +32,7 @@ use crate::{
     session::{
         summarize_tool_result, AgentSessionState, BootstrapAppCatalog, BootstrapAppCatalogEntry,
     },
-    tools::{AgentToolResult, AgentToolSpec, ToolExecutor},
+    tools::{AgentToolResult, AgentToolSpec, ToolCatalogOptions, ToolExecutor},
     AgentConfig, AgentError, AgentRunRequest, AgentRunResult,
 };
 
@@ -112,8 +112,6 @@ impl AgentRunner {
         self.record_user_input(journal, state).await?;
 
         let executor = ToolExecutor::new(self.runtime.core(), self.runtime.tools().clone());
-        let tools = executor.catalog(&state.target)?;
-        let validator = DecisionValidator::new(&tools);
         let planner_retry = PlannerRetryPolicy::new(self.config.max_parse_attempts);
         let repeated_error = RepeatedErrorPolicy::new(self.config.repeated_error_limit);
 
@@ -137,6 +135,13 @@ impl AgentRunner {
             self.report_progress(AgentProgressEvent::TurnStarted {
                 turn_index: state.turn_index,
             });
+            let tools = executor.catalog_with_options(
+                &state.target,
+                ToolCatalogOptions {
+                    allow_selector_locators: state.selector_locators_available(),
+                },
+            )?;
+            let validator = DecisionValidator::new(&tools);
 
             let decision = self
                 .next_decision(model, &tools, &validator, &planner_retry, journal, state)

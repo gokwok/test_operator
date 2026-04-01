@@ -171,11 +171,14 @@ impl VisualObservationSummary {
 
     pub fn is_usable(&self, include_elements: bool) -> bool {
         if include_elements {
-            self.root_element_count > 0 && self.element_count > 0
+            self.has_elements()
         } else {
-            self.screenshot_artifact.is_some()
-                || (self.root_element_count > 0 && self.element_count > 0)
+            self.screenshot_artifact.is_some() || self.has_elements()
         }
+    }
+
+    pub fn has_elements(&self) -> bool {
+        self.root_element_count > 0 && self.element_count > 0
     }
 }
 
@@ -439,6 +442,12 @@ impl LoopState {
 
     pub fn previous_visual(&self) -> Option<&ArtifactId> {
         self.observation_cache.previous_visual()
+    }
+
+    pub fn selector_locators_available(&self) -> bool {
+        self.current_observation
+            .as_ref()
+            .is_some_and(VisualObservationSummary::has_elements)
     }
 
     pub fn record_error_fingerprint(&mut self, fingerprint: impl Into<String>) -> u32 {

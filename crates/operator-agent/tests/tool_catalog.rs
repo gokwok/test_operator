@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use operator_agent::tools::ToolExecutor;
+use operator_agent::tools::{ToolCatalogOptions, ToolExecutor};
 use operator_core::{Capability, CapabilitySet, TargetId};
 use operator_runtime::{RuntimeBuilder, RuntimeConfig};
 use operator_testkit::{InMemorySnapshotStore, MockPlatformDriver};
@@ -129,5 +129,52 @@ async fn planner_summary_keeps_flattened_click_arguments_visible() {
             .any(|argument| argument.contains("target_selector: null | object")),
         "planner summary should expose the flattened target_selector argument: {:?}",
         summary.arguments
+    );
+}
+
+#[tokio::test]
+async fn catalog_can_prune_selector_locators_from_action_schemas() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::PointerInput]),
+    ));
+    let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+        .snapshot_store(Arc::new(InMemorySnapshotStore::new()))
+        .register_driver(driver)
+        .build()
+        .await
+        .expect("runtime should build");
+    let executor = ToolExecutor::new(runtime.core(), runtime.tools().clone());
+
+    let catalog = executor
+        .catalog_with_options(
+            &TargetId("macos".into()),
+            ToolCatalogOptions {
+                allow_selector_locators: false,
+            },
+        )
+        .expect("catalog should resolve for the target");
+    let click = catalog
+        .into_iter()
+        .find(|spec| spec.name == "click")
+        .expect("click should be available");
+
+    let schema_text =
+        serde_json::to_string(&click.input_schema).expect("input schema should serialize");
+    assert!(
+        !schema_text.contains("SnapshotElement"),
+        "selector-based element locators should be pruned: {schema_text}"
+    );
+    assert!(
+        !schema_text.contains("\"Text\""),
+        "selector-based text locators should be pruned: {schema_text}"
+    );
+    assert!(
+        !schema_text.contains("\"Role\""),
+        "selector-based role locators should be pruned: {schema_text}"
+    );
+    assert!(
+        schema_text.contains("SnapshotPixelCoords") && schema_text.contains("\"Coords\""),
+        "coordinate locators should remain available: {schema_text}"
     );
 }

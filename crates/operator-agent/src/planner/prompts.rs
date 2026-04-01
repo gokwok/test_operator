@@ -107,6 +107,20 @@ fn planner_system_prompt(
         );
     }
 
+    if !planner_context
+        .current_observation
+        .as_ref()
+        .is_some_and(|observation| observation.has_elements())
+    {
+        system.push_str("\nSelector locator availability:");
+        system.push_str(
+            "\n- Text, role, and snapshot-element locators are unavailable until the current observe result includes elements.",
+        );
+        system.push_str(
+            "\n- If you need selector-based actions, call `observe` with `include_elements=true` first and wait for that observation to succeed.",
+        );
+    }
+
     system
 }
 
