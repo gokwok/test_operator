@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
+use console::style;
 use operator_agent::{AgentProgressEvent, AgentRunResult};
 use serde_json::{json, Value};
 
@@ -107,10 +108,13 @@ impl AgentProgressRenderer {
             } => {
                 self.current_section = None;
                 lines.push(format!(
-                    "agent {}  target={}  model={}",
-                    session_id, target, model
+                    "{} {}  {}  {}",
+                    style("◆").cyan().bold(),
+                    style(session_id.to_string()).bold(),
+                    style(format!("target={target}")).dim(),
+                    style(format!("model={model}")).dim(),
                 ));
-                lines.push(format!("task  {}", compact_progress_text(task)));
+                lines.push(format!("  {}", compact_progress_text(task)));
             }
             AgentProgressEvent::TurnStarted { turn_index } => {
                 self.enter_turn(&mut lines, *turn_index);
@@ -121,7 +125,11 @@ impl AgentProgressRenderer {
                 summary,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                lines.push(format!("  plan  {}", compact_progress_text(summary)));
+                lines.push(format!(
+                    "  {} {}",
+                    style("∘").cyan(),
+                    style(compact_progress_text(summary)).dim()
+                ));
             }
             AgentProgressEvent::FinishPlanned {
                 turn_index,
@@ -129,8 +137,9 @@ impl AgentProgressRenderer {
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
                 lines.push(format!(
-                    "  plan  Finish: {}",
-                    compact_progress_text(summary)
+                    "  {} {}",
+                    style("∘").cyan(),
+                    style(compact_progress_text(summary)).dim()
                 ));
             }
             AgentProgressEvent::ToolCall {
@@ -139,7 +148,9 @@ impl AgentProgressRenderer {
                 name,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                lines.push(format!("  tool  {name}"));
+                // This line is consumed by the spinner in ConsoleAgentProgressReporter;
+                // rendering it here keeps the renderer testable and state consistent.
+                lines.push(format!("  {} {}", style(name).yellow().bold(), style("…").dim()));
             }
             AgentProgressEvent::ToolResult {
                 turn_index,
@@ -149,18 +160,43 @@ impl AgentProgressRenderer {
                 is_error,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                let label = if *is_error { "  err   " } else { "  ok    " };
-                lines.push(format!("{label}{}", compact_progress_text(summary)));
+                if *is_error {
+                    lines.push(format!(
+                        "  {} {}",
+                        style("✗").red(),
+                        style(compact_progress_text(summary)).red()
+                    ));
+                } else {
+                    lines.push(format!(
+                        "  {} {}",
+                        style("✓").green(),
+                        compact_progress_text(summary)
+                    ));
+                }
             }
             AgentProgressEvent::FinishGateRejected { turn_index, reason } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                lines.push(format!("  wait  {}", compact_progress_text(reason)));
+                lines.push(format!(
+                    "  {} {}",
+                    style("⏸").yellow(),
+                    compact_progress_text(reason)
+                ));
             }
             AgentProgressEvent::RunCompleted { summary } => {
-                lines.push(format!("  done  {}", compact_progress_text(summary)));
+                lines.push(String::new());
+                lines.push(format!(
+                    "{} {}",
+                    style("✓").green().bold(),
+                    style(compact_progress_text(summary)).green().bold()
+                ));
             }
             AgentProgressEvent::RunFailed { reason } => {
-                lines.push(format!("  fail  {}", compact_progress_text(reason)));
+                lines.push(String::new());
+                lines.push(format!(
+                    "{} {}",
+                    style("✗").red().bold(),
+                    style(compact_progress_text(reason)).red().bold()
+                ));
             }
         }
 
@@ -170,7 +206,7 @@ impl AgentProgressRenderer {
     fn enter_progress_section(&mut self, lines: &mut Vec<String>, turn_index: u32) {
         if turn_index == 0 {
             if self.current_section != Some(ProgressSection::Setup) {
-                lines.push("setup".into());
+                lines.push(format!("{}", style("  setup").dim()));
                 self.current_section = Some(ProgressSection::Setup);
             }
             return;
@@ -182,7 +218,7 @@ impl AgentProgressRenderer {
     fn enter_turn(&mut self, lines: &mut Vec<String>, turn_index: u32) {
         let section = ProgressSection::Turn(turn_index);
         if self.current_section != Some(section) {
-            lines.push(format!("turn {turn_index}"));
+            lines.push(format!("{}", style(format!("  turn {turn_index}")).dim()));
             self.current_section = Some(section);
         }
     }
@@ -852,7 +888,7 @@ mod tests {
                 task: "Open Calculator and compute 114 x 9999.".into(),
             }),
             Some(
-                "agent agent-7  target=macos  model=openai\ntask  Open Calculator and compute 114 x 9999."
+                "◆ agent-7  target=macos  model=openai\n  Open Calculator and compute 114 x 9999."
                     .into()
             )
         );
@@ -862,11 +898,11 @@ mod tests {
                 step_index: 0,
                 name: "observe".into(),
             }),
-            Some("setup\n  tool  observe".into())
+            Some("  setup\n  observe …".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::TurnStarted { turn_index: 1 }),
-            Some("turn 1".into())
+            Some("  turn 1".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::PlannedTool {
@@ -874,7 +910,7 @@ mod tests {
                 tool_name: "launch-app".into(),
                 summary: "Launch Calculator before typing.".into(),
             }),
-            Some("  plan  Launch Calculator before typing.".into())
+            Some("  ∘ Launch Calculator before typing.".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::ToolResult {
@@ -884,13 +920,13 @@ mod tests {
                 summary: "action succeeded".into(),
                 is_error: false,
             }),
-            Some("  ok    action succeeded".into())
+            Some("  ✓ action succeeded".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::RunCompleted {
                 summary: "The calculator now shows 1139886.".into(),
             }),
-            Some("  done  The calculator now shows 1139886.".into())
+            Some("\n✓ The calculator now shows 1139886.".into())
         );
     }
 
@@ -909,7 +945,7 @@ mod tests {
             })
             .expect("run start should render");
 
-        assert!(rendered.contains("task  First line with spacing. Second line with more text."));
+        assert!(rendered.contains("First line with spacing. Second line with more text."));
         assert!(rendered.ends_with("..."));
     }
 }
