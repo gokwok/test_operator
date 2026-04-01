@@ -254,6 +254,10 @@ fn reduce_node(node: &HarmonyNode, parent: Option<&HarmonyNode>) -> Vec<ReducedN
 
     reduced = collapse_redundant_wrapper(reduced);
 
+    if is_unusable_leaf_button(&reduced) {
+        return Vec::new();
+    }
+
     if should_collapse_transparent_wrapper(&reduced) {
         return reduced.children;
     }
@@ -280,10 +284,6 @@ fn classify_node(
     );
     let bounds = node_bounds(&node.attributes);
     let enabled = parse_optional_bool(&node.attributes.enabled);
-    let interactive = clickable
-        || long_clickable
-        || checkable
-        || matches!(role.as_str(), "button" | "checkbox" | "switch" | "textbox");
     let has_children = !children.is_empty();
     if role == "button"
         && clickable
@@ -295,6 +295,10 @@ fn classify_node(
     if role == "generic" && has_children && bounds.is_some() {
         role = "group".into();
     }
+    let interactive = clickable
+        || long_clickable
+        || checkable
+        || matches!(role.as_str(), "button" | "checkbox" | "switch" | "textbox");
     let structural = matches!(
         role.as_str(),
         "window" | "dialog" | "toolbar" | "nav" | "tabbar" | "group" | "list" | "scroll"
@@ -302,7 +306,16 @@ fn classify_node(
     let label = node_label(node, parent, &role);
     let value = node_value(node, &role);
     let has_payload = label.is_some() || value.is_some();
+    let opaque_clickable_wrapper = role == "button"
+        && label.is_none()
+        && value.is_none()
+        && (children.is_empty()
+            || (is_layout_container_type(ty)
+                && children.iter().all(|child| {
+                    child.children.is_empty() && matches!(child.role.as_str(), "image" | "group")
+                })));
     let keep_self = bounds.is_some()
+        && !opaque_clickable_wrapper
         && (interactive
             || scrollable
             || matches!(
@@ -366,7 +379,11 @@ fn normalized_role(
         return "textbox".into();
     }
     if ty.contains("ListItem") || ty.contains("GridItem") {
-        return "group".into();
+        return if clickable {
+            "button".into()
+        } else {
+            "group".into()
+        };
     }
     match ty {
         "Text" => {
@@ -452,14 +469,25 @@ fn actionable_node_count(node: &ReducedNode) -> usize {
 
 fn node_label(node: &HarmonyNode, parent: Option<&HarmonyNode>, role: &str) -> Option<String> {
     match role {
-        "textbox" => semantic_label(&node.attributes, parent, role)
-            .or_else(|| descendant_label(node))
-            .filter(|label| label != node_value(node, role).as_deref().unwrap_or_default()),
-        "button" | "checkbox" | "switch" => {
-            semantic_label(&node.attributes, parent, role).or_else(|| descendant_label(node))
-        }
+        "textbox" => textbox_label(node, parent, role),
+        "button" | "checkbox" | "switch" => control_label(node, parent, role),
         _ => semantic_label(&node.attributes, parent, role),
     }
+}
+
+fn textbox_label(node: &HarmonyNode, parent: Option<&HarmonyNode>, role: &str) -> Option<String> {
+    let value = node_value(node, role);
+    direct_semantic_label(&node.attributes, role)
+        .or_else(|| explicit_label_from_ids(&node.attributes, parent, role))
+        .or_else(|| descendant_label(node).filter(|label| Some(label.as_str()) != value.as_deref()))
+        .or_else(|| generic_label_from_ids(&node.attributes, parent, role))
+}
+
+fn control_label(node: &HarmonyNode, parent: Option<&HarmonyNode>, role: &str) -> Option<String> {
+    direct_semantic_label(&node.attributes, role)
+        .or_else(|| explicit_label_from_ids(&node.attributes, parent, role))
+        .or_else(|| descendant_label(node))
+        .or_else(|| generic_label_from_ids(&node.attributes, parent, role))
 }
 
 fn semantic_label(
@@ -467,18 +495,43 @@ fn semantic_label(
     parent: Option<&HarmonyNode>,
     role: &str,
 ) -> Option<String> {
-    let direct = match role {
+    direct_semantic_label(attributes, role)
+        .or_else(|| explicit_label_from_ids(attributes, parent, role))
+        .or_else(|| generic_label_from_ids(attributes, parent, role))
+}
+
+fn direct_semantic_label(attributes: &HarmonyAttributes, role: &str) -> Option<String> {
+    match role {
         "textbox" => meaningful_text(attributes.description.as_deref())
             .or_else(|| meaningful_text(attributes.hint.as_deref())),
         _ => meaningful_text(attributes.text.as_deref())
             .or_else(|| meaningful_text(attributes.description.as_deref()))
             .or_else(|| meaningful_text(attributes.hint.as_deref())),
-    };
-    direct
-        .or_else(|| fallback_label_from_id(attributes.id.as_deref(), role))
-        .or_else(|| {
-            parent.and_then(|parent| fallback_label_from_id(parent.attributes.id.as_deref(), role))
+    }
+}
+
+fn explicit_label_from_ids(
+    attributes: &HarmonyAttributes,
+    parent: Option<&HarmonyNode>,
+    role: &str,
+) -> Option<String> {
+    explicit_fallback_label_from_id(attributes.id.as_deref(), role).or_else(|| {
+        parent.and_then(|parent| {
+            explicit_fallback_label_from_id(parent.attributes.id.as_deref(), role)
         })
+    })
+}
+
+fn generic_label_from_ids(
+    attributes: &HarmonyAttributes,
+    parent: Option<&HarmonyNode>,
+    role: &str,
+) -> Option<String> {
+    generic_fallback_label_from_id(attributes.id.as_deref(), role).or_else(|| {
+        parent.and_then(|parent| {
+            generic_fallback_label_from_id(parent.attributes.id.as_deref(), role)
+        })
+    })
 }
 
 fn node_value(node: &HarmonyNode, role: &str) -> Option<String> {
@@ -663,6 +716,13 @@ fn should_collapse_transparent_wrapper(node: &ReducedNode) -> bool {
             .is_some()
 }
 
+fn is_unusable_leaf_button(node: &ReducedNode) -> bool {
+    node.role == "button"
+        && node.label.is_none()
+        && node.value.is_none()
+        && node.children.is_empty()
+}
+
 fn labels_compatible(parent: Option<&str>, child: Option<&str>) -> bool {
     match (parent, child) {
         (None, _) | (_, None) => true,
@@ -817,6 +877,8 @@ fn meaningful_text(value: Option<&str>) -> Option<String> {
 
 fn is_accessibility_instruction(value: &str) -> bool {
     value.contains("单指双击即可执行")
+        || value.contains("单指双击即可显示按钮")
+        || value.contains("单指双击即可隐藏按钮")
         || value.contains("双击并按住即可弹出更多选项")
         || value.contains("双击并按住左滑可进行更多操作")
         || value.contains("double tap")
@@ -839,9 +901,9 @@ fn is_symbolic_label(value: &str) -> bool {
     matches!(value, "+" | "-" | "×" | "x" | "X" | "..." | "…" | "⋮" | "⋯")
 }
 
-fn fallback_label_from_id(id: Option<&str>, role: &str) -> Option<String> {
+fn explicit_fallback_label_from_id(id: Option<&str>, _role: &str) -> Option<String> {
     let id = id?.trim();
-    if id.is_empty() || looks_opaque_identifier(id) {
+    if id.is_empty() {
         return None;
     }
 
@@ -868,14 +930,24 @@ fn fallback_label_from_id(id: Option<&str>, role: &str) -> Option<String> {
         "__SearchField__searchComponent" | "searchComponent" => Some("搜索".into()),
         "title_area_NoteEditorManager" => Some("title".into()),
         "content_area_NoteEditorManager" => Some("content".into()),
-        _ => humanize_identifier(id, role),
+        _ => None,
     }
+}
+
+fn generic_fallback_label_from_id(id: Option<&str>, role: &str) -> Option<String> {
+    let id = id?.trim();
+    if id.is_empty() || looks_opaque_identifier(id) {
+        return None;
+    }
+
+    humanize_identifier(id, role)
 }
 
 fn looks_opaque_identifier(id: &str) -> bool {
     id.starts_with("note_item_")
         || id.contains('$')
         || id.chars().filter(|ch| ch.is_ascii_hexdigit()).count() > 20
+        || !id.chars().any(char::is_alphabetic)
 }
 
 fn humanize_identifier(id: &str, role: &str) -> Option<String> {
@@ -906,6 +978,7 @@ fn humanize_identifier(id: &str, role: &str) -> Option<String> {
 
     words.retain(|word| {
         !word.is_empty()
+            && !word.chars().any(|ch| ch.is_ascii_digit())
             && !matches!(
                 word.as_str(),
                 "btn"
@@ -1309,6 +1382,150 @@ mod tests {
             .expect("button should exist");
         assert_eq!(button.role, "button");
         assert_eq!(button.label.as_deref(), Some("font style"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_promotes_clickable_list_items_with_descendant_text() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,180]" },
+            "children": [{
+                "attributes": {
+                    "type": "List",
+                    "scrollable": "true",
+                    "bounds": "[0,0][420,180]"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "ListItem",
+                        "clickable": "true",
+                        "bounds": "[0,0][420,76]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text",
+                            "text": "探索",
+                            "bounds": "[40,18][120,56]"
+                        }
+                    }]
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let list = result
+            .elements
+            .get(&root.children[0])
+            .expect("list should exist");
+        let item = result
+            .elements
+            .get(&list.children[0])
+            .expect("list item should exist");
+        assert_eq!(item.role, "button");
+        assert_eq!(item.label.as_deref(), Some("探索"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_prefers_descendant_hint_over_generic_search_identifier() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Search",
+                    "clickable": "true",
+                    "bounds": "[0,0][420,76]",
+                    "id": "Search.Input.searchFrameInput20"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "SearchField",
+                        "clickable": "true",
+                        "hint": "搜索内容",
+                        "bounds": "[10,0][390,76]"
+                    }
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let search = result
+            .elements
+            .get(&root.children[0])
+            .expect("search field should exist");
+        assert_eq!(search.role, "textbox");
+        assert_eq!(search.label.as_deref(), Some("搜索内容"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_prefers_descendant_text_over_generic_button_identifier() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][240,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Button",
+                    "clickable": "true",
+                    "bounds": "[0,0][160,53]",
+                    "id": "download_content_7396"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "Text",
+                        "text": "打开",
+                        "bounds": "[20,10][80,40]"
+                    }
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let button = result
+            .elements
+            .get(&root.children[0])
+            .expect("button should exist");
+        assert_eq!(button.role, "button");
+        assert_eq!(button.label.as_deref(), Some("打开"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_drops_unlabeled_clickable_layout_wrappers_without_semantics() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,240]" },
+            "children": [{
+                "attributes": {
+                    "type": "Stack",
+                    "clickable": "true",
+                    "bounds": "[0,0][420,200]"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "Image",
+                        "bounds": "[0,0][420,200]"
+                    }
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        assert!(root
+            .children
+            .iter()
+            .filter_map(|id| result.elements.get(id))
+            .all(|child| child.role != "button"));
     }
 
     #[test]
