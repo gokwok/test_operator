@@ -88,6 +88,9 @@ enum ProgressSection {
 #[derive(Debug, Default)]
 pub(crate) struct AgentProgressRenderer {
     current_section: Option<ProgressSection>,
+    /// The most recently seen tool call — used to synthesise a confirmation
+    /// line when the result carries no meaningful summary (e.g. "result: outcome").
+    last_tool_call: Option<(String, serde_json::Value)>,
 }
 
 impl AgentProgressRenderer {
@@ -153,6 +156,7 @@ impl AgentProgressRenderer {
                 args,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
+                self.last_tool_call = Some((name.clone(), args.clone()));
                 // This line is consumed by the spinner in ConsoleAgentProgressReporter;
                 // rendering it here keeps the renderer testable and state consistent.
                 let label = tool_call_label(name, args);
@@ -166,29 +170,46 @@ impl AgentProgressRenderer {
                 is_error,
             } => {
                 self.enter_progress_section(&mut lines, *turn_index);
-                // Observe / snapshot calls are internal plumbing — suppress their
-                // result lines entirely to avoid technical noise in the output.
-                if is_observe_tool(name) {
+                let last_call = self.last_tool_call.take();
+
+                // Observe / snapshot / list-apps calls are internal plumbing —
+                // suppress their result lines entirely.
+                if is_observe_tool(name) || name == "list-apps" {
                     return None;
                 }
+
                 if *is_error {
+                    // Strip redundant "error [...]:" / "platform error:" prefixes
+                    // that add no information the user can act on.
+                    let msg = strip_error_prefix(summary);
                     lines.push(format!(
                         "  {} {}",
                         style("✗").red(),
-                        style(compact_progress_text(summary)).red()
+                        style(compact_progress_text(msg)).red()
                     ));
                 } else {
-                    // Strip the generic "result: outcome" agent summary that carries no
-                    // user-visible information; just emit a bare checkmark in that case.
-                    let display = meaningful_summary(summary);
-                    if let Some(text) = display {
-                        lines.push(format!(
-                            "  {} {}",
-                            style("✓").green(),
-                            compact_progress_text(text)
-                        ));
+                    match meaningful_summary(summary) {
+                        Some(text) => {
+                            // Summary is genuinely informative — show it.
+                            lines.push(format!(
+                                "  {} {}",
+                                style("✓").green(),
+                                compact_progress_text(text)
+                            ));
+                        }
+                        None => {
+                            // Generic "result: outcome" — fall back to showing
+                            // the tool name + args as a compact confirmation.
+                            if let Some((tool_name, tool_args)) = last_call {
+                                let label = tool_call_label(&tool_name, &tool_args);
+                                lines.push(format!(
+                                    "  {} {}",
+                                    style("✓").green(),
+                                    style(label).dim()
+                                ));
+                            }
+                        }
                     }
-                    // If display is None the tool ran fine but has nothing worth showing.
                 }
             }
             AgentProgressEvent::FinishGateRejected { turn_index, reason } => {
@@ -235,6 +256,7 @@ impl AgentProgressRenderer {
     fn enter_turn(&mut self, lines: &mut Vec<String>, turn_index: u32) {
         let section = ProgressSection::Turn(turn_index);
         if self.current_section != Some(section) {
+            lines.push(String::new()); // breathing room between turns
             lines.push(format!("{}", style(format!("  turn {turn_index}")).dim()));
             self.current_section = Some(section);
         }
@@ -335,6 +357,23 @@ fn format_tool_args(name: &str, args: &serde_json::Value) -> Option<String> {
         _ => return None,
     };
     Some(s)
+}
+
+/// Strips redundant error prefixes like `"error [platform]: platform error: "` that
+/// wrap the real message but add no actionable information for the user.
+fn strip_error_prefix(msg: &str) -> &str {
+    let mut s = msg.trim();
+    // Strip "error [<tag>]: " wrapper
+    if let Some(rest) = s.strip_prefix("error [") {
+        if let Some(after_tag) = rest.find("]: ") {
+            s = rest[after_tag + 3..].trim();
+        }
+    }
+    // Strip "platform error: " prefix
+    if let Some(rest) = s.strip_prefix("platform error: ") {
+        s = rest.trim();
+    }
+    s
 }
 
 /// Returns true for tools whose results are internal plumbing (observe / snapshots).
@@ -1043,7 +1082,7 @@ mod tests {
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::TurnStarted { turn_index: 1 }),
-            Some("  turn 1".into())
+            Some("\n  turn 1".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::PlannedTool {
@@ -1074,7 +1113,7 @@ mod tests {
             }),
             None
         );
-        // Generic "result: outcome" summaries are suppressed.
+        // Generic "result: outcome" with no preceding ToolCall → None.
         assert_eq!(
             renderer.render(&AgentProgressEvent::ToolResult {
                 turn_index: 1,
@@ -1084,6 +1123,23 @@ mod tests {
                 is_error: false,
             }),
             None
+        );
+        // Generic "result: outcome" WITH a preceding ToolCall → show tool+args.
+        renderer.render(&AgentProgressEvent::ToolCall {
+            turn_index: 1,
+            step_index: 4,
+            name: "click".into(),
+            args: serde_json::json!({"x": 450, "y": 320}),
+        });
+        assert_eq!(
+            renderer.render(&AgentProgressEvent::ToolResult {
+                turn_index: 1,
+                step_index: 4,
+                name: "click".into(),
+                summary: "result: outcome".into(),
+                is_error: false,
+            }),
+            Some("  ✓ click  x=450 y=320".into())
         );
         assert_eq!(
             renderer.render(&AgentProgressEvent::RunCompleted {
