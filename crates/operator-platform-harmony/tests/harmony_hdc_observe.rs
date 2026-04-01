@@ -313,8 +313,14 @@ async fn observe_frontmost_includes_filtered_compact_elements_when_requested() {
         .elements
         .get(&snapshot.root_ids[0])
         .expect("filtered element should exist");
-    assert_eq!(root.role, "button");
-    assert_eq!(root.label.as_deref(), Some("保留"));
+    assert_eq!(root.role, "window");
+    assert_eq!(root.children.len(), 1);
+    let kept = snapshot
+        .elements
+        .get(&root.children[0])
+        .expect("filtered button should exist");
+    assert_eq!(kept.role, "button");
+    assert_eq!(kept.label.as_deref(), Some("保留"));
     assert_eq!(counts.dump_hierarchy_calls.load(Ordering::SeqCst), 1);
 }
 

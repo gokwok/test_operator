@@ -1,12 +1,16 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use operator_core::{ElementId, ElementSource, OperatorError, Rect, UiElement};
 use serde::Deserialize;
 use serde_json::Value;
 
 const MAX_SCROLL_CHILDREN: usize = 40;
+const MAX_CONTAINER_CHILDREN: usize = 80;
+const SAME_ROW_Y_TOLERANCE: f64 = 50.0;
+const MAX_SECONDARY_LABEL_CHARS: usize = 20;
+const MAX_COMBINED_LABEL_CHARS: usize = 36;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InspectResult {
@@ -64,14 +68,26 @@ struct HarmonyAttributes {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct CompactNode {
-    id: ElementId,
+struct ReducedNode {
     role: String,
     label: Option<String>,
     value: Option<String>,
     bounds: Option<Rect>,
     enabled: Option<bool>,
-    children: Vec<CompactNode>,
+    children: Vec<ReducedNode>,
+}
+
+#[derive(Debug, Clone)]
+struct NodeSemantics {
+    role: String,
+    bounds: Option<Rect>,
+    enabled: Option<bool>,
+    interactive: bool,
+    scrollable: bool,
+    structural: bool,
+    keep_self: bool,
+    label: Option<String>,
+    value: Option<String>,
 }
 
 pub(crate) fn build_inspect_result(hierarchy: Value) -> Result<InspectResult, OperatorError> {
@@ -81,22 +97,36 @@ pub(crate) fn build_inspect_result(hierarchy: Value) -> Result<InspectResult, Op
         ))
     })?;
 
-    let mut roots = Vec::new();
-    for (index, child) in root.children.iter().enumerate() {
-        roots.extend(compact_node(child, &format!("hm-{index}")));
+    let mut top_nodes = root
+        .children
+        .iter()
+        .flat_map(reduce_node)
+        .collect::<Vec<_>>();
+    if top_nodes.is_empty() {
+        top_nodes = reduce_node(&root);
+    }
+    if top_nodes.is_empty() {
+        return Ok(InspectResult {
+            elements: HashMap::new(),
+            root_ids: Vec::new(),
+        });
     }
 
-    if roots.is_empty() {
-        roots = compact_node(&root, "hm-root");
-    }
+    let root_node = ReducedNode {
+        role: "window".into(),
+        label: semantic_label(&root.attributes, "window"),
+        value: None,
+        bounds: node_bounds(&root.attributes).or_else(|| union_bounds(&top_nodes)),
+        enabled: parse_optional_bool(&root.attributes.enabled),
+        children: top_nodes,
+    };
 
     let mut elements = HashMap::new();
-    let mut root_ids = Vec::new();
-    for root in roots {
-        root_ids.push(flatten_compact_node(root, &mut elements));
-    }
-
-    Ok(InspectResult { elements, root_ids })
+    let root_id = flatten_reduced_tree(root_node, &mut elements, "ax-0");
+    Ok(InspectResult {
+        elements,
+        root_ids: vec![root_id],
+    })
 }
 
 pub(crate) fn filter_inspect_result_to_region(
@@ -116,20 +146,23 @@ pub(crate) fn filter_inspect_result_to_region(
     }
 }
 
-fn flatten_compact_node(
-    node: CompactNode,
+fn flatten_reduced_tree(
+    node: ReducedNode,
     elements: &mut HashMap<ElementId, UiElement>,
+    path: &str,
 ) -> ElementId {
+    let id = ElementId(path.into());
     let child_ids = node
         .children
         .into_iter()
-        .map(|child| flatten_compact_node(child, elements))
+        .enumerate()
+        .map(|(index, child)| flatten_reduced_tree(child, elements, &format!("{path}-{index}")))
         .collect::<Vec<_>>();
 
     elements.insert(
-        node.id.clone(),
+        id.clone(),
         UiElement {
-            id: node.id.clone(),
+            id: id.clone(),
             role: node.role,
             label: node.label,
             value: node.value,
@@ -141,7 +174,7 @@ fn flatten_compact_node(
         },
     );
 
-    node.id
+    id
 }
 
 fn filter_element_to_region(
@@ -156,10 +189,15 @@ fn filter_element_to_region(
         .iter()
         .filter_map(|child| filter_element_to_region(elements, filtered, child, region))
         .collect::<Vec<_>>();
-    let keep = element
+    let intersects = element
         .bounds
-        .is_some_and(|bounds| rects_intersect(bounds, region))
-        || !children.is_empty();
+        .is_some_and(|bounds| rects_intersect(bounds, region));
+    let structural_shell = matches!(
+        element.role.as_str(),
+        "window" | "dialog" | "toolbar" | "nav" | "tabbar" | "group" | "list" | "scroll"
+    ) && element.label.is_none()
+        && element.value.is_none();
+    let keep = !children.is_empty() || (intersects && !structural_shell);
     if !keep {
         return None;
     }
@@ -170,101 +208,102 @@ fn filter_element_to_region(
     Some(id.clone())
 }
 
-fn compact_node(node: &HarmonyNode, path: &str) -> Vec<CompactNode> {
+fn reduce_node(node: &HarmonyNode) -> Vec<ReducedNode> {
     if !is_visible(node) {
         return Vec::new();
     }
 
-    let mut child_nodes = node
+    let mut children = node
         .children
         .iter()
-        .enumerate()
-        .flat_map(|(index, child)| compact_node(child, &format!("{path}-{index}")))
+        .flat_map(reduce_node)
         .collect::<Vec<_>>();
+    let semantics = classify_node(node, &children);
 
-    let classification = classify_node(node);
-    let bounds = node_bounds(&node.attributes);
-    let enabled = parse_optional_bool(&node.attributes.enabled);
+    if !semantics.keep_self {
+        return children;
+    }
 
-    if classification.scrollable && bounds.is_some() {
-        child_nodes.truncate(MAX_SCROLL_CHILDREN);
-        if !child_nodes.is_empty() {
-            return vec![CompactNode {
-                id: ElementId(path.into()),
-                role: "scroll".into(),
-                label: best_label(node),
-                value: None,
-                bounds,
-                enabled,
-                children: child_nodes,
-            }];
+    if semantics.scrollable {
+        children.truncate(MAX_SCROLL_CHILDREN);
+    } else if semantics.structural {
+        children.truncate(MAX_CONTAINER_CHILDREN);
+    }
+
+    let mut reduced = ReducedNode {
+        role: semantics.role.clone(),
+        label: semantics.label.clone(),
+        value: semantics.value.clone(),
+        bounds: semantics.bounds,
+        enabled: semantics.enabled,
+        children,
+    };
+
+    if should_absorb_decorative_children(&reduced) {
+        if reduced.label.is_none() {
+            reduced.label = label_from_children(&reduced.children);
         }
+        reduced.children.clear();
     }
 
-    if classification.interactive && bounds.is_some() {
-        let role = classification.role;
-        let value = interactive_value(node, &role);
-        return vec![CompactNode {
-            id: ElementId(path.into()),
-            role,
-            label: interactive_label(node),
-            value,
-            bounds,
-            enabled,
-            children: Vec::new(),
-        }];
+    if should_collapse_transparent_wrapper(&reduced) {
+        return reduced.children;
     }
 
-    if classification.semantic_leaf && bounds.is_some() && child_nodes.is_empty() {
-        let role = classification.role;
-        let value = semantic_value(node, &role);
-        return vec![CompactNode {
-            id: ElementId(path.into()),
-            role,
-            label: best_label(node),
-            value,
-            bounds,
-            enabled,
-            children: Vec::new(),
-        }];
-    }
-
-    child_nodes
+    vec![reduced]
 }
 
-#[derive(Debug)]
-struct NodeClassification {
-    role: String,
-    interactive: bool,
-    scrollable: bool,
-    semantic_leaf: bool,
-}
-
-fn classify_node(node: &HarmonyNode) -> NodeClassification {
+fn classify_node(node: &HarmonyNode, children: &[ReducedNode]) -> NodeSemantics {
     let clickable = parse_bool(&node.attributes.clickable);
     let long_clickable = parse_bool(&node.attributes.longClickable);
     let checkable = parse_bool(&node.attributes.checkable);
     let scrollable = parse_bool(&node.attributes.scrollable);
-    let role = normalized_role(
+    let mut role = normalized_role(
         node.attributes.r#type.as_deref(),
         clickable,
         checkable,
         scrollable,
         node.attributes.text.as_deref(),
     );
-    let has_label = best_label(node).is_some();
+    let bounds = node_bounds(&node.attributes);
+    let enabled = parse_optional_bool(&node.attributes.enabled);
     let interactive = clickable
         || long_clickable
         || checkable
-        || scrollable
         || matches!(role.as_str(), "button" | "checkbox" | "switch" | "textbox");
-    let semantic_leaf = !interactive && has_label;
+    let has_children = !children.is_empty();
+    if role == "generic" && has_children && bounds.is_some() {
+        role = "group".into();
+    }
+    let structural = matches!(
+        role.as_str(),
+        "window" | "dialog" | "toolbar" | "nav" | "tabbar" | "group" | "list" | "scroll"
+    );
+    let label = node_label(node, &role);
+    let value = node_value(node, &role);
+    let has_payload = label.is_some() || value.is_some();
+    let keep_self = bounds.is_some()
+        && (interactive
+            || scrollable
+            || matches!(
+                role.as_str(),
+                "checkbox" | "switch" | "textbox" | "text" | "image" | "dialog"
+            )
+            || (structural && has_children)
+            || children.len() >= 2
+            || (has_payload && has_children)
+            || (has_payload && !matches!(role.as_str(), "generic")));
 
-    NodeClassification {
+    NodeSemantics {
         role,
+        bounds,
+        enabled,
         interactive,
         scrollable,
-        semantic_leaf,
+        structural,
+        keep_self,
+        label,
+        value,
     }
 }
 
@@ -276,7 +315,22 @@ fn normalized_role(
     text: Option<&str>,
 ) -> String {
     let ty = ty.unwrap_or("").trim();
+    if ty.contains("Dialog") || ty.contains("Popup") {
+        return "dialog".into();
+    }
+    if ty.contains("ToolBar") || ty.contains("TitleBar") || ty.contains("AppBar") {
+        return "toolbar".into();
+    }
+    if ty.contains("Nav") || ty.contains("Navigation") {
+        return "nav".into();
+    }
+    if ty.contains("TabBar") || ty.contains("Tabs") {
+        return "tabbar".into();
+    }
     if scrollable {
+        if ty.contains("List") || ty.contains("Grid") {
+            return "list".into();
+        }
         return "scroll".into();
     }
     if ty.contains("Switch") {
@@ -288,6 +342,9 @@ fn normalized_role(
     if ty.contains("Edit") || ty.contains("Input") || ty.contains("TextField") {
         return "textbox".into();
     }
+    if ty.contains("ListItem") || ty.contains("GridItem") {
+        return "group".into();
+    }
     match ty {
         "Text" => {
             if clickable {
@@ -298,10 +355,12 @@ fn normalized_role(
         }
         "Image" => "image".into(),
         "Button" => "button".into(),
+        "Column" | "Row" | "Flex" | "Stack" | "RelativeContainer" | "RelativeLayout"
+        | "FrameNode" | "Swiper" | "GridRow" | "GridCol" => "group".into(),
         _ => {
             if clickable {
                 "button".into()
-            } else if trimmed(text).is_some() {
+            } else if meaningful_text(text).is_some() {
                 "text".into()
             } else {
                 "generic".into()
@@ -310,48 +369,69 @@ fn normalized_role(
     }
 }
 
-fn interactive_label(node: &HarmonyNode) -> Option<String> {
-    best_label(node).or_else(|| {
-        let mut texts = Vec::new();
-        gather_descendant_texts(node, &mut texts);
-        choose_primary_label(texts)
-    })
+fn node_label(node: &HarmonyNode, role: &str) -> Option<String> {
+    match role {
+        "textbox" => semantic_label(&node.attributes, role)
+            .or_else(|| descendant_label(node))
+            .filter(|label| label != node_value(node, role).as_deref().unwrap_or_default()),
+        "button" | "checkbox" | "switch" => {
+            semantic_label(&node.attributes, role).or_else(|| descendant_label(node))
+        }
+        _ => semantic_label(&node.attributes, role),
+    }
 }
 
-fn interactive_value(node: &HarmonyNode, role: &str) -> Option<String> {
+fn semantic_label(attributes: &HarmonyAttributes, role: &str) -> Option<String> {
+    match role {
+        "textbox" => meaningful_text(attributes.description.as_deref())
+            .or_else(|| meaningful_text(attributes.hint.as_deref())),
+        _ => meaningful_text(attributes.text.as_deref())
+            .or_else(|| meaningful_text(attributes.description.as_deref()))
+            .or_else(|| meaningful_text(attributes.hint.as_deref())),
+    }
+}
+
+fn node_value(node: &HarmonyNode, role: &str) -> Option<String> {
     match role {
         "checkbox" | "switch" => Some(parse_bool(&node.attributes.checked).to_string()),
-        "textbox" => trimmed(node.attributes.text.as_deref()),
+        "textbox" => meaningful_text(node.attributes.text.as_deref()),
         _ => None,
     }
 }
 
-fn semantic_value(node: &HarmonyNode, role: &str) -> Option<String> {
-    match role {
-        "textbox" => trimmed(node.attributes.text.as_deref()),
-        _ => None,
-    }
+fn descendant_label(node: &HarmonyNode) -> Option<String> {
+    let mut texts = Vec::new();
+    gather_descendant_texts(node, &mut texts);
+    choose_primary_label(texts)
 }
 
-fn best_label(node: &HarmonyNode) -> Option<String> {
-    trimmed(node.attributes.text.as_deref())
-        .or_else(|| trimmed(node.attributes.description.as_deref()))
-        .or_else(|| trimmed(node.attributes.hint.as_deref()))
+fn label_from_children(children: &[ReducedNode]) -> Option<String> {
+    let texts = children
+        .iter()
+        .filter_map(|child| child.label.clone().map(|label| (label, child.bounds)))
+        .collect::<Vec<_>>();
+    choose_primary_label(texts)
 }
 
 fn gather_descendant_texts(node: &HarmonyNode, out: &mut Vec<(String, Option<Rect>)>) {
-    if let Some(text) = trimmed(node.attributes.text.as_deref()) {
-        out.push((text, node_bounds(&node.attributes)));
+    for candidate in [
+        meaningful_text(node.attributes.text.as_deref()),
+        meaningful_text(node.attributes.description.as_deref()),
+        meaningful_text(node.attributes.hint.as_deref()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        out.push((candidate, node_bounds(&node.attributes)));
     }
-    if let Some(text) = trimmed(node.attributes.description.as_deref()) {
-        out.push((text, node_bounds(&node.attributes)));
-    }
+
     for child in &node.children {
         gather_descendant_texts(child, out);
     }
 }
 
-fn choose_primary_label(mut texts: Vec<(String, Option<Rect>)>) -> Option<String> {
+fn choose_primary_label(texts: Vec<(String, Option<Rect>)>) -> Option<String> {
+    let mut texts = dedupe_text_candidates(texts);
     if texts.is_empty() {
         return None;
     }
@@ -366,16 +446,17 @@ fn choose_primary_label(mut texts: Vec<(String, Option<Rect>)>) -> Option<String
         })
     });
 
-    let primary = texts.first().map(|(text, _)| text.clone());
+    let primary = texts.first().map(|(text, _)| text.clone())?;
     let top_y = texts
         .first()
         .and_then(|(_, rect)| rect.as_ref().map(|rect| rect.y))
         .unwrap_or_default();
     let secondary = texts
         .iter()
+        .skip(1)
         .filter(|(_, rect)| {
             rect.as_ref()
-                .map(|rect| (rect.y - top_y).abs() <= 50.0)
+                .map(|rect| (rect.y - top_y).abs() <= SAME_ROW_Y_TOLERANCE)
                 .unwrap_or(true)
         })
         .max_by(|lhs, rhs| {
@@ -385,13 +466,72 @@ fn choose_primary_label(mut texts: Vec<(String, Option<Rect>)>) -> Option<String
         })
         .map(|(text, _)| text.clone());
 
-    match (primary, secondary) {
-        (Some(primary), Some(secondary)) if primary != secondary => {
+    match secondary {
+        Some(secondary)
+            if secondary != primary
+                && primary.chars().count() <= MAX_SECONDARY_LABEL_CHARS
+                && secondary.chars().count() <= MAX_SECONDARY_LABEL_CHARS
+                && primary.chars().count() + secondary.chars().count()
+                    < MAX_COMBINED_LABEL_CHARS =>
+        {
             Some(format!("{primary} {secondary}"))
         }
-        (Some(primary), _) => Some(primary),
-        _ => None,
+        _ => Some(primary),
     }
+}
+
+fn dedupe_text_candidates(texts: Vec<(String, Option<Rect>)>) -> Vec<(String, Option<Rect>)> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::with_capacity(texts.len());
+    for (text, rect) in texts {
+        if seen.insert(text.clone()) {
+            deduped.push((text, rect));
+        }
+    }
+    deduped
+}
+
+fn should_absorb_decorative_children(node: &ReducedNode) -> bool {
+    matches!(node.role.as_str(), "button" | "checkbox" | "switch")
+        && !node.children.is_empty()
+        && node.children.iter().all(|child| {
+            child.children.is_empty() && matches!(child.role.as_str(), "text" | "image")
+        })
+}
+
+fn should_collapse_transparent_wrapper(node: &ReducedNode) -> bool {
+    node.role == "group"
+        && node.label.is_none()
+        && node.value.is_none()
+        && node.children.len() == 1
+        && node
+            .children
+            .first()
+            .and_then(|child| child.bounds)
+            .is_some()
+}
+
+fn union_bounds(nodes: &[ReducedNode]) -> Option<Rect> {
+    let mut iter = nodes.iter().filter_map(|node| node.bounds);
+    let first = iter.next()?;
+    let mut left = first.x;
+    let mut top = first.y;
+    let mut right = first.x + first.width;
+    let mut bottom = first.y + first.height;
+
+    for bounds in iter {
+        left = left.min(bounds.x);
+        top = top.min(bounds.y);
+        right = right.max(bounds.x + bounds.width);
+        bottom = bottom.max(bounds.y + bounds.height);
+    }
+
+    Some(Rect {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    })
 }
 
 fn node_bounds(attributes: &HarmonyAttributes) -> Option<Rect> {
@@ -464,27 +604,46 @@ fn parse_bool_default(value: &Option<String>, default: bool) -> bool {
     parse_optional_bool(value).unwrap_or(default)
 }
 
-fn trimmed(value: Option<&str>) -> Option<String> {
-    value.and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    })
+fn meaningful_text(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.chars().any(is_meaningful_label_char) || is_symbolic_label(trimmed) {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+fn is_meaningful_label_char(ch: char) -> bool {
+    ch.is_alphanumeric()
+        || matches!(
+            ch as u32,
+            0x3400..=0x4DBF
+                | 0x4E00..=0x9FFF
+                | 0xF900..=0xFAFF
+                | 0x3040..=0x30FF
+                | 0xAC00..=0xD7AF
+        )
+}
+
+fn is_symbolic_label(value: &str) -> bool {
+    matches!(value, "+" | "-" | "×" | "x" | "X" | "..." | "…" | "⋮" | "⋯")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::build_inspect_result;
+    use super::{build_inspect_result, filter_inspect_result_to_region};
     use operator_core::Rect;
     use serde_json::json;
 
     #[test]
-    fn harmony_hdc_inspect_prunes_wrappers_and_synthesizes_button_labels() {
+    fn harmony_hdc_inspect_builds_single_window_root_and_button_leaf() {
         let result = build_inspect_result(json!({
-            "attributes": {},
+            "attributes": { "bounds": "[0,0][300,400]" },
             "children": [{
                 "attributes": { "type": "Column", "bounds": "[0,0][300,400]" },
                 "children": [{
@@ -506,29 +665,29 @@ mod tests {
         }))
         .expect("inspect result");
 
-        assert_eq!(result.root_ids.len(), 1);
+        assert_eq!(result.root_ids, vec!["ax-0".into()]);
         let root = result
             .elements
             .get(&result.root_ids[0])
-            .expect("root element should exist");
-        assert_eq!(root.role, "button");
-        assert_eq!(root.label.as_deref(), Some("保存"));
-        assert_eq!(
-            root.bounds,
-            Some(Rect {
-                x: 10.0,
-                y: 20.0,
-                width: 100.0,
-                height: 50.0,
-            })
-        );
-        assert!(root.children.is_empty());
+            .expect("window root should exist");
+        assert_eq!(root.role, "window");
+        assert_eq!(root.children.len(), 1);
+
+        let button = result
+            .elements
+            .get(&root.children[0])
+            .expect("button child should exist");
+        assert_eq!(button.id.0, "ax-0-0");
+        assert_eq!(button.role, "button");
+        assert_eq!(button.label.as_deref(), Some("保存"));
+        assert_eq!(button.enabled, Some(true));
+        assert!(button.children.is_empty());
     }
 
     #[test]
-    fn harmony_hdc_inspect_keeps_scroll_roots_with_compact_children() {
+    fn harmony_hdc_inspect_keeps_list_structure_under_window_root() {
         let result = build_inspect_result(json!({
-            "attributes": {},
+            "attributes": { "bounds": "[0,0][300,600]" },
             "children": [{
                 "attributes": {
                     "type": "List",
@@ -569,54 +728,90 @@ mod tests {
         }))
         .expect("inspect result");
 
-        let scroll = result
+        let root = result
             .elements
             .get(&result.root_ids[0])
-            .expect("scroll root should exist");
-        assert_eq!(scroll.role, "scroll");
-        assert_eq!(scroll.children.len(), 2);
+            .expect("window root should exist");
+        let list = result
+            .elements
+            .get(&root.children[0])
+            .expect("list child should exist");
+        assert_eq!(list.role, "list");
+        assert_eq!(list.children.len(), 2);
+
         let first = result
             .elements
-            .get(&scroll.children[0])
-            .expect("first child should exist");
+            .get(&list.children[0])
+            .expect("first list item should exist");
         assert_eq!(first.role, "button");
         assert_eq!(first.label.as_deref(), Some("第一项"));
     }
 
     #[test]
-    fn harmony_hdc_inspect_preserves_semantic_text_leaves() {
+    fn harmony_hdc_inspect_preserves_multi_child_groups() {
         let result = build_inspect_result(json!({
-            "attributes": {},
+            "attributes": { "bounds": "[0,0][360,240]" },
             "children": [{
                 "attributes": {
-                    "type": "Text",
-                    "text": "欢迎回来",
-                    "bounds": "[12,32][160,62]",
-                    "enabled": "true"
-                }
+                    "type": "Column",
+                    "bounds": "[0,0][360,240]"
+                },
+                "children": [
+                    {
+                        "attributes": {
+                            "type": "Text",
+                            "text": "欢迎回来",
+                            "bounds": "[12,20][140,50]"
+                        }
+                    },
+                    {
+                        "attributes": {
+                            "type": "Button",
+                            "clickable": "true",
+                            "bounds": "[12,80][180,132]"
+                        },
+                        "children": [{
+                            "attributes": {
+                                "type": "Text",
+                                "text": "继续",
+                                "bounds": "[32,96][72,118]"
+                            }
+                        }]
+                    }
+                ]
             }]
         }))
         .expect("inspect result");
 
-        assert_eq!(result.root_ids.len(), 1);
-        let text = result
+        let root = result
             .elements
             .get(&result.root_ids[0])
-            .expect("text root should exist");
-        assert_eq!(text.role, "text");
-        assert_eq!(text.label.as_deref(), Some("欢迎回来"));
-        assert_eq!(text.enabled, Some(true));
+            .expect("window root should exist");
+        let group = result
+            .elements
+            .get(&root.children[0])
+            .expect("group child should exist");
+        assert_eq!(group.role, "group");
+        assert_eq!(group.children.len(), 2);
+
+        let title = result
+            .elements
+            .get(&group.children[0])
+            .expect("title should exist");
+        assert_eq!(title.role, "text");
+        assert_eq!(title.label.as_deref(), Some("欢迎回来"));
     }
 
     #[test]
     fn harmony_hdc_inspect_maps_form_values_and_checked_state() {
         let result = build_inspect_result(json!({
-            "attributes": {},
+            "attributes": { "bounds": "[0,0][300,180]" },
             "children": [
                 {
                     "attributes": {
                         "type": "TextInput",
                         "text": "alice@example.com",
+                        "hint": "邮箱",
                         "bounds": "[10,10][200,60]",
                         "enabled": "true"
                     }
@@ -634,16 +829,21 @@ mod tests {
         }))
         .expect("inspect result");
 
-        let textbox = result
+        let root = result
             .elements
             .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let textbox = result
+            .elements
+            .get(&root.children[0])
             .expect("textbox should exist");
         assert_eq!(textbox.role, "textbox");
+        assert_eq!(textbox.label.as_deref(), Some("邮箱"));
         assert_eq!(textbox.value.as_deref(), Some("alice@example.com"));
 
         let checkbox = result
             .elements
-            .get(&result.root_ids[1])
+            .get(&root.children[1])
             .expect("checkbox should exist");
         assert_eq!(checkbox.role, "checkbox");
         assert_eq!(checkbox.label.as_deref(), Some("记住我"));
@@ -653,41 +853,47 @@ mod tests {
     #[test]
     fn harmony_hdc_inspect_filters_compact_result_to_region() {
         let result = build_inspect_result(json!({
-            "attributes": {},
-            "children": [
-                {
-                    "attributes": {
-                        "type": "Button",
-                        "clickable": "true",
-                        "bounds": "[0,0][120,80]"
-                    },
-                    "children": [{
-                        "attributes": {
-                            "type": "Text",
-                            "text": "左侧",
-                            "bounds": "[20,20][60,50]"
-                        }
-                    }]
+            "attributes": { "bounds": "[0,0][420,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Row",
+                    "bounds": "[0,0][420,120]"
                 },
-                {
-                    "attributes": {
-                        "type": "Button",
-                        "clickable": "true",
-                        "bounds": "[300,0][420,80]"
-                    },
-                    "children": [{
+                "children": [
+                    {
                         "attributes": {
-                            "type": "Text",
-                            "text": "右侧",
-                            "bounds": "[320,20][360,50]"
-                        }
-                    }]
-                }
-            ]
+                            "type": "Button",
+                            "clickable": "true",
+                            "bounds": "[0,0][120,80]"
+                        },
+                        "children": [{
+                            "attributes": {
+                                "type": "Text",
+                                "text": "左侧",
+                                "bounds": "[20,20][60,50]"
+                            }
+                        }]
+                    },
+                    {
+                        "attributes": {
+                            "type": "Button",
+                            "clickable": "true",
+                            "bounds": "[300,0][420,80]"
+                        },
+                        "children": [{
+                            "attributes": {
+                                "type": "Text",
+                                "text": "右侧",
+                                "bounds": "[320,20][360,50]"
+                            }
+                        }]
+                    }
+                ]
+            }]
         }))
         .expect("inspect result");
 
-        let filtered = super::filter_inspect_result_to_region(
+        let filtered = filter_inspect_result_to_region(
             result,
             Rect {
                 x: 0.0,
@@ -697,11 +903,20 @@ mod tests {
             },
         );
 
-        assert_eq!(filtered.root_ids.len(), 1);
-        let only = filtered
+        assert_eq!(filtered.root_ids, vec!["ax-0".into()]);
+        let root = filtered
             .elements
             .get(&filtered.root_ids[0])
-            .expect("filtered element should exist");
+            .expect("window root should exist");
+        let group = filtered
+            .elements
+            .get(&root.children[0])
+            .expect("group should remain");
+        assert_eq!(group.children.len(), 1);
+        let only = filtered
+            .elements
+            .get(&group.children[0])
+            .expect("filtered button should exist");
         assert_eq!(only.label.as_deref(), Some("左侧"));
     }
 }
