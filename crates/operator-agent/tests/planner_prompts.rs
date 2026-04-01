@@ -206,3 +206,32 @@ fn planner_prompts_bound_recent_transcript_by_char_budget() {
         "long older history should be dropped once the character budget is exhausted"
     );
 }
+
+#[test]
+fn planner_prompts_forbid_click_based_app_launching_in_system_prompt() {
+    let context = PlannerPromptBuilder::new().assemble(
+        "Open Notes.",
+        &planner_context(),
+        &[],
+        &ModelContextBuffer::new(),
+        &[],
+    );
+
+    let system = context
+        .system
+        .expect("planner prompt should include system text");
+    assert!(
+        system.contains(
+            "use app lifecycle tools such as `launch-app`, `switch-app`, or `relaunch-app`"
+        ),
+        "system prompt should require app lifecycle tools for app-opening actions: {system}"
+    );
+    assert!(
+        system.contains("Do not use `click` on desktop icons, dock/taskbar items, launcher surfaces, or guessed coordinates to open an app."),
+        "system prompt should forbid click-based app launching: {system}"
+    );
+    assert!(
+        system.contains("If an app lifecycle tool fails, do not fall back to guessed coordinate clicks to open that app."),
+        "system prompt should forbid guessed click fallback after lifecycle-tool failures: {system}"
+    );
+}
