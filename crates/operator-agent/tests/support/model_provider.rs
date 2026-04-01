@@ -8,6 +8,7 @@ use operator_agent::model::{
     channel, AssistantMessage, ContentBlock, DoneReason, ModelError, ModelEvent, ModelProvider,
     ModelRequest, ModelStream, StopReason, Usage,
 };
+use tokio::sync::Notify;
 
 #[derive(Clone, Debug, Default)]
 pub struct DeterministicTestProvider {
@@ -110,6 +111,56 @@ impl ModelProvider for DeterministicTestProvider {
                     let _ = writer.finish(Err(error));
                 }
             }
+        });
+
+        stream
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct BlockingTestProvider {
+    requests: Arc<Mutex<Vec<ModelRequest>>>,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+impl BlockingTestProvider {
+    #[allow(dead_code)]
+    pub fn new(started: Arc<Notify>, release: Arc<Notify>) -> Self {
+        Self {
+            requests: Arc::new(Mutex::new(Vec::new())),
+            started,
+            release,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn requests(&self) -> Vec<ModelRequest> {
+        self.requests
+            .lock()
+            .expect("request log mutex should not be poisoned")
+            .clone()
+    }
+}
+
+impl ModelProvider for BlockingTestProvider {
+    fn stream(&self, req: ModelRequest) -> ModelStream {
+        self.requests
+            .lock()
+            .expect("request log mutex should not be poisoned")
+            .push(req);
+
+        let started = self.started.clone();
+        let release = self.release.clone();
+        let (stream, writer) = channel(NonZeroUsize::new(8).expect("non-zero capacity"));
+
+        tokio::spawn(async move {
+            started.notify_one();
+            release.notified().await;
+            let _ = writer.finish(Err(ModelError::Protocol(
+                "blocking provider released without a deterministic response".into(),
+            )));
         });
 
         stream

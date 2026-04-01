@@ -1,13 +1,17 @@
 use async_trait::async_trait;
 use operator_core::{OperatorError, SessionId};
 
-use crate::{Session, SessionEvent, SessionStore};
+use crate::{Session, SessionEvent, SessionStatus, SessionStore};
 
 pub struct NullSessionStore;
 
 #[async_trait]
 impl SessionStore for NullSessionStore {
     async fn create(&self, _: &Session) -> Result<(), OperatorError> {
+        Ok(())
+    }
+
+    async fn set_status(&self, _: &SessionId, _: SessionStatus) -> Result<(), OperatorError> {
         Ok(())
     }
 

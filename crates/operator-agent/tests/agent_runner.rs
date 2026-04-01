@@ -3,7 +3,7 @@ mod support;
 use std::sync::{Arc, Mutex};
 
 use operator_agent::{
-    model::{Context, Message, ModelRegistry, ProviderKind, UserMessage},
+    model::{Context, Message, ModelProvider, ModelRegistry, ProviderKind, UserMessage},
     AgentConfig, AgentError, AgentProgressEvent, AgentProgressReporter, AgentRunRequest,
     AgentRunner,
 };
@@ -14,12 +14,13 @@ use operator_runtime::{RuntimeBuilder, RuntimeConfig, SessionEvent, SessionStore
 use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
 };
+use tokio::sync::Notify;
 
-use support::DeterministicTestProvider;
+use support::{model_provider::BlockingTestProvider, DeterministicTestProvider};
 
 async fn runner_with(
     driver: Arc<MockPlatformDriver>,
-    provider: Arc<DeterministicTestProvider>,
+    provider: Arc<dyn ModelProvider>,
     session_store: Arc<InMemorySessionStore>,
     config: AgentConfig,
 ) -> AgentRunner {
@@ -36,7 +37,7 @@ async fn runner_with(
 async fn runner_with_provider_kind(
     driver: Arc<MockPlatformDriver>,
     provider_kind: ProviderKind,
-    provider: Arc<DeterministicTestProvider>,
+    provider: Arc<dyn ModelProvider>,
     session_store: Arc<InMemorySessionStore>,
     config: AgentConfig,
 ) -> AgentRunner {
@@ -284,6 +285,79 @@ async fn runner_reports_concise_progress_events_for_turns_tools_and_completion()
             summary: "The current UI is captured.".into(),
         })
     );
+}
+
+#[tokio::test]
+async fn runner_marks_interrupted_runs_in_session_store() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let provider = Arc::new(BlockingTestProvider::new(started.clone(), release.clone()));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let interrupt = Arc::new(Notify::new());
+    let runner = runner_with(
+        driver,
+        provider,
+        session_store.clone(),
+        AgentConfig::default(),
+    )
+    .await
+    .with_interrupt_notify(interrupt.clone());
+
+    let handle = tokio::spawn(async move {
+        runner
+            .run(AgentRunRequest {
+                task: "Interrupt this run.".into(),
+                target: TargetId("macos".into()),
+                model: Some("gpt-5.4".into()),
+                app: None,
+            })
+            .await
+    });
+
+    started.notified().await;
+    interrupt.notify_one();
+
+    let error = handle
+        .await
+        .expect("task should join")
+        .expect_err("run should interrupt");
+    match error {
+        AgentError::Interrupted(message) => {
+            assert!(
+                message.contains("ctrl-c"),
+                "unexpected interrupt message: {message}"
+            );
+        }
+        other => panic!("unexpected error kind: {other}"),
+    }
+    release.notify_waiters();
+
+    let session_id = session_store
+        .list(Some(1))
+        .await
+        .expect("listing sessions should succeed")
+        .into_iter()
+        .next()
+        .expect("interrupted run should persist a session");
+    let session = session_store
+        .get(&session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should exist");
+    assert_eq!(session.status, operator_runtime::SessionStatus::Interrupted);
+
+    let events = session_store
+        .events(&session_id)
+        .await
+        .expect("session events should be readable");
+    assert!(matches!(
+        events.last(),
+        Some(SessionEvent::Error { message }) if message.contains("ctrl-c")
+    ));
 }
 
 #[tokio::test]

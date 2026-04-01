@@ -33,6 +33,11 @@ pub trait SnapshotStore: Send + Sync {
 #[async_trait]
 pub trait SessionStore: Send + Sync {
     async fn create(&self, session: &Session) -> Result<(), OperatorError>;
+    async fn set_status(
+        &self,
+        id: &SessionId,
+        status: crate::SessionStatus,
+    ) -> Result<(), OperatorError>;
     async fn append(&self, id: &SessionId, event: &SessionEvent) -> Result<(), OperatorError>;
     async fn get(&self, id: &SessionId) -> Result<Option<Session>, OperatorError>;
     async fn events(&self, id: &SessionId) -> Result<Vec<SessionEvent>, OperatorError>;

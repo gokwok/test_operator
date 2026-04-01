@@ -12,7 +12,7 @@ use base64::Engine as _;
 use operator_core::{AppInfo, AppListMode, Capability, SessionId, Snapshot};
 use operator_runtime::{Runtime, Session, SessionEvent, SessionStatus};
 use serde_json::{json, Value};
-use tokio::fs;
+use tokio::{fs, sync::Notify};
 
 use crate::{
     journal::SessionJournal,
@@ -37,6 +37,13 @@ use crate::{
 };
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(1);
+const INTERRUPTED_REASON: &str = "received ctrl-c while the agent run was in progress";
+
+#[derive(Clone)]
+enum InterruptMode {
+    CtrlC,
+    Notify(Arc<Notify>),
+}
 
 pub struct AgentRunner {
     runtime: Arc<Runtime>,
@@ -47,6 +54,7 @@ pub struct AgentRunner {
     normalizer: DecisionNormalizer,
     finish_gate: FinishGate,
     progress_reporter: Arc<dyn AgentProgressReporter>,
+    interrupt_mode: InterruptMode,
 }
 
 impl AgentRunner {
@@ -60,6 +68,7 @@ impl AgentRunner {
             normalizer: DecisionNormalizer::new(),
             finish_gate: FinishGate::new(),
             progress_reporter: Arc::new(NoopAgentProgressReporter),
+            interrupt_mode: InterruptMode::CtrlC,
         }
     }
 
@@ -68,6 +77,11 @@ impl AgentRunner {
         progress_reporter: Arc<dyn AgentProgressReporter>,
     ) -> Self {
         self.progress_reporter = progress_reporter;
+        self
+    }
+
+    pub fn with_interrupt_notify(mut self, notify: Arc<Notify>) -> Self {
+        self.interrupt_mode = InterruptMode::Notify(notify);
         self
     }
 
@@ -93,9 +107,20 @@ impl AgentRunner {
             task: state.task.clone(),
         });
 
-        let result = self
-            .run_loop(&model_name, &model, &req, &mut state, &mut journal)
-            .await;
+        let mut result = tokio::select! {
+            biased;
+            result = self.run_loop(&model_name, &model, &req, &mut state, &mut journal) => result,
+            _ = self.wait_for_interrupt() => self.interrupt_run(&mut journal, &mut state, INTERRUPTED_REASON.into()).await,
+        };
+
+        if result.is_err() && !state.is_terminal() {
+            if let Err(persist_error) = self
+                .persist_unhandled_failure(&mut journal, &mut state, &result)
+                .await
+            {
+                result = Err(persist_error);
+            }
+        }
 
         self.flush_session_journal(&mut journal).await?;
         result
@@ -204,6 +229,11 @@ impl AgentRunner {
                             )
                             .await?;
                             self.flush_session_journal(journal).await?;
+                            self.set_runtime_session_status(
+                                &state.session_id,
+                                SessionStatus::Completed,
+                            )
+                            .await?;
                             self.report_progress(AgentProgressEvent::RunCompleted {
                                 summary: summary.clone(),
                             });
@@ -547,7 +577,32 @@ impl AgentRunner {
         )
         .await?;
         self.flush_session_journal(journal).await?;
+        self.set_runtime_session_status(&state.session_id, SessionStatus::Failed)
+            .await?;
         Err(AgentError::Planner(reason))
+    }
+
+    async fn interrupt_run<T>(
+        &self,
+        journal: &mut SessionJournal,
+        state: &mut AgentSessionState,
+        reason: String,
+    ) -> Result<T, AgentError> {
+        state.interrupt(reason.clone());
+        self.report_progress(AgentProgressEvent::RunFailed {
+            reason: reason.clone(),
+        });
+        self.append_session_event(
+            journal,
+            SessionEvent::Error {
+                message: reason.clone(),
+            },
+        )
+        .await?;
+        self.flush_session_journal(journal).await?;
+        self.set_runtime_session_status(&state.session_id, SessionStatus::Interrupted)
+            .await?;
+        Err(AgentError::Interrupted(reason))
     }
 
     async fn flush_session_journal(&self, journal: &mut SessionJournal) -> Result<(), AgentError> {
@@ -557,6 +612,58 @@ impl AgentRunner {
 
         let session_store = self.runtime.core().sessions();
         journal.flush(session_store.as_ref()).await?;
+        Ok(())
+    }
+
+    async fn wait_for_interrupt(&self) {
+        match &self.interrupt_mode {
+            InterruptMode::CtrlC => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+            InterruptMode::Notify(notify) => {
+                notify.notified().await;
+            }
+        }
+    }
+
+    async fn set_runtime_session_status(
+        &self,
+        session_id: &SessionId,
+        status: SessionStatus,
+    ) -> Result<(), AgentError> {
+        self.runtime
+            .core()
+            .sessions()
+            .set_status(session_id, status)
+            .await?;
+        Ok(())
+    }
+
+    async fn persist_unhandled_failure(
+        &self,
+        journal: &mut SessionJournal,
+        state: &mut AgentSessionState,
+        result: &Result<AgentRunResult, AgentError>,
+    ) -> Result<(), AgentError> {
+        let reason = match result {
+            Err(error) => error.to_string(),
+            Ok(_) => return Ok(()),
+        };
+
+        state.fail(reason.clone());
+        self.report_progress(AgentProgressEvent::RunFailed {
+            reason: reason.clone(),
+        });
+        self.append_session_event(
+            journal,
+            SessionEvent::Error {
+                message: reason.clone(),
+            },
+        )
+        .await?;
+        self.flush_session_journal(journal).await?;
+        self.set_runtime_session_status(&state.session_id, SessionStatus::Failed)
+            .await?;
         Ok(())
     }
 

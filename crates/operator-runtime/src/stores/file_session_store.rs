@@ -10,7 +10,7 @@ use tokio::{
     io::AsyncWriteExt,
 };
 
-use crate::{Session, SessionEvent, SessionStore};
+use crate::{Session, SessionEvent, SessionStatus, SessionStore};
 
 pub struct FileSessionStore {
     root: PathBuf,
@@ -75,6 +75,21 @@ impl SessionStore for FileSessionStore {
         }
         let bytes = serde_json::to_vec_pretty(session)?;
         fs::write(path, bytes).await?;
+        Ok(())
+    }
+
+    async fn set_status(&self, id: &SessionId, status: SessionStatus) -> Result<(), OperatorError> {
+        self.ensure_dir().await?;
+
+        let path = self.session_path(id);
+        if !path.exists() {
+            return Err(OperatorError::Platform(format!("session not found: {id}")));
+        }
+
+        let bytes = fs::read(&path).await?;
+        let mut session = serde_json::from_slice::<Session>(&bytes)?;
+        session.status = status;
+        fs::write(path, serde_json::to_vec_pretty(&session)?).await?;
         Ok(())
     }
 

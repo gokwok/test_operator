@@ -3,7 +3,7 @@ mod support;
 use std::sync::Arc;
 
 use operator_agent::{
-    model::{ModelRegistry, ProviderKind},
+    model::{ModelProvider, ModelRegistry, ProviderKind},
     session::{load_persisted_session, ReplayableTranscriptEvent},
     AgentConfig, AgentError, AgentRunRequest, AgentRunner,
 };
@@ -13,12 +13,13 @@ use operator_runtime::{
 };
 use operator_testkit::{test_snapshot, InMemorySnapshotStore, MockPlatformDriver};
 use tempfile::tempdir;
+use tokio::sync::Notify;
 
-use support::DeterministicTestProvider;
+use support::{model_provider::BlockingTestProvider, DeterministicTestProvider};
 
 async fn runner_with(
     driver: Arc<MockPlatformDriver>,
-    provider: Arc<DeterministicTestProvider>,
+    provider: Arc<dyn ModelProvider>,
     session_root: &std::path::Path,
     config: AgentConfig,
 ) -> AgentRunner {
@@ -93,7 +94,7 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
 
     assert_eq!(transcript, replayed_again);
     assert_eq!(transcript.session.id, result.session_id);
-    assert_eq!(transcript.session.status, SessionStatus::Running);
+    assert_eq!(transcript.session.status, SessionStatus::Completed);
     assert_eq!(transcript.events.len(), 8);
     assert!(matches!(
         &transcript.events[0],
@@ -192,6 +193,7 @@ async fn file_session_store_persists_terminal_error_events_without_agent_interna
         .await
         .expect("error transcript should load")
         .expect("persisted session should exist");
+    assert_eq!(transcript.session.status, SessionStatus::Failed);
 
     assert!(
         transcript.events.iter().all(|event| {
@@ -207,5 +209,71 @@ async fn file_session_store_persists_terminal_error_events_without_agent_interna
         transcript.events.last(),
         Some(ReplayableTranscriptEvent::Error { message })
             if message.contains("tool failure loop detected")
+    ));
+}
+
+#[tokio::test]
+async fn file_session_store_marks_interrupted_runs_with_terminal_status() {
+    let dir = tempdir().unwrap();
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::PointerInput]),
+    ));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let provider = Arc::new(BlockingTestProvider::new(started.clone(), release.clone()));
+    let interrupt = Arc::new(Notify::new());
+    let runner = runner_with(driver, provider, dir.path(), AgentConfig::default())
+        .await
+        .with_interrupt_notify(interrupt.clone());
+
+    let handle = tokio::spawn(async move {
+        runner
+            .run(AgentRunRequest {
+                task: "Interrupt the run.".into(),
+                target: TargetId("macos".into()),
+                model: Some("gpt-5.4".into()),
+                app: None,
+            })
+            .await
+    });
+
+    started.notified().await;
+    interrupt.notify_one();
+
+    let error = handle
+        .await
+        .expect("task should join")
+        .expect_err("run should interrupt");
+    match error {
+        AgentError::Interrupted(message) => {
+            assert!(
+                message.contains("ctrl-c"),
+                "unexpected interrupt message: {message}"
+            );
+        }
+        other => panic!("unexpected error kind: {other}"),
+    }
+
+    release.notify_waiters();
+
+    let session_store = FileSessionStore::new(dir.path());
+    let session_id = session_store
+        .list(Some(1))
+        .await
+        .expect("listing sessions should succeed")
+        .into_iter()
+        .next()
+        .expect("interrupted run should persist a session");
+    let transcript = load_persisted_session(&session_store, &session_id)
+        .await
+        .expect("interrupt transcript should load")
+        .expect("persisted session should exist");
+
+    assert_eq!(transcript.session.status, SessionStatus::Interrupted);
+    assert!(matches!(
+        transcript.events.last(),
+        Some(ReplayableTranscriptEvent::Error { message })
+            if message.contains("ctrl-c")
     ));
 }

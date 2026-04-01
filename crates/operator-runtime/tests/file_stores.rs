@@ -98,6 +98,10 @@ async fn null_session_store_is_a_safe_noop() {
 
     store.create(&session).await.unwrap();
     store
+        .set_status(&session.id, SessionStatus::Interrupted)
+        .await
+        .unwrap();
+    store
         .append(
             &session.id,
             &SessionEvent::UserInput {
@@ -122,6 +126,10 @@ async fn file_session_store_round_trips_session_metadata() {
     };
 
     store.create(&session).await.unwrap();
+    store
+        .set_status(&session.id, SessionStatus::Completed)
+        .await
+        .unwrap();
     store.append(&session.id, &persisted_event).await.unwrap();
 
     let loaded = FileSessionStore::new(dir.path())
@@ -139,6 +147,7 @@ async fn file_session_store_round_trips_session_metadata() {
         .unwrap();
 
     assert_eq!(loaded.id, session.id);
+    assert_eq!(loaded.status, SessionStatus::Completed);
     assert_eq!(events, vec![persisted_event]);
     assert_eq!(listed, vec![session.id.clone()]);
     assert!(dir.path().join("sessions").join("sess-1.jsonl").exists());

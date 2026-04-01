@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf, time::SystemTime};
 
 use async_trait::async_trait;
 use operator_core::{ArtifactId, OperatorError, SessionId, Snapshot, SnapshotId, TargetId};
-use operator_runtime::{Session, SessionEvent, SessionStore, SnapshotStore};
+use operator_runtime::{Session, SessionEvent, SessionStatus, SessionStore, SnapshotStore};
 use tokio::sync::RwLock;
 
 pub struct InMemorySnapshotStore {
@@ -132,6 +132,15 @@ impl SessionStore for InMemorySessionStore {
             .await
             .entry(session.id.clone())
             .or_default();
+        Ok(())
+    }
+
+    async fn set_status(&self, id: &SessionId, status: SessionStatus) -> Result<(), OperatorError> {
+        let mut sessions = self.sessions.write().await;
+        let Some(session) = sessions.get_mut(id) else {
+            return Err(OperatorError::Platform(format!("session not found: {id}")));
+        };
+        session.status = status;
         Ok(())
     }
 

@@ -290,6 +290,14 @@ fn session_state_tracks_parse_attempts_notes_errors_and_terminal_status() {
             reason: "Model returned an unrecoverable parse error.".into(),
         }
     );
+
+    state.interrupt("User interrupted the run.");
+    assert_eq!(
+        state.status,
+        AgentSessionStatus::Interrupted {
+            reason: "User interrupted the run.".into(),
+        }
+    );
 }
 
 #[test]

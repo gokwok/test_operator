@@ -124,6 +124,7 @@ pub enum AgentSessionStatus {
     Running,
     Completed { summary: String },
     Failed { reason: String },
+    Interrupted { reason: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -477,6 +478,16 @@ impl LoopState {
         self.status = AgentSessionStatus::Failed {
             reason: reason.into(),
         };
+    }
+
+    pub fn interrupt(&mut self, reason: impl Into<String>) {
+        self.status = AgentSessionStatus::Interrupted {
+            reason: reason.into(),
+        };
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        !matches!(self.status, AgentSessionStatus::Running)
     }
 }
 
