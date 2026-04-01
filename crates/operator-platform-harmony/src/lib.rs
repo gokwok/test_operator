@@ -5,6 +5,7 @@ mod config;
 mod driver;
 mod errors;
 mod factory;
+mod inspect;
 mod normalize;
 mod observe;
 mod permissions;
