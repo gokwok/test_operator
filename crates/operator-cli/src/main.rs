@@ -417,6 +417,9 @@ fn agent_config_for(command: &AgentCommand, default_model: Option<&str>) -> Agen
     if let Some(timeout_ms) = command.timeout_ms {
         config.step_timeout_ms = timeout_ms;
     }
+    if let Some(observe_delay_ms) = command.observe_delay_ms {
+        config.observe_delay_ms = observe_delay_ms;
+    }
     config
 }
 

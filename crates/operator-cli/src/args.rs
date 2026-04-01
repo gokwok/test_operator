@@ -3394,6 +3394,7 @@ pub(crate) struct AgentCommand {
     pub(crate) app: Option<String>,
     pub(crate) include_elements: bool,
     pub(crate) max_steps: Option<NonZeroU32>,
+    pub(crate) observe_delay_ms: Option<u64>,
     pub(crate) target: Option<String>,
     pub(crate) json_output: bool,
     pub(crate) timeout_ms: Option<u64>,
@@ -3691,6 +3692,8 @@ struct AgentArgs {
     include_elements: bool,
     #[arg(long, help = "Maximum number of agent steps before stopping")]
     max_steps: Option<NonZeroU32>,
+    #[arg(long, help = "Delay in milliseconds between a tool call and the automatic observe (default: 500)")]
+    observe_delay_ms: Option<u64>,
 }
 
 impl AgentArgs {
@@ -3709,6 +3712,7 @@ impl AgentArgs {
             app: self.app,
             include_elements: self.include_elements,
             max_steps: self.max_steps,
+            observe_delay_ms: self.observe_delay_ms,
             target: common.target,
             json_output: common.json_output,
             timeout_ms: common.timeout_ms,

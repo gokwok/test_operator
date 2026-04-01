@@ -164,6 +164,10 @@ impl AgentRunner {
                     }
 
                     if should_auto_observe_after_tool(&result) {
+                        if self.config.observe_delay_ms > 0 {
+                            tokio::time::sleep(Duration::from_millis(self.config.observe_delay_ms))
+                                .await;
+                        }
                         if let Some(reason) = self
                             .maybe_auto_observe(&executor, journal, state, Some(name.as_str()))
                             .await?

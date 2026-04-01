@@ -15,6 +15,7 @@ pub struct AgentConfig {
     pub max_parse_attempts: u32,
     pub repeated_error_limit: u32,
     pub step_timeout_ms: u64,
+    pub observe_delay_ms: u64,
     pub planner_format: PlannerFormat,
 }
 
@@ -27,6 +28,7 @@ impl Default for AgentConfig {
             max_parse_attempts: 3,
             repeated_error_limit: 3,
             step_timeout_ms: 30_000,
+            observe_delay_ms: 500,
             planner_format: PlannerFormat::Json,
         }
     }
