@@ -100,10 +100,10 @@ pub(crate) fn build_inspect_result(hierarchy: Value) -> Result<InspectResult, Op
     let mut top_nodes = root
         .children
         .iter()
-        .flat_map(reduce_node)
+        .flat_map(|child| reduce_node(child, None))
         .collect::<Vec<_>>();
     if top_nodes.is_empty() {
-        top_nodes = reduce_node(&root);
+        top_nodes = reduce_node(&root, None);
     }
     if top_nodes.is_empty() {
         return Ok(InspectResult {
@@ -114,7 +114,7 @@ pub(crate) fn build_inspect_result(hierarchy: Value) -> Result<InspectResult, Op
 
     let root_node = ReducedNode {
         role: "window".into(),
-        label: semantic_label(&root.attributes, "window"),
+        label: semantic_label(&root.attributes, None, "window"),
         value: None,
         bounds: node_bounds(&root.attributes).or_else(|| union_bounds(&top_nodes)),
         enabled: parse_optional_bool(&root.attributes.enabled),
@@ -208,7 +208,7 @@ fn filter_element_to_region(
     Some(id.clone())
 }
 
-fn reduce_node(node: &HarmonyNode) -> Vec<ReducedNode> {
+fn reduce_node(node: &HarmonyNode, parent: Option<&HarmonyNode>) -> Vec<ReducedNode> {
     if !is_visible(node) {
         return Vec::new();
     }
@@ -216,9 +216,9 @@ fn reduce_node(node: &HarmonyNode) -> Vec<ReducedNode> {
     let mut children = node
         .children
         .iter()
-        .flat_map(reduce_node)
+        .flat_map(|child| reduce_node(child, Some(node)))
         .collect::<Vec<_>>();
-    let semantics = classify_node(node, &children);
+    let semantics = classify_node(node, parent, &children);
 
     if !semantics.keep_self {
         return children;
@@ -239,12 +239,20 @@ fn reduce_node(node: &HarmonyNode) -> Vec<ReducedNode> {
         children,
     };
 
+    reduced = collapse_redundant_wrapper(reduced);
+
     if should_absorb_decorative_children(&reduced) {
         if reduced.label.is_none() {
             reduced.label = label_from_children(&reduced.children);
         }
         reduced.children.clear();
     }
+
+    if should_absorb_auxiliary_textbox_children(&reduced) {
+        reduced.children.clear();
+    }
+
+    reduced = collapse_redundant_wrapper(reduced);
 
     if should_collapse_transparent_wrapper(&reduced) {
         return reduced.children;
@@ -253,13 +261,18 @@ fn reduce_node(node: &HarmonyNode) -> Vec<ReducedNode> {
     vec![reduced]
 }
 
-fn classify_node(node: &HarmonyNode, children: &[ReducedNode]) -> NodeSemantics {
+fn classify_node(
+    node: &HarmonyNode,
+    parent: Option<&HarmonyNode>,
+    children: &[ReducedNode],
+) -> NodeSemantics {
     let clickable = parse_bool(&node.attributes.clickable);
     let long_clickable = parse_bool(&node.attributes.longClickable);
     let checkable = parse_bool(&node.attributes.checkable);
     let scrollable = parse_bool(&node.attributes.scrollable);
+    let ty = node.attributes.r#type.as_deref().unwrap_or("").trim();
     let mut role = normalized_role(
-        node.attributes.r#type.as_deref(),
+        Some(ty),
         clickable,
         checkable,
         scrollable,
@@ -272,6 +285,13 @@ fn classify_node(node: &HarmonyNode, children: &[ReducedNode]) -> NodeSemantics 
         || checkable
         || matches!(role.as_str(), "button" | "checkbox" | "switch" | "textbox");
     let has_children = !children.is_empty();
+    if role == "button"
+        && clickable
+        && is_layout_container_type(ty)
+        && actionable_descendant_count(children) >= 2
+    {
+        role = layout_container_role(ty);
+    }
     if role == "generic" && has_children && bounds.is_some() {
         role = "group".into();
     }
@@ -279,7 +299,7 @@ fn classify_node(node: &HarmonyNode, children: &[ReducedNode]) -> NodeSemantics 
         role.as_str(),
         "window" | "dialog" | "toolbar" | "nav" | "tabbar" | "group" | "list" | "scroll"
     );
-    let label = node_label(node, &role);
+    let label = node_label(node, parent, &role);
     let value = node_value(node, &role);
     let has_payload = label.is_some() || value.is_some();
     let keep_self = bounds.is_some()
@@ -317,6 +337,9 @@ fn normalized_role(
     let ty = ty.unwrap_or("").trim();
     if ty.contains("Dialog") || ty.contains("Popup") {
         return "dialog".into();
+    }
+    if ty.contains("SearchField") || ty == "Search" {
+        return "textbox".into();
     }
     if ty.contains("ToolBar") || ty.contains("TitleBar") || ty.contains("AppBar") {
         return "toolbar".into();
@@ -356,7 +379,13 @@ fn normalized_role(
         "Image" => "image".into(),
         "Button" => "button".into(),
         "Column" | "Row" | "Flex" | "Stack" | "RelativeContainer" | "RelativeLayout"
-        | "FrameNode" | "Swiper" | "GridRow" | "GridCol" => "group".into(),
+        | "FrameNode" | "Swiper" | "GridRow" | "GridCol" => {
+            if clickable {
+                "button".into()
+            } else {
+                "group".into()
+            }
+        }
         _ => {
             if clickable {
                 "button".into()
@@ -369,26 +398,87 @@ fn normalized_role(
     }
 }
 
-fn node_label(node: &HarmonyNode, role: &str) -> Option<String> {
-    match role {
-        "textbox" => semantic_label(&node.attributes, role)
-            .or_else(|| descendant_label(node))
-            .filter(|label| label != node_value(node, role).as_deref().unwrap_or_default()),
-        "button" | "checkbox" | "switch" => {
-            semantic_label(&node.attributes, role).or_else(|| descendant_label(node))
-        }
-        _ => semantic_label(&node.attributes, role),
+fn is_layout_container_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "Column"
+            | "Row"
+            | "Flex"
+            | "Stack"
+            | "RelativeContainer"
+            | "RelativeLayout"
+            | "FrameNode"
+            | "Swiper"
+            | "GridRow"
+            | "GridCol"
+    )
+}
+
+fn layout_container_role(ty: &str) -> String {
+    if ty.contains("Nav") || ty.contains("Navigation") {
+        "nav".into()
+    } else if ty.contains("ToolBar") || ty.contains("TitleBar") || ty.contains("AppBar") {
+        "toolbar".into()
+    } else {
+        "group".into()
     }
 }
 
-fn semantic_label(attributes: &HarmonyAttributes, role: &str) -> Option<String> {
+fn actionable_descendant_count(children: &[ReducedNode]) -> usize {
+    let mut count = 0;
+    for child in children {
+        count += actionable_node_count(child);
+        if count >= 2 {
+            break;
+        }
+    }
+    count
+}
+
+fn actionable_node_count(node: &ReducedNode) -> usize {
+    let self_count = usize::from(matches!(
+        node.role.as_str(),
+        "button" | "textbox" | "checkbox" | "switch" | "list" | "scroll"
+    ));
+    let mut total = self_count;
+    for child in &node.children {
+        total += actionable_node_count(child);
+        if total >= 2 {
+            break;
+        }
+    }
+    total
+}
+
+fn node_label(node: &HarmonyNode, parent: Option<&HarmonyNode>, role: &str) -> Option<String> {
     match role {
+        "textbox" => semantic_label(&node.attributes, parent, role)
+            .or_else(|| descendant_label(node))
+            .filter(|label| label != node_value(node, role).as_deref().unwrap_or_default()),
+        "button" | "checkbox" | "switch" => {
+            semantic_label(&node.attributes, parent, role).or_else(|| descendant_label(node))
+        }
+        _ => semantic_label(&node.attributes, parent, role),
+    }
+}
+
+fn semantic_label(
+    attributes: &HarmonyAttributes,
+    parent: Option<&HarmonyNode>,
+    role: &str,
+) -> Option<String> {
+    let direct = match role {
         "textbox" => meaningful_text(attributes.description.as_deref())
             .or_else(|| meaningful_text(attributes.hint.as_deref())),
         _ => meaningful_text(attributes.text.as_deref())
             .or_else(|| meaningful_text(attributes.description.as_deref()))
             .or_else(|| meaningful_text(attributes.hint.as_deref())),
-    }
+    };
+    direct
+        .or_else(|| fallback_label_from_id(attributes.id.as_deref(), role))
+        .or_else(|| {
+            parent.and_then(|parent| fallback_label_from_id(parent.attributes.id.as_deref(), role))
+        })
 }
 
 fn node_value(node: &HarmonyNode, role: &str) -> Option<String> {
@@ -491,6 +581,52 @@ fn dedupe_text_candidates(texts: Vec<(String, Option<Rect>)>) -> Vec<(String, Op
     deduped
 }
 
+fn collapse_redundant_wrapper(mut node: ReducedNode) -> ReducedNode {
+    loop {
+        if node.children.len() != 1 {
+            return node;
+        }
+
+        let can_collapse = {
+            let child = &node.children[0];
+            let same_bounds = bounds_substantially_overlap(node.bounds, child.bounds);
+            let compatible_labels =
+                labels_compatible(node.label.as_deref(), child.label.as_deref());
+            let compatible_values =
+                values_compatible(node.value.as_deref(), child.value.as_deref());
+
+            let redundant_interactive = matches!(node.role.as_str(), "button" | "textbox")
+                && matches!(child.role.as_str(), "button" | "textbox")
+                && same_bounds
+                && compatible_labels
+                && compatible_values;
+            let redundant_structural = matches!(node.role.as_str(), "group" | "nav" | "toolbar")
+                && matches!(child.role.as_str(), "group" | "nav" | "toolbar")
+                && node.label.is_none()
+                && node.value.is_none()
+                && same_bounds;
+
+            redundant_interactive || redundant_structural
+        };
+
+        if !can_collapse {
+            return node;
+        }
+
+        let mut child = node.children.remove(0);
+        if child.label.is_none() {
+            child.label = node.label.take();
+        }
+        if child.value.is_none() {
+            child.value = node.value.take();
+        }
+        if child.enabled.is_none() {
+            child.enabled = node.enabled;
+        }
+        node = child;
+    }
+}
+
 fn should_absorb_decorative_children(node: &ReducedNode) -> bool {
     matches!(node.role.as_str(), "button" | "checkbox" | "switch")
         && !node.children.is_empty()
@@ -499,8 +635,24 @@ fn should_absorb_decorative_children(node: &ReducedNode) -> bool {
         })
 }
 
+fn should_absorb_auxiliary_textbox_children(node: &ReducedNode) -> bool {
+    node.role == "textbox"
+        && node.children.iter().all(|child| {
+            matches!(child.role.as_str(), "textbox" | "text" | "image" | "button")
+                && child.children.is_empty()
+                && child
+                    .bounds
+                    .zip(node.bounds)
+                    .map(|(child_bounds, node_bounds)| {
+                        child_bounds.width * child_bounds.height
+                            <= node_bounds.width * node_bounds.height
+                    })
+                    .unwrap_or(true)
+        })
+}
+
 fn should_collapse_transparent_wrapper(node: &ReducedNode) -> bool {
-    node.role == "group"
+    matches!(node.role.as_str(), "group" | "nav" | "toolbar")
         && node.label.is_none()
         && node.value.is_none()
         && node.children.len() == 1
@@ -509,6 +661,48 @@ fn should_collapse_transparent_wrapper(node: &ReducedNode) -> bool {
             .first()
             .and_then(|child| child.bounds)
             .is_some()
+}
+
+fn labels_compatible(parent: Option<&str>, child: Option<&str>) -> bool {
+    match (parent, child) {
+        (None, _) | (_, None) => true,
+        (Some(parent), Some(child)) => parent == child,
+    }
+}
+
+fn values_compatible(parent: Option<&str>, child: Option<&str>) -> bool {
+    match (parent, child) {
+        (None, _) | (_, None) => true,
+        (Some(parent), Some(child)) => parent == child,
+    }
+}
+
+fn bounds_substantially_overlap(parent: Option<Rect>, child: Option<Rect>) -> bool {
+    match (parent, child) {
+        (Some(parent), Some(child)) => {
+            let intersection = rect_intersection(parent, child);
+            let child_area = child.width * child.height;
+            let parent_area = parent.width * parent.height;
+            child_area > 0.0
+                && parent_area > 0.0
+                && intersection / child_area >= 0.85
+                && intersection / parent_area >= 0.55
+        }
+        _ => false,
+    }
+}
+
+fn rect_intersection(lhs: Rect, rhs: Rect) -> f64 {
+    let left = lhs.x.max(rhs.x);
+    let top = lhs.y.max(rhs.y);
+    let right = (lhs.x + lhs.width).min(rhs.x + rhs.width);
+    let bottom = (lhs.y + lhs.height).min(rhs.y + rhs.height);
+
+    if left < right && top < bottom {
+        (right - left) * (bottom - top)
+    } else {
+        0.0
+    }
 }
 
 fn union_bounds(nodes: &[ReducedNode]) -> Option<Rect> {
@@ -610,12 +804,23 @@ fn meaningful_text(value: Option<&str>) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
+    if is_accessibility_instruction(trimmed) {
+        return None;
+    }
 
     if trimmed.chars().any(is_meaningful_label_char) || is_symbolic_label(trimmed) {
         Some(trimmed.to_string())
     } else {
         None
     }
+}
+
+fn is_accessibility_instruction(value: &str) -> bool {
+    value.contains("单指双击即可执行")
+        || value.contains("双击并按住即可弹出更多选项")
+        || value.contains("双击并按住左滑可进行更多操作")
+        || value.contains("double tap")
+            && (value.contains("activate") || value.contains("more options"))
 }
 
 fn is_meaningful_label_char(ch: char) -> bool {
@@ -632,6 +837,98 @@ fn is_meaningful_label_char(ch: char) -> bool {
 
 fn is_symbolic_label(value: &str) -> bool {
     matches!(value, "+" | "-" | "×" | "x" | "X" | "..." | "…" | "⋮" | "⋯")
+}
+
+fn fallback_label_from_id(id: Option<&str>, role: &str) -> Option<String> {
+    let id = id?.trim();
+    if id.is_empty() || looks_opaque_identifier(id) {
+        return None;
+    }
+
+    match id {
+        "sideButton" => Some("toggle sidebar".into()),
+        "createNoteTop" => Some("create note".into()),
+        "changeStyleMode" => Some("change style mode".into()),
+        "more" => Some("more".into()),
+        "quitEditor" => Some("quit editor".into()),
+        "unDo" => Some("undo".into()),
+        "reDo" => Some("redo".into()),
+        "richMore" => Some("rich text more".into()),
+        "saveNote" => Some("save note".into()),
+        "EnhanceMaximizeBtn" => Some("maximize window".into()),
+        "EnhanceMinimizeBtn" => Some("minimize window".into()),
+        "EnhanceCloseBtn" => Some("close window".into()),
+        "richTodo" => Some("todo".into()),
+        "richStylus" => Some("stylus".into()),
+        "pcRichFontStyle" => Some("font style".into()),
+        "richFontStyles" => Some("font styles".into()),
+        "getPicture" => Some("insert picture".into()),
+        "funMore" => Some("more tools".into()),
+        "getAIFunctionsNew" => Some("ai functions".into()),
+        "__SearchField__searchComponent" | "searchComponent" => Some("搜索".into()),
+        "title_area_NoteEditorManager" => Some("title".into()),
+        "content_area_NoteEditorManager" => Some("content".into()),
+        _ => humanize_identifier(id, role),
+    }
+}
+
+fn looks_opaque_identifier(id: &str) -> bool {
+    id.starts_with("note_item_")
+        || id.contains('$')
+        || id.chars().filter(|ch| ch.is_ascii_hexdigit()).count() > 20
+}
+
+fn humanize_identifier(id: &str, role: &str) -> Option<String> {
+    let mut words = Vec::new();
+    let mut token = String::new();
+    let mut previous_lowercase = false;
+
+    for ch in id.chars() {
+        if ch == '_' || ch == '-' || ch == ':' || ch == '.' {
+            if !token.is_empty() {
+                words.push(std::mem::take(&mut token));
+            }
+            previous_lowercase = false;
+            continue;
+        }
+
+        if ch.is_ascii_uppercase() && previous_lowercase && !token.is_empty() {
+            words.push(std::mem::take(&mut token));
+        }
+
+        token.push(ch.to_ascii_lowercase());
+        previous_lowercase = ch.is_ascii_lowercase();
+    }
+
+    if !token.is_empty() {
+        words.push(token);
+    }
+
+    words.retain(|word| {
+        !word.is_empty()
+            && !matches!(
+                word.as_str(),
+                "btn"
+                    | "button"
+                    | "component"
+                    | "common"
+                    | "view"
+                    | "area"
+                    | "cover"
+                    | "manager"
+                    | "new"
+            )
+    });
+
+    if words.is_empty() {
+        return None;
+    }
+
+    if role == "textbox" && words == ["searchfield", "search"] {
+        return Some("搜索".into());
+    }
+
+    Some(words.join(" "))
 }
 
 #[cfg(test)]
@@ -848,6 +1145,170 @@ mod tests {
         assert_eq!(checkbox.role, "checkbox");
         assert_eq!(checkbox.label.as_deref(), Some("记住我"));
         assert_eq!(checkbox.value.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_uses_descendant_title_for_clickable_note_rows() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Stack",
+                    "description": "单指双击即可执行 双击并按住即可弹出更多选项。 双击并按住左滑可进行更多操作。",
+                    "clickable": "true",
+                    "bounds": "[0,0][420,76]"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "Row",
+                        "clickable": "true",
+                        "bounds": "[0,0][420,76]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Column",
+                            "id": "note_item_foo",
+                            "bounds": "[0,0][420,76]"
+                        },
+                        "children": [{
+                            "attributes": {
+                                "type": "Text",
+                                "text": "4/30天气",
+                                "id": "noteListTitle",
+                                "bounds": "[45,15][180,50]"
+                            }
+                        }]
+                    }]
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let row = result
+            .elements
+            .get(&root.children[0])
+            .expect("row button should exist");
+        assert_eq!(row.role, "button");
+        assert_eq!(row.label.as_deref(), Some("4/30天气"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_maps_search_field_to_textbox_and_collapses_wrapper() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Search",
+                    "clickable": "true",
+                    "bounds": "[0,0][420,76]",
+                    "id": "searchComponent"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "SearchField",
+                        "clickable": "true",
+                        "scrollable": "true",
+                        "hint": "搜索",
+                        "bounds": "[10,0][390,76]",
+                        "id": "__SearchField__searchComponent"
+                    }
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let search = result
+            .elements
+            .get(&root.children[0])
+            .expect("search field should exist");
+        assert_eq!(search.role, "textbox");
+        assert_eq!(search.label.as_deref(), Some("搜索"));
+        assert!(search.children.is_empty());
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_uses_button_id_fallback_for_unlabeled_toolbar_controls() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Button",
+                    "clickable": "true",
+                    "bounds": "[0,0][76,76]",
+                    "id": "saveNote"
+                }
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let button = result
+            .elements
+            .get(&root.children[0])
+            .expect("button should exist");
+        assert_eq!(button.role, "button");
+        assert_eq!(button.label.as_deref(), Some("save note"));
+    }
+
+    #[test]
+    fn harmony_hdc_inspect_uses_parent_id_fallback_for_anonymous_clickable_glyph_buttons() {
+        let result = build_inspect_result(json!({
+            "attributes": { "bounds": "[0,0][420,120]" },
+            "children": [{
+                "attributes": {
+                    "type": "Row",
+                    "bounds": "[0,0][120,76]",
+                    "id": "pcRichFontStyle"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "Column",
+                        "clickable": "true",
+                        "bounds": "[0,0][76,76]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "SymbolGlyph",
+                            "bounds": "[15,15][61,61]"
+                        }
+                    }]
+                }]
+            }]
+        }))
+        .expect("inspect result");
+
+        let root = result
+            .elements
+            .get(&result.root_ids[0])
+            .expect("window root should exist");
+        let button = root
+            .children
+            .iter()
+            .find_map(|id| result.elements.get(id))
+            .and_then(|candidate| {
+                if candidate.role == "button" {
+                    Some(candidate)
+                } else {
+                    candidate
+                        .children
+                        .iter()
+                        .find_map(|id| result.elements.get(id))
+                }
+            })
+            .expect("button should exist");
+        assert_eq!(button.role, "button");
+        assert_eq!(button.label.as_deref(), Some("font style"));
     }
 
     #[test]
