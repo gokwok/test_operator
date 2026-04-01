@@ -31,8 +31,9 @@ pub use policy::{
 pub use progress::{AgentProgressEvent, AgentProgressReporter, NoopAgentProgressReporter};
 pub use runner::AgentRunner;
 pub use session::{
-    AgentMessage, AgentSessionState, AgentSessionStatus, LoopHistoryItem, LoopState,
-    ModelContextBuffer, SessionJournal, ToolTraceEntry, VisualObservationSummary,
+    AgentMessage, AgentSessionState, AgentSessionStatus, BootstrapAppCatalog,
+    BootstrapAppCatalogEntry, BootstrapAppContext, LoopHistoryItem, LoopState, ModelContextBuffer,
+    SessionJournal, ToolTraceEntry, VisualObservationSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +41,8 @@ pub struct AgentRunRequest {
     pub task: String,
     pub target: TargetId,
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

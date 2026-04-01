@@ -5,7 +5,9 @@ use operator_runtime::RuntimeCore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    session::{summarize_tool_result, AgentSessionState, VisualObservationSummary},
+    session::{
+        summarize_tool_result, AgentSessionState, BootstrapAppContext, VisualObservationSummary,
+    },
     AgentError,
 };
 
@@ -39,6 +41,8 @@ impl LoopStateContextManager {
             current_visual_artifact: state.current_visual().cloned(),
             previous_visual_artifact: state.previous_visual().cloned(),
             notes: state.notes.clone(),
+            app_bootstrap: (!state.app_bootstrap.eq(&BootstrapAppContext::default()))
+                .then(|| state.app_bootstrap.clone()),
             ui_state_stale: state.ui_state_stale,
         })
     }
@@ -86,6 +90,8 @@ pub struct PlannerContext {
     pub current_visual_artifact: Option<ArtifactId>,
     pub previous_visual_artifact: Option<ArtifactId>,
     pub notes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_bootstrap: Option<BootstrapAppContext>,
     pub ui_state_stale: bool,
 }
 

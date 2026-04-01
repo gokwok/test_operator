@@ -132,6 +132,7 @@ async fn runner_executes_tool_then_finishes_without_finish_gate_reflection() {
             task: "Observe the frontmost UI.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect("runner should succeed");
@@ -234,6 +235,7 @@ async fn runner_reports_concise_progress_events_for_turns_tools_and_completion()
             task: "Capture the frontmost UI.".into(),
             target: TargetId("macos".into()),
             model: Some("openai".into()),
+            app: None,
         })
         .await
         .expect("runner should succeed");
@@ -338,6 +340,7 @@ async fn runner_replans_when_finish_gate_rejects_false_finish() {
             task: "Click Save and confirm the UI after the click.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect("runner should succeed after finish-gate feedback");
@@ -410,6 +413,7 @@ async fn runner_normalizes_frontmost_direct_type_before_execution() {
             task: "Type 777*999= into the frontmost Calculator window.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect("runner should normalize the direct frontmost type action");
@@ -479,6 +483,7 @@ async fn runner_avoids_structured_output_for_doubao_planner_and_finish_gate() {
             task: "Finish from wrapped JSON without structured output after verification.".into(),
             target: TargetId("macos".into()),
             model: Some("doubao-seed".into()),
+            app: None,
         })
         .await
         .expect("runner should parse wrapped planner and finish-gate JSON");
@@ -533,6 +538,7 @@ async fn runner_stops_on_repeated_tool_failures() {
             task: "Click Save.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect_err("runner should stop after repeated tool failures");
@@ -609,6 +615,7 @@ async fn runner_retries_invalid_planner_output_before_continuing() {
             task: "Retry after invalid JSON.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect("runner should recover within the retry budget");

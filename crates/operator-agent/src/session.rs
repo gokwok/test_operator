@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use operator_core::{ArtifactId, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId};
+use operator_core::{AppInfo, ArtifactId, SessionId, Snapshot, SnapshotId, SurfaceKind, TargetId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -182,6 +182,40 @@ pub struct LoopHistoryItem {
     pub summary: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BootstrapAppCatalogEntry {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
+    pub is_running: bool,
+}
+
+impl From<AppInfo> for BootstrapAppCatalogEntry {
+    fn from(value: AppInfo) -> Self {
+        Self {
+            name: value.name,
+            bundle_id: value.bundle_id,
+            is_running: value.is_running,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BootstrapAppCatalog {
+    pub total_count: usize,
+    pub entries: Vec<BootstrapAppCatalogEntry>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub truncated_count: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BootstrapAppContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prelaunched_app: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_catalog: Option<BootstrapAppCatalog>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LoopState {
     pub session_id: SessionId,
@@ -195,6 +229,8 @@ pub struct LoopState {
     pub history: Vec<LoopHistoryItem>,
     pub tool_trace: Vec<ToolTraceEntry>,
     pub notes: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_bootstrap_app_context_empty")]
+    pub app_bootstrap: BootstrapAppContext,
     pub current_observation: Option<VisualObservationSummary>,
     pub observation_cache: ObservationCache,
     pub latest_snapshot: Option<SnapshotId>,
@@ -222,6 +258,7 @@ impl LoopState {
             history: Vec::new(),
             tool_trace: Vec::new(),
             notes: Vec::new(),
+            app_bootstrap: BootstrapAppContext::default(),
             current_observation: None,
             observation_cache: ObservationCache::new(),
             latest_snapshot: None,
@@ -250,6 +287,7 @@ impl LoopState {
         self.history.clear();
         self.tool_trace.clear();
         self.notes.clear();
+        self.app_bootstrap = BootstrapAppContext::default();
         self.current_observation = None;
         self.observation_cache.clear();
         self.latest_snapshot = None;
@@ -314,6 +352,14 @@ impl LoopState {
             summary: note.clone(),
         });
         self.notes.push(note);
+    }
+
+    pub fn record_bootstrap_app_catalog(&mut self, catalog: BootstrapAppCatalog) {
+        self.app_bootstrap.installed_catalog = Some(catalog);
+    }
+
+    pub fn record_prelaunched_app(&mut self, app: impl Into<String>) {
+        self.app_bootstrap.prelaunched_app = Some(app.into());
     }
 
     pub fn mark_ui_stale(&mut self) {
@@ -694,6 +740,14 @@ fn summarize_preview_value(value: &Value) -> String {
 
 fn truncate(text: &str) -> String {
     truncate_to(text, MAX_TEXT_SUMMARY_CHARS)
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
+fn is_bootstrap_app_context_empty(context: &BootstrapAppContext) -> bool {
+    context.prelaunched_app.is_none() && context.installed_catalog.is_none()
 }
 
 fn truncate_to(text: &str, max_chars: usize) -> String {

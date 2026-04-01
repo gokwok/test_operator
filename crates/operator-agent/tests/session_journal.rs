@@ -115,6 +115,7 @@ async fn session_journal_flushes_buffered_events_on_fail_fast_exit() {
             task: "Prime the planner context and fail fast.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect_err("runner should bubble the planner failure");

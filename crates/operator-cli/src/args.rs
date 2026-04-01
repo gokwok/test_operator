@@ -623,6 +623,7 @@ const MCP_SERVE_AFTER_HELP: &str = "Examples
 
 const AGENT_AFTER_HELP: &str = "Examples
   operator agent \"Open Notes and type hello\"
+  operator agent --app Notes \"Open the current note and summarize it\"
   operator agent \"Find the largest file in Downloads and move it to the Trash\"
   operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"
   operator agent --include-elements \"Verify the frontmost UI with the accessibility tree\"";
@@ -646,6 +647,11 @@ const AGENT_OPTION_ROWS: &[CommandHelpEntry] = &[
         command: "--model <MODEL>",
         about:
             "Model selector to use for the agent [stable selectors: openai, doubao; compatibility aliases: gpt-5.4 -> openai, doubao-seed -> doubao]",
+    },
+    CommandHelpEntry {
+        command: "--app <NAME_OR_BUNDLE>",
+        about:
+            "Prelaunch this app before the first planner turn and inject it into bootstrap context",
     },
     CommandHelpEntry {
         command: "--include-elements",
@@ -676,6 +682,7 @@ const AGENT_HELP: LeafHelp = LeafHelp {
     include_global_runtime_flags: true,
     examples: &[
         "operator agent \"Open Notes and type hello\"",
+        "operator agent --app Notes \"Open the current note and summarize it\"",
         "operator agent \"Find the largest file in Downloads and move it to the Trash\"",
         "operator agent --model doubao --max-steps 10 \"Summarize the frontmost window\"",
         "operator agent --include-elements \"Verify the frontmost UI with the accessibility tree\"",
@@ -3384,6 +3391,7 @@ struct CommonArgs {
 pub(crate) struct AgentCommand {
     pub(crate) task: String,
     pub(crate) model: Option<String>,
+    pub(crate) app: Option<String>,
     pub(crate) include_elements: bool,
     pub(crate) max_steps: Option<NonZeroU32>,
     pub(crate) target: Option<String>,
@@ -3671,6 +3679,12 @@ struct AgentArgs {
     model: Option<String>,
     #[arg(
         long,
+        value_name = "NAME_OR_BUNDLE",
+        help = "Prelaunch this app before the first planner turn and inject it into bootstrap context"
+    )]
+    app: Option<String>,
+    #[arg(
+        long,
         alias = "include_elements",
         help = "Use element-tree observes for agent verification instead of screenshot-only verification"
     )]
@@ -3692,6 +3706,7 @@ impl AgentArgs {
         Ok(CliExecution::Agent(AgentCommand {
             task: self.task,
             model,
+            app: self.app,
             include_elements: self.include_elements,
             max_steps: self.max_steps,
             target: common.target,

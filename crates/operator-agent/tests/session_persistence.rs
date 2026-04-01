@@ -76,6 +76,7 @@ async fn file_session_store_loads_deterministic_replayable_transcripts() {
             task: "Gather context and stop.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect("runner should succeed");
@@ -164,6 +165,7 @@ async fn file_session_store_persists_terminal_error_events_without_agent_interna
             task: "Click Save.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect_err("runner should stop after repeated tool failures");

@@ -224,6 +224,7 @@ fn local_harness_report_surfaces_visual_references_and_timing_summaries() {
             task: "Click Save and verify the UI.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         },
         PathBuf::from("/tmp/operator-agent-harness"),
         Some(AgentRunResult {

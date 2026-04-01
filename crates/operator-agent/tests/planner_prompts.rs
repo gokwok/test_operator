@@ -4,7 +4,10 @@ use operator_agent::{
         PlannerContext, PlannerPromptBuilder, PlannerVisualInput, PlannerVisualSlot, TargetSummary,
         ToolResultSummary,
     },
-    session::{AgentMessage, ModelContextBuffer, VisualObservationSummary},
+    session::{
+        AgentMessage, BootstrapAppCatalog, BootstrapAppCatalogEntry, BootstrapAppContext,
+        ModelContextBuffer, VisualObservationSummary,
+    },
     tools::AgentToolSpec,
 };
 use operator_core::{ArtifactId, TargetId};
@@ -64,6 +67,7 @@ fn planner_context() -> PlannerContext {
         current_visual_artifact: Some(ArtifactId("capture-1.png".into())),
         previous_visual_artifact: Some(ArtifactId("capture-prev.png".into())),
         notes: vec!["Observe again before finishing.".into()],
+        app_bootstrap: None,
         ui_state_stale: true,
     }
 }
@@ -234,4 +238,45 @@ fn planner_prompts_forbid_click_based_app_launching_in_system_prompt() {
         system.contains("If an app lifecycle tool fails, do not fall back to guessed coordinate clicks to open that app."),
         "system prompt should forbid guessed click fallback after lifecycle-tool failures: {system}"
     );
+}
+
+#[test]
+fn planner_prompts_include_bootstrap_app_catalog_and_prelaunched_app_in_system_prompt() {
+    let mut context = planner_context();
+    context.app_bootstrap = Some(BootstrapAppContext {
+        prelaunched_app: Some("备忘录".into()),
+        installed_catalog: Some(BootstrapAppCatalog {
+            total_count: 2,
+            entries: vec![
+                BootstrapAppCatalogEntry {
+                    name: "备忘录".into(),
+                    bundle_id: Some("com.huawei.hmos.notepad".into()),
+                    is_running: true,
+                },
+                BootstrapAppCatalogEntry {
+                    name: "计算器".into(),
+                    bundle_id: Some("com.huawei.hmos.calculator".into()),
+                    is_running: false,
+                },
+            ],
+            truncated_count: 0,
+        }),
+    });
+
+    let assembled = PlannerPromptBuilder::new().assemble(
+        "Open Notes.",
+        &context,
+        &[],
+        &ModelContextBuffer::new(),
+        &[],
+    );
+    let system = assembled
+        .system
+        .expect("planner prompt should include system text");
+
+    assert!(system
+        .contains("The CLI already prelaunched this app before the first planner turn: 备忘录"));
+    assert!(system.contains("Installed app catalog bootstrap (`app list --all`):"));
+    assert!(system.contains("备忘录 [bundle=com.huawei.hmos.notepad] [running]"));
+    assert!(system.contains("计算器 [bundle=com.huawei.hmos.calculator]"));
 }

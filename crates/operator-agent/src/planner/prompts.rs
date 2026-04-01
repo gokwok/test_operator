@@ -30,6 +30,51 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "{\"decision\":\"fail\",\"reason\":\"<why the task cannot continue>\"}",
 );
 
+fn planner_system_prompt(planner_context: &PlannerContext) -> String {
+    let mut system = PLANNER_SYSTEM_PROMPT.to_string();
+
+    if let Some(app_bootstrap) = planner_context.app_bootstrap.as_ref() {
+        if let Some(app) = app_bootstrap.prelaunched_app.as_deref() {
+            system.push_str("\nBootstrap app hint:");
+            system.push_str(
+                "\n- The CLI already prelaunched this app before the first planner turn: ",
+            );
+            system.push_str(app);
+            system.push_str("\n- Prefer interacting with that app instead of reopening it unless the task requires a relaunch.");
+        }
+
+        if let Some(catalog) = app_bootstrap.installed_catalog.as_ref() {
+            system.push_str("\nInstalled app catalog bootstrap (`app list --all`):");
+            system.push_str(&format!("\n- total apps: {}", catalog.total_count));
+            if catalog.entries.is_empty() {
+                system.push_str("\n- entries: none");
+            } else {
+                system.push_str("\n- entries:");
+                for entry in &catalog.entries {
+                    system.push_str("\n  - ");
+                    system.push_str(&entry.name);
+                    if let Some(bundle_id) = entry.bundle_id.as_deref() {
+                        system.push_str(" [bundle=");
+                        system.push_str(bundle_id);
+                        system.push(']');
+                    }
+                    if entry.is_running {
+                        system.push_str(" [running]");
+                    }
+                }
+            }
+            if catalog.truncated_count > 0 {
+                system.push_str(&format!(
+                    "\n- truncated: {} additional app entries omitted from the bootstrap catalog",
+                    catalog.truncated_count
+                ));
+            }
+        }
+    }
+
+    system
+}
+
 #[derive(Clone, Debug)]
 pub struct PlannerPromptBuilder {
     recent_message_limit: usize,
@@ -73,7 +118,7 @@ impl PlannerPromptBuilder {
         }));
 
         Context {
-            system: Some(PLANNER_SYSTEM_PROMPT.to_string()),
+            system: Some(planner_system_prompt(planner_context)),
             messages,
             tools: tools.iter().map(tool_spec).collect(),
         }

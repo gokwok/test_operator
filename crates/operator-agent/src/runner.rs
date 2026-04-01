@@ -8,7 +8,7 @@ use std::{
 };
 
 use base64::Engine as _;
-use operator_core::{Capability, SessionId, Snapshot};
+use operator_core::{AppInfo, AppListMode, Capability, SessionId, Snapshot};
 use operator_runtime::{Runtime, Session, SessionEvent, SessionStatus};
 use serde_json::{json, Value};
 use tokio::fs;
@@ -28,8 +28,9 @@ use crate::{
         RepeatedErrorPolicy,
     },
     progress::{AgentProgressEvent, AgentProgressReporter, NoopAgentProgressReporter},
-    session::summarize_tool_result,
-    session::AgentSessionState,
+    session::{
+        summarize_tool_result, AgentSessionState, BootstrapAppCatalog, BootstrapAppCatalogEntry,
+    },
     tools::{AgentToolResult, AgentToolSpec, ToolExecutor},
     AgentConfig, AgentError, AgentRunRequest, AgentRunResult,
 };
@@ -79,7 +80,8 @@ impl AgentRunner {
         let model = self.resolve_model(&model_name)?;
         let session_id = next_session_id();
 
-        let mut state = AgentSessionState::new(session_id.clone(), req.target.clone(), req.task);
+        let mut state =
+            AgentSessionState::new(session_id.clone(), req.target.clone(), req.task.clone());
         state.set_include_elements(self.config.include_elements);
         self.create_runtime_session(&state).await?;
         let mut journal = SessionJournal::new(state.session_id.clone());
@@ -91,7 +93,7 @@ impl AgentRunner {
         });
 
         let result = self
-            .run_loop(&model_name, &model, &mut state, &mut journal)
+            .run_loop(&model_name, &model, &req, &mut state, &mut journal)
             .await;
 
         self.flush_session_journal(&mut journal).await?;
@@ -102,6 +104,7 @@ impl AgentRunner {
         &self,
         model_name: &str,
         model: &ResolvedModel,
+        req: &AgentRunRequest,
         state: &mut AgentSessionState,
         journal: &mut SessionJournal,
     ) -> Result<AgentRunResult, AgentError> {
@@ -112,6 +115,13 @@ impl AgentRunner {
         let validator = DecisionValidator::new(&tools);
         let planner_retry = PlannerRetryPolicy::new(self.config.max_parse_attempts);
         let repeated_error = RepeatedErrorPolicy::new(self.config.repeated_error_limit);
+
+        if let Some(reason) = self
+            .bootstrap_app_context(&executor, req, journal, state)
+            .await?
+        {
+            return self.fail_run(journal, state, reason).await;
+        }
 
         if let Some(reason) = self
             .maybe_auto_observe(&executor, journal, state, None)
@@ -245,6 +255,54 @@ impl AgentRunner {
             .await?;
         if result.is_error {
             return Ok(Some(auto_observe_failure_reason(trigger_tool, &result)));
+        }
+
+        Ok(None)
+    }
+
+    async fn bootstrap_app_context(
+        &self,
+        executor: &ToolExecutor,
+        req: &AgentRunRequest,
+        journal: &mut SessionJournal,
+        state: &mut AgentSessionState,
+    ) -> Result<Option<String>, AgentError> {
+        if self.supports_app_lifecycle(&state.target)? {
+            state.start_step();
+            let list_apps = self
+                .execute_tool(
+                    executor,
+                    journal,
+                    state,
+                    "list-apps",
+                    json!({ "mode": AppListMode::All }),
+                )
+                .await?;
+            if !list_apps.is_error {
+                if let Some(catalog) = bootstrap_app_catalog_from_tool_result(&list_apps) {
+                    state.record_bootstrap_app_catalog(catalog);
+                }
+            }
+        }
+
+        if let Some(app) = req.app.as_deref() {
+            state.start_step();
+            let launch = self
+                .execute_tool(
+                    executor,
+                    journal,
+                    state,
+                    "launch-app",
+                    json!({ "bundle_id_or_name": app }),
+                )
+                .await?;
+            if launch.is_error {
+                return Ok(Some(format!(
+                    "bootstrap prelaunch for `{app}` failed: {}",
+                    summarize_tool_result(&launch)
+                )));
+            }
+            state.record_prelaunched_app(app.to_owned());
         }
 
         Ok(None)
@@ -529,6 +587,11 @@ impl AgentRunner {
         Ok(driver.capabilities().supports(&Capability::Capture))
     }
 
+    fn supports_app_lifecycle(&self, target: &operator_core::TargetId) -> Result<bool, AgentError> {
+        let (_, driver) = self.runtime.core().resolve_driver(target)?;
+        Ok(driver.capabilities().supports(&Capability::AppLifecycle))
+    }
+
     fn validate_config(&self) -> Result<(), AgentError> {
         if self.config.max_steps == 0 {
             return Err(AgentError::Config(
@@ -634,6 +697,64 @@ fn snapshot_from_tool_output(output: &Value) -> Option<Snapshot> {
         .get("snapshot")
         .cloned()
         .and_then(|snapshot| serde_json::from_value(snapshot).ok())
+}
+
+fn bootstrap_app_catalog_from_tool_result(result: &AgentToolResult) -> Option<BootstrapAppCatalog> {
+    let apps = result
+        .output
+        .as_ref()
+        .and_then(|output| output.get("apps"))
+        .cloned()
+        .and_then(|apps| serde_json::from_value::<Vec<AppInfo>>(apps).ok())?;
+
+    Some(compact_bootstrap_app_catalog(apps))
+}
+
+fn compact_bootstrap_app_catalog(mut apps: Vec<AppInfo>) -> BootstrapAppCatalog {
+    const MAX_BOOTSTRAP_APPS: usize = 160;
+    const MAX_BOOTSTRAP_APP_CHARS: usize = 8_000;
+
+    apps.sort_by(|left, right| {
+        right
+            .is_running
+            .cmp(&left.is_running)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            .then_with(|| left.bundle_id.cmp(&right.bundle_id))
+    });
+
+    let total_count = apps.len();
+    let mut entries = Vec::new();
+    let mut char_budget = 0usize;
+
+    for app in apps {
+        let entry = BootstrapAppCatalogEntry::from(app);
+        let line_len = bootstrap_app_catalog_line_len(&entry);
+        if entries.len() >= MAX_BOOTSTRAP_APPS
+            || (!entries.is_empty() && char_budget + line_len > MAX_BOOTSTRAP_APP_CHARS)
+        {
+            break;
+        }
+        char_budget += line_len;
+        entries.push(entry);
+    }
+
+    let truncated_count = total_count.saturating_sub(entries.len());
+    BootstrapAppCatalog {
+        total_count,
+        entries,
+        truncated_count,
+    }
+}
+
+fn bootstrap_app_catalog_line_len(entry: &BootstrapAppCatalogEntry) -> usize {
+    let mut len = entry.name.chars().count();
+    if let Some(bundle_id) = entry.bundle_id.as_deref() {
+        len += bundle_id.chars().count() + " [bundle=]".chars().count();
+    }
+    if entry.is_running {
+        len += " [running]".chars().count();
+    }
+    len
 }
 
 fn should_auto_observe_after_tool(result: &AgentToolResult) -> bool {

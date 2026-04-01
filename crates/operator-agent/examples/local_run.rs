@@ -91,6 +91,7 @@ async fn run(cli: Cli) -> Result<HarnessReport, String> {
         task: cli.task.clone(),
         target: runtime_config.default_target.clone(),
         model: Some(model.clone()),
+        app: None,
     };
 
     let session_store = Arc::new(FileSessionStore::new(&state_root));

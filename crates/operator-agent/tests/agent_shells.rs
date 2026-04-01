@@ -19,6 +19,7 @@ fn request_and_result_shells_round_trip_through_json() {
         task: "Open Safari and focus the frontmost window".into(),
         target: TargetId("macos".into()),
         model: Some("openai".into()),
+        app: Some("Safari".into()),
     };
     let result = AgentRunResult {
         session_id: SessionId("sess-1".into()),

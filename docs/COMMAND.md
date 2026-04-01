@@ -334,6 +334,20 @@ model_name = "doubao-seed-2-0-lite-260215"
 - 显式传入后，planner 可以在默认验证路径中使用 element tree；这适用于需要结构化 UI 校验的任务，但会提高 observe 延迟和 token 成本。
 - 该开关只影响 `operator agent` 的默认验证/观察策略，不改变底层 `observe` tool 本身支持 `include_elements=true` 的能力。
 
+### `operator agent --app` 的 bootstrap 边界
+
+- `operator agent --app <NAME_OR_BUNDLE>` 会在第一轮 planner 之前预启动该应用。
+- 预启动成功后，agent 首轮默认 screenshot observe 会以该应用已在前台/已启动的状态进入 planner。
+- 该 app hint 同时会作为 bootstrap app context 注入 planner system prompt，避免模型在第一轮还要猜测目标应用名或重复打开应用。
+- `--app` 只是 agent 启动期 hint，不改变底层 `launch-app` / `switch-app` / `relaunch-app` 的 northbound contract。
+
+### `operator agent` 默认 app catalog bootstrap
+
+- 默认情况下，`operator agent` 会在第一轮 planner 前查询一次目标 target 的 `app list --all`，并将其压缩后的 app catalog 注入 planner system prompt。
+- 该 catalog 用于让 planner 在首轮就能基于已安装应用名 / bundle id 做决策，而不是先浪费一轮查询 app inventory。
+- 注入内容必须是压缩后的 bootstrap catalog，不是无限制的原始 JSON payload。
+- 若目标平台不支持 app lifecycle / app listing，或 bootstrap 查询失败，agent 仍继续执行，只是不会带上该 app catalog bootstrap。
+
 ### `operator agent` 默认进度输出
 
 - 非 `--json` 路径下，`operator agent <task>` 默认向终端输出简洁的实时进度流。

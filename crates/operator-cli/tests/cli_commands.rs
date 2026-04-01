@@ -501,6 +501,7 @@ fn agent_help_shows_first_phase_flags_and_examples() {
     assert!(help.contains("stable selectors: openai, doubao"));
     assert!(help.contains("gpt-5.4 -> openai"));
     assert!(help.contains("doubao-seed -> doubao"));
+    assert!(help.contains("--app <NAME_OR_BUNDLE>"));
     assert!(help.contains("--include-elements"));
     assert!(help.contains("--max-steps <N>"));
     assert!(help.contains("Global Runtime Flags"));
@@ -508,6 +509,7 @@ fn agent_help_shows_first_phase_flags_and_examples() {
     assert!(help.contains("--timeout-ms <TIMEOUT_MS>"));
     assert!(help.contains("--json"));
     assert!(help.contains("Examples\n  operator agent \"Open Notes and type hello\""));
+    assert!(help.contains("operator agent --app Notes \"Open the current note and summarize it\""));
     assert!(help.contains(
         "operator agent \"Find the largest file in Downloads and move it to the Trash\""
     ));
@@ -531,6 +533,8 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
         "250",
         "--model",
         "doubao-seed",
+        "--app",
+        "Notes",
         "--include-elements",
         "--max-steps",
         "8",
@@ -547,6 +551,7 @@ fn agent_command_maps_task_and_first_phase_flags_to_agent_execution() {
 
     assert_eq!(command.task, "Summarize the frontmost window");
     assert_eq!(command.model.as_deref(), Some("doubao"));
+    assert_eq!(command.app.as_deref(), Some("Notes"));
     assert!(command.include_elements);
     assert_eq!(command.max_steps, Some(NonZeroU32::new(8).unwrap()));
     assert_eq!(command.target.as_deref(), Some("macos"));

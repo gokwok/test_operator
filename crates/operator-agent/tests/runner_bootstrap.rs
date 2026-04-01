@@ -6,7 +6,10 @@ use operator_agent::{
     model::{ContentBlock, Context, Message, ModelRegistry, ProviderKind, UserMessage},
     AgentConfig, AgentError, AgentRunRequest, AgentRunner,
 };
-use operator_core::{ActionOutcome, ArtifactId, Capability, CapabilitySet, TargetId};
+use operator_core::{
+    Action, ActionOutcome, AppInfo, AppListFilter, AppListMode, ArtifactId, Capability,
+    CapabilitySet, QueryRequest, QueryResult, TargetId,
+};
 use operator_runtime::{RuntimeBuilder, RuntimeConfig, SessionEvent, SessionStore};
 use operator_testkit::{
     test_snapshot, InMemorySessionStore, InMemorySnapshotStore, MockPlatformDriver,
@@ -87,6 +90,19 @@ fn screenshot_only_snapshot(snapshot_id: &str, artifact_id: &str) -> operator_co
     operator_core::ObserveResult { snapshot }
 }
 
+fn app_list_result(apps: &[(&str, &str, bool)]) -> QueryResult {
+    QueryResult::Apps(
+        apps.iter()
+            .map(|(name, bundle_id, is_running)| AppInfo {
+                bundle_id: Some((*bundle_id).into()),
+                name: (*name).into(),
+                pid: None,
+                is_running: *is_running,
+            })
+            .collect(),
+    )
+}
+
 #[tokio::test]
 async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() {
     let driver = Arc::new(MockPlatformDriver::new(
@@ -110,6 +126,7 @@ async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() 
             task: "Inspect the first planner context and stop.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect_err("runner should stop after the planned fail decision");
@@ -181,6 +198,167 @@ async fn auto_observe_primes_the_first_planner_turn_without_bootstrap_queries() 
 }
 
 #[tokio::test]
+async fn app_catalog_bootstrap_is_injected_before_the_first_planner_turn() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(app_list_result(&[
+        ("Notes", "com.apple.Notes", false),
+        ("Calculator", "com.apple.Calculator", true),
+    ])));
+    driver.push_observe_result(Ok(screenshot_only_snapshot(
+        "snap-initial",
+        "capture-initial.png",
+    )));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"fail","reason":"Stop after inspecting bootstrap app context."}"#
+            .to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner = runner_with(driver.clone(), provider.clone(), session_store.clone()).await;
+
+    let error = runner
+        .run(AgentRunRequest {
+            task: "Inspect the first planner context and stop.".into(),
+            target: TargetId("macos".into()),
+            model: Some("gpt-5.4".into()),
+            app: None,
+        })
+        .await
+        .expect_err("runner should stop after the planned fail decision");
+    match error {
+        AgentError::Planner(message) => {
+            assert_eq!(message, "Stop after inspecting bootstrap app context.");
+        }
+        other => panic!("unexpected error kind: {other}"),
+    }
+
+    let session_id = session_store
+        .list(Some(1))
+        .await
+        .expect("sessions should list")
+        .into_iter()
+        .next()
+        .expect("session should exist");
+    let events = session_store
+        .events(&session_id)
+        .await
+        .expect("session events should be readable");
+    assert_eq!(
+        tool_call_names(&events),
+        vec!["list-apps".to_string(), "observe".to_string()]
+    );
+
+    let query_calls = driver.query_calls().await;
+    assert_eq!(query_calls.len(), 1);
+    assert_eq!(
+        query_calls[0].0,
+        QueryRequest::ListApps {
+            mode: AppListMode::All,
+            filter: AppListFilter::default(),
+            flush: false,
+        }
+    );
+
+    let request = &provider.requests()[0].context;
+    let system = request
+        .system
+        .as_ref()
+        .expect("planner request should include system prompt");
+    assert!(system.contains("Installed app catalog bootstrap (`app list --all`):"));
+    assert!(system.contains("Calculator [bundle=com.apple.Calculator] [running]"));
+    assert!(system.contains("Notes [bundle=com.apple.Notes]"));
+}
+
+#[tokio::test]
+async fn agent_app_flag_prelaunches_the_requested_app_before_planning() {
+    let driver = Arc::new(MockPlatformDriver::new(
+        "macos",
+        CapabilitySet::new([Capability::Capture, Capability::AppLifecycle]),
+    ));
+    driver.push_query_result(Ok(app_list_result(&[("Notes", "com.apple.Notes", false)])));
+    driver.push_action_result(Ok(ActionOutcome {
+        success: true,
+        duration_ms: 14,
+        detail: Some("launched Notes".into()),
+        coordinates: None,
+        target_app: Some(AppInfo {
+            bundle_id: Some("com.apple.Notes".into()),
+            name: "Notes".into(),
+            pid: None,
+            is_running: true,
+        }),
+        target_window: None,
+        side_effects: Vec::new(),
+        warnings: Vec::new(),
+    }));
+    driver.push_observe_result(Ok(screenshot_only_snapshot(
+        "snap-notes",
+        "capture-notes.png",
+    )));
+
+    let provider = Arc::new(DeterministicTestProvider::from_texts([
+        r#"{"decision":"fail","reason":"Stop after bootstrap setup."}"#.to_string(),
+    ]));
+    let session_store = Arc::new(InMemorySessionStore::new());
+    let runner = runner_with(driver.clone(), provider.clone(), session_store.clone()).await;
+
+    let error = runner
+        .run(AgentRunRequest {
+            task: "Open Notes and stop.".into(),
+            target: TargetId("macos".into()),
+            model: Some("gpt-5.4".into()),
+            app: Some("Notes".into()),
+        })
+        .await
+        .expect_err("runner should stop after the planned fail decision");
+    match error {
+        AgentError::Planner(message) => {
+            assert_eq!(message, "Stop after bootstrap setup.");
+        }
+        other => panic!("unexpected error kind: {other}"),
+    }
+
+    let session_id = session_store
+        .list(Some(1))
+        .await
+        .expect("sessions should list")
+        .into_iter()
+        .next()
+        .expect("session should exist");
+    let events = session_store
+        .events(&session_id)
+        .await
+        .expect("session events should be readable");
+    assert_eq!(
+        tool_call_names(&events),
+        vec![
+            "list-apps".to_string(),
+            "launch-app".to_string(),
+            "observe".to_string()
+        ]
+    );
+
+    let action_calls = driver.action_calls().await;
+    assert_eq!(action_calls.len(), 1);
+    assert!(matches!(
+        &action_calls[0].0.action,
+        Action::LaunchApp { bundle_id_or_name } if bundle_id_or_name == "Notes"
+    ));
+
+    let requests = provider.requests();
+    let system = requests[0]
+        .context
+        .system
+        .as_ref()
+        .expect("planner request should include system prompt");
+    assert!(system
+        .contains("The CLI already prelaunched this app before the first planner turn: Notes"));
+}
+
+#[tokio::test]
 async fn auto_observe_refreshes_after_successful_side_effect_tools() {
     let driver = Arc::new(MockPlatformDriver::new(
         "macos",
@@ -218,6 +396,7 @@ async fn auto_observe_refreshes_after_successful_side_effect_tools() {
             task: "Click Save and stop after the automatic refresh.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect_err("runner should stop after the planned fail decision");
@@ -313,6 +492,7 @@ async fn planner_request_loads_previous_and_current_screenshots_as_image_blocks(
             task: "Click Save and inspect the refreshed screenshots.".into(),
             target: TargetId("macos".into()),
             model: Some("gpt-5.4".into()),
+            app: None,
         })
         .await
         .expect_err("runner should stop after the planned fail decision");

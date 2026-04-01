@@ -84,6 +84,7 @@ impl AgentExecutor for RuntimeAgentExecutor {
                 task: command.task.clone(),
                 target: prepared.runtime_config.default_target.clone(),
                 model: command.model.clone(),
+                app: command.app.clone(),
             };
             let runtime = build_runtime(prepared.runtime_config)
                 .await
