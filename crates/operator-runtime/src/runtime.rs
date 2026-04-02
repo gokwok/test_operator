@@ -701,10 +701,11 @@ impl RuntimeCore {
             .await?
             .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
 
-        // Resolve display IDs (e.g. "e37") to native platform IDs (ax-paths).
-        // Display IDs are assigned by ElementDigest and are not stored in the
-        // snapshot's element map, so we rebuild the digest on demand to look
-        // them up.
+        // Both CLI users and the agent reference elements by display ID (e.g.
+        // "e37") as shown in the rendered element digest.  Display IDs are
+        // assigned transiently by ElementDigest and are not stored in the
+        // snapshot's element map, so we rebuild the digest on demand to
+        // resolve them to the underlying platform ID (ax-path).
         let resolved_id: operator_core::ElementId;
         let element = if snapshot_record.elements.contains_key(element) {
             element

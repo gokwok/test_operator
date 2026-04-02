@@ -129,7 +129,7 @@ fn render_observation_section(
 
     if let Some(digest) = observation.element_digest.as_ref() {
         lines.push(
-            "- element digest (SnapshotElement ids; native bounds use device coordinates):".into(),
+            "- element digest (use display ids like e1, e2 to reference elements; bounds use device coordinates):".into(),
         );
         lines.extend(
             digest
