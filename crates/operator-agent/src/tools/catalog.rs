@@ -346,4 +346,3 @@ fn collect_properties(schema: &Value, root: &Value) -> std::collections::BTreeMa
 
     properties
 }
-

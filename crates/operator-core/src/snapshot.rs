@@ -97,7 +97,10 @@ impl Snapshot {
 
         if (exact || is_partial) && element.bounds.is_some() {
             let b = element.bounds.unwrap();
-            let pt = Point { x: b.x + b.width / 2.0, y: b.y + b.height / 2.0 };
+            let pt = Point {
+                x: b.x + b.width / 2.0,
+                y: b.y + b.height / 2.0,
+            };
             if exact {
                 return Some(pt);
             }

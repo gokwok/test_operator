@@ -674,8 +674,12 @@ impl RuntimeCore {
         target: &TargetId,
     ) -> Result<Locator, OperatorError> {
         match locator {
-            Locator::SnapshotElement { ref snapshot, ref element } => Ok(Locator::Coords(
-                self.snapshot_element_point(snapshot, element, target).await?,
+            Locator::SnapshotElement {
+                ref snapshot,
+                ref element,
+            } => Ok(Locator::Coords(
+                self.snapshot_element_point(snapshot, element, target)
+                    .await?,
             )),
             Locator::SnapshotText { snapshot, text } => {
                 let sid = self.resolve_snapshot_id(&snapshot, target).await?;

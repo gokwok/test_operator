@@ -86,8 +86,12 @@ impl ToolExecutor {
             }
         };
         normalize_agent_args(name, &mut normalized_args);
-        let input =
-            merge_exec_context(Value::Object(normalized_args), session_id, target, timeout_ms)?;
+        let input = merge_exec_context(
+            Value::Object(normalized_args),
+            session_id,
+            target,
+            timeout_ms,
+        )?;
 
         match self.tools.invoke(name, input).await {
             Ok(output) => Ok(AgentToolResult {
@@ -191,10 +195,7 @@ fn normalize_agent_observe(args: &mut serde_json::Map<String, Value>) {
         .unwrap_or(false);
 
     if !args.contains_key("surface") {
-        args.insert(
-            "surface".into(),
-            serde_json::json!({ "kind": "Frontmost" }),
-        );
+        args.insert("surface".into(), serde_json::json!({ "kind": "Frontmost" }));
     }
     args.insert("include_elements".into(), Value::Bool(elements));
     args.entry("include_screenshot".to_string())
