@@ -976,11 +976,11 @@ const PRESS_OPTION_ROWS: &[CommandHelpEntry] = &[CommandHelpEntry {
 const SCROLL_OPTION_ROWS: &[CommandHelpEntry] = &[
     CommandHelpEntry {
         command: "--delta-x <DX>",
-        about: "Horizontal scroll delta (positive = right, negative = left)",
+        about: "Horizontal scroll delta (default: 0; positive = right, negative = left)",
     },
     CommandHelpEntry {
         command: "--delta-y <DY>",
-        about: "Vertical scroll delta (positive = down, negative = up)",
+        about: "Vertical scroll delta (default: 0; positive = down, negative = up)",
     },
 ];
 
@@ -2313,14 +2313,14 @@ const HOTKEY_HELP: LeafHelp = LeafHelp {
 };
 
 const SCROLL_HELP: LeafHelp = LeafHelp {
-    usage: "operator scroll [OPTIONS] --delta-x <DX> --delta-y <DY>",
+    usage: "operator scroll [OPTIONS]",
     about: SCROLL_HELP_ABOUT,
     sections: SCROLL_HELP_SECTIONS,
     include_global_runtime_flags: true,
     examples: &[
-        "operator scroll --delta-x 0 --delta-y 300",
-        "operator scroll --delta-x 0 --delta-y -200 --app Safari",
-        "operator scroll --delta-x 0 --delta-y 100 --x 400 --y 500",
+        "operator scroll --delta-y 300",
+        "operator scroll --delta-y -200 --app Safari",
+        "operator scroll --delta-x 120 --delta-y 100 --x 400 --y 500",
     ],
     footer: "",
 };
@@ -4166,9 +4166,9 @@ impl InputHotkeyArgs {
 struct InputScrollArgs {
     #[command(flatten)]
     common: CommonArgs,
-    #[arg(long, allow_hyphen_values = true)]
+    #[arg(long, allow_hyphen_values = true, default_value_t = 0.0)]
     delta_x: f64,
-    #[arg(long, allow_hyphen_values = true)]
+    #[arg(long, allow_hyphen_values = true, default_value_t = 0.0)]
     delta_y: f64,
     #[command(flatten)]
     action_target: InputActionTargetArgs,
@@ -4181,6 +4181,12 @@ impl InputScrollArgs {
         let common = merge_common(root_common, self.common);
         let mut input = common_input(&common);
         let (target_selector, focus_policy) = self.action_target.into_parts()?;
+        if self.delta_x.abs() <= f64::EPSILON && self.delta_y.abs() <= f64::EPSILON {
+            return Err(
+                "scroll requires a non-zero delta; provide --delta-x, --delta-y, or both"
+                    .to_string(),
+            );
+        }
         input.insert("delta_x".into(), Value::from(self.delta_x));
         input.insert("delta_y".into(), Value::from(self.delta_y));
         insert_action_target(&mut input, target_selector, focus_policy)?;

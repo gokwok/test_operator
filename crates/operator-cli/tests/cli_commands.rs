@@ -1502,11 +1502,11 @@ fn scroll_help_snapshot_is_stable() {
     let help = command_help(["operator", "scroll", "--help"]);
     assert_leaf_help_shape(
         &help,
-        "Usage operator scroll [OPTIONS] --delta-x <DX> --delta-y <DY>",
+        "Usage operator scroll [OPTIONS]",
         "Scroll by delta at a locator or target",
         &[
-            "operator scroll --delta-x 0 --delta-y 300",
-            "operator scroll --delta-x 0 --delta-y -200 --app Safari",
+            "operator scroll --delta-y 300",
+            "operator scroll --delta-y -200 --app Safari",
         ],
     );
     assert!(help.contains("Locator (pick one group)"));
@@ -2572,8 +2572,6 @@ async fn scroll_command_maps_locator_and_deltas_to_tool_input() {
         "macos",
         "--timeout-ms",
         "250",
-        "--delta-x",
-        "0",
         "--delta-y",
         "-120",
         "--snapshot",
@@ -2603,12 +2601,21 @@ async fn scroll_command_maps_locator_and_deltas_to_tool_input() {
 }
 
 #[test]
+fn scroll_command_rejects_zero_vector() {
+    let cli = cli_main::args::Cli::try_parse_from(["operator", "scroll"]).unwrap();
+
+    let error = cli.into_invocation().unwrap_err();
+    assert_eq!(
+        error,
+        "scroll requires a non-zero delta; provide --delta-x, --delta-y, or both"
+    );
+}
+
+#[test]
 fn scroll_command_rejects_verification_flags() {
     let error = cli_main::args::Cli::try_parse_from([
         "operator",
         "scroll",
-        "--delta-x",
-        "0",
         "--delta-y",
         "-120",
         "--verify",
@@ -2624,8 +2631,6 @@ fn scroll_command_rejects_incomplete_snapshot_locator() {
     let cli = cli_main::args::Cli::try_parse_from([
         "operator",
         "scroll",
-        "--delta-x",
-        "0",
         "--delta-y",
         "-120",
         "--snapshot",

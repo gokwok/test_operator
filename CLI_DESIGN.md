@@ -995,13 +995,13 @@ Examples
 ### `operator scroll`
 
 ```
-Usage: operator scroll [OPTIONS] --delta-x <DX> --delta-y <DY>
+Usage: operator scroll [OPTIONS]
 
 Scroll by delta at a locator or target
 
 Options
-  --delta-x <DX>   Horizontal scroll delta (positive = right, negative = left)
-  --delta-y <DY>   Vertical scroll delta (positive = down, negative = up)
+  --delta-x <DX>   Horizontal scroll delta (default: 0; positive = right, negative = left)
+  --delta-y <DY>   Vertical scroll delta (default: 0; positive = down, negative = up)
 
 Locator (pick one group)
   --text <TEXT>                         Scroll near element with this text
@@ -1024,9 +1024,9 @@ Global Runtime Flags
   -h, --help                 Print help
 
 Examples
-  operator scroll --delta-x 0 --delta-y 300
-  operator scroll --delta-x 0 --delta-y -200 --app Safari
-  operator scroll --delta-x 0 --delta-y 100 --x 400 --y 500
+  operator scroll --delta-y 300
+  operator scroll --delta-y -200 --app Safari
+  operator scroll --delta-x 120 --delta-y 100 --x 400 --y 500
 ```
 
 ### `operator drag`
