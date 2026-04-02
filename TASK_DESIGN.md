@@ -56,7 +56,7 @@
 当前代码中的关键事实：
 
 - compile 的事实输入应该来自 persisted session transcript，而不是 `ModelContextBuffer`
-- 当前 replayable transcript schema 与 loader 物理上归属 `operator-agent::journal`
+- 当前 replayable transcript schema 与 loader 物理上归属 `operator-agent::journal`；若采用本路线，应先迁移到 `operator-runtime` 成为共享基础设施
 - 当前 `Locator::SnapshotElement` / `Snapshot*Coords` 绑定历史 `snapshot`
 - selector locator 是否暴露给 planner，依赖当前 session 是否有 usable element observation
 - 当前 agent 默认 `include_elements = false`；compile-friendly recording profile 必须显式开启
@@ -244,6 +244,43 @@ persisted sessions
 
 ## 7. 总体架构
 
+本路线包含两部分结构调整：
+
+1. 在 `operator-runtime` 中引入共享 transcript 基础设施
+2. 引入 `crates/operator-task`
+
+### 7.1 `operator-runtime` 侧新增共享 transcript 层
+
+目标：
+
+- 让 replayable transcript 成为 CLI / Agent / task 共用的运行时基础设施
+- 让 deterministic scaffold 不再依赖 `operator-agent` 私有 loader
+- 保持 transcript payload entry-neutral，而不是绑定 agent 私有结构
+
+建议新增：
+
+```text
+crates/operator-runtime/
+  src/
+    transcript.rs
+```
+
+建议由 `operator-runtime::transcript` 持有：
+
+- `ReplayableTranscriptEvent`
+- `PersistedSessionTranscript`
+- `PersistedToolCall`
+- `PersistedToolResult`
+- `load_persisted_transcript(...)`
+
+约束：
+
+- 共享 transcript 建立在现有 `SessionStore` / `FileSessionStore` 之上，不新增第二套 session 存储
+- transcript schema 必须保持 entry-neutral，不直接暴露 `AgentToolResult` 这类 agent 私有类型
+- task run 与 agent run 都应能通过同一组 runtime helper 读取 replayable transcript
+
+### 7.2 `operator-task`
+
 推荐引入一个新库 crate：
 
 - `crates/operator-task`
@@ -254,9 +291,11 @@ persisted sessions
 - task store
 - task runner
 - anchor resolver
+- deterministic scaffold heuristics
+- compile IR
 - certify
-- run / certify reports
-- task 侧共享 authoring types，例如 `CompileIr` / `TaskPatch` / `TaskRunReport`
+- run / compile / repair / certify reports
+- task 侧 authoring contracts，例如 `TaskCompiler` / `TaskRepairEngine`
 
 建议结构：
 
@@ -270,7 +309,10 @@ crates/operator-task/
     runner.rs
     bind.rs
     anchor.rs
+    scaffold.rs
     compile_ir.rs
+    compiler.rs
+    repair.rs
     certify.rs
     report.rs
 ```
@@ -281,17 +323,17 @@ crates/operator-task/
 - optional LLM-assisted compile
 - patch-based repair
 
-为了避免 runtime 反向依赖模型，同时尊重当前 transcript ownership，建议采用以下物理布局：
+为了避免 runtime 反向依赖模型，建议采用以下物理布局：
 
 1. `operator-task`
    - 不依赖模型/provider
-   - 提供 manifest、shared IR types、runner、store、certify、report
+   - 依赖 `operator-runtime::transcript`
+   - 提供 manifest、shared IR types、runner、store、scaffold、certify、report
+   - 定义 `TaskCompiler` / `TaskRepairEngine` trait 或等价 authoring interface
 2. `operator-agent`
-   - 增加 `task_authoring` 模块
-   - 复用现有 persisted transcript loader 与 `ModelRegistry` / `ResolvedModel`
-   - 负责 deterministic scaffold extraction
-   - 负责 optional LLM compile / repair pass
-   - 输入 persisted agent transcript + `CompileIr`，输出 `TaskManifestDraft` 或 `TaskPatch`
+   - 复用现有 `ModelRegistry` / `ResolvedModel`
+   - 实现 optional model-backed compile / repair backend
+   - 输入 `CompileIr`，输出 `TaskManifestDraft` 或 `TaskPatch`
 
 这样可以保持依赖方向：
 
@@ -308,15 +350,16 @@ operator-task
 operator-agent
   ├── depends on operator-core
   ├── depends on operator-runtime
-  └── may depend on operator-task (for manifest / CompileIr / TaskPatch / reports)
+  └── may depend on operator-task (for compile traits / manifest / CompileIr / TaskPatch / reports)
 ```
 
 关键点：
 
 - `operator-runtime` 不依赖 `operator-task`
 - `operator-runtime` 不依赖模型/provider
-- task runner / store 属于可复用领域库，authoring control plane 当前物理上归属 `operator-agent`
-- 如果未来要把 transcript schema 下沉为跨入口共享抽象，应作为单独 issue 处理，不在本设计第一阶段顺手扩展
+- `operator-runtime` 负责共享 transcript 基础设施，但不负责 task 资产生命周期
+- deterministic scaffold / compile IR 归 `operator-task`
+- model-backed compile / repair backend 归 `operator-agent`
 
 ## 8. 存储设计
 
@@ -834,13 +877,20 @@ Task runner 应继承 agent 当前的“副作用后 refresh visual state”纪�
 
 ## 10.5 Session 与审计
 
-Task run 继续写入共享 `SessionStore`，不发明新的 audit store；但共享 session 的角色是**统一审计轨迹**，不是 task 控制面的主证据格式。
+Task run 继续写入共享 `SessionStore`，不发明新的 audit store。采用本路线后，`SessionStore` 之上还需要由 `operator-runtime` 提供共享 transcript schema 与 loader。
 
 第一阶段职责划分：
 
-- agent-origin scaffold / compile：以 `operator-agent` 的 persisted session transcript 为权威输入
-- task-origin repair / certify：以 task run report 为权威输入，`session_id` / artifacts / snapshots 作为辅助审计证据
-- 共享 `SessionStore`：提供统一 session 检索与人工排障，不承载 task-specific repair semantics
+- `operator-runtime::transcript`：提供共享 replayable transcript 的 schema、loader、writer helper
+- scaffold / compile：以 runtime 持有的共享 transcript 为权威输入
+- task-origin repair / certify：以 task run report + 关联 transcript 为权威输入
+- 共享 `SessionStore`：继续提供统一 session 检索与 JSONL 落盘 backend
+
+共享 transcript 的最低要求：
+
+- 继续可由现有 `SessionEvent` 线性投影得到
+- `ToolResult` payload 必须是 entry-neutral 的共享结构，不直接绑定 `AgentToolResult`
+- agent run 与 task run 都能通过同一 loader 读回 `ToolCall` / `ToolResult` / `Completed` / `Error`
 
 Task run 仍可复用现有 session 事件模型：
 
@@ -851,7 +901,7 @@ Task run 仍可复用现有 session 事件模型：
 - `Completed`
 - `Error`
 
-第一阶段不要求新增 task 专属 `SessionEvent` 变体；如果未来要让 task run 被现有 agent replay loader 原样消费，应先把 replay payload schema 下沉为共享抽象，再做统一。
+第一阶段不要求新增 task 专属 `SessionEvent` 变体；task-specific 语义继续放在 `TaskRunReport`，不要反向污染共享 transcript schema。
 
 ## 10.6 错误分类
 
@@ -898,13 +948,13 @@ runner 需要把失败原因结构化分类，至少包括：
 
 物理归属建议：
 
-- 第一阶段将 scaffold 放在 `operator-agent::task_authoring`
-- 原因是当前 persisted transcript schema / loader 归属 `operator-agent`
-- scaffold 输出的 `CompileIr` / draft manifest 类型仍由 `operator-task` 提供
+- scaffold 放在 `operator-task`
+- 输入通过 `operator-runtime::transcript::load_persisted_transcript(...)` 读取
+- scaffold 输出的 `CompileIr` / draft manifest 类型由 `operator-task` 自身定义
 
 执行内容：
 
-- 读取 persisted session transcript
+- 读取 `operator-runtime` 持有的 persisted transcript
 - 提取成功路径上的 `ToolCall` + `ToolResult`
 - 删除失败分支、噪音 observe、无效探索
 - 收集字面量候选
@@ -915,7 +965,7 @@ scaffold 的目标不是完美，而是把人工固化工作从”从零写 mani
 
 #### 成功路径识别
 
-当前 `SessionEvent` 只在最终有 `Completed`/`Error` 标记，缺乏 per-step 成功标记。scaffold 使用以下启发式规则识别成功路径：
+当前共享 transcript 仍只在最终有 `Completed`/`Error` 标记，缺乏 per-step 成功标记。scaffold 使用以下启发式规则识别成功路径：
 
 1. **session 必须为 `Completed` 状态**：`Failed`/`Interrupted` session 不适合 scaffold
 2. **反向标记法**：从最后一个 `ToolCall`/`ToolResult` 对开始，反向遍历 transcript
@@ -933,6 +983,12 @@ scaffold 的目标不是完美，而是把人工固化工作从”从零写 mani
 
 `task compile` 在 scaffold / compile IR 基础上允许使用模型优化草稿。
 
+职责划分建议：
+
+- `operator-task`：定义 compile IR、pass 边界、输出 schema
+- `operator-agent`：提供 model-backed compiler implementation
+- `operator-cli`：装配 model selector、调用 compile backend、落盘 manifest / report
+
 推荐拆成多个 pass，每个 pass 必须输出严格 JSON：
 
 1. `trajectory_distill`
@@ -946,7 +1002,7 @@ scaffold 的目标不是完美，而是把人工固化工作从”从零写 mani
 5. `manifest_emit`
    - 产出完整 draft
 
-compile 输入必须来自 persisted session，而不是 planner 的 model-facing context。
+compile 输入必须来自 `operator-runtime` 持有的 persisted transcript，而不是 planner 的 model-facing context。
 
 ## 11.4 Repair
 
@@ -957,6 +1013,7 @@ compile 输入必须来自 persisted session，而不是 planner 的 model-facin
 - 现有 task manifest
 - 失败 task run report
 - 关联 `session_id`
+- 关联 runtime transcript
 - 失败 step / 错误分类
 - 前后 observation / artifacts
 
@@ -966,7 +1023,7 @@ compile 输入必须来自 persisted session，而不是 planner 的 model-facin
 - 新的 draft manifest
 - repair report
 
-CLI 入口可以继续使用 `--session <failed-session-id>`，但底层应先按 `session_id` 解析到对应的 task run report，再进入 repair 流程。
+CLI 入口可以继续使用 `--session <failed-session-id>`，但底层应先按 `session_id` 同时解析到对应的 task run report 与关联 transcript，再进入 repair 流程。
 
 repair 原则：
 
@@ -975,7 +1032,7 @@ repair 原则：
   - guard
   - retry policy
   - postcondition
-- 共享 session 作为辅助证据，不作为 repair 的唯一结构化输入
+- 关联 transcript 是 repair 的共享基础证据，task run report 提供 task-specific 语义定位
 - 不默认重写整份 task
 - repair 后必须重新 certify
 
@@ -1240,9 +1297,15 @@ task 专属模型：
 
 ### 16.2 `operator-runtime`
 
-runtime 继续只负责 typed execution，不关心 task 资产生命周期。
+runtime 继续只负责 typed execution 与共享运行时基础设施，不关心 task 资产生命周期。
 
-runner 通过 `ToolRegistry.invoke()` 复用 runtime。
+本路线下，runtime 额外负责：
+
+- 共享 `SessionStore` backend
+- replayable transcript schema / loader / writer helper
+- 让 agent / task / CLI 通过同一组 helper 读取 persisted transcript
+
+runner 通过 `ToolRegistry.invoke()` 复用 runtime；scaffold 通过 runtime transcript helper 读取持久化轨迹。
 
 ### 16.3 `operator-agent`
 
@@ -1251,10 +1314,11 @@ agent 继续负责：
 - 自然语言探索
 - session transcript 产出
 - 模型/provider 抽象
+- model-backed task compile / repair backend
 
 agent 不负责在线执行 task。
 
-但 compile / repair 的模型 pass 可以逻辑上属于 task feature line，并物理上暂存于 `operator-agent` 以复用模型抽象。
+agent 不再拥有 transcript schema 本身；它只是共享 transcript 基础设施的一个 producer。
 
 ### 16.4 `operator-cli`
 
@@ -1272,6 +1336,7 @@ CLI 不直接实现 task 核心逻辑。
 
 ### Phase A
 
+- `operator-runtime` 共享 transcript 层
 - `operator-task` crate
 - manifest schema
 - file-backed task store
@@ -1280,13 +1345,14 @@ CLI 不直接实现 task 核心逻辑。
 
 ### Phase B
 
-- deterministic scaffold
+- deterministic scaffold in `operator-task`
 - compile-friendly recording profile
 - `operator task scaffold`
 
 ### Phase C
 
 - LLM-assisted compile
+- `operator-agent` 中的 model-backed compile / repair backend
 - `operator task compile`
 - provenance / draft report
 - `operator agent --record-task` 便捷入口
@@ -1345,7 +1411,7 @@ operator task repair notes.create \
 
 Task 特性的核心不是“回放 agent”，而是：
 
-- 以 persisted agent session transcript / task run report 为事实输入
+- 以 `operator-runtime` 持有的共享 transcript / task run report 为事实输入
 - 以 manifest 为权威资产
 - 以 deterministic runner 为执行底座
 - 以 scaffold / compile / repair / certify 为控制面生命周期
