@@ -2,17 +2,6 @@ use operator_runtime::ToolSpec as RuntimeToolSpec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const LOCATOR_VARIANT_NAMES: &[&str] = &[
-    "SnapshotElement",
-    "SnapshotPixelCoords",
-    "SnapshotCoords",
-    "SnapshotNormalizedCoords",
-    "Text",
-    "Role",
-    "Coords",
-];
-const SELECTOR_LOCATOR_VARIANTS: &[&str] = &["SnapshotElement", "Text", "Role"];
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentToolSpec {
     pub name: String,
@@ -53,8 +42,12 @@ impl From<RuntimeToolSpec> for AgentToolSpec {
 
 impl AgentToolSpec {
     pub fn with_catalog_options(mut self, options: ToolCatalogOptions) -> Self {
-        if !options.allow_selector_locators {
-            prune_selector_locator_variants(&mut self.input_schema);
+        if self.name == "observe" {
+            // Replace the full observe schema with the simplified agent-facing schema.
+            self.input_schema = simplified_observe_schema();
+        } else {
+            // Replace any Locator field with a flat, simplified schema.
+            simplify_locator_field(&mut self.input_schema, options.allow_selector_locators);
         }
         self
     }
@@ -89,6 +82,111 @@ impl AgentToolSpec {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Simplified agent-facing schemas
+// ---------------------------------------------------------------------------
+
+/// Simplified observe schema: agent only supplies `elements: bool`; the
+/// executor injects surface, include_screenshot, and include_elements.
+fn simplified_observe_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "elements": {
+                "type": "boolean",
+                "description": "Set to true to include the UI element tree in the result"
+            }
+        },
+        "additionalProperties": false
+    })
+}
+
+/// Replace every `locator` property in the schema tree with a simplified flat
+/// schema that the agent can fill without knowing about Locator enum variants.
+fn simplify_locator_field(schema: &mut Value, allow_selector: bool) {
+    let replacement = if allow_selector {
+        simplified_locator_schema_all()
+    } else {
+        simplified_locator_schema_coords_only()
+    };
+    replace_property_schema(schema, "locator", &replacement);
+}
+
+fn simplified_locator_schema_all() -> Value {
+    serde_json::json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "description": "Identify an element by its short ID from the elements list (e.g. \"e37\")",
+                "properties": {
+                    "element": { "type": "string" }
+                },
+                "required": ["element"],
+                "additionalProperties": false
+            },
+            {
+                "type": "object",
+                "description": "Identify an element by matching its text label",
+                "properties": {
+                    "text": { "type": "string" }
+                },
+                "required": ["text"],
+                "additionalProperties": false
+            },
+            {
+                "type": "object",
+                "description": "Identify a point by screen coordinates",
+                "properties": {
+                    "x": { "type": "number" },
+                    "y": { "type": "number" }
+                },
+                "required": ["x", "y"],
+                "additionalProperties": false
+            }
+        ]
+    })
+}
+
+fn simplified_locator_schema_coords_only() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "description": "Identify a point by screen coordinates",
+        "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+        },
+        "required": ["x", "y"],
+        "additionalProperties": false
+    })
+}
+
+/// Recursively walk `schema` and, wherever a `properties` object contains
+/// `field_name`, replace its value with `replacement`.
+fn replace_property_schema(schema: &mut Value, field_name: &str, replacement: &Value) {
+    match schema {
+        Value::Object(map) => {
+            if let Some(properties) = map.get_mut("properties").and_then(Value::as_object_mut) {
+                if properties.contains_key(field_name) {
+                    properties.insert(field_name.to_string(), replacement.clone());
+                }
+            }
+            for value in map.values_mut() {
+                replace_property_schema(value, field_name, replacement);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                replace_property_schema(item, field_name, replacement);
+            }
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Schema descriptor utilities
+// ---------------------------------------------------------------------------
 
 fn schema_descriptor(schema: &Value, root: &Value) -> String {
     let schema = resolve_schema(schema, root);
@@ -249,64 +347,3 @@ fn collect_properties(schema: &Value, root: &Value) -> std::collections::BTreeMa
     properties
 }
 
-fn prune_selector_locator_variants(root: &mut Value) {
-    let snapshot = root.clone();
-    prune_schema_node(root, &snapshot);
-}
-
-fn prune_schema_node(schema: &mut Value, root: &Value) {
-    match schema {
-        Value::Array(items) => {
-            for item in items {
-                prune_schema_node(item, root);
-            }
-        }
-        Value::Object(map) => {
-            for key in ["oneOf", "anyOf", "allOf"] {
-                if let Some(options) = map.get_mut(key).and_then(Value::as_array_mut) {
-                    options.retain(|option| !is_disallowed_locator_variant(option, root));
-                    for option in options {
-                        prune_schema_node(option, root);
-                    }
-                }
-            }
-
-            for value in map.values_mut() {
-                prune_schema_node(value, root);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn is_disallowed_locator_variant(schema: &Value, root: &Value) -> bool {
-    externally_tagged_locator_variant_name(schema, root)
-        .is_some_and(|variant| SELECTOR_LOCATOR_VARIANTS.contains(&variant))
-}
-
-fn externally_tagged_locator_variant_name<'a>(
-    schema: &'a Value,
-    root: &'a Value,
-) -> Option<&'a str> {
-    let schema = resolve_schema(schema, root);
-    let object = schema.as_object()?;
-    let properties = object.get("properties")?.as_object()?;
-    if properties.len() != 1 {
-        return None;
-    }
-
-    let required = object.get("required")?.as_array()?;
-    if required.len() != 1 {
-        return None;
-    }
-
-    let (variant, _) = properties.iter().next()?;
-    let required_variant = required.first()?.as_str()?;
-    if required_variant != variant {
-        return None;
-    }
-
-    LOCATOR_VARIANT_NAMES
-        .contains(&variant.as_str())
-        .then_some(variant.as_str())
-}

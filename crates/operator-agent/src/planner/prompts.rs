@@ -20,7 +20,7 @@ const PLANNER_SYSTEM_PROMPT: &str = concat!(
     "The runner may already provide automatic screenshot-only observe results on the hot path.\n",
     "The planner context carries current/previous visual artifact references from the in-memory loop state, not full snapshot bodies.\n",
     "Do not finish while `ui_state_stale` is true.\n",
-    "Use `observe` as a cold-path tool when you need to verify UI content or state; follow the planner context's observe verification mode when deciding whether to request `include_elements=true`.\n",
+    "Use `observe` as a cold-path tool when you need to verify UI content or state; follow the planner context's observe verification mode when deciding whether to request `elements=true`.\n",
     "When the next step is to open, switch to, relaunch, or foreground an app, use app lifecycle tools such as `launch-app`, `switch-app`, or `relaunch-app`.\n",
     "Do not use `click` on desktop icons, dock/taskbar items, launcher surfaces, or guessed coordinates to open an app.\n",
     "If an app lifecycle tool fails, do not fall back to guessed coordinate clicks to open that app.\n",
@@ -114,10 +114,10 @@ fn planner_system_prompt(
     {
         system.push_str("\nSelector locator availability:");
         system.push_str(
-            "\n- Text, role, and snapshot-element locators are unavailable until the current observe result includes elements.",
+            "\n- Element-ID and text locators are unavailable until the current observe result includes elements.",
         );
         system.push_str(
-            "\n- If you need selector-based actions, call `observe` with `include_elements=true` first and wait for that observation to succeed.",
+            "\n- If you need element-based actions, call `observe` with `elements=true` first and wait for that observation to succeed.",
         );
     }
 
