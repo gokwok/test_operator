@@ -133,6 +133,18 @@ Anchor 是 task 级别的跨会话元素定位描述，不直接引用历史 `sn
 2. 用 anchor 在当前 observation 中重绑定
 3. 重绑定成功后，再转换成当次运行的 `Locator`
 
+### 5.8 Step Output Binding
+
+Step 执行后，runner 会将 tool result 存入一个 step-scoped binding map。后续 step 可以通过 `${steps.<step_id>.<path>}` 语法引用前序 step 的输出。
+
+引用规则：
+
+- `${steps.<step_id>.result}` — 整个 tool result JSON
+- `${steps.<step_id>.result.<json_path>}` — JSON 内部字段，使用点号分隔的简单路径
+- 只允许引用已执行的前序 step，不允许前向引用
+- 引用未执行或不存在的 step 视为 `parameter_error`
+- 第一阶段只支持标量叶节点引用（string / number / bool），不支持引用数组或对象
+
 ## 6. 数据面与控制面
 
 ## 6.1 数据面
@@ -468,14 +480,37 @@ pub struct AnchorSpec {
 }
 ```
 
-匹配顺序建议：
+Anchor 退化策略使用 `AnchorFallback` 枚举定义：
 
-1. 限定 app / window
-2. fresh observe，强制 `include_elements=true`
-3. 用 `role + label + value + bounds` 综合打分
-4. 找不到时退回 text 匹配
-5. 再退回 role/index
-6. 最后才退回 normalized bounds
+```rust
+pub enum AnchorFallback {
+    /// 用 role + label + value 综合匹配
+    SemanticMatch,
+    /// 退回纯文本匹配（label / value / text 任一包含目标串）
+    TextMatch,
+    /// 退回 role + index 定位（如"第 2 个 TextField"）
+    RoleIndex,
+    /// 退回归一化坐标区域匹配（bounds_hint_norm_1000 ± tolerance）
+    NormalizedBounds { tolerance: u32 },
+}
+```
+
+匹配流程：
+
+1. **限定 scope**：按 `app_hint` / `window_hint` 筛选目标窗口
+2. **fresh observe**：强制 `include_elements=true`
+3. **语义打分**（SemanticMatch）：
+   - `role` 精确匹配：+40 分
+   - `label_contains` 子串命中：+30 分
+   - `value_contains` 子串命中：+15 分
+   - `bounds_hint_norm_1000` 在 tolerance 内：+15 分
+   - 总分 ≥ 40 且为最高分者胜出；平局取 tree order 最先者
+   - 低于 40 分视为未命中，进入 fallback 链
+4. **按 `fallbacks` 顺序依次尝试**：
+   - `TextMatch`：遍历 elements，`text_contains` 子串命中即选中
+   - `RoleIndex`：按 role 过滤后取第 `index` 个
+   - `NormalizedBounds`：将归一化坐标中心距离 ≤ tolerance 的元素视为命中
+5. 所有 fallback 均未命中，且 `required = true`，则报 `anchor_unresolved`
 
 默认禁止：
 
@@ -488,24 +523,96 @@ Task step 本质上是“对现有 runtime tool 的封装调用”，而不是�
 
 建议字段：
 
-- `id`
-- `kind`
-  - `observe`
-  - `action`
-  - `assert`
-- `tool`
-- `args`
-- `anchor`
-- `guard`
-- `retry`
-- `postconditions`
-- `on_failure`
+```rust
+pub struct TaskStep {
+    pub id: String,
+    pub kind: StepKind,
+    pub tool: String,
+    pub args: serde_json::Value,
+    pub anchor: Option<String>,
+    pub guard: Option<StepGuard>,
+    pub retry: Option<RetryPolicy>,
+    pub postconditions: Vec<PostCondition>,
+    pub on_failure: OnFailure,
+}
+
+pub enum StepKind {
+    Observe,
+    Action,
+    Assert,
+}
+
+pub struct StepGuard {
+    /// 要求指定 app 在前台
+    pub app_frontmost: Option<String>,
+    /// 要求指定 anchor 在当前 observation 中可解析
+    pub anchor_resolvable: Option<String>,
+    /// 要求前序 step 的 output 某字段满足预期值
+    pub step_output_eq: Option<StepOutputCheck>,
+}
+
+pub struct StepOutputCheck {
+    pub step_id: String,
+    pub path: String,
+    pub expected: serde_json::Value,
+}
+
+pub enum PostCondition {
+    /// 焦点已切换到指定 anchor
+    FocusOn(String),
+    /// 指定 anchor 存在于当前 observation
+    AnchorExists(String),
+    /// 自定义 step output 检查
+    OutputCheck(StepOutputCheck),
+}
+
+pub struct RetryPolicy {
+    pub max_retries: u32,
+    pub delay_ms: u64,
+    /// 重试前是否重新 observe
+    pub re_observe: bool,
+}
+
+pub enum OnFailure {
+    /// 终止整个 task（默认）
+    Fail,
+    /// 跳过当前 step 继续执行
+    Skip,
+    /// 记录警告但继续执行
+    Warn,
+}
+```
+
+TOML 表示示例：
+
+```toml
+[[steps]]
+id = "focus_title"
+tool = "click"
+kind = "action"
+anchor = "title_field"
+on_failure = "fail"
+
+[steps.guard]
+app_frontmost = "Notes"
+anchor_resolvable = "title_field"
+
+[steps.retry]
+max_retries = 2
+delay_ms = 500
+re_observe = true
+
+[[steps.postconditions]]
+type = "FocusOn"
+anchor = "title_field"
+```
 
 约束：
 
 - `tool` 名直接复用 runtime tool 名
-- step 级参数替换只允许引用 task params 或前序 step 输出摘要
+- step 级参数替换只允许引用 task params（`${param_name}`）或前序 step 输出（`${steps.<step_id>.result.<path>}`）
 - side-effect step 默认要求 fresh observe discipline
+- `on_failure` 默认为 `Fail`
 
 ## 9.5 Compile IR
 
@@ -522,6 +629,72 @@ pub struct CompileIr {
     pub observations: Vec<ObservationDigest>,
     pub literals: Vec<LiteralCandidate>,
     pub anchor_candidates: Vec<AnchorCandidate>,
+}
+
+/// 从 transcript 提取的单步候选
+pub struct CompiledStepCandidate {
+    /// 在 transcript 中的序号
+    pub transcript_index: usize,
+    /// runtime tool 名
+    pub tool: String,
+    /// 原始 tool call input
+    pub input: serde_json::Value,
+    /// tool result（用于判断成功/失败）
+    pub output: serde_json::Value,
+    /// 此步是否被判定为成功路径的一部分
+    pub on_success_path: bool,
+    /// 此步使用的 locator 类型（用于 anchor 提取）
+    pub locator_info: Option<LocatorDigest>,
+}
+
+/// Observation 摘要，不含完整像素数据
+pub struct ObservationDigest {
+    /// 对应的 transcript step index
+    pub after_step_index: usize,
+    /// 前台 app
+    pub frontmost_app: Option<String>,
+    /// 窗口标题
+    pub window_title: Option<String>,
+    /// 元素摘要列表（role + label + bounds，不含完整树）
+    pub element_summaries: Vec<ElementSummary>,
+    /// 是否包含 screenshot
+    pub has_screenshot: bool,
+}
+
+pub struct ElementSummary {
+    pub role: String,
+    pub label: Option<String>,
+    pub value: Option<String>,
+    pub bounds_norm_1000: Option<RectNorm1000>,
+}
+
+/// 可能需要参数化的字面量候选
+pub struct LiteralCandidate {
+    pub step_index: usize,
+    pub json_path: String,
+    pub value: serde_json::Value,
+    /// 启发式判断：是否像用户输入（非系统生成）
+    pub likely_user_input: bool,
+}
+
+/// Locator 信息摘要
+pub struct LocatorDigest {
+    pub kind: String,
+    pub element_role: Option<String>,
+    pub element_label: Option<String>,
+    pub element_bounds_norm_1000: Option<RectNorm1000>,
+}
+
+/// 从 observation 和 locator 推断的 anchor 候选
+pub struct AnchorCandidate {
+    pub name_hint: String,
+    pub source_step_index: usize,
+    pub role: Option<String>,
+    pub label_contains: Option<String>,
+    pub value_contains: Option<String>,
+    pub bounds_hint_norm_1000: Option<RectNorm1000>,
+    /// 该候选在多少个 observation 中出现过
+    pub occurrence_count: usize,
 }
 ```
 
@@ -682,7 +855,23 @@ runner 需要把失败原因结构化分类，至少包括：
 - 生成 anchor 候选
 - 输出一个可人工修改的 draft manifest
 
-scaffold 的目标不是完美，而是把人工固化工作从“从零写 manifest”降低到“review + 调整”。
+scaffold 的目标不是完美，而是把人工固化工作从”从零写 manifest”降低到”review + 调整”。
+
+#### 成功路径识别
+
+当前 `SessionEvent` 只在最终有 `Completed`/`Error` 标记，缺乏 per-step 成功标记。scaffold 使用以下启发式规则识别成功路径：
+
+1. **session 必须为 `Completed` 状态**：`Failed`/`Interrupted` session 不适合 scaffold
+2. **反向标记法**：从最后一个 `ToolCall`/`ToolResult` 对开始，反向遍历 transcript
+3. **失败 tool call 识别**：
+   - `ToolResult.output` 包含 `”error”` 顶层字段 → 标记为失败
+   - 同一个 tool + 相似 input 连续出现多次，只保留最后一次成功的 → 前面的视为重试噪音
+4. **噪音 observe 识别**：
+   - 两个相邻 observe 之间没有 action step → 删除前一个
+   - observe 后紧跟的 action 被标记为失败 → 该 observe 一并删除
+5. **成功路径**：删除所有被标记为失败和噪音的步骤后，剩余的有序 `ToolCall`/`ToolResult` 对即为成功路径
+
+此启发式不保证 100% 准确，scaffold 输出始终为 `draft` 状态，需要人工 review。
 
 ## 11.3 Compile
 
@@ -891,14 +1080,38 @@ operator agent "新建一个备忘录，标题是 X，内容是 Y" --record-task
 2. 成功后自动触发 `task scaffold` 或 `task compile`
 3. 生成 `notes.create` draft
 
-但这只是便利入口，不应成为 task 体系的唯一入口。
+但这只是便利入口，不应成为 task 体系的唯一入口。属于 **Phase C** 范围，在 compile 能力就绪后再提供。
 
 核心入口仍应是：
 
 - `task scaffold --session ...`
 - `task compile --session ...`
 
-## 13. 高成功率设计原则
+## 13. 版本管理与并发
+
+### 13.1 版本策略
+
+Task manifest 使用单调递增整数版本号：
+
+- scaffold / compile 首次生成：`version = 1`
+- 每次 repair 成功后：`version += 1`
+- 手动编辑 manifest 后建议手动递增版本
+- certify report 绑定执行时的 version
+- `certified` 状态绑定到具体 version，version 变更后自动回退为 `draft`
+
+第一阶段不要求版本历史存储或回滚能力。旧版本可通过 git 追溯。
+
+### 13.2 并发控制
+
+Task 操作 GUI 桌面，天然不支持并行：
+
+- 同一时刻只允许一个 `task run` 实例持有 GUI 执行权
+- 使用文件锁 `~/.operator/tasks/.run.lock` 实现互斥
+- 获取锁失败时立即报错 `concurrent_run_denied`，不排队等待
+- `task certify` 的多 case 执行串行运行，共享同一把锁
+- scaffold / compile / repair 不操作 GUI，不受此锁限制
+
+## 14. 高成功率设计原则
 
 这条特性的价值建立在成功率上，因此以下约束必须硬性执行：
 
@@ -909,8 +1122,10 @@ operator agent "新建一个备忘录，标题是 X，内容是 Y" --record-task
 5. **默认优先语义 anchor，不优先绝对坐标**
 6. **repair 使用 patch，不使用整份重编译**
 7. **task 可信度来自 certify，不来自 compile 成功**
+8. **version 变更后 certified 状态自动失效**
+9. **并发 task run 通过文件锁互斥，不允许竞态**
 
-## 14. Certification 设计
+## 15. Certification 设计
 
 高成功率不能只靠设计假设，必须有认证流程。
 
@@ -936,9 +1151,9 @@ operator agent "新建一个备忘录，标题是 X，内容是 Y" --record-task
 
 第一阶段不要求新增单独的 `approve` 命令。
 
-## 15. 与现有模块的边界
+## 16. 与现有模块的边界
 
-### 15.1 `operator-core`
+### 16.1 `operator-core`
 
 第一阶段不修改公共 `Action` / `Locator` 语义去直接承载 task。
 
@@ -951,13 +1166,13 @@ task 专属模型：
 
 都放在 `operator-task`。
 
-### 15.2 `operator-runtime`
+### 16.2 `operator-runtime`
 
 runtime 继续只负责 typed execution，不关心 task 资产生命周期。
 
 runner 通过 `ToolRegistry.invoke()` 复用 runtime。
 
-### 15.3 `operator-agent`
+### 16.3 `operator-agent`
 
 agent 继续负责：
 
@@ -969,7 +1184,7 @@ agent 不负责在线执行 task。
 
 但 compile / repair 的模型 pass 可以逻辑上属于 task feature line，并物理上暂存于 `operator-agent` 以复用模型抽象。
 
-### 15.4 `operator-cli`
+### 16.4 `operator-cli`
 
 CLI 负责：
 
@@ -979,7 +1194,7 @@ CLI 负责：
 
 CLI 不直接实现 task 核心逻辑。
 
-## 16. 分阶段落地
+## 17. 分阶段落地
 
 推荐实施顺序：
 
@@ -1002,6 +1217,7 @@ CLI 不直接实现 task 核心逻辑。
 - LLM-assisted compile
 - `operator task compile`
 - provenance / draft report
+- `operator agent --record-task` 便捷入口
 
 ### Phase D
 
@@ -1015,7 +1231,7 @@ CLI 不直接实现 task 核心逻辑。
 
 这五个阶段都在本设计范围内；复合 tool promotion 不在本设计范围。
 
-## 17. 示例用户路径
+## 18. 示例用户路径
 
 ### 17.1 先录制再固化
 
@@ -1053,7 +1269,7 @@ operator task repair notes.create \
   --model openai
 ```
 
-## 18. 最终结论
+## 19. 最终结论
 
 Task 特性的核心不是“回放 agent”，而是：
 
