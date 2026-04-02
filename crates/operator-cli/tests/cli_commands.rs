@@ -875,7 +875,7 @@ fn show_help_shows_examples() {
 fn root_help_groups_commands_by_domain() {
     let help = command_help(["operator", "--help"]);
     assert!(help.contains("Usage operator [OPTIONS] <COMMAND>"));
-    assert!(help.contains("Operator - Turn any desktop app into an API, from CLI to AI"));
+    assert!(help.contains("Operator - The control plane for desktop apps"));
     assert!(!help.contains("Tip:\n  Start with operator observe --help"));
     assert!(help.contains("Core"));
     assert!(help.contains("Observe"));

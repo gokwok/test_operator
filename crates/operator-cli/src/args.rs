@@ -58,7 +58,7 @@ struct LeafHelp {
     footer: &'static str,
 }
 
-const ROOT_ABOUT: &str = "Operator - Turn any desktop app into an API, from CLI to AI";
+const ROOT_ABOUT: &str = "Operator - The control plane for desktop apps";
 const ROOT_USAGE: &str = "operator [OPTIONS] <COMMAND>";
 const ROOT_FOOTER: &str = "Use 'operator <command> --help' for detailed usage.";
 const ROOT_EXAMPLES: &[&str] = &[

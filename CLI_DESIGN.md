@@ -12,7 +12,7 @@ Commands still marked **[planned]** are not yet implemented.
 ```
 Usage: operator [OPTIONS] <COMMAND>
 
-Operator - Turn any desktop app into an API, from CLI to AI
+Operator - The control plane for desktop apps
 
 Core
   permissions   Check automation permissions and runtime readiness
