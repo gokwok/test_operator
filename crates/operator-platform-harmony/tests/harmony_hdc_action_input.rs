@@ -826,6 +826,7 @@ impl HarmonyHdcUiSession for FakeUiSession {
                 },
             )),
             Locator::SnapshotElement { .. }
+            | Locator::SnapshotText { .. }
             | Locator::SnapshotPixelCoords { .. }
             | Locator::SnapshotCoords { .. }
             | Locator::SnapshotNormalizedCoords { .. } => Ok(None),
