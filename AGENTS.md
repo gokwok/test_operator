@@ -45,9 +45,9 @@ Operator 是一个 Rust 实现的跨平台自动化内核，目标是统一 CLI�
 
 ## 3. 项目总体结构
 
-当前仓库可能处于逐步搭建状态，但目标结构以 `DESIGN.md` 和 Linear 中的当前里程碑/issue 链为准。
+当前仓库已经完成 core/runtime、bootstrap、macOS / Harmony、CLI / MCP / Agent 的第一批可用实现，但后续结构和范围仍以 `DESIGN.md` 和 Linear 中的当前里程碑/issue 链为准。
 
-目标 workspace 结构：
+当前/目标 workspace 结构：
 
 ```text
 operator/
@@ -55,15 +55,16 @@ operator/
   AGENTS.md
   DESIGN.md
   crates/
-    operator-core/            # Phase 1 MVP
-    operator-runtime/         # Phase 1 MVP
-    operator-testkit/         # Phase 1 MVP
-    operator-platform-macos/  # Phase 1 MVP
-    operator-cli/             # Phase 1 MVP
-    operator-mcp/             # Phase 2
-    operator-agent/           # Phase 3
-    operator-platform-windows/  # Phase 4，暂未实现
-    operator-platform-harmony/  # Phase 4，暂未实现
+    operator-core/
+    operator-runtime/
+    operator-testkit/
+    operator-bootstrap/
+    operator-platform-macos/
+    operator-platform-harmony/
+    operator-cli/
+    operator-mcp/
+    operator-agent/
+    operator-platform-windows/  # 未来扩展，暂未实现
   docs/
     platforms/
 ```
@@ -74,30 +75,34 @@ operator/
   - 领域模型、错误类型、typed request/response、ID、snapshot、locator、capability 等核心抽象。
   - 不依赖平台实现、CLI、MCP、Agent。
 - `operator-runtime`
-  - `RuntimeCore`、`Runtime`、`RuntimeBuilder`、`TargetResolver`、`ToolRegistry`、store traits 与文件存储。
+  - `RuntimeCore`、`Runtime`、`RuntimeBuilder`、`TargetResolver`、`PlatformRegistry`、`ToolRegistry`、store traits 与文件存储。
   - 负责执行链路和运行时装配，不直接耦合具体平台 API。
 - `operator-testkit`
   - `MockPlatformDriver`、内存 store、测试 fixture。
   - 只服务测试，不参与生产逻辑。
+- `operator-bootstrap`
+  - `~/.operator/config.toml` 解析/编辑、命名 target 与 model selector 管理、`system_platform_registry()`。
+  - 让 CLI / MCP / 测试入口共享同一份配置和平台注册逻辑。
 - `operator-platform-*`
-  - 各平台 driver crate。
-  - 只实现平台能力，不实现入口逻辑。
+  - 各平台 driver crate，负责具体平台能力。
+  - 如需接入统一装配层，可以额外实现 runtime 中定义的 `PlatformDriverFactory`。
 - `operator-cli`
   - CLI 入口，负责参数解析、调用 `ToolRegistry`、格式化输出。
 - `operator-mcp`
   - MCP server 入口，负责协议适配，不重复实现业务逻辑。
 - `operator-agent`
-  - Agent runner 和 `ModelClient` 抽象，复用 runtime 和工具定义。
+  - Agent runner、model registry/provider 抽象与 planner loop，复用 runtime 和工具定义。
 - `docs/`
   - 设计、平台调研、补充说明。
 
 依赖方向必须保持单向：
 
-- entry -> runtime -> core
-- platform -> core
+- entry -> bootstrap/runtime/core
+- bootstrap -> runtime/platform/core
+- platform -> core（若实现统一装配，可额外依赖 runtime 中的 registry/factory 抽象）
 - testkit -> core/runtime
 - entry 不得直接承载平台业务逻辑
-- core 不得依赖 entry、platform、LLM provider
+- core 不得依赖 entry、platform、bootstrap、LLM provider
 
 ## 4. 任务执行方式
 
@@ -279,20 +284,22 @@ git commit -s -m "feat(core): add typed automation domain models" \
 
 ## 11. 实施顺序
 
-默认按当前里程碑对应的 Linear issue 链推进：
+原始 bootstrap 顺序大致如下：
 
 1. workspace bootstrap
 2. `operator-core`
 3. `operator-runtime`
 4. `operator-testkit`
-5. tool registry and tools
-6. macOS driver
-7. CLI
-8. MCP
-9. Agent
-10. Windows/Harmony scaffolds
+5. `operator-bootstrap` 与配置/平台注册层
+6. tool registry and tools
+7. macOS driver
+8. Harmony HDC driver
+9. CLI
+10. MCP
+11. Agent
+12. Windows scaffold
 
-详细任务顺序、blocker 链和验证命令以 Linear 项目 `Operator Implementation` 中的当前 issue 为准。
+当前仓库已经不处于“按本节静态顺序逐项落地”的早期阶段。实际任务顺序、blocker 链和验证命令，一律以 Linear 项目 `Operator Implementation` 中的当前 issue 为准。
 
 ## 12. 完成标准
 

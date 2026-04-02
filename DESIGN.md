@@ -1,6 +1,6 @@
 # Operator Design
 
-> 跨平台自动化内核，Rust 实现；当前提供 CLI / MCP 入口，并为 Agent / A2A 保留扩展边界。
+> 跨平台自动化内核，Rust 实现；当前已提供 CLI / MCP / Agent 入口，并为 A2A 保留扩展边界。
 
 ---
 
@@ -49,7 +49,7 @@
 
 本文档描述 Operator 的总体架构、抽象边界和实现路径。
 
-> **实现状态说明（2026-03-27）：** 本文档中的核心分层、typed runtime、snapshot/capability 模型仍然有效；其中 macOS 平台、统一 `operator` CLI、`operator mcp serve`、`operator agent <task>` 已经实现。多平台接入的核心内核已具备雏形，但入口层装配仍然以 macOS 为主，Windows / Harmony driver 仍未落地。
+> **实现状态说明（2026-04-01）：** 本文档中的核心分层、typed runtime、snapshot/capability 模型仍然有效。当前 workspace 已落地统一 `operator` CLI、`operator mcp serve`、`operator agent <task>`，并通过 `operator-bootstrap` + `system_platform_registry()` 统一装配 `macos.system` 与 `harmony.hdc`。Windows driver 仍处于规划态；Harmony 已完成第一阶段接入，但 `get-focus`、window/region observe、细粒度窗口管理等能力仍有缺口。
 
 ---
 
@@ -90,7 +90,7 @@
 
 ## 4. 总体架构
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                  User / LLM Client                  │
 └───────────┬─────────────────┬───────────────────────┘
@@ -101,21 +101,21 @@
                          │                      │
                     Tool Registry  ◄─────────────┘
                          │
-                    RuntimeCore
-                    ┌────┴────────────────────────────┐
-                    │         │            │           │
-               Snapshot    Session      Event      Target
-                Store       Store        Sink      Resolver
-                                                    │
-                              ┌──────────┬──────────┼──────────┐
-                              │          │          │          │
-                           macOS     Windows    Harmony    (future)
-                           Driver     Driver     Driver
+                  Runtime / RuntimeCore
+                    ┌────┴─────────────────────────────┐
+                    │         │          │              │
+               Snapshot/   Session    Event         Target /
+               Artifact     Store      Sink      Platform Registry
+                 Store                               │
+                                 ┌──────────┬────────┼──────────┐
+                                 │          │        │          │
+                              macOS     Windows   Harmony    (future)
+                              Driver     Driver    Driver
 
 Agent Runner
-  ├── ModelClient
+  ├── ModelRegistry / ModelProvider
   ├── Tool Registry
-  └── Session Store
+  └── Session Journal / Store
 ```
 
 **核心思路：**
@@ -123,7 +123,7 @@ Agent Runner
 - `RuntimeCore` 是核心装配对象，不持有 `ToolRegistry`，避免循环引用
 - `ToolRegistry` 独立持有，handler 持有 `Arc<RuntimeCore>` 而非完整 `Runtime`
 - `PlatformDriver` 是平台执行边界，对上提供 typed `observe/query/act`
-- `SnapshotStore` 和 `SessionStore` 提供可共享的状态协议，但不同入口不共享进程内实例
+- `SnapshotStore` / `ArtifactStore` / `SessionStore` 提供可共享的状态协议，但不同入口不共享进程内实例
 
 ---
 
@@ -199,18 +199,19 @@ pub enum OperatorError {
 
 负责运行时装配和通用执行逻辑，**不直接调用平台 API**。
 
-- `RuntimeCore` / `RuntimeBuilder`（核心装配，不持有 `ToolRegistry`）
-- `Runtime`（外层聚合，持有 `Arc<RuntimeCore>` + `ToolRegistry`）
+- `RuntimeCore` / `RuntimeBuilder` / `Runtime`
 - `TargetResolver`
-- `ToolRegistry`（注册、查找、执行工具）
-- `SnapshotStore` / `SessionStore`（trait + 文件实现）
+- `PlatformRegistry` / `PlatformDriverFactory`
+- `ToolRegistry`
+- `SnapshotStore` / `ArtifactStore` / `SessionStore`
+- `EventSink`
 
 ### 5.3 Platform 层
 
-每个平台一个独立 crate，只实现 `PlatformDriver` trait：
+每个平台一个独立 crate；最小要求是提供 `PlatformDriver`，若需要接入统一装配层，也可以额外提供 `PlatformDriverFactory`。
 
-- 当前已实现：`operator-platform-macos`
-- 未来扩展：`operator-platform-windows`、`operator-platform-harmony`
+- 当前已实现：`operator-platform-macos`、`operator-platform-harmony`
+- 未来扩展：`operator-platform-windows`
 
 ### 5.4 Entry 层
 
@@ -219,50 +220,57 @@ pub enum OperatorError {
 - 当前已实现：
   - `operator-cli` — 统一用户入口，暴露 `operator` 二进制
   - `operator-mcp` — MCP 协议适配库，由 `operator mcp serve` 复用
-- 当前已实现：
-  - `operator-agent` — 本地单 session agent runner（独立 crate，可选依赖）
+  - `operator-agent` — 本地单 session agent runner
+- 共享装配支撑：
+  - `operator-bootstrap` — 负责 `config.toml` 解析/编辑、命名 target 与 model selector 管理、`system_platform_registry()` 装配
 - 未来扩展：
   - A2A surface — 复用 `operator-agent` 能力向外提供 agent 协议入口
 
-> **说明：** Agent 单独成 crate 而非内嵌于 runtime，原因是 Agent 需要 `ModelClient`（外部 LLM 依赖）。核心 runtime 不应反向依赖任何 LLM/provider 抽象，使得只需要 CLI / MCP 能力的用户无需引入该依赖。
+> **说明：** Agent 单独成 crate 而非内嵌于 runtime，原因是 Agent 需要模型/provider 抽象；`operator-bootstrap` 单独成 crate，则是为了让 CLI / MCP / 测试入口共享同一份配置与平台注册逻辑，而不把平台选择硬编码进每个入口。
 
 ---
 
 ## 6. Workspace 结构
 
-长期控制在少量清晰的 crate 内；当前 workspace 已经包含 macOS、CLI、MCP、Agent 和测试支撑，其他平台仍保持规划态。
+长期控制在少量清晰的 crate 内；当前 workspace 已经包含 core/runtime、bootstrap、macOS / Harmony 平台、CLI / MCP / Agent 入口以及测试支撑。
 
-```
+```text
 operator/
   Cargo.toml                   # workspace 根，声明 members 和共用依赖
   crates/
     operator-core/              # 自动化领域模型、typed 请求/响应、错误
-    operator-runtime/           # RuntimeCore、ToolRegistry、存储 trait
-    operator-platform-macos/    # 当前唯一平台实现
-    operator-cli/               # 当前唯一用户二进制：operator
+    operator-runtime/           # RuntimeCore、ToolRegistry、存储 trait/实现
+    operator-bootstrap/         # 配置加载/编辑、平台注册表与 model bootstrap
+    operator-platform-macos/    # macOS system driver
+    operator-platform-harmony/  # Harmony HDC driver
+    operator-cli/               # 统一用户二进制：operator
     operator-mcp/               # MCP 协议适配库（无独立 bin target）
     operator-agent/             # 单 session 本地 agent runner
-    operator-testkit/           # 测试工具：MockPlatformDriver、fixture 等
+    operator-testkit/           # 测试工具：MockPlatformDriver、内存存储等
 ```
 
 ### 6.1 当前实现与未来扩展
 
 当前 workspace members 为：
 
-- `operator-cli`
 - `operator-agent`
+- `operator-bootstrap`
+- `operator-cli`
 - `operator-core`
 - `operator-mcp`
+- `operator-platform-harmony`
 - `operator-platform-macos`
 - `operator-runtime`
 - `operator-testkit`
 
-未来若接入其他平台，可在 workspace 中新增：
+当前入口层装配已经从“CLI / Agent 直接手工注册 `MacosDriver`”演进为：
 
-- `operator-platform-windows`
-- `operator-platform-harmony`
+1. `operator-bootstrap` 负责读取/编辑 `~/.operator/config.toml`
+2. `RuntimeBuilder` 负责注入 `FileSnapshotStore`、`FileArtifactStore`、`FileSessionStore`
+3. `system_platform_registry()` 统一注册 `macos.system` 与 `harmony.hdc`
+4. `TargetResolver` 基于命名 target 解析 `platform / driver / driver_config`
 
-当前 `operator-cli` 与 `operator-agent` 仍直接依赖 `operator-platform-macos` 完成本地 runtime 装配；多平台最终形态需要额外引入“平台/driver 注册层”，把入口层从 macOS 直连装配中解耦出来。
+因此 runtime 内核已经具备多平台、多 driver 的基础装配能力；后续新增平台时，优先新增 platform crate + factory，并通过 bootstrap registry 接入，而不是在 CLI / MCP / Agent 中各自硬编码。
 
 ### 6.2 `operator-testkit` 职责
 
@@ -646,6 +654,8 @@ pub enum Capability {
     PointerInput,
     /// 键盘输入
     KeyboardInput,
+    /// 窗口查询
+    WindowQuery,
     /// 窗口管理
     WindowManagement,
     /// 应用启动/关闭
@@ -672,7 +682,7 @@ impl CapabilitySet {
 }
 ```
 
-> **设计说明：** 不在核心枚举中硬编码平台特有能力（如原有的 `Menu`），而是使用结构化 `CapabilityId` 作为扩展点。这样 Core 层保持平台中立，又避免把平台能力做成裸字符串。
+> **设计说明：** 当前实现已经将“窗口查询”和“窗口管理”拆分为 `WindowQuery` / `WindowManagement` 两个能力位，以便 Harmony 这类平台只声明可查询但不可管理窗口的场景。平台特有能力仍通过结构化 `CapabilityId` 扩展，不把平台差异做成裸字符串。
 
 ---
 
@@ -728,7 +738,7 @@ pub struct HealthStatus {
 
 Runtime 拆分为 `RuntimeCore` 和 `Runtime` 两个结构，以避免 `ToolHandler` 持有 `Arc<Runtime>` 导致的循环引用：
 
-```
+```text
 Runtime
   ├── Arc<RuntimeCore>    ← ToolHandler 持有此引用（不持有 ToolRegistry）
   └── ToolRegistry        ← 持有所有 ToolHandler
@@ -738,10 +748,13 @@ Runtime
 /// 核心组件容器，不持有 ToolRegistry，可安全被 ToolHandler 引用
 pub struct RuntimeCore {
     resolver: TargetResolver,
+    platform_registry: PlatformRegistry,
+    artifacts: Arc<dyn ArtifactStore>,
     snapshots: Arc<dyn SnapshotStore>,
     sessions: Arc<dyn SessionStore>,
     event_sink: Arc<dyn EventSink>,
     config: RuntimeConfig,
+    driver_cache: Mutex<HashMap<TargetId, Arc<dyn PlatformDriver>>>,
 }
 
 /// 外层聚合，对入口层暴露
@@ -754,6 +767,11 @@ pub struct Runtime {
 ### 11.2 依赖 trait
 
 ```rust
+/// artifact 解析
+pub trait ArtifactStore: Send + Sync {
+    async fn resolve_artifact(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError>;
+}
+
 /// 快照存储
 pub trait SnapshotStore: Send + Sync {
     async fn save(&self, snapshot: &Snapshot) -> Result<(), OperatorError>;
@@ -761,17 +779,16 @@ pub trait SnapshotStore: Send + Sync {
     async fn list(&self, target: &TargetId) -> Result<Vec<SnapshotId>, OperatorError>;
     async fn delete(&self, id: &SnapshotId) -> Result<(), OperatorError>;
     async fn resolve_artifact(&self, id: &ArtifactId) -> Result<PathBuf, OperatorError>;
-    /// 清理过期快照及其 artifact 文件，返回清理数量
-    /// 调用时机：RuntimeBuilder::build() 时调用一次，之后每隔 N 次 save() 懒触发
     async fn evict_expired(&self) -> Result<u32, OperatorError>;
 }
 
 /// 会话存储
 pub trait SessionStore: Send + Sync {
     async fn create(&self, session: &Session) -> Result<(), OperatorError>;
+    async fn set_status(&self, id: &SessionId, status: SessionStatus) -> Result<(), OperatorError>;
     async fn append(&self, id: &SessionId, event: &SessionEvent) -> Result<(), OperatorError>;
     async fn get(&self, id: &SessionId) -> Result<Option<Session>, OperatorError>;
-    /// limit: None 时返回最近 100 条；调用方不应依赖无限返回
+    async fn events(&self, id: &SessionId) -> Result<Vec<SessionEvent>, OperatorError>;
     async fn list(&self, limit: Option<usize>) -> Result<Vec<SessionId>, OperatorError>;
 }
 
@@ -781,14 +798,16 @@ pub trait EventSink: Send + Sync {
 }
 ```
 
+> **实现说明：** `RuntimeBuilder` 目前要求显式传入 `SnapshotStore`；`ArtifactStore` 若未注入，会自动回退到基于 `SnapshotStore::resolve_artifact()` 的适配层。`SessionStore` 默认为 `NullSessionStore`，入口层可按需替换为文件存储或测试实现。
+
 ### 11.3 RuntimeCore 职责
 
-- 注册平台 driver
-- 解析 target ref，得到 `TargetDescriptor` 并选择正确的 driver
-- 能力检查，拒绝不支持的操作
-- 提供 typed `observe/query/act` 执行入口
-- 管理 snapshot 和 session 生命周期
-- 记录执行事件到 `EventSink`
+- 解析命名 target，得到带 `driver_config` 的 `TargetDescriptor`
+- 通过 `PlatformRegistry` 查找 factory，实例化并缓存 per-target driver
+- 能力检查，拒绝不支持的 observe/query/action
+- 提供 typed `observe/query/act` 执行入口，并统一处理超时
+- 保存 snapshot、管理 artifact/session 生命周期、记录审计事件
+- 在动作执行前做请求归一化，在动作执行后做可选 verification（focus / geometry / window state）
 
 ### 11.4 TargetResolver
 
@@ -799,6 +818,7 @@ pub struct TargetDescriptor {
     pub id: TargetId,
     pub platform: String,
     pub driver: String,
+    pub driver_config: DriverConfig,
 }
 ```
 
@@ -808,7 +828,7 @@ pub struct TargetDescriptor {
 |---|---|
 | `macos` | `platform = "macos"`, `driver = "macos.system"` |
 | `windows-lab` | `platform = "windows"`, `driver = "windows.remote"` |
-| `harmony-phone` | `platform = "harmony"`, `driver = "harmony.node"` |
+| `harmony-pc` | `platform = "harmony"`, `driver = "harmony.hdc"` |
 
 这里的 `remote` / `bridge` / `node` 只属于 driver 选择和配置范畴，不进入用户侧 target 语法。
 
@@ -831,19 +851,19 @@ Snapshot 是系统的关键状态原语，作用：
   snapshots/
     <snapshot-id>.json
   artifacts/
-    <snapshot-id>.png         # image_artifact 对应的实际文件
+    <artifact-id>.<ext>       # image_artifact 对应的实际文件（如 png / jpeg）
   config.toml
 ```
 
 **生命周期策略：**
 
 - 每个 snapshot 可携带 `expires_at`，默认 TTL 为 24 小时（来自 `config.toml`）
-- `SnapshotStore::evict_expired()` 在 `RuntimeBuilder::build()` 时调用一次（清理遗留），此后每隔 100 次 `save()` 懒触发一次
+- `SnapshotStore::evict_expired()` 在 `RuntimeBuilder::build()` 时调用一次（清理遗留），此后每隔 `snapshot_evict_interval` 次 `save()` 懒触发一次（默认 100）
 - 最大保留数量可在 `config.toml` 中配置
 
 ### 12.2 Session
 
-Session 属于 **Phase 3（Agent / 审计）** 能力，不阻塞 CLI / MCP 骨架落地。
+Session 已进入当前实现，用于 Agent transcript、失败回放和调试；CLI / MCP 仍然可以在不显式传 `session_id` 的情况下运行。
 
 Session 记录一次完整的交互过程：
 
@@ -872,7 +892,12 @@ pub enum SessionStatus {
 }
 ```
 
-实现上优先使用 `.jsonl` 格式，每行一个 `SessionEvent`，不引入数据库。
+当前 `SessionStore` 还提供 `set_status()` 与 `events()` 读取接口。文件实现 `FileSessionStore` 在 `~/.operator/sessions/` 下分别持久化：
+
+- `<session-id>.json` — session header / 当前状态
+- `<session-id>.jsonl` — 事件日志（每行一个 `SessionEvent`）
+
+`RuntimeBuilder` 默认仍可使用 `NullSessionStore`，因此不关心会话能力的入口依然可以保持近似无状态。
 
 ---
 
@@ -941,7 +966,7 @@ CLI / MCP / Agent
 
 | 工具 | 说明 |
 |---|---|
-| `observe` | 截图 + 获取 UI 元素树，生成 snapshot |
+| `observe` | 按请求获取截图 / UI 元素树，生成 snapshot |
 | `snapshot-get` | 获取已有 snapshot 详情 |
 | `artifact-get` | 获取已持久化的截图 artifact 路径 |
 
@@ -949,7 +974,7 @@ CLI / MCP / Agent
 
 | 工具 | 说明 |
 |---|---|
-| `list-apps` | 列出运行中的应用 |
+| `list-apps` | 列出运行中的应用或目标侧可操作 app catalog |
 | `list-windows` | 列出窗口列表，可按 app 过滤 |
 | `get-focus` | 查询当前焦点 app / window / element |
 | `permissions-status` | 查询权限状态 |
@@ -976,52 +1001,52 @@ CLI / MCP / Agent
 
 ## 14. 配置系统
 
-配置文件位于 `~/.operator/config.toml`，CLI flag 和环境变量可覆盖任何配置项。
+配置文件位于 `~/.operator/config.toml`；当前 CLI 只对局部字段提供显式覆盖（例如 `--target`、`--timeout-ms`、`--model`、`--max-steps`），环境变量目前主要用于 `OPERATOR_HOME` 以及 agent provider 凭据 / base URL 的回退。
 
 ```toml
 [runtime]
-default_target     = "macos"
-snapshot_ttl_hours = 24
-max_snapshots      = 200
-default_timeout_ms = 10_000
+default_target          = "macos"
+snapshot_ttl_hours      = 24
+max_snapshots           = 200
+default_timeout_ms      = 10_000
+snapshot_evict_interval = 100
 
 [targets.macos]
-platform = "macos"
-driver   = "macos.system"
+platform    = "macos"
+driver      = "macos.system"
 description = "Built-in local macOS automation target"
 
 [targets.windows-lab]
-platform = "windows"
-driver   = "windows.remote"
+platform    = "windows"
+driver      = "windows.remote"
 description = "Shared Windows lab machine"
 
 [targets.windows-lab.driver_config]
 endpoint = "wss://lab.example"
 
-[targets.harmony-phone]
-platform = "harmony"
-driver   = "harmony.hdc"
+[targets.harmony-pc]
+platform    = "harmony"
+driver      = "harmony.hdc"
 description = "Harmony device reachable over HDC TCP"
 
-[targets.harmony-phone.driver_config]
-addr     = "192.168.8.43:35319"
-
-[mcp]
-transport      = "stdio"   # stdio | http
-disabled_tools = []
+[targets.harmony-pc.driver_config]
+addr = "192.168.8.43:35319"
+# optional overrides:
+# connect_key = "pc-01"
+# key_dir = "/Users/alice/.hdc"
+# timeout_ms = 60_000
+# agent_path = "/tmp/agent.so"
+# remote_agent_path = "/data/local/tmp/agent.so"
+# startup_delay_ms = 500
 
 [security]
-# MCP 模式下可设为 false，禁用所有有副作用的工具
+# 全局运行时闸门；关闭后所有有副作用工具都会被拒绝
 allow_side_effects = true
 # 审计记录是否落盘
 audit_enabled = true
 # 对工具输入/输出做脱敏后再落盘
 redact_sensitive_fields = true
 artifact_ttl_hours = 24
-
-[agent]
-max_steps       = 50
-step_timeout_ms = 30_000
 
 [agent.model]
 default = "openai"
@@ -1065,23 +1090,28 @@ agent model/provider 配置契约固定为：
   - `model_name`
 - `model_name` 是最终发往远端 provider 的真实模型 id；selector 名称是 northbound shell contract。
 - `operator agent --model <selector>` 显式覆盖 `[agent.model].default`；未传时读取配置默认值。
-- 当 provider 字段缺失时，后续 bootstrap/agent 解析允许向环境变量回退以保留兼容性。
+- 当 provider 字段缺失时，bootstrap/agent 解析会向环境变量回退：
+  - OpenAI：`OPENAI_API_KEY`、`OPENAI_BASE_URL`
+  - Doubao：`ARK_API_KEY` / `DOUBAO_API_KEY`、`ARK_BASE_URL` / `DOUBAO_BASE_URL`
 - CLI 兼容 alias 保留为 northbound 输入兼容层：
   - `gpt-5.4` -> `openai`
   - `doubao-seed` -> `doubao`
 - Core inspection surface（`operator model list/show`）必须对 `api_key` 做脱敏：只保留最后 4 个可见字符，前面全部替换为 `*`。
 
-**配置加载优先级：**
-
-```
-CLI flag > 环境变量 > ~/.operator/config.toml > 内置默认值
-```
+> **当前边界：**
+>
+> - 持久化配置实际消费的 agent 子树只有 `[agent.model]`；`max_steps`、`step_timeout_ms`、`include_elements`、`observe_delay_ms` 等 loop 运行参数仍由 `operator agent` CLI 与 `AgentConfig::default()` 决定。
+> - 当前配置文件尚未解析独立的 `[mcp]` section，也尚未实现 `disabled_tools` 之类的细粒度工具策略；MCP 复用 runtime 的全局 `security.allow_side_effects` 闸门。
+> - 配置优先级不是单一全局链条，而是分域处理：
+>   - operator home：`OPERATOR_HOME` > `~/.operator`
+>   - runtime target / timeout 等调用时参数：CLI flag > runtime config > 内置默认值
+>   - agent provider 凭据 / base_url：`[agent.model.provider.*]` 优先，缺失时回退到环境变量
 
 ---
 
 ## 15. CLI 设计
 
-CLI 偏工程化、可脚本化，是 `ToolRegistry` 的一个薄包装；但当前用户面已经从“平铺 tool 名”收敛成“按能力域组织的稳定 shell surface”。这层设计的权威补充说明见 [docs/COMMAND.md](docs/COMMAND.md)。
+CLI 偏工程化、可脚本化，是 `ToolRegistry` 的一个薄包装；当前用户面已经从“平铺 tool 名”收敛成“按能力域组织的稳定 shell surface”。这层设计的权威补充说明见 [docs/COMMAND.md](docs/COMMAND.md)。
 
 ```bash
 # 观察
@@ -1089,7 +1119,7 @@ operator capture frontmost
 operator snapshot s_123
 
 # 查询
-operator list windows --app TextEdit
+operator window list --app TextEdit
 operator show
 
 # 输入 / 应用 / 窗口
@@ -1098,20 +1128,25 @@ operator type "hello world" --after-key return
 operator app launch Calculator
 operator window resize --window-id 42 --width 900 --height 700 --verify geometry
 
-# MCP
+# 配置
+operator target list
+operator model list
+
+# MCP / Agent
 operator mcp serve
+operator agent "Open Notes and type hello"
 ```
 
 **CLI 原则：**
 
-- 所有命令支持 `--target`（默认读取配置中的 `default_target`）
+- 所有 runtime 工具类命令支持 `--target`（默认读取配置中的 `default_target`）
 - `--target` 选择命名 target，不暴露 local / remote / bridge 等连接细节
-- 所有命令支持 `--json`，输出结构与 MCP 工具结果格式兼容
+- 所有 runtime 工具类命令支持 `--json`，输出结构与 MCP 工具结果格式兼容
 - 动作命令默认支持 `--timeout-ms` 覆盖超时
-- `Core / Observe / Interact / System / Integration / AI` 只作为 help 分组标题，不作为真实一级命令
-- CLI 只做参数解析和格式化输出，不包含业务逻辑
+- `Core / Observe / Interact / Integration / AI` 只作为 help 分组标题，不作为真实一级命令
+- CLI 只做参数解析、配置编辑和格式化输出，不包含平台业务逻辑
 
-`Core` 分组除 `permissions` / `capabilities` / `snapshot` / `artifact` 外，还应包含命名 target 管理家族：
+`Core` 分组除 `permissions` / `capabilities` / `snapshot` / `artifact` 外，还包含命名 target 管理家族：
 
 - `operator target list`
 - `operator target show [name]`
@@ -1120,8 +1155,19 @@ operator mcp serve
 - `operator target unset <name> <path>...`
 - `operator target remove <name>`
 
-这些命令只负责检查和维护 `.operator/config.toml` 中的命名 target 定义；实际自动化命令仍然只通过全局 `--target <name>` 选择执行目标，不暴露 transport 或 driver routing 语法。
-legacy 协议形态字符串（如 `local:macos`、`device:harmony:...`）不再属于 northbound contract，也不再由 runtime resolver 兜底解析。
+这些命令只负责检查和维护 `~/.operator/config.toml` 中的命名 target 定义；实际自动化命令仍然只通过全局 `--target <name>` 选择执行目标，不暴露 transport 或 driver routing 语法。
+
+`AI` 分组还包含 model selector / provider 管理家族：
+
+- `operator model list`
+- `operator model show [selector]`
+- `operator model use <selector>`
+- `operator model set <selector> --set <field=value>...`
+- `operator model unset <selector> <field>...`
+
+这些命令只编辑 `[agent.model]` 子树，并在 read path 中统一脱敏 `api_key`。legacy 协议形态字符串（如 `local:macos`、`device:harmony:...`）不再属于 northbound contract，也不再由 runtime resolver 兜底解析。
+
+> **当前 shell contract 细节：** CLI 的 `window list` 为了保持输出契约清晰，当前要求显式传 `--app <NAME>`；而 runtime 内部 `list-windows` tool 仍保留 `app: Option<String>` 的 typed 能力，以便 Agent / 测试或其他入口复用。
 
 ---
 
@@ -1133,18 +1179,19 @@ MCP server 直接暴露同一份工具定义，不另起一套逻辑。当前实
 operator mcp serve
 ```
 
-内部协议适配仍由 `operator-mcp` crate 承载，但用户面只保留 `operator` 一个二进制。
+底层协议适配由 `operator-mcp` crate 承载，但 runtime、tool schema、target 解析与平台装配仍复用 `operator-bootstrap` + `RuntimeBuilder`。
 
 ### 16.1 Transport
 
-当前实现只支持 **stdio** transport（兼容 Claude Desktop 等工具），后续按需扩展 HTTP Streamable transport。
+当前实现只支持 **stdio** transport（兼容 Claude Desktop 等工具）；transport 选择尚未下沉到 `config.toml`。后续如需扩展 HTTP Streamable transport，应保持工具定义与执行链完全复用。
 
 ### 16.2 设计要求
 
 - 工具 schema 直接从 `ToolRegistry` 中导出，**零重复**
 - handler 与 CLI / Agent 共用同一条执行链
-- 支持通过配置禁用有副作用的工具（`security.allow_side_effects = false`）
+- 当前安全策略只有全局运行时闸门：`security.allow_side_effects = false`
 - MCP 层只做协议适配（JSON-RPC 编解码），不包含平台逻辑
+- 当前 server 支持 `initialize`、`notifications/initialized`、`tools/list`、`tools/call`、`ping`
 
 ### 16.3 并发处理
 
@@ -1152,119 +1199,146 @@ MCP 是多客户端协议，多个请求可能同时到达同一个 target。MVP
 
 | 场景 | 策略 |
 |---|---|
-| 同一 target，任何操作 | MVP 一律串行，优先保证确定性 |
+| 同一 target，任何操作 | 当前一律串行，优先保证确定性 |
 | 不同 target | 完全并发 |
 | 队列超时 | 返回 `OperatorError::TargetBusy` |
 
-> **实现说明：** MVP 阶段每个 target 维护一个 `tokio::sync::Semaphore`（许可数为 1）作为串行闸门。是否允许部分只读请求绕过队列，必须等 snapshot 一致性和平台行为经过验证后再放开。
+> **实现说明：** 当前 `operator-mcp` 为每个 target 维护一个 `tokio::sync::Semaphore`（许可数为 1）作为串行闸门；side-effect policy 与默认 target / timeout 都从 runtime 配置注入，而不是在 MCP 层另起一套配置模型。
 
 ---
 
 ## 17. Agent 设计
 
-Agent 不单独维护工具系统，完全复用 `ToolRegistry`。这一层目前仍未实现；CLI root help 只保留 `A2A` 说明块作为未来入口占位，不反向污染 core/runtime 的自动化边界。
+Agent 不单独维护工具系统，完全复用 `ToolRegistry`。这一层已经以 `operator-agent` crate 落地，并由 `operator agent <task>` 暴露本地单 session、单 target、单 loop 的 northbound 入口；A2A surface 仍是后续扩展。
 
 ### 17.1 组件
 
+```text
+AgentRunner
+  ├── ModelRegistry / ResolvedModel
+  ├── PlannerPromptBuilder
+  ├── DecisionParser / DecisionValidator / DecisionNormalizer
+  ├── FinishGate
+  ├── ToolExecutor
+  ├── LoopStateContextManager / ObservationCache
+  ├── SessionJournal
+  └── Runtime（SessionStore + ToolRegistry）
 ```
-AgentRunner（operator-agent crate）
-  ├── ModelClient       # 调用 LLM，抽象具体 provider
-  ├── SessionStore      # 记录对话历史（来自 RuntimeCore）
-  └── ToolRegistry      # 复用同一份工具（来自 Runtime）
-```
+
+当前实现特点：
+
+- `ModelRegistry` 支持 `openai` / `doubao` 两个 selector，并保留 CLI alias：`gpt-5.4` -> `openai`、`doubao-seed` -> `doubao`
+- provider 目前为 `OpenAiResponsesProvider` 与 `DoubaoChatCompletionsProvider`
+- planner 不依赖 provider-native tool calling；工具目录以 prompt reference + JSON schema 方式提供给模型
+- `ToolExecutor` 会根据 target `CapabilitySet` 与 `allow_side_effects` 过滤工具目录；当当前 observation 不足以支撑 selector locator 时，还会裁剪相关 schema
+- loop 热状态保留在内存中，持久化由 `SessionJournal` + `SessionStore` 承担，二者分离
 
 ### 17.2 Agent Loop
 
-```
-1. 读取任务与历史 session
-2. 构造 ModelRequest（含工具列表 + 历史消息）
-3. 调用 ModelClient，获取 ModelResponse
-4. 若响应包含工具调用：
-   a. 通过 ToolRegistry 执行
-   b. 记录调用和结果到 SessionStore
-   c. 回到步骤 2
-5. 若响应为最终答复或达到 max_steps，退出
+```text
+1. 解析 selector / provider，创建 runtime session 与 AgentSessionState
+2. 通过 list-apps 建立 bootstrap app context；若显式传 --app，可预启动应用
+3. 在支持 capture 的 target 上，首次规划前自动 observe；对有副作用工具执行后再自动刷新 observation
+4. LoopStateContextManager + PlannerPromptBuilder 组装紧凑上下文：
+   - task / notes / recent history / tool summaries
+   - 当前与上一轮视觉输入
+   - target capabilities / app catalog / UI stale 标志
+5. 调用模型，DecisionParser 解析 JSON 决策；DecisionValidator 做 schema 校验；
+   DecisionNormalizer 按模型坐标策略重写 locator
+6. ToolExecutor 执行 runtime 工具，并注入 target / session_id / timeout_ms
+7. PlannerRetryPolicy 处理 parse/validation 失败；RepeatedErrorPolicy 避免同类错误循环
+8. FinishGate 先做确定性判定，再按需触发模型反思式收口
+9. 更新 session 状态、journal 与最终 summary；支持 ctrl-c / Notify 中断
 ```
 
-> **原则：** Agent 的价值来自工具复用，不来自复杂推理框架。初版保持 loop 简单，优先保证工具行为稳定。
+> **热路径说明：** 当前默认是 screenshot-first loop。`include_elements = false` 时，不把完整 UI tree 作为 planner 热路径输入；元素树主要用于 locator 解析、冷路径调试和显式校验。
 
-### 17.3 ModelClient 抽象
+### 17.3 Model / Planner 抽象
+
+当前模型抽象不是单个 `complete()` 接口，而是 `ModelProvider::stream(ModelRequest) -> ModelStream` + `ModelRegistry`：
 
 ```rust
-pub trait ModelClient: Send + Sync {
-    async fn complete(
-        &self,
-        request: ModelRequest,
-    ) -> Result<ModelResponse, OperatorError>;
+pub trait ModelProvider: Send + Sync + 'static {
+    fn stream(&self, req: ModelRequest) -> ModelStream;
 }
 
 pub struct ModelRequest {
-    pub model: String,
-    pub messages: Vec<Message>,
-    pub tools: Vec<ToolSpec>,       // 直接复用 ToolSpec
-    pub max_tokens: Option<u32>,
+    pub config: ModelConfig,
+    pub context: Context,
+    pub options: CallOptions,
+    pub stream: bool,
+    pub timeout: Option<Duration>,
 }
 
-pub struct ModelResponse {
-    pub content: Vec<ContentBlock>,
-    pub stop_reason: StopReason,
-    pub usage: TokenUsage,
-}
-
-pub enum ContentBlock {
-    Text(String),
-    ToolUse { id: String, name: String, input: serde_json::Value },
+pub struct ModelConfig {
+    pub provider: ProviderKind,
+    pub id: ModelId,
+    pub coordinate_policy: CoordinatePolicy,
+    pub default_options: CallOptions,
+    pub default_timeout_ms: Option<u64>,
 }
 ```
 
-这样将来可以接入 Anthropic、OpenAI、Gemini 或本地模型，但这些抽象只存在于 `operator-agent`，runtime 不绑定任何一家 SDK。
+这里有两个实现相关的约束：
+
+- `Context` 支持 `Text / Image / Thinking / ToolCall / ToolResult` block，因此当前/上一轮截图会以模型原生图片输入进入 planner 与 finish gate
+- `coordinate_policy` 目前是 selector 级配置的一部分：
+  - OpenAI：`SurfaceImagePixels`
+  - Doubao：`SurfaceNormalized1000`
+
+这让同一份 northbound planner contract 可以在不同 provider 下复用，而坐标归一化仍能保持稳定。
 
 ---
 
 ## 18. 平台实现建议
 
-### 18.1 macOS（MVP 首选平台）
+### 18.1 macOS（当前主桌面平台）
 
-| 能力 | 实现方式 |
+| 能力 | 当前实现 |
 |---|---|
-| 截图 | `CGWindowListCreateImage` / `ScreenCaptureKit` |
-| UI 元素树 | `AXUIElement` (Accessibility API) |
-| 鼠标输入 | `CGEvent` |
-| 键盘输入 | `CGEvent` |
-| 应用发现 | `NSWorkspace` |
-| 应用启动 | `NSWorkspace.open` |
-| 权限检测 | `AXIsProcessTrusted` / `CGRequestScreenCaptureAccess` |
-| macOS 特有能力 | 通过 `Capability::Extension(CapabilityId { namespace: "macos", name: "menu" })` 声明 |
+| 截图 | `screencapture` CLI + artifact 文件落盘 + bounds/image-size 归一化 |
+| UI 元素树 | `osascript -l JavaScript` 查询并展开 Accessibility tree |
+| 鼠标输入 | Quartz `CGEvent` |
+| 键盘输入 | Quartz `CGEvent` |
+| 应用发现 / 启动 / 切换 | `NSWorkspace`、`open`、AppleScript/JXA 辅助 |
+| 窗口管理 | AppleScript / AX button / bounds setter |
+| 权限检测 | `AXIsProcessTrusted` + `screencapture` / `System Events` probe |
+| 可选动作效果回显 | `action-effects` helper feature |
 
-Rust 侧通过 `objc2` crate 调用 Objective-C API，或封装为 C FFI 桥接层。
+> **实现取向：** 当前 macOS driver 有意优先复用系统 CLI / script bridge 与少量 FFI，而不是一次性把所有 Cocoa / AX 能力直接包成大而全的 Rust 绑定。
 
 ### 18.2 Windows（第二阶段）
 
-| 能力 | 实现方式 |
+| 能力 | 建议实现方式 |
 |---|---|
 | 截图 | `BitBlt` / `DXGI Desktop Duplication` |
 | UI 元素树 | UI Automation（`windows` crate） |
 | 输入模拟 | `SendInput` |
 | 应用/窗口管理 | `EnumWindows` / `ShellExecute` |
-| 权限查询 | `GetForegroundWindow` |
+| 权限查询 | `GetForegroundWindow` / 安全上下文探测 |
 
-### 18.3 HarmonyOS（Bridge 模式）
+### 18.3 HarmonyOS（HDC bridge，已落地第一阶段）
 
-HarmonyOS 与桌面系统差异大，不建议初版追求 Rust 直接打系统 API。推荐 bridge 架构：
+Harmony 侧当前不是“待调研的泛 bridge”，而是已经以 `operator-platform-harmony` crate 落地 `harmony.hdc` driver。当前实现结构为：
 
+```text
+HarmonyHdcDriverFactory
+  └── HarmonyHdcDriver
+        └── HarmonyHdcWorker（后台线程）
+              ├── shell session
+              └── UI session
 ```
-主控端（Rust PlatformDriver）
-    ↕  WebSocket / ADB / 自定义 RPC
-设备端（HarmonyOS 原生调试桥或辅助服务）
-```
 
-设备端实现屏幕截图、节点树查询、点击/滑动输入等，主控端 driver 负责协议通信和结果转换。
+一期实现特征：
 
-**能力建议：** 屏幕截图、页面节点树、点击/滑动/输入、应用启动、设备信息。
+- target 通过 `platform = "harmony"` + `driver = "harmony.hdc"` 接入
+- `driver_config.addr` 为必填；其余可选覆盖项包括 `connect_key`、`key_dir`、`timeout_ms`、`agent_path`、`remote_agent_path`、`startup_delay_ms`
+- 当前 capability 面为：`Capture`、`InspectTree`、`PointerInput`、`KeyboardInput`、`AppLifecycle`、`WindowQuery`、`Permissions`
+- `observe` 当前只支持 `frontmost` 与 `fullscreen`；`window` / `region` surface 仍返回 unsupported
+- 查询已覆盖 app catalog、running apps、windows、permissions、capabilities；`GetFocus` 仍未落地
+- 动作当前覆盖 `click`、`type`、`press`、`hotkey`、`drag`、`swipe`、`launch/switch/quit/relaunch-app`；`move`、`scroll`、`hide/unhide-app`、窗口管理动作仍未实现
 
-> **边界约束：** Harmony bridge 的页面、路由、设备节点等概念先停留在平台 crate 内，不提前进入 core 的公共 `Surface` / `Locator` 抽象。
-
-> **待定事项：** Bridge 协议选型（WebSocket / ADB / 自定义 RPC）应在阶段 7 开始前独立调研确定，不应在设计阶段提前锁定。
+> **边界约束：** Harmony 特有的设备连接、mission、UI bridge 等概念继续停留在 platform crate 内，不上浮到 core 的公共 `Surface` / `Locator` / `Action` 模型。
 
 ---
 
@@ -1326,12 +1400,14 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 
 | 机制 | 说明 |
 |---|---|
-| 权限检查 | 执行前检查系统权限（录屏、辅助功能等） |
+| 权限检查 | 执行前检查系统权限（录屏、辅助功能、HDC 连接/UI bridge 等） |
 | 能力检查 | 执行前验证 target 支持所需 `Capability` |
 | 副作用标记 | 每个工具显式标注 `has_side_effects` |
-| MCP 安全模式 | `allow_side_effects = false` 时，有副作用工具返回拒绝 |
-| 工具黑名单 | 通过 `disabled_tools` 配置项精确禁用指定工具 |
+| 全局副作用闸门 | `allow_side_effects = false` 时，有副作用工具返回拒绝，并写入审计事件 |
 | 可配置审计日志 | 所有 tool 调用可通过 `EventSink` 记录，并支持脱敏和关闭 |
+| 会话落盘 | Agent / CLI 可选接入 `SessionStore`，把 transcript 与状态单独持久化 |
+
+**当前尚未实现**按工具粒度的 `disabled_tools` 黑名单；如后续需要，应在 runtime policy 层补齐，而不是只在 MCP 层做一次性过滤。
 
 **初版不提供通用 shell 工具**，避免把 MCP 入口变成任意命令执行面。
 
@@ -1341,51 +1417,56 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 
 ### 22.1 当前 crate
 
-- `operator-core`
-- `operator-runtime`
-- `operator-platform-macos`
+- `operator-agent`
+- `operator-bootstrap`
 - `operator-cli`
+- `operator-core`
 - `operator-mcp`
+- `operator-platform-harmony`
+- `operator-platform-macos`
+- `operator-runtime`
 - `operator-testkit`
 
 ### 22.2 当前入口
 
 - `operator` CLI
 - `operator mcp serve`
+- `operator agent <task>`
 
 ### 22.3 当前能力面
 
-**Observe / Query：**
+**统一 runtime tools：**
 
-- `observe`
-- `snapshot-get`
-- `artifact-get`
-- `list-apps`
-- `list-windows`
-- `get-focus`
-- `permissions-status`
-- `capabilities`
-
-**Action：**
-
+- observe / snapshot：`observe`、`snapshot-get`、`artifact-get`
+- query：`list-apps`、`list-windows`、`get-focus`、`permissions-status`、`capabilities`
 - pointer / keyboard：`click`、`move`、`type`、`press`、`hotkey`、`scroll`、`drag`、`swipe`
 - app lifecycle：`launch-app`、`switch-app`、`quit-app`、`relaunch-app`、`hide-app`、`unhide-app`
 - window management：`focus-window`、`close-window`、`minimize-window`、`maximize-window`、`move-window`、`resize-window`、`set-window-bounds`
 
+**平台实现差异：**
+
+- `macos.system`：已覆盖 observe、query、pointer/keyboard、app lifecycle、window management、permissions；支持可选 `action-effects` helper
+- `harmony.hdc`：已覆盖 capture、inspect tree、app catalog / windows / permissions、`click/type/press/hotkey/drag/swipe`、`launch/switch/quit/relaunch-app`
+  - 当前缺口：`get-focus`、`observe(window/region)`、`move`、`scroll`、`hide/unhide-app`、窗口管理动作
+  - 因此“统一 tool 面”与“具体平台可用子集”之间仍存在一期差距，运行时会在 capability 或 driver 层拒绝不支持的调用
+
 ### 22.4 当前交付状态
 
-- macOS 平台已能完成观察、查询、输入、应用生命周期和窗口管理
-- 统一 `operator` CLI 已完成分组命令面和稳定 help 契约
-- MCP stdio 模式已完成，并复用同一份 tool schema 和执行链
-- `operator agent <task>` 已完成第一阶段接入，并直接调用 runtime 工具而非 CLI
-- `operator-core` 与 `operator-runtime` 在不引入 LLM/provider 依赖时可独立编译
-- 同一 target 的并发操作仍保持串行，优先保证确定性
-- 运行时核心已经支持“同平台多 driver”的方向，但 CLI / Agent 的 runtime 装配仍直接注册 `MacosDriver`
+- `operator-core` 已沉淀 typed 领域模型、locator/snapshot/action/query 原语与能力模型
+- `operator-runtime` 已提供 `RuntimeBuilder`、`PlatformRegistry`、`TargetResolver`、`ToolRegistry`、typed `observe/query/act` 执行链，以及 action normalization / verification
+- 文件存储已覆盖 snapshot、artifact、session 三类状态；`RuntimeBuilder` 默认仍可回退到 null session store
+- `operator-bootstrap` 已提供 config 文档读写、命名 target 编辑、model selector/provider 编辑，以及 `system_platform_registry()`
+- `operator-cli` 已完成统一二进制命令面，并承载 target/model 配置编辑、MCP serve 和 Agent 入口
+- `operator-mcp` 已完成 stdio JSON-RPC server，并对同一 target 的并发请求做串行化
+- `operator-agent` 已完成本地单 session runner、model registry、planner parser/validator/normalizer、finish gate、auto-observe、session journal 与 interrupt handling
+- `operator-platform-macos` 与 `operator-platform-harmony` 都已接入统一 runtime；Windows 仍未实现
 
 ### 22.5 未来阶段
 
 - A2A：在已有 `operator-agent` 之上补齐 northbound agent 协议入口
-- Windows / Harmony：补齐更多平台 driver
+- Windows：补齐桌面平台 driver
+- Harmony：补齐 `get-focus`、更多 observe surface、更多动作/窗口语义
+- Policy：如有需要，补齐细粒度工具 allow/deny list 与更强的审计策略
 
 ---
 
@@ -1393,19 +1474,22 @@ AgentRunner config.step_timeout_ms   # 单步超时（含 model 调用）
 
 **已完成：**
 
-1. 内核与 runtime 骨架
-2. macOS driver
-3. 统一 `operator` CLI
-4. `operator mcp serve`
-5. 分组命令面与稳定 help 契约
-6. `operator agent <task>` 第一阶段本地 runner
+1. typed core / runtime 骨架
+2. 文件化 snapshot / artifact / session 存储
+3. `operator-bootstrap` 配置与平台注册层
+4. macOS system driver
+5. Harmony HDC 第一阶段 driver
+6. 统一 `operator` CLI
+7. `operator mcp serve`
+8. `operator agent <task>` 本地 runner
 
 **推荐后续顺序：**
 
-1. 平台/driver 注册层与命名 target 解析
-2. Windows driver scaffold
-3. Harmony driver scaffold
-4. 更高阶的能力域（如 clipboard / dialog / menu 等）
+1. Windows driver
+2. 补齐 Harmony 一期缺口（`get-focus`、更多 observe surface、更多动作语义）
+3. 细化 runtime policy（如 `disabled_tools` / allowlist / 更强审计）
+4. A2A northbound surface / 多 session 编排
+5. 更高阶能力域（clipboard / dialog / menu 等）
 
 ---
 
@@ -1476,7 +1560,7 @@ Snapshot、tool input/output、model response 都可能包含敏感信息。MVP 
 
 ### 26.1 Async Trait 实现策略
 
-**决策：** 所有异步 trait（`PlatformDriver`、`SnapshotStore`、`SessionStore`、`EventSink`、`ModelClient`）使用 `async-trait` crate 标注。
+**决策：** 所有异步 trait（`PlatformDriver`、`SnapshotStore`、`SessionStore`、`EventSink`、`ModelProvider` 等）使用 `async-trait` crate 标注。
 
 ```rust
 #[async_trait::async_trait]
@@ -1534,25 +1618,28 @@ if let (
 
 ### 26.4 Phase 1/2 中 Session 的处理
 
-**决策：** Phase 1/2 中 `ExecContext.session` 字段存在但被**静默忽略**（不报错、不写入任何存储）。
+**更新后的决策：** `ExecContext.session` 现在已经是活动字段，但仍保持“可选接入”的装配策略：
 
-**实现方式：** `operator-runtime` 内置一个 `NullSessionStore`：
+- `RuntimeBuilder` 默认仍使用 `NullSessionStore`
+- 需要会话能力的入口（当前主要是 CLI / Agent）会显式注入 `FileSessionStore`
+- 因此**不是**所有调用都会持久化 session；只有在入口层装配了真实 `SessionStore` 时，`session_id` 才会落盘生效
 
-```rust
-pub struct NullSessionStore;
+当前文件实现采用两层结构：
 
-#[async_trait::async_trait]
-impl SessionStore for NullSessionStore {
-    async fn create(&self, _: &Session) -> Result<(), OperatorError> { Ok(()) }
-    async fn append(&self, _: &SessionId, _: &SessionEvent) -> Result<(), OperatorError> { Ok(()) }
-    async fn get(&self, _: &SessionId) -> Result<Option<Session>, OperatorError> { Ok(None) }
-    async fn list(&self, _: Option<usize>) -> Result<Vec<SessionId>, OperatorError> { Ok(vec![]) }
-}
-```
+- `sessions/<id>.json`：`Session` header 与当前 `SessionStatus`
+- `sessions/<id>.jsonl`：顺序追加的 `SessionEvent`
 
-`RuntimeBuilder` 默认使用 `NullSessionStore`。Phase 3 实现 `.jsonl` 文件存储后，通过 `RuntimeBuilder::session_store(impl SessionStore)` 替换，不影响 CLI / MCP 层。
+`SessionStore` 也已经扩展为除 `create/append/get/list` 外，再提供：
 
-**原因：** `SessionId` 字段保留在 `ExecContext` 中，是为了 Phase 3 接入时零改动。静默忽略优于报错，因为 CLI 入口默认不传 session_id，不应因此失败。
+- `set_status(id, status)` — 更新 session 状态
+- `events(id)` — 读取完整事件流
+
+**原因：** 这样可以同时满足两类入口：
+
+1. 纯 CLI / MCP 工具调用：保持接近无状态，不强制用户关心 session
+2. Agent / 回放 / 调试：保留完整 transcript、状态迁移与失败诊断能力
+
+也就是说，旧的“静默忽略 `ExecContext.session`”只在默认 `NullSessionStore` 场景下仍成立；在当前标准 CLI / Agent 装配路径中，session 已经真实持久化。
 
 ---
 

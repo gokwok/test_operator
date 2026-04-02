@@ -131,13 +131,9 @@ impl ElementDigest {
     /// Each entry is on its own line; a trailing `"... N more ..."` line is
     /// appended when entries were truncated.
     pub fn render(&self) -> String {
-        let mut lines: Vec<String> =
-            self.entries.iter().map(|e| e.render_line()).collect();
+        let mut lines: Vec<String> = self.entries.iter().map(|e| e.render_line()).collect();
         if self.truncated_count > 0 {
-            lines.push(format!(
-                "... {} more entries omitted",
-                self.truncated_count
-            ));
+            lines.push(format!("... {} more entries omitted", self.truncated_count));
         }
         lines.join("\n")
     }
@@ -242,7 +238,7 @@ fn collect_entries(
 
     // --- Emit this element if it carries useful information ---
     let emit = is_digest_worthy(element);
-    let effective_depth = if emit { depth } else { depth };
+    let effective_depth = depth;
 
     if emit {
         out.push(ElementDigestEntry {
@@ -258,17 +254,27 @@ fn collect_entries(
 
     // 5. Skip subtrees of labelled interactive elements — the parent already
     //    carries all the information an agent needs to act on it.
-    let dominated_interactive = emit
-        && element.label.is_some()
-        && is_interactive_role(&element.role);
+    let dominated_interactive =
+        emit && element.label.is_some() && is_interactive_role(&element.role);
     if dominated_interactive {
         return;
     }
 
     let my_label = element.label.as_deref();
-    let child_depth = if emit { effective_depth + 1 } else { effective_depth };
+    let child_depth = if emit {
+        effective_depth + 1
+    } else {
+        effective_depth
+    };
     for child_id in &element.children {
-        collect_entries(snapshot, child_id, child_depth, my_label, max_label_len, out);
+        collect_entries(
+            snapshot,
+            child_id,
+            child_depth,
+            my_label,
+            max_label_len,
+            out,
+        );
     }
 }
 
@@ -393,8 +399,7 @@ mod tests {
             vec!["root"],
         );
 
-        let digest =
-            ElementDigest::from_snapshot(&snapshot, &DigestOptions::default()).unwrap();
+        let digest = ElementDigest::from_snapshot(&snapshot, &DigestOptions::default()).unwrap();
         assert_eq!(digest.entries.len(), 2);
         assert_eq!(digest.entries[0].depth, 0);
         assert_eq!(digest.entries[1].depth, 1);
@@ -407,9 +412,18 @@ mod tests {
     #[test]
     fn digest_truncates_entries() {
         let elements: Vec<UiElement> = (0..10)
-            .map(|i| make_element(&format!("e{i}"), "button", Some(&format!("Btn {i}")), vec![]))
+            .map(|i| {
+                make_element(
+                    &format!("e{i}"),
+                    "button",
+                    Some(&format!("Btn {i}")),
+                    vec![],
+                )
+            })
             .collect();
-        let root_ids: Vec<&str> = (0..10).map(|i| &*Box::leak(format!("e{i}").into_boxed_str())).collect();
+        let root_ids: Vec<&str> = (0..10)
+            .map(|i| &*Box::leak(format!("e{i}").into_boxed_str()))
+            .collect();
         let snapshot = make_snapshot(elements, root_ids);
 
         let opts = DigestOptions {

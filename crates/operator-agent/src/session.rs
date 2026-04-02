@@ -222,7 +222,6 @@ impl VisualObservationSummary {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoopHistoryItem {
     pub turn_index: u32,
