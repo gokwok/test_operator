@@ -56,13 +56,16 @@
 当前代码中的关键事实：
 
 - compile 的事实输入应该来自 persisted session transcript，而不是 `ModelContextBuffer`
+- 当前 replayable transcript schema 与 loader 物理上归属 `operator-agent::journal`
 - 当前 `Locator::SnapshotElement` / `Snapshot*Coords` 绑定历史 `snapshot`
 - selector locator 是否暴露给 planner，依赖当前 session 是否有 usable element observation
+- 当前 agent 默认 `include_elements = false`；compile-friendly recording profile 必须显式开启
 - runtime action 执行链已经统一，不需要再发明一套新执行协议
+- 当前 `CLI_DESIGN.md` / `docs/COMMAND.md` 尚未纳入 `operator task`；本设计落地时必须同步两份 CLI authority 文档
 
 ## 3. 设计目标
 
-- 为 Operator 增加一个稳定的 `task` northbound shell surface
+- 定义 `task` feature line 的 northbound shell surface，并要求落地时与 CLI authority 文档同步
 - 让 task 执行期完全脱离 LLM，降低成本、波动和延迟
 - 让 agent 成功 run 可以沉淀为可复用资产，而不是一次性 transcript
 - 保持与现有 `operator-runtime` / `ToolRegistry` / `SessionStore` 的边界一致
@@ -135,15 +138,17 @@ Anchor 是 task 级别的跨会话元素定位描述，不直接引用历史 `sn
 
 ### 5.8 Step Output Binding
 
-Step 执行后，runner 会将 tool result 存入一个 step-scoped binding map。后续 step 可以通过 `${steps.<step_id>.<path>}` 语法引用前序 step 的输出。
+Step 执行后，runner 会将 tool result 存入一个 step-scoped binding map。后续 step 可以通过 `${steps.<step_id>.result.<leaf_path>}` 语法引用前序 step 的输出。
 
 引用规则：
 
-- `${steps.<step_id>.result}` — 整个 tool result JSON
-- `${steps.<step_id>.result.<json_path>}` — JSON 内部字段，使用点号分隔的简单路径
+- 第一阶段只支持 `${steps.<step_id>.result.<leaf_path>}`
+- `<leaf_path>` 使用点号分隔的简单路径
+- 路径必须落到标量叶节点（string / number / bool）
+- 不支持 `${steps.<step_id>.result}` 整个对象绑定
+- 不支持引用数组或对象
 - 只允许引用已执行的前序 step，不允许前向引用
-- 引用未执行或不存在的 step 视为 `parameter_error`
-- 第一阶段只支持标量叶节点引用（string / number / bool），不支持引用数组或对象
+- 引用未执行、路径不存在或值不是标量，统一视为 `parameter_error`
 
 ## 6. 数据面与控制面
 
@@ -249,9 +254,9 @@ persisted sessions
 - task store
 - task runner
 - anchor resolver
-- scaffold heuristics / compile IR
 - certify
-- run / compile / certify reports
+- run / certify reports
+- task 侧共享 authoring types，例如 `CompileIr` / `TaskPatch` / `TaskRunReport`
 
 建议结构：
 
@@ -263,27 +268,30 @@ crates/operator-task/
     schema.rs
     store.rs
     runner.rs
+    bind.rs
     anchor.rs
-    scaffold.rs
     compile_ir.rs
     certify.rs
     report.rs
 ```
 
-同时定义一个**逻辑上的** compile subsystem：
+同时定义一个**逻辑上的** task authoring subsystem：
 
-- `TaskCompiler`
-- `TaskRepair`
+- deterministic scaffold
+- optional LLM-assisted compile
+- patch-based repair
 
-为了避免 runtime 反向依赖模型，建议采用以下物理布局：
+为了避免 runtime 反向依赖模型，同时尊重当前 transcript ownership，建议采用以下物理布局：
 
 1. `operator-task`
    - 不依赖模型/provider
-   - 提供 manifest、IR、runner、certify
+   - 提供 manifest、shared IR types、runner、store、certify、report
 2. `operator-agent`
-   - 增加 `task_compile` 模块
-   - 复用现有 `ModelRegistry` / `ResolvedModel`
-   - 输入 `CompileIR`，输出 `TaskManifestDraft` 或 `TaskPatch`
+   - 增加 `task_authoring` 模块
+   - 复用现有 persisted transcript loader 与 `ModelRegistry` / `ResolvedModel`
+   - 负责 deterministic scaffold extraction
+   - 负责 optional LLM compile / repair pass
+   - 输入 persisted agent transcript + `CompileIr`，输出 `TaskManifestDraft` 或 `TaskPatch`
 
 这样可以保持依赖方向：
 
@@ -300,14 +308,15 @@ operator-task
 operator-agent
   ├── depends on operator-core
   ├── depends on operator-runtime
-  └── may depend on operator-task (for compile IR / manifest draft types)
+  └── may depend on operator-task (for manifest / CompileIr / TaskPatch / reports)
 ```
 
 关键点：
 
 - `operator-runtime` 不依赖 `operator-task`
 - `operator-runtime` 不依赖模型/provider
-- task 不是 entry 层，而是可被 CLI 和 compile path 复用的领域库
+- task runner / store 属于可复用领域库，authoring control plane 当前物理上归属 `operator-agent`
+- 如果未来要把 transcript schema 下沉为跨入口共享抽象，应作为单独 issue 处理，不在本设计第一阶段顺手扩展
 
 ## 8. 存储设计
 
@@ -409,8 +418,12 @@ args = { keys = ["Meta", "N"] }
 id = "focus_title"
 tool = "click"
 kind = "action"
-anchor = "title_field"
+args = {}
 verifications = ["Focus"]
+
+[[steps.anchor_bindings]]
+arg_path = "locator"
+anchor = "title_field"
 
 [[steps]]
 id = "type_title"
@@ -422,6 +435,10 @@ args = { text = "${title}", clear_before = true }
 id = "focus_body"
 tool = "click"
 kind = "action"
+args = {}
+
+[[steps.anchor_bindings]]
+arg_path = "locator"
 anchor = "body_area"
 
 [[steps]]
@@ -519,7 +536,7 @@ pub enum AnchorFallback {
 
 ## 9.4 Task Step
 
-Task step 本质上是“对现有 runtime tool 的封装调用”，而不是另一套动作协议。
+对 `Observe` / `Action` 而言，task step 本质上是“对现有 runtime tool 的封装调用”；`Assert` 是 runner 内建 pseudo-step，不直接调用平台。
 
 建议字段：
 
@@ -527,11 +544,12 @@ Task step 本质上是“对现有 runtime tool 的封装调用”，而不是�
 pub struct TaskStep {
     pub id: String,
     pub kind: StepKind,
-    pub tool: String,
+    pub tool: Option<String>,
     pub args: serde_json::Value,
-    pub anchor: Option<String>,
+    pub anchor_bindings: Vec<AnchorBinding>,
     pub guard: Option<StepGuard>,
     pub retry: Option<RetryPolicy>,
+    pub verifications: Vec<ActionVerification>,
     pub postconditions: Vec<PostCondition>,
     pub on_failure: OnFailure,
 }
@@ -540,6 +558,13 @@ pub enum StepKind {
     Observe,
     Action,
     Assert,
+}
+
+pub struct AnchorBinding {
+    /// 要把哪个 tool 参数位置替换成 fresh locator，例如 `locator` / `from` / `to`
+    pub arg_path: String,
+    /// 使用哪个 task-level anchor 做重绑定
+    pub anchor: String,
 }
 
 pub struct StepGuard {
@@ -590,8 +615,13 @@ TOML 表示示例：
 id = "focus_title"
 tool = "click"
 kind = "action"
-anchor = "title_field"
+args = {}
 on_failure = "fail"
+verifications = ["Focus"]
+
+[[steps.anchor_bindings]]
+arg_path = "locator"
+anchor = "title_field"
 
 [steps.guard]
 app_frontmost = "Notes"
@@ -609,7 +639,12 @@ anchor = "title_field"
 
 约束：
 
+- `Observe` / `Action` step 必须设置 `tool`；`Assert` step 必须省略 `tool`
 - `tool` 名直接复用 runtime tool 名
+- `args` 直接复用对应 runtime tool 的输入形状，但不写入 `target` / `session_id` / `timeout_ms` 这类 exec context 字段
+- `anchor_bindings.arg_path` 指向一个 locator 槽位，例如 `locator` / `from` / `to`
+- `target_selector` / `focus_policy` / 其他非 locator 的 tool-specific 参数，继续显式放在 `args`
+- `verifications` 直接复用现有 `ActionVerification` 枚举，只对 action step 生效
 - step 级参数替换只允许引用 task params（`${param_name}`）或前序 step 输出（`${steps.<step_id>.result.<path>}`）
 - side-effect step 默认要求 fresh observe discipline
 - `on_failure` 默认为 `Fail`
@@ -722,11 +757,13 @@ report 建议记录：
 
 - task name / version
 - run target
+- linked session id
 - case 列表
 - repeats / passes / failures
 - 失败 session id
 - 失败 step id
 - 失败分类
+- step 级摘要与关键 observation / artifact 引用
 - 总结结论
 
 ## 10. Task Runner 设计
@@ -797,9 +834,15 @@ Task runner 应继承 agent 当前的“副作用后 refresh visual state”纪�
 
 ## 10.5 Session 与审计
 
-Task run 继续写入共享 `SessionStore`，不发明新的 audit store。
+Task run 继续写入共享 `SessionStore`，不发明新的 audit store；但共享 session 的角色是**统一审计轨迹**，不是 task 控制面的主证据格式。
 
-第一阶段可复用现有 session 事件模型：
+第一阶段职责划分：
+
+- agent-origin scaffold / compile：以 `operator-agent` 的 persisted session transcript 为权威输入
+- task-origin repair / certify：以 task run report 为权威输入，`session_id` / artifacts / snapshots 作为辅助审计证据
+- 共享 `SessionStore`：提供统一 session 检索与人工排障，不承载 task-specific repair semantics
+
+Task run 仍可复用现有 session 事件模型：
 
 - `UserInput`
   - 记录 task name 和绑定参数摘要
@@ -808,7 +851,7 @@ Task run 继续写入共享 `SessionStore`，不发明新的 audit store。
 - `Completed`
 - `Error`
 
-第一阶段不要求新增 task 专属 `SessionEvent` 变体。
+第一阶段不要求新增 task 专属 `SessionEvent` 变体；如果未来要让 task run 被现有 agent replay loader 原样消费，应先把 replay payload schema 下沉为共享抽象，再做统一。
 
 ## 10.6 错误分类
 
@@ -839,6 +882,11 @@ runner 需要把失败原因结构化分类，至少包括：
 - 保留副作用后的 auto-observe
 - session 持久化必须完整
 
+补充事实：
+
+- 当前 `AgentConfig` 默认 `include_elements = false`
+- 因此 compile-friendly recording profile 必须显式传入 `--include-elements` 或等效配置
+
 原因：
 
 - 没有 elements 的 transcript 更容易退化成坐标脚本
@@ -846,7 +894,15 @@ runner 需要把失败原因结构化分类，至少包括：
 
 ## 11.2 Scaffold
 
-`task scaffold` 不依赖 LLM，只做 deterministic 提取：
+`task scaffold` 不依赖 LLM，只做 deterministic 提取。
+
+物理归属建议：
+
+- 第一阶段将 scaffold 放在 `operator-agent::task_authoring`
+- 原因是当前 persisted transcript schema / loader 归属 `operator-agent`
+- scaffold 输出的 `CompileIr` / draft manifest 类型仍由 `operator-task` 提供
+
+执行内容：
 
 - 读取 persisted session transcript
 - 提取成功路径上的 `ToolCall` + `ToolResult`
@@ -864,7 +920,7 @@ scaffold 的目标不是完美，而是把人工固化工作从”从零写 mani
 1. **session 必须为 `Completed` 状态**：`Failed`/`Interrupted` session 不适合 scaffold
 2. **反向标记法**：从最后一个 `ToolCall`/`ToolResult` 对开始，反向遍历 transcript
 3. **失败 tool call 识别**：
-   - `ToolResult.output` 包含 `”error”` 顶层字段 → 标记为失败
+   - `ReplayableTranscriptEvent::ToolResult.result.is_error == true` → 标记为失败
    - 同一个 tool + 相似 input 连续出现多次，只保留最后一次成功的 → 前面的视为重试噪音
 4. **噪音 observe 识别**：
    - 两个相邻 observe 之间没有 action step → 删除前一个
@@ -894,12 +950,13 @@ compile 输入必须来自 persisted session，而不是 planner 的 model-facin
 
 ## 11.4 Repair
 
-`task repair` 基于失败 session 做局部修复。
+`task repair` 基于失败运行证据做局部修复。
 
 输入：
 
 - 现有 task manifest
-- 失败 run session
+- 失败 task run report
+- 关联 `session_id`
 - 失败 step / 错误分类
 - 前后 observation / artifacts
 
@@ -909,6 +966,8 @@ compile 输入必须来自 persisted session，而不是 planner 的 model-facin
 - 新的 draft manifest
 - repair report
 
+CLI 入口可以继续使用 `--session <failed-session-id>`，但底层应先按 `session_id` 解析到对应的 task run report，再进入 repair 流程。
+
 repair 原则：
 
 - 只允许改动局部：
@@ -916,6 +975,7 @@ repair 原则：
   - guard
   - retry policy
   - postcondition
+- 共享 session 作为辅助证据，不作为 repair 的唯一结构化输入
 - 不默认重写整份 task
 - repair 后必须重新 certify
 
@@ -933,9 +993,19 @@ manifest 需要记录 provenance：
 
 ## 12. CLI / UX 设计
 
-## 12.1 根命令分组
+## 12.1 与当前 CLI authority 的关系
 
-建议把 `task` 放在 `AI` 分组，与 `agent` 并列：
+本节定义的是 **task feature line 的命令提案**，不单独覆写当前根 help authority。
+
+约束：
+
+- 当前根 help / 分组 / help 文案仍以 `CLI_DESIGN.md` 与 `docs/COMMAND.md` 为准
+- 第一次把 `operator task` 落地到 northbound shell surface 时，必须在同一 issue 中同步更新两份 CLI authority 文档
+- 在完成同步之前，本节只能视为 task feature 自身的命令设计，不视为已经生效的稳定 CLI 契约
+
+推荐集成方式：
+
+- 把 `task` 放在 `AI` 分组，与 `agent` 并列
 
 ```text
 AI
@@ -943,15 +1013,15 @@ AI
   task    Run and manage parameterized automation tasks
 ```
 
-原因：
+这样做的原因：
 
 - task 的来源通常是 agent transcript
 - compile / repair 需要模型
 - 对用户心智来说，`agent` 是一次性探索，`task` 是沉淀后的复用资产
 
-## 12.2 稳定命令树
+## 12.2 建议命令树
 
-建议第一阶段 northbound shell surface：
+建议 task feature line 第一阶段 northbound shell surface：
 
 ```text
 operator task
@@ -1103,12 +1173,14 @@ Task manifest 使用单调递增整数版本号：
 
 ### 13.2 并发控制
 
-Task 操作 GUI 桌面，天然不支持并行：
+Task 操作 GUI 桌面，天然不适合同一 target 并行执行：
 
-- 同一时刻只允许一个 `task run` 实例持有 GUI 执行权
-- 使用文件锁 `~/.operator/tasks/.run.lock` 实现互斥
-- 获取锁失败时立即报错 `concurrent_run_denied`，不排队等待
-- `task certify` 的多 case 执行串行运行，共享同一把锁
+- 锁粒度应与 resolved target 对齐，而不是全局 operator home
+- 同一时刻只允许一个 `task run` 实例持有某个 target 的 GUI 执行权
+- 建议使用文件锁 `~/.operator/tasks/.locks/<target>.run.lock` 实现 per-target 互斥
+- 同一 target 获取锁失败时立即报错 `concurrent_run_denied`，不排队等待
+- 不同 target 的 task run 允许并发，保持与当前 runtime / MCP 的 target 级串行原则一致
+- `task certify` 对同一 target 的多 case 串行运行，共享该 target 的锁
 - scaffold / compile / repair 不操作 GUI，不受此锁限制
 
 ## 14. 高成功率设计原则
@@ -1233,7 +1305,7 @@ CLI 不直接实现 task 核心逻辑。
 
 ## 18. 示例用户路径
 
-### 17.1 先录制再固化
+### 18.1 先录制再固化
 
 ```bash
 operator agent "新建一个备忘录，标题是 周会纪要，内容是 1. 项目进展" \
@@ -1246,7 +1318,7 @@ operator task run notes.create \
   --set-file content=./body.md
 ```
 
-### 17.2 直接 compile
+### 18.2 直接 compile
 
 ```bash
 operator task compile \
@@ -1255,13 +1327,13 @@ operator task compile \
   --model openai
 ```
 
-### 17.3 certify
+### 18.3 certify
 
 ```bash
 operator task certify notes.create --case ~/.operator/tasks/notes.create/cases/smoke.toml
 ```
 
-### 17.4 repair
+### 18.4 repair
 
 ```bash
 operator task repair notes.create \
@@ -1273,7 +1345,7 @@ operator task repair notes.create \
 
 Task 特性的核心不是“回放 agent”，而是：
 
-- 以 persisted session 为事实输入
+- 以 persisted agent session transcript / task run report 为事实输入
 - 以 manifest 为权威资产
 - 以 deterministic runner 为执行底座
 - 以 scaffold / compile / repair / certify 为控制面生命周期
