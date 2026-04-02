@@ -1256,6 +1256,7 @@ impl WorkerState {
                     ))
                 }),
             Locator::SnapshotElement { .. }
+            | Locator::SnapshotText { .. }
             | Locator::SnapshotPixelCoords { .. }
             | Locator::SnapshotCoords { .. }
             | Locator::SnapshotNormalizedCoords { .. } => Err(OperatorError::Platform(
@@ -1724,6 +1725,7 @@ impl HarmonyHdcUiSession for RealHarmonyHdcUiSession {
                     hdc_platform_error("failed to resolve Harmony role locator", error)
                 }),
             Locator::SnapshotElement { .. }
+            | Locator::SnapshotText { .. }
             | Locator::SnapshotPixelCoords { .. }
             | Locator::SnapshotCoords { .. }
             | Locator::SnapshotNormalizedCoords { .. } => Err(OperatorError::Platform(
