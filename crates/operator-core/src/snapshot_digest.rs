@@ -23,6 +23,12 @@ pub struct ElementDigest {
 /// One entry in an [`ElementDigest`], corresponding to a single UI element.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ElementDigestEntry {
+    /// Short sequential display ID (e.g. `"e1"`, `"e2"`).  Use this to
+    /// reference the element in actions; resolve it back to the underlying
+    /// platform ID via [`ElementDigest::resolve_id`].
+    pub display_id: String,
+    /// Internal platform element ID (ax-path or equivalent).  Not shown in
+    /// rendered output; use [`ElementDigest::resolve_id`] to look it up.
     pub element_id: String,
     pub role: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -71,8 +77,17 @@ impl ElementDigest {
         }
 
         let mut entries = Vec::new();
+        let mut counter = 0usize;
         for root_id in &snapshot.root_ids {
-            collect_entries(snapshot, root_id, 0, None, opts.max_label_len, &mut entries);
+            collect_entries(
+                snapshot,
+                root_id,
+                0,
+                None,
+                opts.max_label_len,
+                &mut entries,
+                &mut counter,
+            );
         }
         if entries.is_empty() {
             return None;
@@ -85,6 +100,15 @@ impl ElementDigest {
             truncated_count,
         })
     }
+
+    /// Resolve a short display ID (e.g. `"e5"`) back to the underlying
+    /// platform element ID (e.g. `"ax-0-1-2"`).
+    pub fn resolve_id(&self, display_id: &str) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|e| e.display_id == display_id)
+            .map(|e| e.element_id.as_str())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +118,7 @@ impl ElementDigest {
 impl ElementDigestEntry {
     /// Render this entry as a single indented line.
     ///
-    /// Example: `  - [el-btn] button label="OK" bounds=(10,20,80,30)`
+    /// Example: `  - [e3] button label="OK" bounds=(10,20,80,30)`
     pub fn render_line(&self) -> String {
         let mut fields = Vec::new();
         if let Some(label) = self.label.as_deref() {
@@ -103,8 +127,10 @@ impl ElementDigestEntry {
         if let Some(value) = self.value.as_deref() {
             fields.push(format!("value={}", quoted(value)));
         }
-        if let Some(enabled) = self.enabled {
-            fields.push(format!("enabled={enabled}"));
+        // Only emit `enabled` when the element is disabled; enabled is the
+        // expected default and adds noise when shown unconditionally.
+        if self.enabled == Some(false) {
+            fields.push("enabled=false".to_string());
         }
         if let Some(bounds) = self.bounds {
             fields.push(format!("bounds={}", format_rect(bounds)));
@@ -118,7 +144,7 @@ impl ElementDigestEntry {
         format!(
             "{}- [{}] {}{}",
             "  ".repeat(self.depth),
-            self.element_id,
+            self.display_id,
             self.role,
             suffix
         )
@@ -175,6 +201,7 @@ fn collect_entries(
     parent_label: Option<&str>,
     max_label_len: usize,
     out: &mut Vec<ElementDigestEntry>,
+    counter: &mut usize,
 ) {
     let Some(element) = snapshot.elements.get(element_id) else {
         return;
@@ -197,26 +224,30 @@ fn collect_entries(
         }
     }
 
-    // 3. Collapse single-child passthrough groups: if this element is a group
-    //    with exactly one child and adds no new label/value, skip it and let
-    //    the child inherit this depth.
-    let dominated = element.role == "group"
-        && element.children.len() == 1
-        && element.label.is_none()
-        && element.value.is_none();
-    if dominated {
-        collect_entries(
-            snapshot,
-            &element.children[0],
-            depth,
-            parent_label,
-            max_label_len,
-            out,
-        );
+    // 3. Skip decorative-named groups: groups whose label names a visual
+    //    styling layer (background, blur, shadow, overlay, gradient, color).
+    //    These are never interactive and carry no semantic information for an
+    //    agent.  Drop the entire subtree.
+    if element.role == "group" {
+        if let Some(label) = element.label.as_deref() {
+            if is_decorative_label(label) {
+                return;
+            }
+        }
+    }
+
+    // 4. Collapse unlabeled passthrough groups: if this element is a group
+    //    with no label/value it adds no semantic information — skip it and
+    //    promote its children to the same depth.  This handles both the
+    //    single-child and multi-child cases.
+    if element.role == "group" && element.label.is_none() && element.value.is_none() {
+        for child_id in &element.children {
+            collect_entries(snapshot, child_id, depth, parent_label, max_label_len, out, counter);
+        }
         return;
     }
 
-    // 4. Collapse parent–child duplicate labels: if a group's label is
+    // 5. Collapse parent–child duplicate labels: if a group's label is
     //    identical to its single child's label, skip the group.
     if element.role == "group" && element.children.len() == 1 {
         if let Some(my_label) = element.label.as_deref() {
@@ -229,6 +260,7 @@ fn collect_entries(
                         parent_label,
                         max_label_len,
                         out,
+                        counter,
                     );
                     return;
                 }
@@ -238,10 +270,11 @@ fn collect_entries(
 
     // --- Emit this element if it carries useful information ---
     let emit = is_digest_worthy(element);
-    let effective_depth = depth;
 
     if emit {
+        *counter += 1;
         out.push(ElementDigestEntry {
+            display_id: format!("e{counter}"),
             element_id: element.id.to_string(),
             role: element.role.clone(),
             label: truncate_option(element.label.as_deref(), max_label_len),
@@ -252,7 +285,7 @@ fn collect_entries(
         });
     }
 
-    // 5. Skip subtrees of labelled interactive elements — the parent already
+    // 6. Skip subtrees of labelled interactive elements — the parent already
     //    carries all the information an agent needs to act on it.
     let dominated_interactive =
         emit && element.label.is_some() && is_interactive_role(&element.role);
@@ -261,11 +294,7 @@ fn collect_entries(
     }
 
     let my_label = element.label.as_deref();
-    let child_depth = if emit {
-        effective_depth + 1
-    } else {
-        effective_depth
-    };
+    let child_depth = if emit { depth + 1 } else { depth };
     for child_id in &element.children {
         collect_entries(
             snapshot,
@@ -274,6 +303,7 @@ fn collect_entries(
             my_label,
             max_label_len,
             out,
+            counter,
         );
     }
 }
@@ -290,6 +320,20 @@ fn is_interactive_role(role: &str) -> bool {
         role,
         "button" | "textbox" | "checkbox" | "switch" | "slider" | "link" | "menuitem"
     )
+}
+
+/// Returns `true` when a group label names a purely visual / styling layer
+/// (e.g. `"title card background color"`, `"hero blur"`, `"card shadow"`).
+/// Such groups contain no interactive elements and should be dropped entirely.
+fn is_decorative_label(label: &str) -> bool {
+    let lower = label.to_lowercase();
+    lower.contains("background")
+        || lower.contains("blur")
+        || lower.contains("shadow")
+        || lower.contains("overlay")
+        || lower.contains("gradient")
+        || lower.ends_with(" color")
+        || lower.ends_with("_color")
 }
 
 fn truncate_option(value: Option<&str>, limit: usize) -> Option<String> {
@@ -404,9 +448,15 @@ mod tests {
         assert_eq!(digest.entries[0].depth, 0);
         assert_eq!(digest.entries[1].depth, 1);
 
+        // display_ids are short sequential IDs; element_ids retain the originals
+        assert_eq!(digest.entries[0].display_id, "e1");
+        assert_eq!(digest.entries[0].element_id, "root");
+        assert_eq!(digest.entries[1].display_id, "e2");
+        assert_eq!(digest.entries[1].element_id, "btn");
+
         let rendered = digest.render();
-        assert!(rendered.contains("- [root] window"));
-        assert!(rendered.contains("  - [btn] button"));
+        assert!(rendered.contains("- [e1] window"));
+        assert!(rendered.contains("  - [e2] button"));
     }
 
     #[test]
@@ -444,7 +494,7 @@ mod tests {
         );
         let text = snapshot.render_element_tree(&DigestOptions::default());
         assert!(text.starts_with("snapshot snap-1 (harmony-pc)"));
-        assert!(text.contains("[btn] button label=\"OK\""));
+        assert!(text.contains("[e1] button label=\"OK\""));
     }
 
     #[test]
