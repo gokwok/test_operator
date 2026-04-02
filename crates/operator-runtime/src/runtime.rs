@@ -5,9 +5,10 @@ use std::{
 };
 
 use operator_core::{
-    Action, ActionOutcome, ActionRequest, ActionVerification, Capability, ExecContext, FocusInfo,
-    ImageSizePx, Locator, ObserveRequest, ObserveResult, OperatorError, PlatformDriver, Point,
-    QueryRequest, QueryResult, TargetDescriptor, TargetId, WindowInfo,
+    Action, ActionOutcome, ActionRequest, ActionVerification, Capability, DigestOptions,
+    ElementDigest, ExecContext, FocusInfo, ImageSizePx, Locator, ObserveRequest, ObserveResult,
+    OperatorError, PlatformDriver, Point, QueryRequest, QueryResult, TargetDescriptor, TargetId,
+    WindowInfo,
 };
 use tokio::time;
 
@@ -699,6 +700,27 @@ impl RuntimeCore {
             .get(snapshot)
             .await?
             .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))?;
+
+        // Resolve display IDs (e.g. "e37") to native platform IDs (ax-paths).
+        // Display IDs are assigned by ElementDigest and are not stored in the
+        // snapshot's element map, so we rebuild the digest on demand to look
+        // them up.
+        let resolved_id: operator_core::ElementId;
+        let element = if snapshot_record.elements.contains_key(element) {
+            element
+        } else if let Some(native_id) = ElementDigest::from_snapshot(
+            &snapshot_record,
+            &DigestOptions::default(),
+        )
+        .as_ref()
+        .and_then(|d| d.resolve_id(element.as_str()))
+        {
+            resolved_id = native_id.into();
+            &resolved_id
+        } else {
+            return Err(OperatorError::ElementNotFound(element.clone()));
+        };
+
         let element_record = snapshot_record
             .elements
             .get(element)
