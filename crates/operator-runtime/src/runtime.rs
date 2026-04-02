@@ -7,8 +7,8 @@ use std::{
 use operator_core::{
     Action, ActionOutcome, ActionRequest, ActionVerification, Capability, DigestOptions,
     ElementDigest, ExecContext, FocusInfo, ImageSizePx, Locator, ObserveRequest, ObserveResult,
-    OperatorError, PlatformDriver, Point, QueryRequest, QueryResult, SnapshotId, TargetDescriptor,
-    TargetId, WindowInfo,
+    OperatorError, PlatformDriver, Point, QueryRequest, QueryResult, SnapshotId, Surface,
+    SurfaceKind, TargetDescriptor, TargetId, WindowInfo,
 };
 use tokio::time;
 
@@ -711,19 +711,39 @@ impl RuntimeCore {
     }
 
     /// Resolve the `"latest"` sentinel snapshot ID to the most recent snapshot
-    /// for the given target, or return the ID unchanged if it is already concrete.
+    /// for the given target.  If no snapshot exists yet, automatically runs a
+    /// frontmost observe so there is always something to work with.  Returns
+    /// the ID unchanged when it is already a concrete snapshot ID.
     async fn resolve_snapshot_id(
         &self,
         snapshot: &SnapshotId,
         target: &TargetId,
     ) -> Result<SnapshotId, OperatorError> {
         if snapshot.0 == "latest" {
-            self.snapshots
-                .list(target)
-                .await?
-                .into_iter()
-                .last()
-                .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))
+            let ids = self.snapshots.list(target).await?;
+            if let Some(id) = ids.into_iter().last() {
+                return Ok(id);
+            }
+            // No snapshot on record — capture one automatically so the caller
+            // never has to think about bootstrapping.
+            let ctx = ExecContext {
+                target: target.clone(),
+                session: None,
+                timeout_ms: None,
+            };
+            let result = self
+                .observe(
+                    ObserveRequest {
+                        surface: Surface {
+                            kind: SurfaceKind::Frontmost,
+                        },
+                        include_screenshot: false,
+                        include_elements: true,
+                    },
+                    ctx,
+                )
+                .await?;
+            Ok(result.snapshot.id)
         } else {
             Ok(snapshot.clone())
         }
