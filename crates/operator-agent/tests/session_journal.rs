@@ -144,7 +144,7 @@ async fn session_journal_flushes_buffered_events_on_fail_fast_exit() {
         .expect("session events should be readable after fail-fast flush");
     assert_eq!(
         events.len(),
-        3,
+        4,
         "fail-fast flush should keep buffered events"
     );
     assert!(matches!(
@@ -174,4 +174,9 @@ async fn session_journal_flushes_buffered_events_on_fail_fast_exit() {
         output["output"]["snapshot"]["image_artifact"],
         "capture-initial.png"
     );
+
+    let SessionEvent::Error { message } = &events[3] else {
+        panic!("expected the planner error to flush on fail-fast exit: {events:?}");
+    };
+    assert!(message.contains("planner model call failed"));
 }

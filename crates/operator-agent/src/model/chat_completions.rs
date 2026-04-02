@@ -5,56 +5,41 @@ use serde_json::{json, Map, Value};
 
 use super::{
     channel, AssistantMessage, CallOptions, ContentBlock, Context, DoneReason, ErrorReason,
-    Message, ModelError, ModelEvent, ModelProvider, ModelRequest, ModelStream, ModelStreamWriter,
-    ProviderKind, ReasoningLevel, ResponseFormat, StopReason, ToolResultMessage, ToolSpec, Usage,
+    HttpProviderConfig, Message, ModelError, ModelEvent, ModelProvider, ModelRequest, ModelStream,
+    ModelStreamWriter, ReasoningLevel, ResponseFormat, StopReason, ToolSpec, Usage,
 };
 
-const DEFAULT_BASE_URL: &str = "https://ark.cn-beijing.volces.com/api/v3";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DoubaoProviderConfig {
-    pub api_key: String,
-    pub base_url: String,
-}
-
-impl DoubaoProviderConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: DEFAULT_BASE_URL.to_string(),
-        }
-    }
-}
-
 #[derive(Clone)]
-pub struct DoubaoChatCompletionsProvider {
+pub struct ChatCompletionsProvider {
     client: Client,
-    config: DoubaoProviderConfig,
+    config: HttpProviderConfig,
 }
 
-impl DoubaoChatCompletionsProvider {
-    pub fn new(config: DoubaoProviderConfig) -> Result<Self, ModelError> {
+impl ChatCompletionsProvider {
+    pub fn new(config: HttpProviderConfig) -> Result<Self, ModelError> {
+        let provider = config.provider;
         let client = Client::builder()
             .build()
             .map_err(|error| ModelError::ProviderInitFailed {
-                provider: ProviderKind::OpenAiCompatible,
+                provider,
                 message: error.to_string(),
             })?;
 
         Self::with_client(config, client)
     }
 
-    pub fn with_client(config: DoubaoProviderConfig, client: Client) -> Result<Self, ModelError> {
+    pub fn with_client(config: HttpProviderConfig, client: Client) -> Result<Self, ModelError> {
         if config.api_key.trim().is_empty() {
             return Err(ModelError::ProviderInitFailed {
-                provider: ProviderKind::OpenAiCompatible,
+                provider: config.provider,
                 message: "api key must not be empty".into(),
             });
         }
-
-        let mut config = config;
         if config.base_url.trim().is_empty() {
-            config.base_url = DEFAULT_BASE_URL.to_string();
+            return Err(ModelError::ProviderInitFailed {
+                provider: config.provider,
+                message: "base_url must not be empty".into(),
+            });
         }
 
         Ok(Self { client, config })
@@ -84,14 +69,16 @@ impl DoubaoChatCompletionsProvider {
         }
 
         let payload = serde_json::from_slice::<Value>(&body).map_err(|error| {
-            ModelError::Protocol(format!("doubao response was not valid json: {error}"))
+            ModelError::Protocol(format!(
+                "chat completions response was not valid json: {error}"
+            ))
         })?;
 
         assistant_message_from_response(payload)
     }
 }
 
-impl ModelProvider for DoubaoChatCompletionsProvider {
+impl ModelProvider for ChatCompletionsProvider {
     fn stream(&self, req: ModelRequest) -> ModelStream {
         let (stream, writer) = channel(NonZeroUsize::new(16).expect("event capacity must be set"));
         let provider = self.clone();
@@ -221,12 +208,12 @@ fn request_body(context: &Context, model: &Arc<str>, options: &CallOptions) -> V
         body.insert("temperature".into(), json!(temperature));
     }
     if let Some(max_output_tokens) = options.max_output_tokens {
-        body.insert("max_tokens".into(), json!(max_output_tokens));
+        body.insert("max_completion_tokens".into(), json!(max_output_tokens));
     }
     if let Some(response_format) = options.response_format {
         body.insert(
             "response_format".into(),
-            response_format_payload(response_format),
+            json!(response_format_payload(response_format)),
         );
     }
 
@@ -235,17 +222,17 @@ fn request_body(context: &Context, model: &Arc<str>, options: &CallOptions) -> V
 
 fn messages(context: &Context) -> Vec<Value> {
     let mut messages = Vec::new();
-    if let Some(instructions) = instructions(context.system.as_deref(), &context.tools) {
+    if let Some(system) = system_message(context.system.as_deref(), &context.tools) {
         messages.push(json!({
             "role": "system",
-            "content": instructions,
+            "content": system,
         }));
     }
     messages.extend(context.messages.iter().map(message_input));
     messages
 }
 
-fn instructions(system: Option<&str>, tools: &[ToolSpec]) -> Option<String> {
+fn system_message(system: Option<&str>, tools: &[ToolSpec]) -> Option<String> {
     let mut parts = Vec::new();
     if let Some(system) = system {
         let system = system.trim();
@@ -260,7 +247,6 @@ fn instructions(system: Option<&str>, tools: &[ToolSpec]) -> Option<String> {
             "Available tools (planning reference only; do not use provider-native tool calling):\n{catalog}"
         ));
     }
-
     if parts.is_empty() {
         None
     } else {
@@ -268,57 +254,16 @@ fn instructions(system: Option<&str>, tools: &[ToolSpec]) -> Option<String> {
     }
 }
 
-fn message_input(message: &Message) -> Value {
-    match message {
-        Message::User(message) => message_with_role("user", &message.content),
-        Message::Assistant(message) => message_with_role("assistant", &message.content),
-        Message::ToolResult(ToolResultMessage { content, .. }) => {
-            message_with_role("user", content)
-        }
+fn response_format_payload(response_format: ResponseFormat) -> Value {
+    match response_format {
+        ResponseFormat::JsonObject => json!({
+            "type": "json_object",
+        }),
     }
 }
 
-fn message_with_role(role: &str, content: &[ContentBlock]) -> Value {
-    json!({
-        "role": role,
-        "content": content.iter().filter_map(input_content_item).collect::<Vec<_>>(),
-    })
-}
-
-fn input_content_item(block: &ContentBlock) -> Option<Value> {
-    match block {
-        ContentBlock::Text { text } => Some(json!({
-            "type": "text",
-            "text": text,
-        })),
-        ContentBlock::Image { mime, data_base64 } => Some(json!({
-            "type": "image_url",
-            "image_url": {
-                "url": format!("data:{mime};base64,{data_base64}"),
-            },
-        })),
-        ContentBlock::Thinking { thinking } => Some(json!({
-            "type": "text",
-            "text": thinking,
-        })),
-        ContentBlock::ToolCall {
-            id,
-            name,
-            arguments_json,
-        } => Some(json!({
-            "type": "text",
-            "text": serde_json::to_string_pretty(&json!({
-                "tool_call_id": id,
-                "tool_name": name,
-                "arguments_json": arguments_json,
-            }))
-            .expect("tool call blocks should serialize to json"),
-        })),
-    }
-}
-
-fn reasoning_effort(level: ReasoningLevel) -> &'static str {
-    match level {
+fn reasoning_effort(reasoning_level: ReasoningLevel) -> &'static str {
+    match reasoning_level {
         ReasoningLevel::Minimal => "minimal",
         ReasoningLevel::Low => "low",
         ReasoningLevel::Medium => "medium",
@@ -326,115 +271,177 @@ fn reasoning_effort(level: ReasoningLevel) -> &'static str {
     }
 }
 
-fn response_format_payload(format: ResponseFormat) -> Value {
-    match format {
-        ResponseFormat::JsonObject => json!({ "type": "json_object" }),
+fn message_input(message: &Message) -> Value {
+    match message {
+        Message::User(message) => json!({
+            "role": "user",
+            "content": message.content.iter().map(content_input).collect::<Vec<_>>(),
+        }),
+        Message::Assistant(message) => json!({
+            "role": "assistant",
+            "content": assistant_content(message.content.as_slice()),
+        }),
+        Message::ToolResult(message) => json!({
+            "role": "tool",
+            "tool_call_id": message.tool_call_id,
+            "content": tool_result_text(message.content.as_slice()),
+        }),
     }
 }
 
-fn assistant_message_from_response(response: Value) -> Result<AssistantMessage, ModelError> {
-    let choices = response
+fn content_input(block: &ContentBlock) -> Value {
+    match block {
+        ContentBlock::Text { text } => json!({
+            "type": "text",
+            "text": text,
+        }),
+        ContentBlock::Image { mime, data_base64 } => json!({
+            "type": "image_url",
+            "image_url": {
+                "url": format!("data:{mime};base64,{data_base64}")
+            },
+        }),
+        ContentBlock::Thinking { thinking } => json!({
+            "type": "text",
+            "text": thinking,
+        }),
+        ContentBlock::ToolCall {
+            id,
+            name,
+            arguments_json,
+        } => json!({
+            "type": "tool_call",
+            "id": id,
+            "function": {
+                "name": name,
+                "arguments": arguments_json,
+            },
+        }),
+    }
+}
+
+fn assistant_content(content: &[ContentBlock]) -> String {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            ContentBlock::Thinking { thinking } => Some(thinking.as_str()),
+            ContentBlock::Image { .. } | ContentBlock::ToolCall { .. } => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn tool_result_text(content: &[ContentBlock]) -> String {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(text.as_str()),
+            ContentBlock::Thinking { thinking } => Some(thinking.as_str()),
+            ContentBlock::Image { .. } | ContentBlock::ToolCall { .. } => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn assistant_message_from_response(payload: Value) -> Result<AssistantMessage, ModelError> {
+    let choice = payload
         .get("choices")
         .and_then(Value::as_array)
-        .ok_or_else(|| ModelError::Protocol("doubao response missing `choices` array".into()))?;
+        .and_then(|choices| choices.first())
+        .ok_or_else(|| {
+            ModelError::Protocol("chat completions response missing `choices[0]`".into())
+        })?;
+    let message = choice.get("message").ok_or_else(|| {
+        ModelError::Protocol("chat completions response missing assistant message".into())
+    })?;
+    let content = message
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ModelError::Protocol("chat completions response missing assistant `content`".into())
+        })?;
 
-    let choice = choices
-        .first()
-        .ok_or_else(|| ModelError::Protocol("doubao response did not include a choice".into()))?;
-    let message = choice
-        .get("message")
-        .and_then(Value::as_object)
-        .ok_or_else(|| ModelError::Protocol("doubao response missing choice `message`".into()))?;
-
-    let mut content = Vec::new();
-    if let Some(reasoning) = message.get("reasoning_content").and_then(Value::as_str) {
-        if !reasoning.trim().is_empty() {
-            content.push(ContentBlock::Thinking {
-                thinking: reasoning.to_string(),
+    let mut blocks = Vec::new();
+    if let Some(thinking) = message.get("reasoning_content").and_then(Value::as_str) {
+        if !thinking.is_empty() {
+            blocks.push(ContentBlock::Thinking {
+                thinking: thinking.to_string(),
             });
         }
     }
-    append_message_blocks(&mut content, message.get("content"));
+    if !content.is_empty() {
+        blocks.push(ContentBlock::Text {
+            text: content.to_string(),
+        });
+    }
 
-    if !content
-        .iter()
-        .any(|block| matches!(block, ContentBlock::Text { .. }))
-    {
+    if blocks.is_empty() {
         return Err(ModelError::Protocol(
-            "doubao response missing assistant text content".into(),
+            "chat completions response missing assistant content".into(),
         ));
     }
 
     Ok(AssistantMessage {
-        content,
-        usage: usage_from_response(&response),
-        stop: stop_reason_from_response(choice),
+        content: blocks,
+        usage: usage_from_chat_payload(&payload),
+        stop: stop_reason_from_choice(choice),
         error_message: None,
-        timestamp_ms: timestamp_ms(),
+        timestamp_ms: SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
     })
 }
 
-fn append_message_blocks(content: &mut Vec<ContentBlock>, value: Option<&Value>) {
-    let Some(value) = value else {
-        return;
-    };
-
-    match value {
-        Value::String(text) => {
-            content.push(ContentBlock::Text { text: text.clone() });
-        }
-        Value::Array(blocks) => {
-            for block in blocks {
-                match block {
-                    Value::String(text) => content.push(ContentBlock::Text { text: text.clone() }),
-                    Value::Object(object) => {
-                        let block_type = object.get("type").and_then(Value::as_str);
-                        let text = object.get("text").and_then(Value::as_str);
-                        if matches!(block_type, Some("text") | Some("output_text")) {
-                            if let Some(text) = text {
-                                content.push(ContentBlock::Text {
-                                    text: text.to_string(),
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-fn usage_from_response(response: &Value) -> Usage {
-    let Some(usage) = response.get("usage").and_then(Value::as_object) else {
-        return Usage::default();
-    };
-
+fn usage_from_chat_payload(payload: &Value) -> Usage {
+    let usage = payload.get("usage");
     Usage {
         input_tokens: usage
-            .get("prompt_tokens")
+            .and_then(|usage| usage.get("prompt_tokens"))
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
         output_tokens: usage
-            .get("completion_tokens")
+            .and_then(|usage| usage.get("completion_tokens"))
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
         total_tokens: usage
-            .get("total_tokens")
+            .and_then(|usage| usage.get("total_tokens"))
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
         cost: None,
     }
 }
 
-fn stop_reason_from_response(choice: &Value) -> StopReason {
+fn stop_reason_from_choice(choice: &Value) -> StopReason {
     match choice.get("finish_reason").and_then(Value::as_str) {
+        Some("stop") => StopReason::Stop,
         Some("length") => StopReason::Length,
-        Some("tool_calls") | Some("tool_use") => StopReason::ToolUse,
+        Some("tool_calls") => StopReason::ToolUse,
         Some("content_filter") => StopReason::Error,
-        Some("stop") | None => StopReason::Stop,
         _ => StopReason::Stop,
+    }
+}
+
+fn done_reason(reason: StopReason) -> DoneReason {
+    match reason {
+        StopReason::Stop => DoneReason::Stop,
+        StopReason::Length => DoneReason::Length,
+        StopReason::ToolUse => DoneReason::ToolUse,
+        StopReason::Aborted | StopReason::Error => DoneReason::Stop,
+    }
+}
+
+fn error_reason(error: &ModelError) -> ErrorReason {
+    match error {
+        ModelError::Aborted => ErrorReason::Aborted,
+        ModelError::ModelNotFound(_)
+        | ModelError::Timeout
+        | ModelError::ProviderNotFound { .. }
+        | ModelError::ProviderInitFailed { .. }
+        | ModelError::Transport(_)
+        | ModelError::Protocol(_)
+        | ModelError::Provider(_) => ErrorReason::Error,
     }
 }
 
@@ -448,47 +455,6 @@ fn request_error(error: reqwest::Error) -> ModelError {
 
 fn http_error(status: u16, body: &[u8]) -> ModelError {
     let parsed = serde_json::from_slice::<Value>(body)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("error")
-                .and_then(Value::as_object)
-                .and_then(|error| error.get("message"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| String::from_utf8_lossy(body).trim().to_string());
-
-    ModelError::Provider(format!(
-        "doubao chat completions api returned {status}: {parsed}"
-    ))
-}
-
-fn done_reason(stop: StopReason) -> DoneReason {
-    match stop {
-        StopReason::Stop => DoneReason::Stop,
-        StopReason::Length => DoneReason::Length,
-        StopReason::ToolUse => DoneReason::ToolUse,
-        StopReason::Aborted | StopReason::Error => DoneReason::Stop,
-    }
-}
-
-fn error_reason(error: &ModelError) -> ErrorReason {
-    match error {
-        ModelError::Aborted => ErrorReason::Aborted,
-        ModelError::Timeout
-        | ModelError::ModelNotFound(_)
-        | ModelError::ProviderNotFound { .. }
-        | ModelError::ProviderInitFailed { .. }
-        | ModelError::Transport(_)
-        | ModelError::Protocol(_)
-        | ModelError::Provider(_) => ErrorReason::Error,
-    }
-}
-
-fn timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+        .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(body).into_owned()));
+    ModelError::Provider(format!("chat completions api returned {status}: {parsed}"))
 }

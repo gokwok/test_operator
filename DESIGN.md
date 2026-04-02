@@ -1055,11 +1055,13 @@ default = "openai"
 api_key = ""
 base_url = "https://api.openai.com/v1"
 model_name = "gpt-5.4"
+api_kind = "responses"
 
 [agent.model.provider.doubao]
 api_key = ""
 base_url = "https://ark.cn-beijing.volces.com/api/v3"
 model_name = "doubao-seed-2-0-lite-260215"
+api_kind = "chat_completions"
 ```
 
 命名 target 的标准 envelope 固定为：
@@ -1084,10 +1086,17 @@ agent model/provider 配置契约固定为：
 - selector 与 provider `model_name` 的关系固定为“northbound selector -> provider-specific model id”：
   - `openai` selector 对应 OpenAI provider，默认示例 `model_name = "gpt-5.4"`
   - `doubao` selector 对应 Doubao provider，默认示例 `model_name = "doubao-seed-2-0-lite-260215"`
-- provider entry 当前只允许三个字段：
+- provider entry 当前只允许四个字段：
   - `api_key`
   - `base_url`
   - `model_name`
+  - `api_kind`
+- `api_kind` 是 provider-specific HTTP dialect；当前支持：
+  - `responses`
+  - `chat_completions`
+- `api_kind` 缺失时，按 selector 使用默认值：
+  - `openai` -> `responses`
+  - `doubao` -> `chat_completions`
 - `model_name` 是最终发往远端 provider 的真实模型 id；selector 名称是 northbound shell contract。
 - `operator agent --model <selector>` 显式覆盖 `[agent.model].default`；未传时读取配置默认值。
 - 当 provider 字段缺失时，bootstrap/agent 解析会向环境变量回退：
@@ -1228,7 +1237,7 @@ AgentRunner
 当前实现特点：
 
 - `ModelRegistry` 支持 `openai` / `doubao` 两个 selector，并保留 CLI alias：`gpt-5.4` -> `openai`、`doubao-seed` -> `doubao`
-- provider 目前为 `OpenAiResponsesProvider` 与 `DoubaoChatCompletionsProvider`
+- provider identity 当前为 `OpenAi` 与 `Doubao`；HTTP dialect 通过 `api_kind` 选择 `responses` 或 `chat_completions`
 - planner 不依赖 provider-native tool calling；工具目录以 prompt reference + JSON schema 方式提供给模型
 - `ToolExecutor` 会根据 target `CapabilitySet` 与 `allow_side_effects` 过滤工具目录；当当前 observation 不足以支撑 selector locator 时，还会裁剪相关 schema
 - loop 热状态保留在内存中，持久化由 `SessionJournal` + `SessionStore` 承担，二者分离
@@ -1272,6 +1281,7 @@ pub struct ModelRequest {
 
 pub struct ModelConfig {
     pub provider: ProviderKind,
+    pub api_kind: ApiKind,
     pub id: ModelId,
     pub coordinate_policy: CoordinatePolicy,
     pub default_options: CallOptions,
@@ -1282,6 +1292,7 @@ pub struct ModelConfig {
 这里有两个实现相关的约束：
 
 - `Context` 支持 `Text / Image / Thinking / ToolCall / ToolResult` block，因此当前/上一轮截图会以模型原生图片输入进入 planner 与 finish gate
+- planner 的 provider-specific hint 继续绑定在真实 provider 身份上，而不是绑定在 `api_kind` 上
 - `coordinate_policy` 目前是 selector 级配置的一部分：
   - OpenAI：`SurfaceImagePixels`
   - Doubao：`SurfaceNormalized1000`

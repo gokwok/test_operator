@@ -1,5 +1,5 @@
 use operator_agent::{
-    model::{CallOptions, CoordinatePolicy, ModelConfig, ProviderKind},
+    model::{ApiKind, CallOptions, CoordinatePolicy, ModelConfig, ProviderKind},
     planner::{AgentDecision, DecisionNormalizer},
     session::AgentSessionState,
 };
@@ -9,7 +9,8 @@ use serde_json::json;
 
 fn model_config(policy: CoordinatePolicy) -> ModelConfig {
     ModelConfig {
-        provider: ProviderKind::OpenAiCompatible,
+        provider: ProviderKind::Doubao,
+        api_kind: ApiKind::ChatCompletions,
         id: "test-model".into(),
         coordinate_policy: policy,
         default_options: CallOptions::default(),

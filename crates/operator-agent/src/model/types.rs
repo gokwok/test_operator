@@ -8,12 +8,20 @@ pub type ModelId = Arc<str>;
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     OpenAi,
-    OpenAiCompatible,
+    Doubao,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiKind {
+    Responses,
+    ChatCompletions,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelConfig {
     pub provider: ProviderKind,
+    pub api_kind: ApiKind,
     pub id: ModelId,
     pub coordinate_policy: CoordinatePolicy,
     pub default_options: CallOptions,

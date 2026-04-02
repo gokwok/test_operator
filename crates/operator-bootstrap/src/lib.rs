@@ -22,6 +22,8 @@ use serde::Deserialize;
 
 const OPENAI_MODEL_SELECTOR: &str = "openai";
 const DOUBAO_MODEL_SELECTOR: &str = "doubao";
+const RESPONSES_API_KIND: &str = "responses";
+const CHAT_COMPLETIONS_API_KIND: &str = "chat_completions";
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BootstrapConfig {
@@ -40,6 +42,7 @@ pub struct AgentModelProviderConfig {
     pub api_key: Option<String>,
     pub base_url: Option<String>,
     pub model_name: Option<String>,
+    pub api_kind: Option<String>,
 }
 
 pub fn operator_home_dir() -> PathBuf {
@@ -261,6 +264,7 @@ fn parse_agent_model_provider(
             "api_key" => &mut provider.api_key,
             "base_url" => &mut provider.base_url,
             "model_name" => &mut provider.model_name,
+            "api_kind" => &mut provider.api_kind,
             _ => {
                 return Err(OperatorError::Platform(format!(
                     "unknown agent model provider field `{field}` for `{name}`"
@@ -272,7 +276,12 @@ fn parse_agent_model_provider(
                 "agent model provider field `{name}.{field}` must be a string"
             ))
         })?;
-        *slot = normalized_optional_string(string);
+        *slot = match field.as_str() {
+            "api_kind" => normalized_optional_string(string)
+                .map(|api_kind| validate_supported_model_api_kind(name, &api_kind))
+                .transpose()?,
+            _ => normalized_optional_string(string),
+        };
     }
 
     Ok(provider)
@@ -285,6 +294,30 @@ pub(crate) fn validate_supported_model_selector(selector: &str) -> Result<(), Op
         Err(OperatorError::Platform(format!(
             "unsupported agent model selector `{selector}`; expected one of: {OPENAI_MODEL_SELECTOR}, {DOUBAO_MODEL_SELECTOR}"
         )))
+    }
+}
+
+pub fn default_model_api_kind_for_selector(selector: &str) -> Result<&'static str, OperatorError> {
+    match selector {
+        OPENAI_MODEL_SELECTOR => Ok(RESPONSES_API_KIND),
+        DOUBAO_MODEL_SELECTOR => Ok(CHAT_COMPLETIONS_API_KIND),
+        _ => Err(OperatorError::Platform(format!(
+            "unsupported agent model selector `{selector}`; expected one of: {OPENAI_MODEL_SELECTOR}, {DOUBAO_MODEL_SELECTOR}"
+        ))),
+    }
+}
+
+pub fn validate_supported_model_api_kind(
+    selector: &str,
+    api_kind: &str,
+) -> Result<String, OperatorError> {
+    validate_supported_model_selector(selector)?;
+    match api_kind.trim() {
+        RESPONSES_API_KIND => Ok(RESPONSES_API_KIND.to_owned()),
+        CHAT_COMPLETIONS_API_KIND => Ok(CHAT_COMPLETIONS_API_KIND.to_owned()),
+        other => Err(OperatorError::Platform(format!(
+            "unsupported agent model api_kind `{other}` for `{selector}`; expected one of: {RESPONSES_API_KIND}, {CHAT_COMPLETIONS_API_KIND}"
+        ))),
     }
 }
 
@@ -478,6 +511,7 @@ model_name = "doubao-seed-2-0-lite-260215"
                 api_key: Some("sk-openai".into()),
                 base_url: Some("https://api.openai.com/v1".into()),
                 model_name: Some("gpt-5.4".into()),
+                api_kind: None,
             })
         );
         assert_eq!(
@@ -486,6 +520,7 @@ model_name = "doubao-seed-2-0-lite-260215"
                 api_key: None,
                 base_url: Some("https://ark.cn-beijing.volces.com/api/v3".into()),
                 model_name: Some("doubao-seed-2-0-lite-260215".into()),
+                api_kind: None,
             })
         );
     }

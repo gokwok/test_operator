@@ -289,11 +289,13 @@ default = "openai"
 api_key = "..."
 base_url = "https://api.openai.com/v1"
 model_name = "gpt-5.4"
+api_kind = "responses"
 
 [agent.model.provider.doubao]
 api_key = "..."
 base_url = "https://ark.cn-beijing.volces.com/api/v3"
 model_name = "doubao-seed-2-0-lite-260215"
+api_kind = "chat_completions"
 ```
 
 约束：
@@ -312,6 +314,13 @@ model_name = "doubao-seed-2-0-lite-260215"
   - `api_key`
   - `base_url`
   - `model_name`
+- `api_kind`
+- `api_kind` 是远端 API dialect，当前只允许：
+  - `responses`
+  - `chat_completions`
+- `api_kind` 缺失时按 selector 回填默认值：
+  - `openai` -> `responses`
+  - `doubao` -> `chat_completions`
 - `model_name` 是实际发往远端 provider 的 model id，不等同于 northbound selector 名。
 - `api_key` 可持久化在 TOML 中，但 Core inspection surface 绝不能明文显示。
 
@@ -380,6 +389,7 @@ model_name = "doubao-seed-2-0-lite-260215"
   - selector 名称
   - 是否为当前 default selector
   - provider kind
+  - `api_kind`
   - `model_name`
   - `base_url`
   - 脱敏后的 `api_key`
@@ -402,6 +412,7 @@ model_name = "doubao-seed-2-0-lite-260215"
   - `api_key`
   - `base_url`
   - `model_name`
+  - `api_kind`
 - path 语义固定为“相对于单个 provider entry 的 field”，不允许 dotted path、绝对路径或其他顶层 key。
 - 当前支持的 provider 名称仅限 `openai` / `doubao`。
 - 所有字段值当前都应解析为字符串；删除字段使用 `model unset` 而不是 `null`。
@@ -413,6 +424,7 @@ model_name = "doubao-seed-2-0-lite-260215"
   - `api_key`
   - `base_url`
   - `model_name`
+  - `api_kind`
 - `default` 不属于 `model unset` 的可删除范围；切换默认 selector 使用 `model use`。
 
 ### `api_key` 脱敏规则

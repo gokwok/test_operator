@@ -11,8 +11,8 @@ use toml::Value as TomlValue;
 use toml_edit::{value as edit_value, DocumentMut, Item, Table};
 
 use crate::{
-    parse_bootstrap_config, parse_runtime_config, validate_supported_model_selector,
-    AgentModelProviderConfig, BootstrapConfig,
+    parse_bootstrap_config, parse_runtime_config, validate_supported_model_api_kind,
+    validate_supported_model_selector, AgentModelProviderConfig, BootstrapConfig,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +49,7 @@ pub enum ModelConfigFieldPath {
     ApiKey,
     BaseUrl,
     ModelName,
+    ApiKind,
 }
 
 impl ModelConfigFieldPath {
@@ -151,6 +152,7 @@ impl RuntimeConfigDocument {
         set_optional_string_field(table, "api_key", provider.api_key.as_deref());
         set_optional_string_field(table, "base_url", provider.base_url.as_deref());
         set_optional_string_field(table, "model_name", provider.model_name.as_deref());
+        set_optional_string_field(table, "api_kind", provider.api_kind.as_deref());
         self.prune_agent_model_tables();
         Ok(())
     }
@@ -167,8 +169,12 @@ impl RuntimeConfigDocument {
                 "model field `{rendered_path}` only accepts string values"
             ))
         })?;
+        let normalized = match path {
+            ModelConfigFieldPath::ApiKind => validate_supported_model_api_kind(name, string)?,
+            _ => string.to_owned(),
+        };
         let table = self.model_provider_table_mut(name)?;
-        table[rendered_path.as_str()] = edit_value(string);
+        table[rendered_path.as_str()] = edit_value(normalized);
         Ok(())
     }
 
@@ -498,6 +504,7 @@ fn parse_model_path(path: &str) -> Result<ModelConfigFieldPath, OperatorError> {
         ["api_key"] => Ok(ModelConfigFieldPath::ApiKey),
         ["base_url"] => Ok(ModelConfigFieldPath::BaseUrl),
         ["model_name"] => Ok(ModelConfigFieldPath::ModelName),
+        ["api_kind"] => Ok(ModelConfigFieldPath::ApiKind),
         ["agent", ..] | ["provider", ..] => Err(OperatorError::Platform(format!(
             "model field path `{path}` must be relative to a single [agent.model.provider.<name>] entry"
         ))),
@@ -663,6 +670,7 @@ fn render_model_path(path: &ModelConfigFieldPath) -> String {
         ModelConfigFieldPath::ApiKey => "api_key".into(),
         ModelConfigFieldPath::BaseUrl => "base_url".into(),
         ModelConfigFieldPath::ModelName => "model_name".into(),
+        ModelConfigFieldPath::ApiKind => "api_kind".into(),
     }
 }
 
@@ -840,6 +848,7 @@ step_timeout_ms = 30000
                     api_key: Some("sk-openai-1234".into()),
                     base_url: Some("https://api.openai.com/v1".into()),
                     model_name: Some("gpt-5.4".into()),
+                    api_kind: Some("responses".into()),
                 },
             )
             .expect("set provider");
@@ -865,6 +874,7 @@ step_timeout_ms = 30000
         assert!(rendered.contains("api_key = \"sk-openai-1234\""));
         assert!(rendered.contains("base_url = \"https://api.openai.com/v1\""));
         assert!(rendered.contains("model_name = \"gpt-5.4\""));
+        assert!(rendered.contains("api_kind = \"responses\""));
         assert!(!rendered.contains("[agent.model.provider.doubao]"));
     }
 

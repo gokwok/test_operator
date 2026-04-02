@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
-    doubao::{DoubaoChatCompletionsProvider, DoubaoProviderConfig},
-    openai::{OpenAiProviderConfig, OpenAiResponsesProvider},
-    provider::{ModelError, ModelProvider},
-    types::{CallOptions, CoordinatePolicy, ModelConfig, ProviderKind, ReasoningLevel},
+    chat_completions::ChatCompletionsProvider,
+    provider::{HttpProviderConfig, ModelError, ModelProvider},
+    responses::ResponsesProvider,
+    types::{ApiKind, CallOptions, CoordinatePolicy, ModelConfig, ProviderKind, ReasoningLevel},
 };
 
 pub const OPENAI_MODEL_SELECTOR: &str = "openai";
@@ -20,6 +20,8 @@ pub const CLI_MODEL_VALUES: &[&str] = &[
 
 const OPENAI_DEFAULT_MODEL_NAME: &str = "gpt-5.4";
 const DOUBAO_DEFAULT_MODEL_NAME: &str = "doubao-seed-2-0-lite-260215";
+const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const DOUBAO_DEFAULT_BASE_URL: &str = "https://ark.cn-beijing.volces.com/api/v3";
 const OPENAI_ENV_HINTS: &str = "OPENAI_API_KEY";
 const DOUBAO_ENV_HINTS: &str = "ARK_API_KEY or DOUBAO_API_KEY";
 const OPENAI_SELECTOR_NAMES: &[&str] = &[OPENAI_MODEL_SELECTOR, OPENAI_MODEL_ALIAS];
@@ -30,6 +32,7 @@ pub struct SelectedModelProviderConfig {
     pub api_key: Option<String>,
     pub base_url: Option<String>,
     pub model_name: Option<String>,
+    pub api_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -41,6 +44,11 @@ pub enum ModelRegistryBootstrapError {
 
     #[error("unsupported model selector `{0}`; expected one of: openai, doubao")]
     UnsupportedSelector(String),
+
+    #[error(
+        "unsupported api_kind `{api_kind}` for `{selector}`; expected one of: responses, chat_completions"
+    )]
+    UnsupportedApiKind { selector: String, api_kind: String },
 
     #[error(
         "no credentials configured for `{selector}`; set {env_hints} or configure [agent.model.provider.{selector}].api_key"
@@ -66,8 +74,8 @@ pub fn normalize_model_selector(name: &str) -> Result<&'static str, ModelRegistr
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvironmentProviderBootstrap {
-    pub openai: Option<OpenAiProviderConfig>,
-    pub doubao: Option<DoubaoProviderConfig>,
+    pub openai: Option<HttpProviderConfig>,
+    pub doubao: Option<HttpProviderConfig>,
 }
 
 impl EnvironmentProviderBootstrap {
@@ -82,20 +90,22 @@ impl EnvironmentProviderBootstrap {
         V: AsRef<str>,
     {
         let vars = normalized_env_vars(vars);
-        let openai = env_value(&vars, "OPENAI_API_KEY").map(|api_key| {
-            let mut config = OpenAiProviderConfig::new(api_key.to_owned());
-            if let Some(base_url) = env_value(&vars, "OPENAI_BASE_URL") {
-                config.base_url = base_url.to_owned();
-            }
-            config
+        let openai = env_value(&vars, "OPENAI_API_KEY").map(|api_key| HttpProviderConfig {
+            provider: ProviderKind::OpenAi,
+            api_key: api_key.to_owned(),
+            base_url: env_value(&vars, "OPENAI_BASE_URL")
+                .unwrap_or(OPENAI_DEFAULT_BASE_URL)
+                .to_owned(),
         });
 
         let doubao = first_env_value(&vars, &["ARK_API_KEY", "DOUBAO_API_KEY"]).map(|api_key| {
-            let mut config = DoubaoProviderConfig::new(api_key.to_owned());
-            if let Some(base_url) = first_env_value(&vars, &["ARK_BASE_URL", "DOUBAO_BASE_URL"]) {
-                config.base_url = base_url.to_owned();
+            HttpProviderConfig {
+                provider: ProviderKind::Doubao,
+                api_key: api_key.to_owned(),
+                base_url: first_env_value(&vars, &["ARK_BASE_URL", "DOUBAO_BASE_URL"])
+                    .unwrap_or(DOUBAO_DEFAULT_BASE_URL)
+                    .to_owned(),
             }
-            config
         });
 
         if openai.is_none() && doubao.is_none() {
@@ -116,13 +126,17 @@ impl EnvironmentProviderBootstrap {
         registry: &mut ModelRegistry,
     ) -> Result<(), ModelRegistryBootstrapError> {
         if let Some(config) = self.openai.clone() {
-            let provider = OpenAiResponsesProvider::new(config)?;
-            registry.register_provider(ProviderKind::OpenAi, Arc::new(provider));
+            registry.register_provider(
+                ProviderKind::OpenAi,
+                build_provider(default_api_kind_for_provider(ProviderKind::OpenAi), config)?,
+            );
         }
 
         if let Some(config) = self.doubao.clone() {
-            let provider = DoubaoChatCompletionsProvider::new(config)?;
-            registry.register_provider(ProviderKind::OpenAiCompatible, Arc::new(provider));
+            registry.register_provider(
+                ProviderKind::Doubao,
+                build_provider(default_api_kind_for_provider(ProviderKind::Doubao), config)?,
+            );
         }
 
         Ok(())
@@ -147,11 +161,13 @@ impl ModelRegistry {
         registry.register_selector_model(
             OPENAI_MODEL_SELECTOR,
             ProviderKind::OpenAi,
+            ApiKind::Responses,
             OPENAI_DEFAULT_MODEL_NAME,
         );
         registry.register_selector_model(
             DOUBAO_MODEL_SELECTOR,
-            ProviderKind::OpenAiCompatible,
+            ProviderKind::Doubao,
+            ApiKind::ChatCompletions,
             DOUBAO_DEFAULT_MODEL_NAME,
         );
         registry
@@ -191,65 +207,25 @@ impl ModelRegistry {
         let vars = normalized_env_vars(vars);
         let mut registry = Self::new();
 
-        match selector {
-            OPENAI_MODEL_SELECTOR => {
-                let api_key = normalized_option(configured.api_key.as_deref())
-                    .or_else(|| env_value(&vars, "OPENAI_API_KEY").map(str::to_owned))
-                    .ok_or_else(|| {
-                        ModelRegistryBootstrapError::MissingSelectedProviderCredentials {
-                            selector: selector.to_owned(),
-                            env_hints: OPENAI_ENV_HINTS,
-                        }
-                    })?;
-                let mut provider_config = OpenAiProviderConfig::new(api_key);
-                if let Some(base_url) = normalized_option(configured.base_url.as_deref())
-                    .or_else(|| env_value(&vars, "OPENAI_BASE_URL").map(str::to_owned))
-                {
-                    provider_config.base_url = base_url;
-                }
-                registry.register_provider(
-                    ProviderKind::OpenAi,
-                    Arc::new(OpenAiResponsesProvider::new(provider_config)?),
-                );
-                let model_name = normalized_option(configured.model_name.as_deref())
-                    .unwrap_or_else(|| OPENAI_DEFAULT_MODEL_NAME.to_owned());
-                registry.register_selector_model(selector, ProviderKind::OpenAi, &model_name);
-            }
-            DOUBAO_MODEL_SELECTOR => {
-                let api_key = normalized_option(configured.api_key.as_deref())
-                    .or_else(|| {
-                        first_env_value(&vars, &["ARK_API_KEY", "DOUBAO_API_KEY"])
-                            .map(str::to_owned)
-                    })
-                    .ok_or_else(|| {
-                        ModelRegistryBootstrapError::MissingSelectedProviderCredentials {
-                            selector: selector.to_owned(),
-                            env_hints: DOUBAO_ENV_HINTS,
-                        }
-                    })?;
-                let mut provider_config = DoubaoProviderConfig::new(api_key);
-                if let Some(base_url) =
-                    normalized_option(configured.base_url.as_deref()).or_else(|| {
-                        first_env_value(&vars, &["ARK_BASE_URL", "DOUBAO_BASE_URL"])
-                            .map(str::to_owned)
-                    })
-                {
-                    provider_config.base_url = base_url;
-                }
-                registry.register_provider(
-                    ProviderKind::OpenAiCompatible,
-                    Arc::new(DoubaoChatCompletionsProvider::new(provider_config)?),
-                );
-                let model_name = normalized_option(configured.model_name.as_deref())
-                    .unwrap_or_else(|| DOUBAO_DEFAULT_MODEL_NAME.to_owned());
-                registry.register_selector_model(
-                    selector,
-                    ProviderKind::OpenAiCompatible,
-                    &model_name,
-                );
-            }
-            _ => unreachable!("normalize_model_selector only returns supported selectors"),
-        }
+        let provider = provider_for_selector(selector);
+        let api_key = selected_api_key(selector, configured, &vars)?;
+        let base_url = selected_base_url(selector, configured, &vars);
+        let api_kind = selected_api_kind(selector, configured)?;
+        let model_name = normalized_option(configured.model_name.as_deref())
+            .unwrap_or_else(|| default_model_name(selector).to_owned());
+
+        registry.register_provider(
+            provider,
+            build_provider(
+                api_kind,
+                HttpProviderConfig {
+                    provider,
+                    api_key,
+                    base_url,
+                },
+            )?,
+        );
+        registry.register_selector_model(selector, provider, api_kind, &model_name);
 
         Ok(registry)
     }
@@ -296,9 +272,10 @@ impl ModelRegistry {
         &mut self,
         selector: &str,
         provider: ProviderKind,
+        api_kind: ApiKind,
         model_name: &str,
     ) {
-        let config = phase1_model(selector, provider, model_name);
+        let config = phase1_model(selector, provider, api_kind, model_name);
         for name in selector_names(selector) {
             self.register_config(*name, config.clone());
         }
@@ -353,7 +330,129 @@ fn first_env_value<'a>(vars: &'a HashMap<String, String>, names: &[&str]) -> Opt
     names.iter().find_map(|name| env_value(vars, name))
 }
 
-fn phase1_model(selector: &str, provider: ProviderKind, model_name: &str) -> ModelConfig {
+fn default_model_name(selector: &str) -> &'static str {
+    match selector {
+        OPENAI_MODEL_SELECTOR => OPENAI_DEFAULT_MODEL_NAME,
+        DOUBAO_MODEL_SELECTOR => DOUBAO_DEFAULT_MODEL_NAME,
+        _ => OPENAI_DEFAULT_MODEL_NAME,
+    }
+}
+
+fn default_api_kind_for_provider(provider: ProviderKind) -> ApiKind {
+    match provider {
+        ProviderKind::OpenAi => ApiKind::Responses,
+        ProviderKind::Doubao => ApiKind::ChatCompletions,
+    }
+}
+
+fn default_api_kind_for_selector(selector: &str) -> ApiKind {
+    default_api_kind_for_provider(provider_for_selector(selector))
+}
+
+fn provider_for_selector(selector: &str) -> ProviderKind {
+    match selector {
+        OPENAI_MODEL_SELECTOR => ProviderKind::OpenAi,
+        DOUBAO_MODEL_SELECTOR => ProviderKind::Doubao,
+        _ => ProviderKind::OpenAi,
+    }
+}
+
+fn default_base_url(provider: ProviderKind) -> &'static str {
+    match provider {
+        ProviderKind::OpenAi => OPENAI_DEFAULT_BASE_URL,
+        ProviderKind::Doubao => DOUBAO_DEFAULT_BASE_URL,
+    }
+}
+
+fn selected_api_key(
+    selector: &str,
+    configured: &SelectedModelProviderConfig,
+    vars: &HashMap<String, String>,
+) -> Result<String, ModelRegistryBootstrapError> {
+    match selector {
+        OPENAI_MODEL_SELECTOR => normalized_option(configured.api_key.as_deref())
+            .or_else(|| env_value(vars, "OPENAI_API_KEY").map(str::to_owned))
+            .ok_or_else(
+                || ModelRegistryBootstrapError::MissingSelectedProviderCredentials {
+                    selector: selector.to_owned(),
+                    env_hints: OPENAI_ENV_HINTS,
+                },
+            ),
+        DOUBAO_MODEL_SELECTOR => normalized_option(configured.api_key.as_deref())
+            .or_else(|| {
+                first_env_value(vars, &["ARK_API_KEY", "DOUBAO_API_KEY"]).map(str::to_owned)
+            })
+            .ok_or_else(
+                || ModelRegistryBootstrapError::MissingSelectedProviderCredentials {
+                    selector: selector.to_owned(),
+                    env_hints: DOUBAO_ENV_HINTS,
+                },
+            ),
+        _ => unreachable!("normalize_model_selector only returns supported selectors"),
+    }
+}
+
+fn selected_base_url(
+    selector: &str,
+    configured: &SelectedModelProviderConfig,
+    vars: &HashMap<String, String>,
+) -> String {
+    match selector {
+        OPENAI_MODEL_SELECTOR => normalized_option(configured.base_url.as_deref())
+            .or_else(|| env_value(vars, "OPENAI_BASE_URL").map(str::to_owned))
+            .unwrap_or_else(|| default_base_url(ProviderKind::OpenAi).to_owned()),
+        DOUBAO_MODEL_SELECTOR => normalized_option(configured.base_url.as_deref())
+            .or_else(|| {
+                first_env_value(vars, &["ARK_BASE_URL", "DOUBAO_BASE_URL"]).map(str::to_owned)
+            })
+            .unwrap_or_else(|| default_base_url(ProviderKind::Doubao).to_owned()),
+        _ => unreachable!("normalize_model_selector only returns supported selectors"),
+    }
+}
+
+fn selected_api_kind(
+    selector: &str,
+    configured: &SelectedModelProviderConfig,
+) -> Result<ApiKind, ModelRegistryBootstrapError> {
+    Ok(configured
+        .api_kind
+        .as_deref()
+        .map(|api_kind| normalize_api_kind(selector, api_kind))
+        .transpose()?
+        .unwrap_or_else(|| default_api_kind_for_selector(selector)))
+}
+
+fn normalize_api_kind(
+    selector: &str,
+    api_kind: &str,
+) -> Result<ApiKind, ModelRegistryBootstrapError> {
+    match api_kind.trim() {
+        "responses" => Ok(ApiKind::Responses),
+        "chat_completions" => Ok(ApiKind::ChatCompletions),
+        other => Err(ModelRegistryBootstrapError::UnsupportedApiKind {
+            selector: selector.to_owned(),
+            api_kind: other.to_owned(),
+        }),
+    }
+}
+
+fn build_provider(
+    api_kind: ApiKind,
+    config: HttpProviderConfig,
+) -> Result<Arc<dyn ModelProvider>, ModelRegistryBootstrapError> {
+    let provider: Arc<dyn ModelProvider> = match api_kind {
+        ApiKind::Responses => Arc::new(ResponsesProvider::new(config)?),
+        ApiKind::ChatCompletions => Arc::new(ChatCompletionsProvider::new(config)?),
+    };
+    Ok(provider)
+}
+
+fn phase1_model(
+    selector: &str,
+    provider: ProviderKind,
+    api_kind: ApiKind,
+    model_name: &str,
+) -> ModelConfig {
     let reasoning_level = match selector {
         OPENAI_MODEL_SELECTOR | DOUBAO_MODEL_SELECTOR => Some(ReasoningLevel::Minimal),
         _ => Some(ReasoningLevel::Medium),
@@ -366,6 +465,7 @@ fn phase1_model(selector: &str, provider: ProviderKind, model_name: &str) -> Mod
 
     ModelConfig {
         provider,
+        api_kind,
         id: Arc::from(model_name),
         coordinate_policy,
         default_options: CallOptions {

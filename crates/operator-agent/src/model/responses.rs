@@ -5,56 +5,42 @@ use serde_json::{json, Map, Value};
 
 use super::{
     channel, AssistantMessage, CallOptions, ContentBlock, Context, DoneReason, ErrorReason,
-    Message, ModelError, ModelEvent, ModelProvider, ModelRequest, ModelStream, ModelStreamWriter,
-    ProviderKind, ReasoningLevel, ResponseFormat, StopReason, ToolResultMessage, ToolSpec, Usage,
+    HttpProviderConfig, Message, ModelError, ModelEvent, ModelProvider, ModelRequest, ModelStream,
+    ModelStreamWriter, ReasoningLevel, ResponseFormat, StopReason, ToolResultMessage, ToolSpec,
+    Usage,
 };
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OpenAiProviderConfig {
-    pub api_key: String,
-    pub base_url: String,
-}
-
-impl OpenAiProviderConfig {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            base_url: DEFAULT_BASE_URL.to_string(),
-        }
-    }
-}
-
 #[derive(Clone)]
-pub struct OpenAiResponsesProvider {
+pub struct ResponsesProvider {
     client: Client,
-    config: OpenAiProviderConfig,
+    config: HttpProviderConfig,
 }
 
-impl OpenAiResponsesProvider {
-    pub fn new(config: OpenAiProviderConfig) -> Result<Self, ModelError> {
+impl ResponsesProvider {
+    pub fn new(config: HttpProviderConfig) -> Result<Self, ModelError> {
+        let provider = config.provider;
         let client = Client::builder()
             .build()
             .map_err(|error| ModelError::ProviderInitFailed {
-                provider: ProviderKind::OpenAi,
+                provider,
                 message: error.to_string(),
             })?;
 
         Self::with_client(config, client)
     }
 
-    pub fn with_client(config: OpenAiProviderConfig, client: Client) -> Result<Self, ModelError> {
+    pub fn with_client(config: HttpProviderConfig, client: Client) -> Result<Self, ModelError> {
         if config.api_key.trim().is_empty() {
             return Err(ModelError::ProviderInitFailed {
-                provider: ProviderKind::OpenAi,
+                provider: config.provider,
                 message: "api key must not be empty".into(),
             });
         }
-
-        let mut config = config;
         if config.base_url.trim().is_empty() {
-            config.base_url = DEFAULT_BASE_URL.to_string();
+            return Err(ModelError::ProviderInitFailed {
+                provider: config.provider,
+                message: "base_url must not be empty".into(),
+            });
         }
 
         Ok(Self { client, config })
@@ -81,14 +67,16 @@ impl OpenAiResponsesProvider {
         }
 
         let payload = serde_json::from_slice::<Value>(&body).map_err(|error| {
-            ModelError::Protocol(format!("openai response was not valid json: {error}"))
+            ModelError::Protocol(format!(
+                "responses api response was not valid json: {error}"
+            ))
         })?;
 
         assistant_message_from_response(payload)
     }
 }
 
-impl ModelProvider for OpenAiResponsesProvider {
+impl ModelProvider for ResponsesProvider {
     fn stream(&self, req: ModelRequest) -> ModelStream {
         let (stream, writer) = channel(NonZeroUsize::new(16).expect("event capacity must be set"));
         let provider = self.clone();
@@ -264,79 +252,16 @@ fn instructions(system: Option<&str>, tools: &[ToolSpec]) -> Option<String> {
     }
 }
 
-fn message_input(message: &Message) -> Value {
-    match message {
-        Message::User(message) => {
-            message_with_role("user", MessageContentRole::User, &message.content)
-        }
-        Message::Assistant(message) => {
-            message_with_role("assistant", MessageContentRole::Assistant, &message.content)
-        }
-        Message::ToolResult(ToolResultMessage { content, .. }) => {
-            message_with_role("user", MessageContentRole::User, content)
-        }
+fn response_format_payload(response_format: ResponseFormat) -> Value {
+    match response_format {
+        ResponseFormat::JsonObject => json!({
+            "type": "json_object",
+        }),
     }
 }
 
-fn message_with_role(
-    role: &str,
-    content_role: MessageContentRole,
-    content: &[ContentBlock],
-) -> Value {
-    json!({
-        "role": role,
-        "content": content
-            .iter()
-            .filter_map(|block| input_content_item(content_role, block))
-            .collect::<Vec<_>>(),
-    })
-}
-
-fn input_content_item(content_role: MessageContentRole, block: &ContentBlock) -> Option<Value> {
-    match block {
-        ContentBlock::Text { text } => Some(json!({
-            "type": text_block_type(content_role),
-            "text": text,
-        })),
-        ContentBlock::Image { mime, data_base64 } => Some(json!({
-            "type": "input_image",
-            "image_url": format!("data:{mime};base64,{data_base64}"),
-        })),
-        ContentBlock::Thinking { thinking } => Some(json!({
-            "type": text_block_type(content_role),
-            "text": thinking,
-        })),
-        ContentBlock::ToolCall {
-            id,
-            name,
-            arguments_json,
-        } => Some(json!({
-            "type": text_block_type(content_role),
-            "text": serde_json::to_string_pretty(&json!({
-                "tool_call_id": id,
-                "tool_name": name,
-                "arguments_json": arguments_json,
-            }))
-            .expect("tool call blocks should serialize to json"),
-        })),
-    }
-}
-
-#[derive(Clone, Copy)]
-enum MessageContentRole {
-    User,
-    Assistant,
-}
-
-fn text_block_type(content_role: MessageContentRole) -> &'static str {
-    match content_role {
-        MessageContentRole::User => "input_text",
-        MessageContentRole::Assistant => "output_text",
-    }
-}
-
-fn reasoning_effort(level: ReasoningLevel) -> &'static str {
-    match level {
+fn reasoning_effort(reasoning_level: ReasoningLevel) -> &'static str {
+    match reasoning_level {
         ReasoningLevel::Minimal => "none",
         ReasoningLevel::Low => "low",
         ReasoningLevel::Medium => "medium",
@@ -344,117 +269,211 @@ fn reasoning_effort(level: ReasoningLevel) -> &'static str {
     }
 }
 
-fn response_format_payload(format: ResponseFormat) -> Value {
-    match format {
-        ResponseFormat::JsonObject => json!({ "type": "json_object" }),
+fn message_input(message: &Message) -> Value {
+    match message {
+        Message::User(message) => json!({
+            "role": "user",
+            "content": message.content.iter().map(content_input).collect::<Vec<_>>(),
+        }),
+        Message::Assistant(message) => json!({
+            "role": "assistant",
+            "content": assistant_content(message.content.as_slice()),
+        }),
+        Message::ToolResult(message) => tool_result_input(message),
     }
 }
 
-fn assistant_message_from_response(response: Value) -> Result<AssistantMessage, ModelError> {
-    let output = response
+fn content_input(block: &ContentBlock) -> Value {
+    match block {
+        ContentBlock::Text { text } => json!({
+            "type": "input_text",
+            "text": text,
+        }),
+        ContentBlock::Image { mime, data_base64 } => json!({
+            "type": "input_image",
+            "image_url": format!("data:{mime};base64,{data_base64}"),
+        }),
+        ContentBlock::Thinking { thinking } => json!({
+            "type": "input_text",
+            "text": thinking,
+        }),
+        ContentBlock::ToolCall {
+            id,
+            name,
+            arguments_json,
+        } => json!({
+            "type": "function_call",
+            "call_id": id,
+            "name": name,
+            "arguments": arguments_json,
+        }),
+    }
+}
+
+fn assistant_content(content: &[ContentBlock]) -> Vec<Value> {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(json!({
+                "type": "output_text",
+                "text": text,
+            })),
+            ContentBlock::Thinking { thinking } => Some(json!({
+                "type": "output_text",
+                "text": thinking,
+            })),
+            ContentBlock::ToolCall {
+                id,
+                name,
+                arguments_json,
+            } => Some(json!({
+                "type": "function_call",
+                "call_id": id,
+                "name": name,
+                "arguments": arguments_json,
+            })),
+            ContentBlock::Image { .. } => None,
+        })
+        .collect()
+}
+
+fn tool_result_input(message: &ToolResultMessage) -> Value {
+    let output = message
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text } => Some(Value::String(text.clone())),
+            ContentBlock::Thinking { thinking } => Some(Value::String(thinking.clone())),
+            ContentBlock::Image { .. } | ContentBlock::ToolCall { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "type": "function_call_output",
+        "call_id": message.tool_call_id,
+        "output": output,
+    })
+}
+
+fn assistant_message_from_response(payload: Value) -> Result<AssistantMessage, ModelError> {
+    let output = payload
         .get("output")
         .and_then(Value::as_array)
-        .ok_or_else(|| ModelError::Protocol("openai response missing `output` array".into()))?;
+        .ok_or_else(|| {
+            ModelError::Protocol("responses api response missing `output` array".into())
+        })?;
 
     let mut content = Vec::new();
     for item in output {
-        let Some(item_type) = item.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-
-        match item_type {
-            "reasoning" => append_reasoning_blocks(&mut content, item),
-            "message" => append_message_blocks(&mut content, item),
+        match item.get("type").and_then(Value::as_str) {
+            Some("reasoning") => {}
+            Some("message") => {
+                let message_content =
+                    item.get("content")
+                        .and_then(Value::as_array)
+                        .ok_or_else(|| {
+                            ModelError::Protocol(
+                                "responses api assistant message missing `content` array".into(),
+                            )
+                        })?;
+                for block in message_content {
+                    if let Some(text) = block.get("text").and_then(Value::as_str) {
+                        content.push(ContentBlock::Text {
+                            text: text.to_string(),
+                        });
+                    }
+                }
+            }
+            Some("function_call") => {
+                let id = item.get("call_id").and_then(Value::as_str).ok_or_else(|| {
+                    ModelError::Protocol("responses api function_call missing `call_id`".into())
+                })?;
+                let name = item.get("name").and_then(Value::as_str).ok_or_else(|| {
+                    ModelError::Protocol("responses api function_call missing `name`".into())
+                })?;
+                let arguments = item
+                    .get("arguments")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        ModelError::Protocol(
+                            "responses api function_call missing `arguments`".into(),
+                        )
+                    })?;
+                content.push(ContentBlock::ToolCall {
+                    id: Arc::from(id),
+                    name: Arc::from(name),
+                    arguments_json: arguments.to_string(),
+                });
+            }
             _ => {}
         }
     }
 
-    if !content
-        .iter()
-        .any(|block| matches!(block, ContentBlock::Text { .. }))
-    {
+    if content.is_empty() {
         return Err(ModelError::Protocol(
-            "openai response missing assistant `output_text` content".into(),
+            "responses api response missing assistant `output_text` content".into(),
         ));
     }
 
     Ok(AssistantMessage {
         content,
-        usage: usage_from_response(&response),
-        stop: stop_reason_from_response(&response),
+        usage: usage_from_responses_payload(&payload),
+        stop: stop_reason_from_response(&payload),
         error_message: None,
-        timestamp_ms: timestamp_ms(),
+        timestamp_ms: SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
     })
 }
 
-fn append_reasoning_blocks(content: &mut Vec<ContentBlock>, item: &Value) {
-    if let Some(summary) = item.get("summary").and_then(Value::as_array) {
-        for block in summary {
-            if let Some(text) = block.get("text").and_then(Value::as_str) {
-                if !text.trim().is_empty() {
-                    content.push(ContentBlock::Thinking {
-                        thinking: text.to_string(),
-                    });
-                }
-            }
-        }
-    }
-}
-
-fn append_message_blocks(content: &mut Vec<ContentBlock>, item: &Value) {
-    let Some(blocks) = item.get("content").and_then(Value::as_array) else {
-        return;
-    };
-
-    for block in blocks {
-        let Some(block_type) = block.get("type").and_then(Value::as_str) else {
-            continue;
-        };
-        if block_type == "output_text" {
-            if let Some(text) = block.get("text").and_then(Value::as_str) {
-                content.push(ContentBlock::Text {
-                    text: text.to_string(),
-                });
-            }
-        }
-    }
-}
-
-fn usage_from_response(response: &Value) -> Usage {
-    let Some(usage) = response.get("usage").and_then(Value::as_object) else {
-        return Usage::default();
-    };
-
+fn usage_from_responses_payload(payload: &Value) -> Usage {
+    let usage = payload.get("usage");
     Usage {
         input_tokens: usage
-            .get("input_tokens")
+            .and_then(|usage| usage.get("input_tokens"))
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
         output_tokens: usage
-            .get("output_tokens")
+            .and_then(|usage| usage.get("output_tokens"))
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
         total_tokens: usage
-            .get("total_tokens")
+            .and_then(|usage| usage.get("total_tokens"))
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
         cost: None,
     }
 }
 
-fn stop_reason_from_response(response: &Value) -> StopReason {
-    match response.get("status").and_then(Value::as_str) {
-        Some("incomplete") => match response
-            .get("incomplete_details")
-            .and_then(Value::as_object)
-            .and_then(|details| details.get("reason"))
-            .and_then(Value::as_str)
-        {
-            Some("max_output_tokens") => StopReason::Length,
-            _ => StopReason::Stop,
-        },
+fn stop_reason_from_response(payload: &Value) -> StopReason {
+    match payload.get("status").and_then(Value::as_str) {
+        Some("completed") => StopReason::Stop,
+        Some("incomplete") => StopReason::Length,
         Some("failed") => StopReason::Error,
+        Some("cancelled") => StopReason::Aborted,
         _ => StopReason::Stop,
+    }
+}
+
+fn done_reason(reason: StopReason) -> DoneReason {
+    match reason {
+        StopReason::Stop => DoneReason::Stop,
+        StopReason::Length => DoneReason::Length,
+        StopReason::ToolUse => DoneReason::ToolUse,
+        StopReason::Aborted | StopReason::Error => DoneReason::Stop,
+    }
+}
+
+fn error_reason(error: &ModelError) -> ErrorReason {
+    match error {
+        ModelError::Aborted => ErrorReason::Aborted,
+        ModelError::ModelNotFound(_)
+        | ModelError::Timeout
+        | ModelError::ProviderNotFound { .. }
+        | ModelError::ProviderInitFailed { .. }
+        | ModelError::Transport(_)
+        | ModelError::Protocol(_)
+        | ModelError::Provider(_) => ErrorReason::Error,
     }
 }
 
@@ -468,45 +487,6 @@ fn request_error(error: reqwest::Error) -> ModelError {
 
 fn http_error(status: u16, body: &[u8]) -> ModelError {
     let parsed = serde_json::from_slice::<Value>(body)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("error")
-                .and_then(Value::as_object)
-                .and_then(|error| error.get("message"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| String::from_utf8_lossy(body).trim().to_string());
-
-    ModelError::Provider(format!("openai responses api returned {status}: {parsed}"))
-}
-
-fn done_reason(stop: StopReason) -> DoneReason {
-    match stop {
-        StopReason::Stop => DoneReason::Stop,
-        StopReason::Length => DoneReason::Length,
-        StopReason::ToolUse => DoneReason::ToolUse,
-        StopReason::Aborted | StopReason::Error => DoneReason::Stop,
-    }
-}
-
-fn error_reason(error: &ModelError) -> ErrorReason {
-    match error {
-        ModelError::Aborted => ErrorReason::Aborted,
-        ModelError::Timeout
-        | ModelError::ModelNotFound(_)
-        | ModelError::ProviderNotFound { .. }
-        | ModelError::ProviderInitFailed { .. }
-        | ModelError::Transport(_)
-        | ModelError::Protocol(_)
-        | ModelError::Provider(_) => ErrorReason::Error,
-    }
-}
-
-fn timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+        .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(body).into_owned()));
+    ModelError::Provider(format!("responses api returned {status}: {parsed}"))
 }

@@ -3,10 +3,10 @@ mod support;
 use std::{sync::Arc, time::Duration};
 
 use operator_agent::model::{
-    normalize_model_selector, CallOptions, ContentBlock, Context, CoordinatePolicy,
-    DoubaoProviderConfig, EnvironmentProviderBootstrap, Message, ModelConfig, ModelError,
-    ModelEvent, ModelRegistry, ModelRegistryBootstrapError, ModelRequest, OpenAiProviderConfig,
-    ProviderKind, ReasoningLevel, SelectedModelProviderConfig, ToolSpec, UserMessage,
+    normalize_model_selector, ApiKind, CallOptions, ContentBlock, Context, CoordinatePolicy,
+    EnvironmentProviderBootstrap, HttpProviderConfig, Message, ModelConfig, ModelError, ModelEvent,
+    ModelRegistry, ModelRegistryBootstrapError, ModelRequest, ProviderKind, ReasoningLevel,
+    SelectedModelProviderConfig, ToolSpec, UserMessage,
 };
 use serde_json::json;
 use support::DeterministicTestProvider;
@@ -38,7 +38,8 @@ fn default_registry_exposes_selector_models_and_compatibility_aliases() {
     let doubao = registry
         .config("doubao")
         .expect("doubao selector should exist");
-    assert_eq!(doubao.provider, ProviderKind::OpenAiCompatible);
+    assert_eq!(doubao.provider, ProviderKind::Doubao);
+    assert_eq!(doubao.api_kind, ApiKind::ChatCompletions);
     assert_eq!(doubao.id.as_ref(), "doubao-seed-2-0-lite-260215");
     assert_eq!(doubao.default_timeout_ms, Some(30_000));
     assert_eq!(
@@ -83,6 +84,7 @@ async fn resolve_returns_registered_provider_for_known_model() {
         resolved.config,
         ModelConfig {
             provider: ProviderKind::OpenAi,
+            api_kind: ApiKind::Responses,
             id: Arc::from("gpt-5.4"),
             coordinate_policy: CoordinatePolicy::SurfaceImagePixels,
             default_options: CallOptions {
@@ -152,14 +154,16 @@ fn environment_provider_bootstrap_reads_supported_credentials_from_env_vars() {
 
     assert_eq!(
         bootstrap.openai,
-        Some(OpenAiProviderConfig {
+        Some(HttpProviderConfig {
+            provider: ProviderKind::OpenAi,
             api_key: "openai-key".into(),
             base_url: "https://openai.example/v1".into(),
         })
     );
     assert_eq!(
         bootstrap.doubao,
-        Some(DoubaoProviderConfig {
+        Some(HttpProviderConfig {
+            provider: ProviderKind::Doubao,
             api_key: "ark-key".into(),
             base_url: "https://ark.example/api/v3".into(),
         })
@@ -208,6 +212,7 @@ fn selector_bootstrap_uses_config_values_and_keeps_alias_mapping_explicit() {
             api_key: Some("sk-openai".into()),
             base_url: Some("https://openai.internal/v1".into()),
             model_name: Some("gpt-5.4-mini".into()),
+            api_kind: None,
         },
         std::iter::empty::<(&str, &str)>(),
     )
@@ -215,6 +220,7 @@ fn selector_bootstrap_uses_config_values_and_keeps_alias_mapping_explicit() {
 
     let selector = registry.resolve("openai").expect("openai should resolve");
     assert_eq!(selector.config.id.as_ref(), "gpt-5.4-mini");
+    assert_eq!(selector.config.api_kind, ApiKind::Responses);
     assert_eq!(
         selector.config.coordinate_policy,
         CoordinatePolicy::SurfaceImagePixels
@@ -237,6 +243,7 @@ fn selector_bootstrap_falls_back_to_environment_fields_for_missing_values() {
             api_key: None,
             base_url: None,
             model_name: Some("doubao-pro-32k".into()),
+            api_kind: None,
         },
         [
             ("DOUBAO_API_KEY", "doubao-env"),
@@ -247,6 +254,7 @@ fn selector_bootstrap_falls_back_to_environment_fields_for_missing_values() {
 
     let resolved = registry.resolve("doubao").expect("doubao should resolve");
     assert_eq!(resolved.config.id.as_ref(), "doubao-pro-32k");
+    assert_eq!(resolved.config.api_kind, ApiKind::ChatCompletions);
     assert_eq!(
         resolved.config.coordinate_policy,
         CoordinatePolicy::SurfaceNormalized1000

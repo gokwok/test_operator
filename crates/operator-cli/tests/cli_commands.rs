@@ -1129,10 +1129,11 @@ fn model_set_help_snapshot_is_stable() {
     assert!(help.contains("Update provider fields on a selector"));
     assert!(help.contains("--set <FIELD=VALUE>"));
     assert!(help.contains("Mutation Contract"));
-    assert!(help.contains("api_key | base_url | model_name"));
+    assert!(help.contains("api_key | base_url | model_name | api_kind"));
     assert!(help.contains("relative field path"));
     assert!(help.contains("selector normalization"));
     assert!(help.contains("operator model set openai --set api_key=<redacted-openai-key>"));
+    assert!(help.contains("operator model set openai --set api_kind=chat_completions"));
     assert!(!help.contains("Global Runtime Flags"));
 }
 
@@ -1145,8 +1146,10 @@ fn model_unset_help_snapshot_is_stable() {
     assert!(help.contains("api_key"));
     assert!(help.contains("base_url"));
     assert!(help.contains("model_name"));
+    assert!(help.contains("api_kind"));
     assert!(help.contains("selector normalization"));
     assert!(help.contains("operator model unset openai api_key"));
+    assert!(help.contains("operator model unset openai api_kind"));
     assert!(!help.contains("Global Runtime Flags"));
 }
 
@@ -3515,7 +3518,7 @@ model_name = "doubao-seed-2-0-lite-260215"
 
     assert_eq!(
         rendered,
-        "Models (2):\n  • doubao\n    Provider: openai_compatible\n    Model: doubao-seed-2-0-lite-260215\n    Base URL: <unset>\n    API Key: ***********5678\n  • openai [default]\n    Provider: openai\n    Model: gpt-5.4\n    Base URL: https://api.openai.com/v1\n    API Key: **********1234"
+        "Models (2):\n  • doubao\n    Provider: doubao\n    API Kind: chat_completions\n    Model: doubao-seed-2-0-lite-260215\n    Base URL: <unset>\n    API Key: ***********5678\n  • openai [default]\n    Provider: openai\n    API Kind: responses\n    Model: gpt-5.4\n    Base URL: https://api.openai.com/v1\n    API Key: **********1234"
     );
 }
 
@@ -3562,7 +3565,8 @@ model_name = "doubao-seed-2-0-lite-260215"
             "model": {
                 "name": "doubao",
                 "is_default": true,
-                "provider_kind": "openai_compatible",
+                "provider_kind": "doubao",
+                "api_kind": "chat_completions",
                 "model_name": "doubao-seed-2-0-lite-260215",
                 "base_url": "https://ark.cn-beijing.volces.com/api/v3",
                 "api_key": "***********5678"
@@ -3609,6 +3613,7 @@ default_target = "macos"
                 "name": "openai",
                 "is_default": false,
                 "provider_kind": "openai",
+                "api_kind": "responses",
                 "model_name": null,
                 "base_url": null,
                 "api_key": null
@@ -3746,6 +3751,7 @@ async fn model_set_creates_provider_entry_and_returns_masked_json() {
                 "name": "openai",
                 "is_default": false,
                 "provider_kind": "openai",
+                "api_kind": "responses",
                 "model_name": "gpt-5.4",
                 "base_url": "https://api.openai.com/v1",
                 "api_key": "********1234"
@@ -3862,6 +3868,7 @@ model_name = "doubao-seed-2-0-lite-260215"
                 "name": "openai",
                 "is_default": false,
                 "provider_kind": "openai",
+                "api_kind": "responses",
                 "model_name": null,
                 "base_url": null,
                 "api_key": null

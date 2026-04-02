@@ -8,14 +8,15 @@ use std::{
 };
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, CoordinatePolicy, DoubaoChatCompletionsProvider,
-    DoubaoProviderConfig, Message, ModelConfig, ModelError, ModelEvent, ModelProvider,
-    ProviderKind, ReasoningLevel, ResponseFormat, ToolSpec, UserMessage,
+    ApiKind, CallOptions, ChatCompletionsProvider, ContentBlock, Context, CoordinatePolicy,
+    HttpProviderConfig, Message, ModelConfig, ModelError, ModelEvent, ModelProvider, ProviderKind,
+    ReasoningLevel, ResponseFormat, ToolSpec, UserMessage,
 };
 use serde_json::{json, Value};
 
-fn provider(base_url: String) -> DoubaoChatCompletionsProvider {
-    DoubaoChatCompletionsProvider::new(DoubaoProviderConfig {
+fn provider(base_url: String) -> ChatCompletionsProvider {
+    ChatCompletionsProvider::new(HttpProviderConfig {
+        provider: ProviderKind::Doubao,
         api_key: "test-key".into(),
         base_url,
     })
@@ -24,7 +25,8 @@ fn provider(base_url: String) -> DoubaoChatCompletionsProvider {
 
 fn model_config() -> ModelConfig {
     ModelConfig {
-        provider: ProviderKind::OpenAiCompatible,
+        provider: ProviderKind::Doubao,
+        api_kind: ApiKind::ChatCompletions,
         id: "doubao-seed-2-0-lite-260215".into(),
         coordinate_policy: CoordinatePolicy::SurfaceNormalized1000,
         default_options: CallOptions::default(),
@@ -136,7 +138,10 @@ async fn doubao_provider_uses_chat_completions_for_json_planner_requests() {
         recorded.body["response_format"]["type"],
         Value::String("json_object".into())
     );
-    assert_eq!(recorded.body["max_tokens"], Value::Number(512.into()));
+    assert_eq!(
+        recorded.body["max_completion_tokens"],
+        Value::Number(512.into())
+    );
     assert_eq!(
         recorded.body["messages"][0]["role"],
         Value::String("system".into())

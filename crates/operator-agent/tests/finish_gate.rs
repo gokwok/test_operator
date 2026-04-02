@@ -39,7 +39,7 @@ fn resolved_model(
     registry.register_provider(provider_kind, provider.clone());
     let model_name = match provider_kind {
         ProviderKind::OpenAi => "gpt-5.4",
-        ProviderKind::OpenAiCompatible => "doubao-seed",
+        ProviderKind::Doubao => "doubao-seed",
     };
 
     (
@@ -321,7 +321,7 @@ async fn finish_gate_rejects_finish_when_ui_state_is_stale_without_model_reflect
     state.mark_ui_stale();
 
     let (model, provider) = resolved_model(
-        ProviderKind::OpenAiCompatible,
+        ProviderKind::Doubao,
         r#"{"verdict":"ok","reason":"This should never be used."}"#,
     );
 

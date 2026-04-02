@@ -638,8 +638,9 @@ fn render_models(output: &Value) -> String {
             }
 
             format!(
-                "{heading}\n    Provider: {}\n    Model: {}\n    Base URL: {}\n    API Key: {}",
+                "{heading}\n    Provider: {}\n    API Kind: {}\n    Model: {}\n    Base URL: {}\n    API Key: {}",
                 render_string_field(model["provider_kind"].as_str()),
+                render_string_field(model["api_kind"].as_str()),
                 render_string_field(model["model_name"].as_str()),
                 render_string_field(model["base_url"].as_str()),
                 render_string_field(model["api_key"].as_str()),
@@ -670,6 +671,10 @@ fn render_model(output: &Value) -> String {
         format!(
             "Provider: {}",
             render_string_field(model["provider_kind"].as_str())
+        ),
+        format!(
+            "API Kind: {}",
+            render_string_field(model["api_kind"].as_str())
         ),
         format!(
             "Model Name: {}",
@@ -1091,6 +1096,7 @@ mod tests {
                     "name": "openai",
                     "is_default": true,
                     "provider_kind": "openai",
+                    "api_kind": "responses",
                     "model_name": "gpt-5.4",
                     "base_url": "https://api.openai.com/v1",
                     "api_key": "**********1234"
@@ -1098,7 +1104,8 @@ mod tests {
                 {
                     "name": "doubao",
                     "is_default": false,
-                    "provider_kind": "openai_compatible",
+                    "provider_kind": "doubao",
+                    "api_kind": "chat_completions",
                     "model_name": null,
                     "base_url": null,
                     "api_key": null
@@ -1108,7 +1115,7 @@ mod tests {
 
         assert_eq!(
             render_models(&output),
-            "Models (2):\n  • openai [default]\n    Provider: openai\n    Model: gpt-5.4\n    Base URL: https://api.openai.com/v1\n    API Key: **********1234\n  • doubao\n    Provider: openai_compatible\n    Model: <unset>\n    Base URL: <unset>\n    API Key: <unset>"
+            "Models (2):\n  • openai [default]\n    Provider: openai\n    API Kind: responses\n    Model: gpt-5.4\n    Base URL: https://api.openai.com/v1\n    API Key: **********1234\n  • doubao\n    Provider: doubao\n    API Kind: chat_completions\n    Model: <unset>\n    Base URL: <unset>\n    API Key: <unset>"
         );
     }
 
@@ -1118,7 +1125,8 @@ mod tests {
             "model": {
                 "name": "doubao",
                 "is_default": false,
-                "provider_kind": "openai_compatible",
+                "provider_kind": "doubao",
+                "api_kind": "chat_completions",
                 "model_name": "doubao-seed-2-0-lite-260215",
                 "base_url": "https://ark.cn-beijing.volces.com/api/v3",
                 "api_key": "********5678"
@@ -1127,7 +1135,7 @@ mod tests {
 
         assert_eq!(
             render_model(&output),
-            "Model: doubao\nDefault: no\nProvider: openai_compatible\nModel Name: doubao-seed-2-0-lite-260215\nBase URL: https://ark.cn-beijing.volces.com/api/v3\nAPI Key: ********5678"
+            "Model: doubao\nDefault: no\nProvider: doubao\nAPI Kind: chat_completions\nModel Name: doubao-seed-2-0-lite-260215\nBase URL: https://ark.cn-beijing.volces.com/api/v3\nAPI Key: ********5678"
         );
     }
 

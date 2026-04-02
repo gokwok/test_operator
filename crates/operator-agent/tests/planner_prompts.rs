@@ -1,7 +1,7 @@
 use operator_agent::{
     model::{
-        AssistantMessage, CallOptions, ContentBlock, CoordinatePolicy, Message, ModelConfig,
-        ProviderKind, StopReason, Usage, UserMessage,
+        ApiKind, AssistantMessage, CallOptions, ContentBlock, CoordinatePolicy, Message,
+        ModelConfig, ProviderKind, StopReason, Usage, UserMessage,
     },
     planner::{
         PlannerContext, PlannerPromptBuilder, PlannerVisualInput, PlannerVisualSlot, TargetSummary,
@@ -169,6 +169,7 @@ fn visual_inputs() -> Vec<PlannerVisualInput> {
 fn openai_model_config() -> ModelConfig {
     ModelConfig {
         provider: ProviderKind::OpenAi,
+        api_kind: ApiKind::Responses,
         id: "gpt-5.4".into(),
         coordinate_policy: CoordinatePolicy::SurfaceImagePixels,
         default_options: CallOptions::default(),
@@ -178,7 +179,8 @@ fn openai_model_config() -> ModelConfig {
 
 fn compatible_model_config() -> ModelConfig {
     ModelConfig {
-        provider: ProviderKind::OpenAiCompatible,
+        provider: ProviderKind::Doubao,
+        api_kind: ApiKind::ChatCompletions,
         id: "doubao-seed-2-0-lite-260215".into(),
         coordinate_policy: CoordinatePolicy::SurfaceNormalized1000,
         default_options: CallOptions::default(),
@@ -488,9 +490,12 @@ fn planner_prompts_render_bounded_element_digest_lines() {
     );
     let request = current_request_text(&assembled.messages);
 
-    assert!(request
-        .contains("element digest (SnapshotElement ids; native bounds use device coordinates):"));
-    assert!(request.contains("[el-button] button label=\"保存\" enabled=true bounds=(12,24,88,36)"));
-    assert!(request.contains("[el-text] text label=\"状态：已保存\""));
+    assert!(
+        request.contains(
+            "element digest (use display ids like e1, e2 to reference elements; bounds use device coordinates):"
+        )
+    );
+    assert!(request.contains("[e1] button label=\"保存\" bounds=(12,24,88,36)"));
+    assert!(request.contains("[e2] text label=\"状态：已保存\""));
     assert!(request.contains("... 2 more element digest entries omitted"));
 }

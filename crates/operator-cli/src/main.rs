@@ -21,9 +21,10 @@ use operator_agent::{
     AgentRunner,
 };
 use operator_bootstrap::{
-    load_bootstrap_config_from, load_runtime_config, operator_home_dir, parse_model_set_expression,
-    parse_target_set_expression, runtime_config_path, system_platform_registry, AgentModelConfig,
-    ModelConfigFieldPath, RuntimeConfigDocument, TargetConfigFieldPath,
+    default_model_api_kind_for_selector, load_bootstrap_config_from, load_runtime_config,
+    operator_home_dir, parse_model_set_expression, parse_target_set_expression,
+    runtime_config_path, system_platform_registry, AgentModelConfig, ModelConfigFieldPath,
+    RuntimeConfigDocument, TargetConfigFieldPath,
 };
 use operator_core::{OperatorError, TargetId};
 #[cfg(not(test))]
@@ -581,6 +582,7 @@ fn configured_model_provider(
             api_key: provider.api_key.clone(),
             base_url: provider.base_url.clone(),
             model_name: provider.model_name.clone(),
+            api_kind: provider.api_kind.clone(),
         })
         .unwrap_or_default()
 }
@@ -845,10 +847,18 @@ fn configured_model_selectors(agent_model: &AgentModelConfig) -> Vec<String> {
 
 fn model_payload(selector: &str, agent_model: &AgentModelConfig) -> Value {
     let provider = agent_model.providers.get(selector);
+    let api_kind = provider
+        .and_then(|provider| provider.api_kind.clone())
+        .or_else(|| {
+            default_model_api_kind_for_selector(selector)
+                .ok()
+                .map(str::to_owned)
+        });
     serde_json::json!({
         "name": selector,
         "is_default": agent_model.default.as_deref() == Some(selector),
         "provider_kind": model_provider_kind(selector),
+        "api_kind": api_kind,
         "model_name": provider.and_then(|provider| provider.model_name.clone()),
         "base_url": provider.and_then(|provider| provider.base_url.clone()),
         "api_key": output::mask_secret(provider.and_then(|provider| provider.api_key.as_deref())),
@@ -858,7 +868,7 @@ fn model_payload(selector: &str, agent_model: &AgentModelConfig) -> Value {
 fn model_provider_kind(selector: &str) -> &'static str {
     match selector {
         "openai" => "openai",
-        "doubao" => "openai_compatible",
+        "doubao" => "doubao",
         _ => "unknown",
     }
 }

@@ -46,6 +46,13 @@ pub enum ModelError {
     Provider(String),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpProviderConfig {
+    pub provider: ProviderKind,
+    pub api_key: String,
+    pub base_url: String,
+}
+
 pub trait ModelProvider: Send + Sync + 'static {
     fn stream(&self, req: ModelRequest) -> ModelStream;
 }

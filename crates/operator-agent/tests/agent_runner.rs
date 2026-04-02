@@ -550,7 +550,7 @@ async fn runner_avoids_structured_output_for_doubao_planner_and_finish_gate() {
     let session_store = Arc::new(InMemorySessionStore::new());
     let runner = runner_with_provider_kind(
         driver,
-        ProviderKind::OpenAiCompatible,
+        ProviderKind::Doubao,
         provider.clone(),
         session_store,
         AgentConfig {
@@ -830,7 +830,10 @@ async fn agent_runner_reenables_selector_locators_after_element_backed_observati
         "selector locators should return once the current observation includes elements: {click_summary}"
     );
     let request = current_request_text(&requests[0].context);
-    assert!(request
-        .contains("element digest (SnapshotElement ids; native bounds use device coordinates):"));
-    assert!(request.contains("[el-1] AXButton label=\"Test Element el-1\" enabled=true"));
+    assert!(
+        request.contains(
+            "element digest (use display ids like e1, e2 to reference elements; bounds use device coordinates):"
+        )
+    );
+    assert!(request.contains("[e1] AXButton label=\"Test Element el-1\""));
 }

@@ -537,7 +537,7 @@ const MODEL_GROUP_HELP: CommandHelpGroup = CommandHelpGroup {
         "operator model show",
         "operator model show openai",
         "operator model use doubao",
-        "operator model set openai --set model_name=gpt-5.4",
+        "operator model set openai --set model_name=gpt-5.4 --set api_kind=responses",
         "operator model unset doubao api_key",
     ],
     footer: "Use 'operator model <command> --help' for detailed usage.",
@@ -704,7 +704,11 @@ const MODEL_LIST_HELP_SECTIONS: &[LeafHelpSection] = &[
             },
             CommandHelpEntry {
                 command: "provider kind",
-                about: "Provider implementation kind derived from the selector",
+                about: "Real upstream provider identity derived from the selector",
+            },
+            CommandHelpEntry {
+                command: "api_kind",
+                about: "Effective remote API dialect (`responses` or `chat_completions`)",
             },
             CommandHelpEntry {
                 command: "model_name",
@@ -767,7 +771,7 @@ const MODEL_SHOW_HELP_SECTIONS: &[LeafHelpSection] = &[
                 about: "Provider entry for the selected logical selector",
             },
             CommandHelpEntry {
-                command: "api_key | base_url | model_name",
+                command: "api_key | base_url | model_name | api_kind",
                 about: "The only supported provider fields in the Core contract",
             },
             CommandHelpEntry {
@@ -841,7 +845,7 @@ const MODEL_SET_HELP_SECTIONS: &[LeafHelpSection] = &[
         heading: "Mutation Contract",
         rows: &[
             CommandHelpEntry {
-                command: "api_key | base_url | model_name",
+                command: "api_key | base_url | model_name | api_kind",
                 about: "The only writable provider fields",
             },
             CommandHelpEntry {
@@ -889,6 +893,10 @@ const MODEL_UNSET_HELP_SECTIONS: &[LeafHelpSection] = &[
             CommandHelpEntry {
                 command: "model_name",
                 about: "Remove the stored remote provider model id",
+            },
+            CommandHelpEntry {
+                command: "api_kind",
+                about: "Remove the explicit API dialect override and fall back to the selector default",
             },
         ],
     },
@@ -2229,6 +2237,7 @@ const MODEL_SET_HELP: LeafHelp = LeafHelp {
     examples: &[
         "operator model set openai --set api_key=<redacted-openai-key>",
         "operator model set openai --set base_url=https://api.openai.com/v1",
+        "operator model set openai --set api_kind=chat_completions",
         "operator model set doubao --set model_name=doubao-seed-2-0-lite-260215",
     ],
     footer: "",
@@ -2242,6 +2251,7 @@ const MODEL_UNSET_HELP: LeafHelp = LeafHelp {
     examples: &[
         "operator model unset openai api_key",
         "operator model unset doubao base_url model_name",
+        "operator model unset openai api_kind",
         "operator --json model unset openai base_url",
     ],
     footer: "",

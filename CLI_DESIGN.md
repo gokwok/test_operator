@@ -368,12 +368,15 @@ Notes
     - 'gpt-5.4' normalizes to selector 'openai'
     - 'doubao-seed' normalizes to selector 'doubao'
   - The selector chooses the provider entry; 'model_name' is the remote provider model id.
+  - Provider identity and transport dialect are separate:
+    - provider kind: 'openai' or 'doubao'
+    - api_kind: 'responses' or 'chat_completions'
 
 Examples
   operator model list
   operator model show openai
   operator model use doubao
-  operator model set openai --set model_name='gpt-5.4'
+  operator model set openai --set model_name='gpt-5.4' --set api_kind='responses'
   operator model unset doubao api_key
 ```
 
@@ -389,6 +392,7 @@ Output
     - selector name
     - whether it is the configured default selector
     - provider kind
+    - effective api_kind
     - remote model_name
     - configured base_url
     - masked api_key
@@ -427,6 +431,7 @@ Output
     - api_key
     - base_url
     - model_name
+    - api_kind
 
   api_key follows the same masking rules as 'operator model list'.
 
@@ -493,6 +498,7 @@ Mutation Contract
     - api_key
     - base_url
     - model_name
+    - api_kind
 
   Path restrictions:
     - FIELD is relative to a single provider entry; dotted paths are invalid
@@ -508,6 +514,7 @@ Mutation Contract
 Examples
   operator model set openai --set api_key='<redacted-openai-key>'
   operator model set openai --set base_url='https://api.openai.com/v1'
+  operator model set openai --set api_kind='chat_completions'
   operator model set doubao --set model_name='doubao-seed-2-0-lite-260215'
 ```
 
@@ -527,6 +534,7 @@ Field Contract
     - api_key
     - base_url
     - model_name
+    - api_kind
 
   This command only removes provider fields from [agent.model.provider.<NAME>].
   Compatibility aliases normalize to the stable selector names before lookup.
@@ -538,6 +546,7 @@ Options
 
 Examples
   operator model unset openai api_key
+  operator model unset openai api_kind
   operator model unset doubao base_url model_name
 ```
 

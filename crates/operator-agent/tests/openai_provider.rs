@@ -8,14 +8,15 @@ use std::{
 };
 
 use operator_agent::model::{
-    CallOptions, ContentBlock, Context, CoordinatePolicy, Message, ModelConfig, ModelError,
-    ModelEvent, ModelProvider, OpenAiProviderConfig, OpenAiResponsesProvider, ProviderKind,
-    ReasoningLevel, ResponseFormat, ToolSpec, UserMessage,
+    ApiKind, CallOptions, ContentBlock, Context, CoordinatePolicy, HttpProviderConfig, Message,
+    ModelConfig, ModelError, ModelEvent, ModelProvider, ProviderKind, ReasoningLevel,
+    ResponseFormat, ResponsesProvider, ToolSpec, UserMessage,
 };
 use serde_json::{json, Value};
 
-fn provider(base_url: String) -> OpenAiResponsesProvider {
-    OpenAiResponsesProvider::new(OpenAiProviderConfig {
+fn provider(base_url: String) -> ResponsesProvider {
+    ResponsesProvider::new(HttpProviderConfig {
+        provider: ProviderKind::OpenAi,
         api_key: "test-key".into(),
         base_url,
     })
@@ -25,6 +26,7 @@ fn provider(base_url: String) -> OpenAiResponsesProvider {
 fn model_config() -> ModelConfig {
     ModelConfig {
         provider: ProviderKind::OpenAi,
+        api_kind: ApiKind::Responses,
         id: "gpt-5.4".into(),
         coordinate_policy: CoordinatePolicy::SurfaceImagePixels,
         default_options: CallOptions::default(),
@@ -433,12 +435,12 @@ async fn openai_provider_encodes_assistant_history_as_output_text() {
         Value::String("output_text".into())
     );
     assert_eq!(
-        recorded.body["input"][2]["role"],
-        Value::String("user".into())
+        recorded.body["input"][2]["type"],
+        Value::String("function_call_output".into())
     );
     assert_eq!(
-        recorded.body["input"][2]["content"][0]["type"],
-        Value::String("input_text".into())
+        recorded.body["input"][2]["call_id"],
+        Value::String("tool-1".into())
     );
 }
 

@@ -165,6 +165,7 @@ fn configured_models(model: &str, operator_home: &Path) -> Result<ModelRegistry,
             api_key: provider.api_key.clone(),
             base_url: provider.base_url.clone(),
             model_name: provider.model_name.clone(),
+            api_kind: provider.api_kind.clone(),
         })
         .unwrap_or_default();
 
