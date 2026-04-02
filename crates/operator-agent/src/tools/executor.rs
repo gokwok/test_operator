@@ -77,7 +77,17 @@ impl ToolExecutor {
             .find_spec(name)
             .map(|spec| !spec.has_side_effects)
             .unwrap_or(false);
-        let input = merge_exec_context(arguments.clone(), session_id, target, timeout_ms)?;
+        let mut normalized_args = match arguments.clone() {
+            Value::Object(map) => map,
+            _ => {
+                return Err(AgentError::Planner(
+                    "tool arguments must be encoded as a JSON object".into(),
+                ));
+            }
+        };
+        normalize_agent_args(name, &mut normalized_args);
+        let input =
+            merge_exec_context(Value::Object(normalized_args), session_id, target, timeout_ms)?;
 
         match self.tools.invoke(name, input).await {
             Ok(output) => Ok(AgentToolResult {
@@ -108,6 +118,87 @@ impl ToolExecutor {
             .into_iter()
             .find(|spec| spec.name == name)
     }
+}
+
+/// Translate simplified agent-facing arguments to full runtime format before dispatch.
+///
+/// - Locator fields: `{"element":"e37"}` / `{"text":"..."}` / `{"x":N,"y":N}` →
+///   `SnapshotElement` / `SnapshotText` / `Coords` variants (all use `"latest"` snapshot).
+/// - Observe tool: `{"elements":bool}` → `{"surface":{"kind":"Frontmost"},
+///   "include_screenshot":false,"include_elements":bool}`.
+fn normalize_agent_args(name: &str, args: &mut serde_json::Map<String, Value>) {
+    if let Some(locator) = args.get("locator").cloned() {
+        if let Some(normalized) = normalize_agent_locator(&locator) {
+            args.insert("locator".into(), normalized);
+        }
+    }
+
+    if name == "observe" {
+        normalize_agent_observe(args);
+    }
+}
+
+fn normalize_agent_locator(locator: &Value) -> Option<Value> {
+    let obj = locator.as_object()?;
+
+    // Already in runtime format — skip normalization.
+    if obj.contains_key("SnapshotElement")
+        || obj.contains_key("SnapshotText")
+        || obj.contains_key("SnapshotPixelCoords")
+        || obj.contains_key("SnapshotCoords")
+        || obj.contains_key("SnapshotNormalizedCoords")
+        || obj.contains_key("Text")
+        || obj.contains_key("Role")
+        || obj.contains_key("Coords")
+    {
+        return None;
+    }
+
+    // {"element": "e37"} → SnapshotElement with "latest" sentinel.
+    if let Some(element) = obj.get("element").and_then(Value::as_str) {
+        return Some(serde_json::json!({
+            "SnapshotElement": {
+                "snapshot": "latest",
+                "element": element
+            }
+        }));
+    }
+
+    // {"text": "foo"} → SnapshotText with "latest" sentinel.
+    if let Some(text) = obj.get("text").and_then(Value::as_str) {
+        return Some(serde_json::json!({
+            "SnapshotText": {
+                "snapshot": "latest",
+                "text": text
+            }
+        }));
+    }
+
+    // {"x": N, "y": N} → Coords.
+    if let (Some(x), Some(y)) = (obj.get("x"), obj.get("y")) {
+        return Some(serde_json::json!({
+            "Coords": { "x": x, "y": y }
+        }));
+    }
+
+    None
+}
+
+fn normalize_agent_observe(args: &mut serde_json::Map<String, Value>) {
+    let elements = args
+        .remove("elements")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !args.contains_key("surface") {
+        args.insert(
+            "surface".into(),
+            serde_json::json!({ "kind": "Frontmost" }),
+        );
+    }
+    args.insert("include_elements".into(), Value::Bool(elements));
+    args.entry("include_screenshot".to_string())
+        .or_insert(Value::Bool(false));
 }
 
 fn merge_exec_context(
