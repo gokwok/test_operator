@@ -709,12 +709,10 @@ impl RuntimeCore {
         let resolved_id: operator_core::ElementId;
         let element = if snapshot_record.elements.contains_key(element) {
             element
-        } else if let Some(native_id) = ElementDigest::from_snapshot(
-            &snapshot_record,
-            &DigestOptions::default(),
-        )
-        .as_ref()
-        .and_then(|d| d.resolve_id(element.0.as_str()))
+        } else if let Some(native_id) =
+            ElementDigest::from_snapshot(&snapshot_record, &DigestOptions::default())
+                .as_ref()
+                .and_then(|d| d.resolve_id(element.0.as_str()))
         {
             resolved_id = native_id.into();
             &resolved_id

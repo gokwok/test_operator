@@ -238,6 +238,15 @@ impl Driver {
         self.exec_side_effect_checked(&build_right_click_command(x, y))
     }
 
+    pub fn move_cursor<X, Y>(&mut self, x: X, y: Y) -> Result<()>
+    where
+        X: Into<Coord>,
+        Y: Into<Coord>,
+    {
+        let (x, y) = self.resolve_point(x.into(), y.into())?;
+        self.exec_side_effect_checked(&build_move_cursor_command(x, y))
+    }
+
     pub fn swipe<X1, Y1, X2, Y2>(
         &mut self,
         x1: X1,
@@ -1099,6 +1108,10 @@ fn build_right_click_command(x: i32, y: i32) -> String {
     format!("uinput -M -m {x} {y} -c 1")
 }
 
+fn build_move_cursor_command(x: i32, y: i32) -> String {
+    format!("uinput -M -m {x} {y}")
+}
+
 fn remote_temp_path(extension: &str) -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1133,11 +1146,11 @@ fn decode_base64_output(value: &str) -> Result<Vec<u8>> {
 mod tests {
     use super::{
         AppAbilityInfo, AppLabelInfo, DriverBuilder, bracket_groups,
-        build_filter_desktop_bundles_command, build_press_keys_command, build_right_click_command,
-        decode_base64_output, extract_ipv4_after, normalize_velocity, parse_app_abilities,
-        parse_app_info_json, parse_app_labels, parse_app_list, parse_app_version,
-        parse_current_app, parse_display_size, parse_main_ability_from_dump, parse_mission_list,
-        parse_window_detail, parse_window_list, parse_wlan_ip, shell_escape,
+        build_filter_desktop_bundles_command, build_move_cursor_command, build_press_keys_command,
+        build_right_click_command, decode_base64_output, extract_ipv4_after, normalize_velocity,
+        parse_app_abilities, parse_app_info_json, parse_app_labels, parse_app_list,
+        parse_app_version, parse_current_app, parse_display_size, parse_main_ability_from_dump,
+        parse_mission_list, parse_window_detail, parse_window_list, parse_wlan_ip, shell_escape,
     };
     use crate::types::Coord;
     use serde_json::{Value, json};
@@ -1324,6 +1337,13 @@ Mission ID #12 {
         let command = build_right_click_command(1560, 1040);
 
         assert_eq!(command, "uinput -M -m 1560 1040 -c 1");
+    }
+
+    #[test]
+    fn move_cursor_builds_move_only_command() {
+        let command = build_move_cursor_command(1560, 1040);
+
+        assert_eq!(command, "uinput -M -m 1560 1040");
     }
 
     #[test]

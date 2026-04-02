@@ -7,11 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hmdriver_rs::{AppLabelInfo, CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiDriver};
+use hmdriver_rs::{
+    AppLabelInfo, Bounds, CorrelatedWindowList, CurrentApp, Driver, ShellResult, UiComponentInfo,
+    UiDriver,
+};
 use operator_core::{
     Action, ActionCoordinates, ActionFocusPolicy, ActionOutcome, ActionRequest, ActionSideEffect,
-    ActionTargetSelector, Capability, ClickMode, DragMotion, ImageSizePx, Locator, OperatorError,
-    PermissionStatus, PermissionsReport, Point, Rect, TargetId, TypeTrailingKey,
+    ActionTargetSelector, AppInfo, Capability, ClickMode, DragMotion, FocusInfo, ImageSizePx,
+    Locator, OperatorError, PermissionStatus, PermissionsReport, Point, Rect, TargetId,
+    TypeTrailingKey, WindowInfo,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -28,7 +32,8 @@ use crate::{
     errors::hdc_platform_error,
     inspect::{build_inspect_result, filter_inspect_result_to_region, InspectResult},
     normalize::{
-        resolve_action_target, target_anchor_point, InstalledHarmonyApp, ResolvedActionTarget,
+        normalize_windows, resolve_action_target, target_anchor_point, InstalledHarmonyApp,
+        ResolvedActionTarget,
     },
     permissions::{HarmonyPermissionSnapshot, ProbeStatus},
     HarmonyHdcConfig,
@@ -53,6 +58,11 @@ pub trait HarmonyHdcShellSession: Send {
             Capability::InspectTree,
         ))
     }
+    fn move_cursor(&mut self, _point: Point) -> Result<(), OperatorError> {
+        Err(OperatorError::CapabilityNotSupported(
+            Capability::PointerInput,
+        ))
+    }
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError>;
     fn input_text(&mut self, text: &str) -> Result<(), OperatorError>;
     fn press_keys(&mut self, keys: &[u32]) -> Result<(), OperatorError>;
@@ -65,6 +75,21 @@ pub trait HarmonyHdcShellSession: Send {
 pub trait HarmonyHdcUiSession {
     fn check_ready(&self) -> Result<(), OperatorError>;
     fn resolve_locator(&mut self, locator: &Locator) -> Result<Option<Point>, OperatorError>;
+    fn active_window(&mut self) -> Result<Option<HarmonyActiveWindow>, OperatorError> {
+        Err(OperatorError::CapabilityNotSupported(
+            Capability::WindowQuery,
+        ))
+    }
+    fn focused_component(&mut self) -> Result<Option<UiComponentInfo>, OperatorError> {
+        Err(OperatorError::CapabilityNotSupported(
+            Capability::InspectTree,
+        ))
+    }
+    fn dock_app_icon_point(&mut self, _labels: &[String]) -> Result<Option<Point>, OperatorError> {
+        Err(OperatorError::CapabilityNotSupported(
+            Capability::AppLifecycle,
+        ))
+    }
 }
 
 pub trait HarmonyHdcSessionFactory: Send + Sync + 'static {
@@ -224,6 +249,17 @@ impl HarmonyHdcWorker {
         response_rx.await.map_err(|_| worker_stopped_error())?
     }
 
+    pub(crate) async fn query_focus(&self) -> Result<Option<FocusInfo>, OperatorError> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.sender
+            .send(WorkerCommand::QueryFocus {
+                response: response_tx,
+            })
+            .map_err(|_| worker_stopped_error())?;
+
+        response_rx.await.map_err(|_| worker_stopped_error())?
+    }
+
     pub(crate) async fn inspect_tree(
         &self,
         region: Option<Rect>,
@@ -287,6 +323,9 @@ enum WorkerCommand {
         region: Option<Rect>,
         response: oneshot::Sender<Result<InspectResult, OperatorError>>,
     },
+    QueryFocus {
+        response: oneshot::Sender<Result<Option<FocusInfo>, OperatorError>>,
+    },
     Act {
         request: Box<ActionRequest>,
         response: oneshot::Sender<Result<ActionOutcome, OperatorError>>,
@@ -309,6 +348,14 @@ pub(crate) struct HarmonyAppQueryReport {
 struct HarmonyAppCatalogCache {
     version: u32,
     report: HarmonyAppQueryReport,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HarmonyActiveWindow {
+    pub bundle_id: String,
+    pub title: Option<String>,
+    pub bounds: Option<Rect>,
+    pub is_focused: bool,
 }
 
 struct WorkerState {
@@ -584,14 +631,19 @@ impl WorkerState {
             verifications: _,
         } = request;
         let started = Instant::now();
-        let resolved_target = target_selector
-            .as_ref()
-            .map(|selector| self.resolve_target(selector))
-            .transpose()?;
+        let resolved_target = if matches!(&action, Action::UnhideApp) {
+            None
+        } else {
+            target_selector
+                .as_ref()
+                .map(|selector| self.resolve_target(selector))
+                .transpose()?
+        };
 
         let mut outcome = match action {
             Action::LaunchApp { bundle_id_or_name } => self.launch_app(&bundle_id_or_name)?,
             Action::Click { mode } => self.click(locator, resolved_target.as_ref(), mode)?,
+            Action::Move => self.move_cursor(locator, resolved_target.as_ref())?,
             Action::Type {
                 text,
                 clear_before,
@@ -611,6 +663,9 @@ impl WorkerState {
             Action::Hotkey { keys } => {
                 self.hotkey(resolved_target.as_ref(), focus_policy, &keys)?
             }
+            Action::Scroll { delta_x, delta_y } => {
+                self.scroll(locator, resolved_target.as_ref(), delta_x, delta_y)?
+            }
             Action::SwitchApp => {
                 let target = required_target_selector("switch-app", resolved_target.as_ref())?;
                 self.switch_app(target)?
@@ -622,6 +677,21 @@ impl WorkerState {
             Action::RelaunchApp => {
                 let target = required_target_selector("relaunch-app", resolved_target.as_ref())?;
                 self.relaunch_app(target)?
+            }
+            Action::HideApp => {
+                let target = required_target_selector("hide-app", resolved_target.as_ref())?;
+                let active_window = self.best_effort_active_window(true);
+                if !hide_target_matches_frontmost_window(target, active_window.as_ref()) {
+                    return Err(OperatorError::Platform(
+                        "harmony.hdc hide-app requires the target app to be frontmost and visible"
+                            .into(),
+                    ));
+                }
+                self.toggle_app_visibility(target, "hid app", ActionSideEffect::HideApp)?
+            }
+            Action::UnhideApp => {
+                let target = self.resolve_unhide_target(target_selector.as_ref())?;
+                self.toggle_app_visibility(&target, "unhid app", ActionSideEffect::UnhideApp)?
             }
             Action::Drag { from, to, motion } => self.drag(from, to, motion)?,
             Action::Swipe {
@@ -636,6 +706,61 @@ impl WorkerState {
         apply_target(&mut outcome, resolved_target.as_ref());
         outcome.duration_ms = started.elapsed().as_millis() as u64;
         Ok(outcome)
+    }
+
+    fn query_focus(&mut self) -> Result<Option<FocusInfo>, OperatorError> {
+        let labels = self.query_app_labels()?;
+        let active_window = self.best_effort_active_window(true);
+        let current_app = self.frontmost_app(active_window.as_ref())?;
+        let focused_window = focused_window_from_windows(self.query_windows()?, &labels);
+        let bundle_id = active_window
+            .as_ref()
+            .map(|window| window.bundle_id.clone())
+            .or_else(|| current_app.as_ref().map(|app| app.bundle_name.clone()));
+        let app_name = resolved_focus_app_name(
+            bundle_id.as_deref(),
+            &labels,
+            focused_window.as_ref(),
+            active_window.as_ref(),
+        );
+        if let Some(component) = self.best_effort_focused_component() {
+            return Ok(Some(focus_info_from_component(
+                component, bundle_id, app_name,
+            )));
+        }
+
+        if let Some(window) = active_window {
+            return Ok(Some(FocusInfo {
+                role: "Window".into(),
+                label: window.title.clone().or_else(|| app_name.clone()),
+                bounds: window.bounds,
+                bundle_id: Some(window.bundle_id),
+                app_name,
+            }));
+        }
+
+        if let Some(window) = focused_window {
+            return Ok(Some(FocusInfo {
+                role: "Window".into(),
+                label: window.title.clone().or_else(|| app_name.clone()),
+                bounds: window.bounds,
+                bundle_id,
+                app_name,
+            }));
+        }
+
+        if let Some(bundle_id) = bundle_id {
+            let label = app_name.clone();
+            return Ok(Some(FocusInfo {
+                role: "Application".into(),
+                label,
+                bounds: None,
+                bundle_id: Some(bundle_id),
+                app_name,
+            }));
+        }
+
+        Ok(None)
     }
 
     fn launch_app(&mut self, bundle_id_or_name: &str) -> Result<ActionOutcome, OperatorError> {
@@ -822,6 +947,28 @@ impl WorkerState {
         Ok(outcome)
     }
 
+    fn move_cursor(
+        &mut self,
+        locator: Option<Locator>,
+        target: Option<&ResolvedActionTarget>,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let point = if let Some(locator) = locator.as_ref() {
+            self.resolve_locator_point(locator)?
+        } else {
+            target.map(target_anchor).transpose()?.ok_or_else(|| {
+                OperatorError::Platform(
+                    "harmony.hdc move requires a locator or target selector".into(),
+                )
+            })?
+        };
+        self.with_shell_session(|session| session.move_cursor(point))?;
+
+        let mut outcome = successful_action_outcome("moved");
+        outcome.coordinates = Some(point_coordinates(point));
+        outcome.side_effects = vec![ActionSideEffect::MoveCursor];
+        Ok(outcome)
+    }
+
     fn type_text(
         &mut self,
         locator: Option<Locator>,
@@ -968,6 +1115,38 @@ impl WorkerState {
         Ok(outcome)
     }
 
+    fn toggle_app_visibility(
+        &mut self,
+        target: &ResolvedActionTarget,
+        detail: &str,
+        side_effect: ActionSideEffect,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let candidates = self.dock_icon_labels(target)?;
+        let point = self
+            .with_ui_session(|session| session.dock_app_icon_point(&candidates))?
+            .ok_or_else(|| {
+                OperatorError::Platform(format!(
+                    "harmony.hdc could not find a dock icon for {}",
+                    candidates.join(" / ")
+                ))
+            })?;
+        self.with_shell_session(|session| session.click(point, ClickMode::Left))?;
+
+        let mut outcome = successful_action_outcome(detail);
+        outcome.coordinates = Some(point_coordinates(point));
+        outcome.side_effects = vec![
+            ActionSideEffect::Click {
+                mode: ClickMode::Left,
+            },
+            side_effect,
+        ];
+        outcome
+            .warnings
+            .push("harmony.hdc approximates app visibility by clicking the dock icon".into());
+        apply_target(&mut outcome, Some(target));
+        Ok(outcome)
+    }
+
     fn drag(
         &mut self,
         from: Locator,
@@ -1007,12 +1186,46 @@ impl WorkerState {
         Ok(outcome)
     }
 
+    fn scroll(
+        &mut self,
+        locator: Option<Locator>,
+        target: Option<&ResolvedActionTarget>,
+        delta_x: f64,
+        delta_y: f64,
+    ) -> Result<ActionOutcome, OperatorError> {
+        let point = if let Some(locator) = locator.as_ref() {
+            self.resolve_locator_point(locator)?
+        } else if let Some(target) = target {
+            target_anchor(target)?
+        } else {
+            display_center(self.with_shell_session(|session| session.display_size())?)
+        };
+
+        let mut outcome = successful_action_outcome("scrolled");
+        outcome.coordinates = Some(point_coordinates(point));
+        outcome.side_effects = vec![ActionSideEffect::Scroll { delta_x, delta_y }];
+        outcome
+            .warnings
+            .push("harmony.hdc approximates scroll with swipe input".into());
+
+        if delta_x.abs() <= f64::EPSILON && delta_y.abs() <= f64::EPSILON {
+            return Ok(outcome);
+        }
+
+        let display = self.with_shell_session(|session| session.display_size())?;
+        let (from, to) = scroll_swipe_segment(point, display, delta_x, delta_y);
+        self.with_shell_session(|session| session.swipe(from, to, Some(2_000)))?;
+        outcome.coordinates = Some(range_coordinates(from, to));
+        Ok(outcome)
+    }
+
     fn resolve_target(
         &mut self,
         selector: &ActionTargetSelector,
     ) -> Result<ResolvedActionTarget, OperatorError> {
         let windows = self.query_windows()?;
-        let current_app = self.current_app()?;
+        let active_window = self.best_effort_active_window(false);
+        let current_app = self.frontmost_app(active_window.as_ref())?;
         let labels = match selector {
             ActionTargetSelector::App(_) => self.query_app_labels()?,
             _ => BTreeMap::new(),
@@ -1043,6 +1256,35 @@ impl WorkerState {
         self.with_shell_session(|session| session.current_app())
     }
 
+    fn best_effort_active_window(&mut self, connect: bool) -> Option<HarmonyActiveWindow> {
+        if !connect && self.ui_session.is_none() {
+            return None;
+        }
+        self.with_ui_session(|session| session.active_window())
+            .unwrap_or_default()
+    }
+
+    fn best_effort_focused_component(&mut self) -> Option<UiComponentInfo> {
+        self.with_ui_session(|session| session.focused_component())
+            .unwrap_or_default()
+    }
+
+    fn frontmost_app(
+        &mut self,
+        active_window: Option<&HarmonyActiveWindow>,
+    ) -> Result<Option<CurrentApp>, OperatorError> {
+        if let Some(window) = active_window {
+            let bundle = window.bundle_id.trim();
+            if !bundle.is_empty() {
+                return Ok(Some(CurrentApp {
+                    bundle_name: bundle.to_string(),
+                    ability_name: String::new(),
+                }));
+            }
+        }
+        self.current_app()
+    }
+
     fn resolve_launch_bundle(&mut self, bundle_id_or_name: &str) -> Result<String, OperatorError> {
         let bundle_id_or_name = bundle_id_or_name.trim();
         if bundle_id_or_name.is_empty() {
@@ -1060,7 +1302,8 @@ impl WorkerState {
             return Ok(bundle);
         }
 
-        let current_app = self.current_app()?;
+        let active_window = self.best_effort_active_window(false);
+        let current_app = self.frontmost_app(active_window.as_ref())?;
         if let Some(bundle) = current_app
             .as_ref()
             .filter(|app| normalize_match_text(&app.bundle_name) == requested)
@@ -1109,6 +1352,79 @@ impl WorkerState {
             &report.installed_apps,
             requested,
         ))
+    }
+
+    fn resolve_unhide_target(
+        &mut self,
+        selector: Option<&ActionTargetSelector>,
+    ) -> Result<ResolvedActionTarget, OperatorError> {
+        let selector = selector.ok_or_else(|| {
+            OperatorError::Platform("harmony.hdc unhide-app requires a target selector".into())
+        })?;
+
+        Ok(match selector {
+            ActionTargetSelector::App(bundle_id_or_name) => {
+                self.resolve_installed_or_running_app_target(bundle_id_or_name)?
+            }
+            _ => self.resolve_target(selector)?,
+        })
+    }
+
+    fn resolve_installed_or_running_app_target(
+        &mut self,
+        bundle_id_or_name: &str,
+    ) -> Result<ResolvedActionTarget, OperatorError> {
+        if let Ok(target) =
+            self.resolve_target(&ActionTargetSelector::App(bundle_id_or_name.into()))
+        {
+            return Ok(target);
+        }
+
+        let bundle = self.resolve_launch_bundle(bundle_id_or_name)?;
+        let labels = self.query_app_labels()?;
+        let name = labels
+            .get(&bundle)
+            .cloned()
+            .unwrap_or_else(|| bundle.clone());
+
+        Ok(ResolvedActionTarget {
+            app: Some(AppInfo {
+                bundle_id: Some(bundle),
+                name,
+                pid: None,
+                is_running: false,
+            }),
+            window: None,
+        })
+    }
+
+    fn dock_icon_labels(
+        &mut self,
+        target: &ResolvedActionTarget,
+    ) -> Result<Vec<String>, OperatorError> {
+        let labels = self.query_app_labels()?;
+        let mut candidates = Vec::new();
+        if let Some(app) = target.app.as_ref() {
+            push_unique_label(&mut candidates, &app.name);
+            if let Some(bundle_id) = app.bundle_id.as_deref() {
+                if let Some(label) = labels.get(bundle_id) {
+                    push_unique_label(&mut candidates, label);
+                }
+            }
+        }
+        if let Some(window) = target.window.as_ref() {
+            if let Some(app_name) = window.app_name.as_deref() {
+                push_unique_label(&mut candidates, app_name);
+            }
+        }
+
+        if candidates.is_empty() {
+            return Err(OperatorError::Platform(
+                "harmony.hdc app visibility fallback requires a resolved app label".into(),
+            ));
+        }
+
+        Ok(candidates)
     }
 
     fn with_shell_session<T>(
@@ -1246,6 +1562,13 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
             .map_err(|error| hdc_platform_error("failed to dump Harmony layout hierarchy", error))
     }
 
+    fn move_cursor(&mut self, point: Point) -> Result<(), OperatorError> {
+        let (x, y) = screen_point(point)?;
+        self.driver
+            .move_cursor(x, y)
+            .map_err(|error| hdc_platform_error("failed to move cursor over hdc", error))
+    }
+
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError> {
         let (x, y) = screen_point(point)?;
         match mode {
@@ -1367,6 +1690,56 @@ impl HarmonyHdcUiSession for RealHarmonyHdcUiSession {
             )),
         }
     }
+
+    fn active_window(&mut self) -> Result<Option<HarmonyActiveWindow>, OperatorError> {
+        self.ui
+            .find_active_window()
+            .and_then(|window| {
+                window
+                    .map(|window| {
+                        let title = non_empty_owned(window.title()?);
+                        Ok(HarmonyActiveWindow {
+                            bundle_id: window.bundle_name()?,
+                            title,
+                            bounds: rect_from_ui_bounds(window.bounds()?),
+                            is_focused: window.is_focused()?,
+                        })
+                    })
+                    .transpose()
+            })
+            .map_err(|error| hdc_platform_error("failed to resolve Harmony active window", error))
+    }
+
+    fn focused_component(&mut self) -> Result<Option<UiComponentInfo>, OperatorError> {
+        self.ui
+            .query()
+            .focused(true)
+            .find_component()
+            .and_then(|component| component.map(|component| component.info()).transpose())
+            .map_err(|error| {
+                hdc_platform_error("failed to resolve Harmony focused component", error)
+            })
+    }
+
+    fn dock_app_icon_point(&mut self, labels: &[String]) -> Result<Option<Point>, OperatorError> {
+        let display = self.ui.display_size().map_err(|error| {
+            hdc_platform_error("failed to read Harmony display size for dock lookup", error)
+        })?;
+        let display_height = f64::from(display.y);
+        let dock_threshold = display_height * 0.75;
+        let mut best: Option<(Point, f64)> = None;
+        for label in labels
+            .iter()
+            .map(|label| label.trim())
+            .filter(|label| !label.is_empty())
+        {
+            collect_dock_candidates(&self.ui, label, dock_threshold, &mut best).map_err(
+                |error| hdc_platform_error("failed to resolve Harmony dock icon", error),
+            )?;
+        }
+
+        Ok(best.map(|(point, _)| point))
+    }
 }
 
 fn looks_like_gui_catalog_entry(bundle: &str, label: &str) -> bool {
@@ -1478,6 +1851,9 @@ fn worker_loop(
             WorkerCommand::InspectTree { region, response } => {
                 let _ = response.send(state.inspect_tree(region));
             }
+            WorkerCommand::QueryFocus { response } => {
+                let _ = response.send(state.query_focus());
+            }
             WorkerCommand::Act { request, response } => {
                 let _ = response.send(state.act(*request));
             }
@@ -1560,6 +1936,222 @@ fn apply_target(outcome: &mut ActionOutcome, target: Option<&ResolvedActionTarge
     if let Some(target) = target {
         outcome.target_app = target.app.clone();
         outcome.target_window = target.window.clone();
+    }
+}
+
+fn focus_info_from_component(
+    component: UiComponentInfo,
+    bundle_id: Option<String>,
+    app_name: Option<String>,
+) -> FocusInfo {
+    let role = non_empty_str(&component.kind)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "Unknown".into());
+    FocusInfo {
+        role,
+        label: component_label(&component),
+        bounds: rect_from_ui_bounds(component.bounds),
+        bundle_id,
+        app_name,
+    }
+}
+
+fn component_label(component: &UiComponentInfo) -> Option<String> {
+    non_empty_owned(component.description.clone())
+        .or_else(|| non_empty_owned(component.text.clone()))
+}
+
+fn rect_from_ui_bounds(bounds: Bounds) -> Option<Rect> {
+    let width = bounds.right - bounds.left;
+    let height = bounds.bottom - bounds.top;
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+
+    Some(Rect {
+        x: f64::from(bounds.left),
+        y: f64::from(bounds.top),
+        width: f64::from(width),
+        height: f64::from(height),
+    })
+}
+
+fn focused_window_from_windows(
+    windows: CorrelatedWindowList,
+    labels: &BTreeMap<String, String>,
+) -> Option<WindowInfo> {
+    normalize_windows(windows, labels, None)
+        .into_iter()
+        .find(|window| window.is_focused)
+}
+
+fn resolved_focus_app_name(
+    bundle_id: Option<&str>,
+    labels: &BTreeMap<String, String>,
+    focused_window: Option<&WindowInfo>,
+    active_window: Option<&HarmonyActiveWindow>,
+) -> Option<String> {
+    bundle_id
+        .and_then(|bundle| labels.get(bundle).cloned())
+        .or_else(|| focused_window.and_then(|window| window.app_name.clone()))
+        .or_else(|| active_window.and_then(|window| window.title.clone()))
+        .or_else(|| bundle_id.map(ToOwned::to_owned))
+}
+
+fn hide_target_matches_frontmost_window(
+    target: &ResolvedActionTarget,
+    active_window: Option<&HarmonyActiveWindow>,
+) -> bool {
+    let Some(window) = target.window.as_ref() else {
+        return false;
+    };
+
+    if let Some(active_window) = active_window {
+        let active_bundle = non_empty_str(&active_window.bundle_id);
+        let target_bundle = target
+            .app
+            .as_ref()
+            .and_then(|app| app.bundle_id.as_deref())
+            .and_then(non_empty_str);
+        if let (Some(target_bundle), Some(active_bundle)) = (target_bundle, active_bundle) {
+            return target_bundle == active_bundle;
+        }
+
+        let target_title = window.title.as_deref().and_then(non_empty_str);
+        let active_title = active_window.title.as_deref().and_then(non_empty_str);
+        if let (Some(target_title), Some(active_title)) = (target_title, active_title) {
+            if target_title.eq_ignore_ascii_case(active_title) {
+                return true;
+            }
+        }
+    }
+
+    window.is_focused
+}
+
+fn display_center(size: ImageSizePx) -> Point {
+    Point {
+        x: f64::from(size.width) / 2.0,
+        y: f64::from(size.height) / 2.0,
+    }
+}
+
+fn scroll_swipe_segment(
+    anchor: Point,
+    display: ImageSizePx,
+    delta_x: f64,
+    delta_y: f64,
+) -> (Point, Point) {
+    let width = f64::from(display.width);
+    let height = f64::from(display.height);
+    let margin = width.min(height).mul_add(0.04, 0.0).clamp(24.0, 64.0);
+    let swipe_dx = scroll_axis_swipe_distance(delta_x, width, false);
+    let swipe_dy = scroll_axis_swipe_distance(delta_y, height, true);
+    let (from_x, to_x) = bounded_axis_segment(anchor.x, swipe_dx, margin, width - margin);
+    let (from_y, to_y) = bounded_axis_segment(anchor.y, swipe_dy, margin, height - margin);
+    (
+        Point {
+            x: from_x,
+            y: from_y,
+        },
+        Point { x: to_x, y: to_y },
+    )
+}
+
+fn scroll_axis_swipe_distance(delta: f64, axis_extent: f64, vertical: bool) -> f64 {
+    if delta.abs() <= f64::EPSILON {
+        return 0.0;
+    }
+
+    let max_distance = (axis_extent * 0.35).max(24.0);
+    let distance = ((delta.abs() / 120.0).max(0.25) * axis_extent * 0.12).clamp(24.0, max_distance);
+    let sign = if vertical {
+        delta.signum()
+    } else {
+        -delta.signum()
+    };
+    sign * distance
+}
+
+fn bounded_axis_segment(anchor: f64, travel: f64, min: f64, max: f64) -> (f64, f64) {
+    let half = travel / 2.0;
+    let mut start = anchor - half;
+    let mut end = anchor + half;
+    let low = start.min(end);
+    let mut high = start.max(end);
+    if low < min {
+        let shift = min - low;
+        start += shift;
+        end += shift;
+        high += shift;
+    }
+    if high > max {
+        let shift = high - max;
+        start -= shift;
+        end -= shift;
+    }
+
+    (start.clamp(min, max), end.clamp(min, max))
+}
+
+fn push_unique_label(labels: &mut Vec<String>, value: &str) {
+    let Some(value) = non_empty_str(value) else {
+        return;
+    };
+    if labels
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(value))
+    {
+        return;
+    }
+    labels.push(value.to_string());
+}
+
+fn non_empty_owned(value: String) -> Option<String> {
+    non_empty_str(&value).map(ToOwned::to_owned)
+}
+
+fn non_empty_str(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn collect_dock_candidates(
+    ui: &UiDriver,
+    label: &str,
+    dock_threshold: f64,
+    best: &mut Option<(Point, f64)>,
+) -> hmdriver_rs::Result<()> {
+    for component in ui.query().text(label).all()? {
+        consider_dock_candidate(component.info()?, dock_threshold, best);
+    }
+    for component in ui.query().description(label).all()? {
+        consider_dock_candidate(component.info()?, dock_threshold, best);
+    }
+    Ok(())
+}
+
+fn consider_dock_candidate(
+    component: UiComponentInfo,
+    dock_threshold: f64,
+    best: &mut Option<(Point, f64)>,
+) {
+    let center_y = f64::from(component.center.y);
+    if center_y < dock_threshold {
+        return;
+    }
+
+    let point = Point {
+        x: f64::from(component.center.x),
+        y: center_y,
+    };
+    match best {
+        Some((_, best_y)) if *best_y >= center_y => {}
+        _ => *best = Some((point, center_y)),
     }
 }
 

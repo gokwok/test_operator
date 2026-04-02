@@ -242,7 +242,15 @@ fn collect_entries(
     //    single-child and multi-child cases.
     if element.role == "group" && element.label.is_none() && element.value.is_none() {
         for child_id in &element.children {
-            collect_entries(snapshot, child_id, depth, parent_label, max_label_len, out, counter);
+            collect_entries(
+                snapshot,
+                child_id,
+                depth,
+                parent_label,
+                max_label_len,
+                out,
+                counter,
+            );
         }
         return;
     }

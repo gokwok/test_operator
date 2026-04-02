@@ -20,5 +20,6 @@ pub use permissions::{
     HDC_CAPTURE_CHECK_ID, HDC_CONNECT_CHECK_ID, HDC_SHELL_CHECK_ID, HDC_UI_BRIDGE_CHECK_ID,
 };
 pub use worker::{
-    HarmonyHdcSessionFactory, HarmonyHdcShellSession, HarmonyHdcUiSession, HarmonyHdcWorker,
+    HarmonyActiveWindow, HarmonyHdcSessionFactory, HarmonyHdcShellSession, HarmonyHdcUiSession,
+    HarmonyHdcWorker,
 };

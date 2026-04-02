@@ -11,9 +11,9 @@ use hmdriver_rs::{
     CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry, WindowRect,
 };
 use operator_core::{
-    Action, ActionFocusPolicy, ActionRequest, ActionTargetSelector, ClickMode, DragModifier,
-    DragMotion, DriverConfig, ExecContext, ImageSizePx, Locator, PlatformDriver, Point, Rect,
-    TargetDescriptor, TargetId, TypeTrailingKey,
+    Action, ActionFocusPolicy, ActionRequest, ActionSideEffect, ActionTargetSelector, ClickMode,
+    DragModifier, DragMotion, DriverConfig, ExecContext, ImageSizePx, Locator, PlatformDriver,
+    Point, Rect, TargetDescriptor, TargetId, TypeTrailingKey,
 };
 use operator_platform_harmony::{
     HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory, HarmonyHdcShellSession,
@@ -435,6 +435,88 @@ async fn drag_and_swipe_actions_convert_duration_to_velocity_and_warn_on_ignored
     assert_eq!(counts.shell_connects.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+async fn move_and_scroll_actions_use_cursor_move_and_swipe_fallbacks() {
+    let actions = Arc::new(Mutex::new(Vec::new()));
+    let driver = build_driver(FakeSessionFactory {
+        recorded_actions: Arc::clone(&actions),
+        current_app: Some(CurrentApp {
+            bundle_name: "com.demo.notes".into(),
+            ability_name: "EntryAbility".into(),
+        }),
+        windows: CorrelatedWindowList {
+            windows: vec![CorrelatedWindow {
+                window: window(7, "Draft", 101, 40, 50, 600, 400),
+                mission: Some(mission(7, "Notes", "com.demo.notes")),
+            }],
+            focused_window_id: Some(7),
+            highlighted_window_ids: vec![7],
+            total_window_count: Some(1),
+        },
+        ..Default::default()
+    });
+
+    let moved = driver
+        .act(
+            ActionRequest {
+                action: Action::Move,
+                locator: Some(Locator::Coords(Point { x: 640.0, y: 360.0 })),
+                target_selector: None,
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("move should succeed");
+    let scrolled = driver
+        .act(
+            ActionRequest {
+                action: Action::Scroll {
+                    delta_x: 0.0,
+                    delta_y: -120.0,
+                },
+                locator: None,
+                target_selector: Some(ActionTargetSelector::WindowTitle("Draft".into())),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("scroll should succeed");
+
+    assert_eq!(moved.detail.as_deref(), Some("moved"));
+    assert_eq!(
+        moved.coordinates.as_ref().and_then(|coords| coords.point),
+        Some(Point { x: 640.0, y: 360.0 })
+    );
+    assert_eq!(moved.side_effects, vec![ActionSideEffect::MoveCursor]);
+    assert_eq!(scrolled.detail.as_deref(), Some("scrolled"));
+    assert_eq!(
+        scrolled.side_effects,
+        vec![ActionSideEffect::Scroll {
+            delta_x: 0.0,
+            delta_y: -120.0,
+        }]
+    );
+    assert_eq!(
+        scrolled.warnings,
+        vec!["harmony.hdc approximates scroll with swipe input"]
+    );
+    assert_eq!(
+        actions.lock().unwrap().clone(),
+        vec![
+            RecordedShellAction::Move(Point { x: 640.0, y: 360.0 }),
+            RecordedShellAction::Swipe {
+                from: Point { x: 340.0, y: 314.8 },
+                to: Point { x: 340.0, y: 185.2 },
+                speed: Some(2_000),
+            },
+        ]
+    );
+}
+
 fn build_driver(factory: FakeSessionFactory) -> Arc<dyn PlatformDriver> {
     HarmonyHdcDriverFactory::new_with_session_factory(Arc::new(factory))
         .build(&TargetDescriptor {
@@ -504,6 +586,7 @@ fn mission(mission_id: u32, app_name: &str, bundle_name: &str) -> MissionEntry {
 
 #[derive(Debug, Clone, PartialEq)]
 enum RecordedShellAction {
+    Move(Point),
     Click {
         point: Point,
         mode: ClickMode,
@@ -651,6 +734,14 @@ impl HarmonyHdcShellSession for FakeShellSession {
             .lock()
             .unwrap()
             .push(RecordedShellAction::Click { point, mode });
+        Ok(())
+    }
+
+    fn move_cursor(&mut self, point: Point) -> Result<(), operator_core::OperatorError> {
+        self.recorded_actions
+            .lock()
+            .unwrap()
+            .push(RecordedShellAction::Move(point));
         Ok(())
     }
 

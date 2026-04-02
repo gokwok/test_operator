@@ -113,6 +113,7 @@ fn digest_observation() -> VisualObservationSummary {
             entries: vec![
                 ElementDigestEntry {
                     element_id: "el-button".into(),
+                    display_id: "e1".into(),
                     role: "button".into(),
                     label: Some("保存".into()),
                     value: None,
@@ -127,6 +128,7 @@ fn digest_observation() -> VisualObservationSummary {
                 },
                 ElementDigestEntry {
                     element_id: "el-text".into(),
+                    display_id: "e2".into(),
                     role: "text".into(),
                     label: Some("状态：已保存".into()),
                     value: None,

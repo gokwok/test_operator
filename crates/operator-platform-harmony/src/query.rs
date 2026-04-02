@@ -1,6 +1,5 @@
 use operator_core::{
-    AppInfo, AppListFilter, AppListMode, Capability, CapabilitySet, OperatorError, QueryRequest,
-    QueryResult,
+    AppInfo, AppListFilter, AppListMode, CapabilitySet, OperatorError, QueryRequest, QueryResult,
 };
 
 use crate::{
@@ -51,9 +50,7 @@ pub(crate) async fn query(
             Ok(QueryResult::Permissions(worker.permissions_report().await?))
         }
         QueryRequest::Capabilities => Ok(QueryResult::Capabilities(capabilities)),
-        QueryRequest::GetFocus => Err(OperatorError::CapabilityNotSupported(
-            Capability::InspectTree,
-        )),
+        QueryRequest::GetFocus => Ok(QueryResult::Focus(worker.query_focus().await?)),
     }
 }
 

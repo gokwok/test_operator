@@ -9,17 +9,17 @@ use std::{
 };
 
 use hmdriver_rs::{
-    AppLabelInfo, CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry, WindowEntry,
-    WindowRect,
+    AppLabelInfo, Bounds, CorrelatedWindow, CorrelatedWindowList, CurrentApp, MissionEntry,
+    UiComponentInfo, WindowEntry, WindowRect,
 };
 use operator_core::{
     AppListFilter, AppListMode, DriverConfig, ExecContext, ImageSizePx, PermissionStatus,
     PlatformDriver, QueryRequest, QueryResult, Rect, TargetDescriptor, TargetId,
 };
 use operator_platform_harmony::{
-    HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory, HarmonyHdcShellSession,
-    HarmonyHdcUiSession, HDC_CAPTURE_CHECK_ID, HDC_CONNECT_CHECK_ID, HDC_SHELL_CHECK_ID,
-    HDC_UI_BRIDGE_CHECK_ID,
+    HarmonyActiveWindow, HarmonyHdcConfig, HarmonyHdcDriverFactory, HarmonyHdcSessionFactory,
+    HarmonyHdcShellSession, HarmonyHdcUiSession, HDC_CAPTURE_CHECK_ID, HDC_CONNECT_CHECK_ID,
+    HDC_SHELL_CHECK_ID, HDC_UI_BRIDGE_CHECK_ID,
 };
 use operator_runtime::PlatformDriverFactory;
 use serde_json::json;
@@ -471,6 +471,120 @@ async fn capabilities_query_returns_declared_capability_set() {
     assert!(capabilities.supports(&operator_core::Capability::Permissions));
 }
 
+#[tokio::test]
+async fn get_focus_prefers_focused_component_and_resolves_app_context() {
+    let driver = build_driver(FakeSessionFactory {
+        labels: vec![app_label("com.demo.notes", "备忘录")],
+        current_app: Some(CurrentApp {
+            bundle_name: "com.demo.notes".into(),
+            ability_name: "EntryAbility".into(),
+        }),
+        windows: CorrelatedWindowList {
+            windows: vec![CorrelatedWindow {
+                window: window(7, "Draft", 101, 40, 50, 600, 400),
+                mission: Some(mission(7, "Notes", "com.demo.notes")),
+            }],
+            focused_window_id: Some(7),
+            highlighted_window_ids: vec![7],
+            total_window_count: Some(1),
+        },
+        focused_component: Some(UiComponentInfo {
+            id: "node-1".into(),
+            key: "node-1".into(),
+            kind: "TextField".into(),
+            text: "标题".into(),
+            description: "文档标题".into(),
+            selected: false,
+            checked: false,
+            enabled: true,
+            focused: true,
+            checkable: false,
+            clickable: true,
+            long_clickable: false,
+            scrollable: false,
+            bounds: Bounds {
+                left: 120,
+                top: 90,
+                right: 420,
+                bottom: 150,
+            },
+            center: hmdriver_rs::Point { x: 270, y: 120 },
+        }),
+        ..Default::default()
+    });
+
+    let result = driver
+        .query(QueryRequest::GetFocus, &exec_context())
+        .await
+        .expect("get-focus should succeed");
+
+    assert_eq!(
+        result,
+        QueryResult::Focus(Some(operator_core::FocusInfo {
+            role: "TextField".into(),
+            label: Some("文档标题".into()),
+            bounds: Some(Rect {
+                x: 120.0,
+                y: 90.0,
+                width: 300.0,
+                height: 60.0,
+            }),
+            bundle_id: Some("com.demo.notes".into()),
+            app_name: Some("备忘录".into()),
+        }))
+    );
+}
+
+#[tokio::test]
+async fn get_focus_prefers_active_window_over_shell_foreground_guess() {
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        labels: vec![
+            app_label("com.ohos.sceneboard", "桌面"),
+            app_label("com.edrawsoft.mindmaster.pc", "万兴脑图"),
+        ],
+        current_app: Some(CurrentApp {
+            bundle_name: "com.edrawsoft.mindmaster.pc".into(),
+            ability_name: "EntryAbility".into(),
+        }),
+        active_window: Some(HarmonyActiveWindow {
+            bundle_id: "com.ohos.sceneboard".into(),
+            title: Some("桌面".into()),
+            bounds: Some(Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            }),
+            is_focused: true,
+        }),
+        ..Default::default()
+    });
+
+    let result = driver
+        .query(QueryRequest::GetFocus, &exec_context())
+        .await
+        .expect("get-focus should prefer the ui-reported active window");
+
+    assert_eq!(
+        result,
+        QueryResult::Focus(Some(operator_core::FocusInfo {
+            role: "Window".into(),
+            label: Some("桌面".into()),
+            bounds: Some(Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            }),
+            bundle_id: Some("com.ohos.sceneboard".into()),
+            app_name: Some("桌面".into()),
+        }))
+    );
+    assert_eq!(counts.current_app_calls.load(Ordering::SeqCst), 0);
+}
+
 fn build_driver(factory: FakeSessionFactory) -> Arc<dyn PlatformDriver> {
     build_driver_with_config(factory, default_driver_config())
 }
@@ -624,6 +738,8 @@ struct FakeSessionFactory {
     desktop_visible_bundles: Vec<String>,
     current_app: Option<CurrentApp>,
     windows: CorrelatedWindowList,
+    active_window: Option<HarmonyActiveWindow>,
+    focused_component: Option<UiComponentInfo>,
     shell_connect: ProbeOutcome,
     shell_probe: ProbeOutcome,
     capture_probe: ProbeOutcome,
@@ -645,6 +761,8 @@ impl Default for FakeSessionFactory {
                 highlighted_window_ids: Vec::new(),
                 total_window_count: Some(0),
             },
+            active_window: None,
+            focused_component: None,
             shell_connect: ProbeOutcome::Ok,
             shell_probe: ProbeOutcome::Ok,
             capture_probe: ProbeOutcome::Ok,
@@ -680,6 +798,8 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
         self.ui_connect.into_result()?;
         Ok(Box::new(FakeUiSession {
             probe: self.ui_probe,
+            active_window: self.active_window.clone(),
+            focused_component: self.focused_component.clone(),
         }))
     }
 }
@@ -812,6 +932,8 @@ impl HarmonyHdcShellSession for FakeShellSession {
 
 struct FakeUiSession {
     probe: ProbeOutcome,
+    active_window: Option<HarmonyActiveWindow>,
+    focused_component: Option<UiComponentInfo>,
 }
 
 impl HarmonyHdcUiSession for FakeUiSession {
@@ -824,5 +946,17 @@ impl HarmonyHdcUiSession for FakeUiSession {
         _locator: &operator_core::Locator,
     ) -> Result<Option<operator_core::Point>, operator_core::OperatorError> {
         Ok(None)
+    }
+
+    fn active_window(
+        &mut self,
+    ) -> Result<Option<HarmonyActiveWindow>, operator_core::OperatorError> {
+        Ok(self.active_window.clone())
+    }
+
+    fn focused_component(
+        &mut self,
+    ) -> Result<Option<UiComponentInfo>, operator_core::OperatorError> {
+        Ok(self.focused_component.clone())
     }
 }
