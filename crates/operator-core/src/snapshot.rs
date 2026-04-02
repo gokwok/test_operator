@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::SystemTime};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ArtifactId, ElementId, Rect, SnapshotId, Surface, TargetId};
+use crate::{ArtifactId, ElementId, Point, Rect, SnapshotId, Surface, TargetId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Snapshot {
@@ -64,6 +64,55 @@ pub struct SnapshotMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub element_tree: Option<ElementTreeAssessment>,
     pub capture_duration_ms: u64,
+}
+
+impl Snapshot {
+    /// Search the element tree (DFS, root order) for an element whose `label`
+    /// or `value` matches `text`.  Exact case-insensitive match is preferred;
+    /// falls back to the first partial (substring) match.  Returns the centre
+    /// point of the matching element's bounds, or `None` if nothing is found.
+    pub fn find_by_label(&self, text: &str) -> Option<Point> {
+        let needle = text.trim().to_lowercase();
+        let mut partial: Option<Point> = None;
+        for root_id in &self.root_ids {
+            if let Some(exact) = self.search_label_dfs(root_id, &needle, &mut partial) {
+                return Some(exact);
+            }
+        }
+        partial
+    }
+
+    fn search_label_dfs(
+        &self,
+        id: &ElementId,
+        needle: &str,
+        partial: &mut Option<Point>,
+    ) -> Option<Point> {
+        let element = self.elements.get(id)?;
+        let label = element.label.as_deref().unwrap_or("").trim().to_lowercase();
+        let value = element.value.as_deref().unwrap_or("").trim().to_lowercase();
+
+        let exact = label == needle || value == needle;
+        let is_partial = !exact && (label.contains(needle) || value.contains(needle));
+
+        if (exact || is_partial) && element.bounds.is_some() {
+            let b = element.bounds.unwrap();
+            let pt = Point { x: b.x + b.width / 2.0, y: b.y + b.height / 2.0 };
+            if exact {
+                return Some(pt);
+            }
+            if partial.is_none() {
+                *partial = Some(pt);
+            }
+        }
+
+        for child_id in &element.children {
+            if let Some(exact) = self.search_label_dfs(child_id, needle, partial) {
+                return Some(exact);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

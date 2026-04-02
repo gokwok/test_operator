@@ -7,8 +7,8 @@ use std::{
 use operator_core::{
     Action, ActionOutcome, ActionRequest, ActionVerification, Capability, DigestOptions,
     ElementDigest, ExecContext, FocusInfo, ImageSizePx, Locator, ObserveRequest, ObserveResult,
-    OperatorError, PlatformDriver, Point, QueryRequest, QueryResult, TargetDescriptor, TargetId,
-    WindowInfo,
+    OperatorError, PlatformDriver, Point, QueryRequest, QueryResult, SnapshotId, TargetDescriptor,
+    TargetId, WindowInfo,
 };
 use tokio::time;
 
@@ -182,7 +182,7 @@ impl RuntimeCore {
 
         let started = Instant::now();
         let timeout_ms = self.timeout_ms(&ctx);
-        let normalized = match self.normalize_action_request(req).await {
+        let normalized = match self.normalize_action_request(req, &ctx.target).await {
             Ok(req) => req,
             Err(error) => {
                 self.emit_completed("act", started, false, &ctx).await?;
@@ -639,15 +639,16 @@ impl RuntimeCore {
     async fn normalize_action_request(
         &self,
         mut req: ActionRequest,
+        target: &TargetId,
     ) -> Result<ActionRequest, OperatorError> {
         if let Some(locator) = req.locator.take() {
-            req.locator = Some(self.normalize_locator(locator).await?);
+            req.locator = Some(self.normalize_locator(locator, target).await?);
         }
 
         req.action = match req.action {
             Action::Drag { from, to, motion } => Action::Drag {
-                from: self.normalize_locator(from).await?,
-                to: self.normalize_locator(to).await?,
+                from: self.normalize_locator(from, target).await?,
+                to: self.normalize_locator(to, target).await?,
                 motion,
             },
             Action::Swipe {
@@ -656,8 +657,8 @@ impl RuntimeCore {
                 duration_ms,
                 steps,
             } => Action::Swipe {
-                from: self.normalize_locator(from).await?,
-                to: self.normalize_locator(to).await?,
+                from: self.normalize_locator(from, target).await?,
+                to: self.normalize_locator(to, target).await?,
                 duration_ms,
                 steps,
             },
@@ -667,11 +668,30 @@ impl RuntimeCore {
         Ok(req)
     }
 
-    async fn normalize_locator(&self, locator: Locator) -> Result<Locator, OperatorError> {
+    async fn normalize_locator(
+        &self,
+        locator: Locator,
+        target: &TargetId,
+    ) -> Result<Locator, OperatorError> {
         match locator {
-            Locator::SnapshotElement { snapshot, element } => Ok(Locator::Coords(
-                self.snapshot_element_point(&snapshot, &element).await?,
+            Locator::SnapshotElement { ref snapshot, ref element } => Ok(Locator::Coords(
+                self.snapshot_element_point(snapshot, element, target).await?,
             )),
+            Locator::SnapshotText { snapshot, text } => {
+                let sid = self.resolve_snapshot_id(&snapshot, target).await?;
+                let snap = self
+                    .snapshots
+                    .get(&sid)
+                    .await?
+                    .ok_or_else(|| OperatorError::SnapshotNotFound(sid.clone()))?;
+                let point = snap.find_by_label(&text).ok_or_else(|| {
+                    OperatorError::Platform(format!(
+                        "no element with label matching {:?} found in snapshot {sid}",
+                        text
+                    ))
+                })?;
+                Ok(Locator::Coords(point))
+            }
             Locator::SnapshotPixelCoords { snapshot, point } => Ok(Locator::Coords(
                 self.snapshot_pixel_point(&snapshot, point).await?,
             )),
@@ -690,11 +710,32 @@ impl RuntimeCore {
         }
     }
 
+    /// Resolve the `"latest"` sentinel snapshot ID to the most recent snapshot
+    /// for the given target, or return the ID unchanged if it is already concrete.
+    async fn resolve_snapshot_id(
+        &self,
+        snapshot: &SnapshotId,
+        target: &TargetId,
+    ) -> Result<SnapshotId, OperatorError> {
+        if snapshot.0 == "latest" {
+            self.snapshots
+                .list(target)
+                .await?
+                .into_iter()
+                .last()
+                .ok_or_else(|| OperatorError::SnapshotNotFound(snapshot.clone()))
+        } else {
+            Ok(snapshot.clone())
+        }
+    }
+
     async fn snapshot_element_point(
         &self,
         snapshot: &operator_core::SnapshotId,
         element: &operator_core::ElementId,
+        target: &TargetId,
     ) -> Result<Point, OperatorError> {
+        let snapshot = &self.resolve_snapshot_id(snapshot, target).await?;
         let snapshot_record = self
             .snapshots
             .get(snapshot)

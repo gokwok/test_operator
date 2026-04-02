@@ -5094,11 +5094,13 @@ impl RawLocatorArgs {
     }
 
     fn into_locator(self) -> Result<Option<Locator>, String> {
-        let snapshot_variant = self.snapshot.is_some() || self.element.is_some();
+        // --snapshot is an optional modifier for --element and --text, not an
+        // independent variant, so we exclude it from the mutual-exclusivity check.
+        let element_variant = self.element.is_some();
         let text_variant = self.text.is_some();
         let role_variant = self.role.is_some();
         let coords_variant = self.x.is_some() || self.y.is_some();
-        let selected = [snapshot_variant, text_variant, role_variant, coords_variant]
+        let selected = [element_variant, text_variant, role_variant, coords_variant]
             .into_iter()
             .filter(|flag| *flag)
             .count();
@@ -5111,21 +5113,29 @@ impl RawLocatorArgs {
             return Err("locator flags are mutually exclusive".into());
         }
 
-        if snapshot_variant {
+        // --element [--snapshot <id>]
+        // When --snapshot is omitted the runtime will use the most recent snapshot.
+        if element_variant {
             let snapshot = self
                 .snapshot
-                .ok_or_else(|| "--snapshot is required when --element is provided".to_string())?;
-            let element = self
-                .element
-                .ok_or_else(|| "--element is required when --snapshot is provided".to_string())?;
+                .map(SnapshotId::from)
+                .unwrap_or_else(|| SnapshotId::from("latest"));
+            let element = self.element.unwrap();
             return Ok(Some(Locator::SnapshotElement {
-                snapshot: SnapshotId::from(snapshot),
+                snapshot,
                 element: element.into(),
             }));
         }
 
+        // --text [--snapshot <id>]
+        // Routes through snapshot label matching (faster than live inspection).
+        // When --snapshot is omitted the runtime uses the most recent snapshot.
         if let Some(text) = self.text {
-            return Ok(Some(Locator::Text(text)));
+            let snapshot = self
+                .snapshot
+                .map(SnapshotId::from)
+                .unwrap_or_else(|| SnapshotId::from("latest"));
+            return Ok(Some(Locator::SnapshotText { snapshot, text }));
         }
 
         if let Some(role) = self.role {
