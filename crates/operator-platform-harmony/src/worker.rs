@@ -41,6 +41,7 @@ use crate::{
 
 const SHELL_PROBE_COMMAND: &str = "echo operator >/dev/null";
 const APP_CATALOG_CACHE_VERSION: u32 = 1;
+const SMART_DOCK_WINDOW_ID: &str = "11";
 
 pub trait HarmonyHdcShellSession: Send {
     fn exec_checked(&mut self, command: &str) -> Result<(), OperatorError>;
@@ -61,6 +62,14 @@ pub trait HarmonyHdcShellSession: Send {
     fn move_cursor(&mut self, _point: Point) -> Result<(), OperatorError> {
         Err(OperatorError::CapabilityNotSupported(
             Capability::PointerInput,
+        ))
+    }
+    fn dock_app_icon_point_by_bundle(
+        &mut self,
+        _bundle_id: &str,
+    ) -> Result<Option<Point>, OperatorError> {
+        Err(OperatorError::CapabilityNotSupported(
+            Capability::AppLifecycle,
         ))
     }
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError>;
@@ -680,8 +689,7 @@ impl WorkerState {
             }
             Action::HideApp => {
                 let target = required_target_selector("hide-app", resolved_target.as_ref())?;
-                let active_window = self.best_effort_active_window(true);
-                if !hide_target_matches_frontmost_window(target, active_window.as_ref()) {
+                if !hide_target_matches_frontmost_window(target) {
                     return Err(OperatorError::Platform(
                         "harmony.hdc hide-app requires the target app to be frontmost and visible"
                             .into(),
@@ -1122,14 +1130,18 @@ impl WorkerState {
         side_effect: ActionSideEffect,
     ) -> Result<ActionOutcome, OperatorError> {
         let candidates = self.dock_icon_labels(target)?;
-        let point = self
-            .with_ui_session(|session| session.dock_app_icon_point(&candidates))?
-            .ok_or_else(|| {
-                OperatorError::Platform(format!(
-                    "harmony.hdc could not find a dock icon for {}",
-                    candidates.join(" / ")
-                ))
-            })?;
+        let point = match self.dock_icon_point_by_bundle(target)? {
+            Some(point) => Some(point),
+            None => self
+                .with_ui_session(|session| session.dock_app_icon_point(&candidates))
+                .unwrap_or_default(),
+        }
+        .ok_or_else(|| {
+            OperatorError::Platform(format!(
+                "harmony.hdc could not find a dock icon for {}",
+                candidates.join(" / ")
+            ))
+        })?;
         self.with_shell_session(|session| session.click(point, ClickMode::Left))?;
 
         let mut outcome = successful_action_outcome(detail);
@@ -1407,6 +1419,7 @@ impl WorkerState {
         if let Some(app) = target.app.as_ref() {
             push_unique_label(&mut candidates, &app.name);
             if let Some(bundle_id) = app.bundle_id.as_deref() {
+                push_unique_label(&mut candidates, bundle_id);
                 if let Some(label) = labels.get(bundle_id) {
                     push_unique_label(&mut candidates, label);
                 }
@@ -1425,6 +1438,21 @@ impl WorkerState {
         }
 
         Ok(candidates)
+    }
+
+    fn dock_icon_point_by_bundle(
+        &mut self,
+        target: &ResolvedActionTarget,
+    ) -> Result<Option<Point>, OperatorError> {
+        let bundle_id = target
+            .app
+            .as_ref()
+            .and_then(|app| app.bundle_id.as_deref())
+            .and_then(non_empty_str);
+        let Some(bundle_id) = bundle_id else {
+            return Ok(None);
+        };
+        self.with_shell_session(|session| session.dock_app_icon_point_by_bundle(bundle_id))
     }
 
     fn with_shell_session<T>(
@@ -1567,6 +1595,19 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
         self.driver
             .move_cursor(x, y)
             .map_err(|error| hdc_platform_error("failed to move cursor over hdc", error))
+    }
+
+    fn dock_app_icon_point_by_bundle(
+        &mut self,
+        bundle_id: &str,
+    ) -> Result<Option<Point>, OperatorError> {
+        let hierarchy = self.driver.dump_hierarchy().map_err(|error| {
+            hdc_platform_error(
+                "failed to dump Harmony layout hierarchy for dock lookup",
+                error,
+            )
+        })?;
+        Ok(find_smart_dock_icon_point(&hierarchy, bundle_id))
     }
 
     fn click(&mut self, point: Point, mode: ClickMode) -> Result<(), OperatorError> {
@@ -1998,35 +2039,11 @@ fn resolved_focus_app_name(
         .or_else(|| bundle_id.map(ToOwned::to_owned))
 }
 
-fn hide_target_matches_frontmost_window(
-    target: &ResolvedActionTarget,
-    active_window: Option<&HarmonyActiveWindow>,
-) -> bool {
-    let Some(window) = target.window.as_ref() else {
-        return false;
-    };
-
-    if let Some(active_window) = active_window {
-        let active_bundle = non_empty_str(&active_window.bundle_id);
-        let target_bundle = target
-            .app
-            .as_ref()
-            .and_then(|app| app.bundle_id.as_deref())
-            .and_then(non_empty_str);
-        if let (Some(target_bundle), Some(active_bundle)) = (target_bundle, active_bundle) {
-            return target_bundle == active_bundle;
-        }
-
-        let target_title = window.title.as_deref().and_then(non_empty_str);
-        let active_title = active_window.title.as_deref().and_then(non_empty_str);
-        if let (Some(target_title), Some(active_title)) = (target_title, active_title) {
-            if target_title.eq_ignore_ascii_case(active_title) {
-                return true;
-            }
-        }
-    }
-
-    window.is_focused
+fn hide_target_matches_frontmost_window(target: &ResolvedActionTarget) -> bool {
+    target
+        .window
+        .as_ref()
+        .is_some_and(|window| window.is_focused)
 }
 
 fn display_center(size: ImageSizePx) -> Point {
@@ -2105,6 +2122,132 @@ fn push_unique_label(labels: &mut Vec<String>, value: &str) {
         return;
     }
     labels.push(value.to_string());
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DockLayoutNode {
+    #[serde(default)]
+    attributes: DockLayoutAttributes,
+    #[serde(default)]
+    children: Vec<DockLayoutNode>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Default, Deserialize)]
+struct DockLayoutAttributes {
+    #[serde(default)]
+    bounds: Option<String>,
+    #[serde(default)]
+    clickable: Option<String>,
+    #[serde(default)]
+    hostWindowId: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+}
+
+fn find_smart_dock_icon_point(hierarchy: &Value, bundle_id: &str) -> Option<Point> {
+    let root = serde_json::from_value::<DockLayoutNode>(hierarchy.clone()).ok()?;
+    let mut best: Option<(Point, u8, f64)> = None;
+    collect_smart_dock_icon_candidates(&root, bundle_id, &mut best);
+    best.map(|(point, _, _)| point)
+}
+
+fn collect_smart_dock_icon_candidates(
+    node: &DockLayoutNode,
+    bundle_id: &str,
+    best: &mut Option<(Point, u8, f64)>,
+) {
+    if let Some((point, score, area)) = smart_dock_icon_candidate(node, bundle_id) {
+        let replace = match best {
+            Some((_, best_score, best_area)) => {
+                score > *best_score || (score == *best_score && area < *best_area)
+            }
+            None => true,
+        };
+        if replace {
+            *best = Some((point, score, area));
+        }
+    }
+
+    for child in &node.children {
+        collect_smart_dock_icon_candidates(child, bundle_id, best);
+    }
+}
+
+fn smart_dock_icon_candidate(node: &DockLayoutNode, bundle_id: &str) -> Option<(Point, u8, f64)> {
+    let score = smart_dock_match_score(&node.attributes, bundle_id)?;
+    let bounds = node
+        .attributes
+        .bounds
+        .as_deref()
+        .and_then(parse_harmony_bounds)?;
+    let point = Point {
+        x: bounds.x + bounds.width / 2.0,
+        y: bounds.y + bounds.height / 2.0,
+    };
+    Some((point, score, bounds.width * bounds.height))
+}
+
+fn smart_dock_match_score(attributes: &DockLayoutAttributes, bundle_id: &str) -> Option<u8> {
+    if attributes.hostWindowId.as_deref() != Some(SMART_DOCK_WINDOW_ID)
+        || attributes.clickable.as_deref() != Some("true")
+    {
+        return None;
+    }
+
+    let icon_container = format!("SmartDock_AppIcon_Container_{bundle_id}");
+    let icon_view = format!("AppIconCommonView_{bundle_id}");
+    let resident_item = format!("ResidentLayoutForPC_AppItem_{bundle_id}");
+    let mut score = 0_u8;
+
+    for candidate in [attributes.id.as_deref(), attributes.key.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        if !candidate.contains(bundle_id) {
+            continue;
+        }
+        let candidate_score = if candidate.contains(&icon_container) {
+            4
+        } else if candidate.contains(&icon_view) {
+            3
+        } else if candidate.contains(&resident_item) {
+            2
+        } else {
+            1
+        };
+        score = score.max(candidate_score);
+    }
+
+    (score > 0).then_some(score)
+}
+
+fn parse_harmony_bounds(value: &str) -> Option<Rect> {
+    let value = value.trim();
+    let (top_left, bottom_right) = value
+        .strip_prefix('[')?
+        .strip_suffix(']')?
+        .split_once("][")?;
+    let (left, top) = top_left.split_once(',')?;
+    let (right, bottom) = bottom_right.split_once(',')?;
+    let left = left.trim().parse::<f64>().ok()?;
+    let top = top.trim().parse::<f64>().ok()?;
+    let right = right.trim().parse::<f64>().ok()?;
+    let bottom = bottom.trim().parse::<f64>().ok()?;
+    let width = right - left;
+    let height = bottom - top;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+
+    Some(Rect {
+        x: left,
+        y: top,
+        width,
+        height,
+    })
 }
 
 fn non_empty_owned(value: String) -> Option<String> {
@@ -2242,7 +2385,10 @@ fn screen_point(point: Point) -> Result<(i32, i32), OperatorError> {
 
 #[cfg(test)]
 mod tests {
-    use super::looks_like_gui_catalog_entry;
+    use operator_core::Point;
+    use serde_json::json;
+
+    use super::{find_smart_dock_icon_point, looks_like_gui_catalog_entry};
 
     #[test]
     fn gui_catalog_filter_keeps_user_facing_apps() {
@@ -2274,5 +2420,36 @@ mod tests {
             "ohos.global.systemres",
             "系统"
         ));
+    }
+
+    #[test]
+    fn shell_dock_lookup_prefers_icon_bounds_from_dump_layout() {
+        let hierarchy = json!({
+            "attributes": { "bounds": "[0,0][2160,2160]" },
+            "children": [{
+                "attributes": {
+                    "hostWindowId": "11",
+                    "clickable": "true",
+                    "id": "ResidentLayoutForPC_AppItem_com.demo.notes_0__",
+                    "bounds": "[1802,1955][1905,2080]"
+                },
+                "children": [{
+                    "attributes": {
+                        "hostWindowId": "11",
+                        "clickable": "true",
+                        "id": "SmartDock_AppIcon_Container_com.demo.notes_MainAbility_0",
+                        "bounds": "[1815,1981][1891,2057]"
+                    }
+                }]
+            }]
+        });
+
+        assert_eq!(
+            find_smart_dock_icon_point(&hierarchy, "com.demo.notes"),
+            Some(Point {
+                x: 1853.0,
+                y: 2019.0,
+            })
+        );
     }
 }

@@ -382,6 +382,65 @@ async fn hide_and_unhide_actions_click_matching_dock_icons() {
 }
 
 #[tokio::test]
+async fn hide_app_falls_back_to_bundle_based_shell_dock_lookup() {
+    let actions = Arc::new(Mutex::new(Vec::new()));
+    let counts = Arc::new(CallCounts::default());
+    let driver = build_driver(FakeSessionFactory {
+        counts: Arc::clone(&counts),
+        recorded_actions: Arc::clone(&actions),
+        app_labels: vec![app_label("com.demo.notes", "备忘录")],
+        current_app: Some(CurrentApp {
+            bundle_name: "com.demo.notes".into(),
+            ability_name: "EntryAbility".into(),
+        }),
+        windows: CorrelatedWindowList {
+            windows: vec![CorrelatedWindow {
+                window: window(7, "Draft", 101, 40, 50, 600, 400),
+                mission: Some(mission(7, "Notes", "com.demo.notes")),
+            }],
+            focused_window_id: Some(7),
+            highlighted_window_ids: vec![7],
+            total_window_count: Some(1),
+        },
+        dock_icon_bundles: vec![(
+            "com.demo.notes".into(),
+            Point {
+                x: 972.0,
+                y: 1042.0,
+            },
+        )],
+        ..Default::default()
+    });
+
+    let hidden = driver
+        .act(
+            ActionRequest {
+                action: Action::HideApp,
+                locator: None,
+                target_selector: Some(ActionTargetSelector::App("备忘录".into())),
+                focus_policy: ActionFocusPolicy::Auto,
+                verifications: Vec::new(),
+            },
+            &exec_context(),
+        )
+        .await
+        .expect("hide-app should fall back to shell dock lookup by bundle");
+
+    assert_eq!(hidden.detail.as_deref(), Some("hid app"));
+    assert_eq!(
+        actions.lock().unwrap().clone(),
+        vec![RecordedShellAction::Click {
+            point: Point {
+                x: 972.0,
+                y: 1042.0
+            },
+            mode: ClickMode::Left,
+        }]
+    );
+    assert_eq!(counts.ui_connects.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn hide_app_requires_frontmost_visible_target() {
     let driver = build_driver(FakeSessionFactory {
         app_labels: vec![
@@ -588,6 +647,7 @@ enum RecordedShellAction {
 #[derive(Default)]
 struct CallCounts {
     shell_connects: AtomicUsize,
+    ui_connects: AtomicUsize,
     current_app_calls: AtomicUsize,
     list_windows_calls: AtomicUsize,
 }
@@ -602,6 +662,7 @@ struct FakeSessionFactory {
     windows: CorrelatedWindowList,
     active_window: Option<HarmonyActiveWindow>,
     dock_icons: Vec<(String, Point)>,
+    dock_icon_bundles: Vec<(String, Point)>,
 }
 
 impl Default for FakeSessionFactory {
@@ -620,6 +681,7 @@ impl Default for FakeSessionFactory {
             },
             active_window: None,
             dock_icons: Vec::new(),
+            dock_icon_bundles: Vec::new(),
         }
     }
 }
@@ -637,6 +699,7 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
             app_labels: self.app_labels.clone(),
             current_app: self.current_app.clone(),
             windows: self.windows.clone(),
+            dock_icon_bundles: self.dock_icon_bundles.clone(),
         }))
     }
 
@@ -644,6 +707,7 @@ impl HarmonyHdcSessionFactory for FakeSessionFactory {
         &self,
         _config: &HarmonyHdcConfig,
     ) -> Result<Box<dyn HarmonyHdcUiSession>, operator_core::OperatorError> {
+        self.counts.ui_connects.fetch_add(1, Ordering::SeqCst);
         Ok(Box::new(FakeUiSession {
             active_window: self.active_window.clone(),
             dock_icons: self.dock_icons.clone(),
@@ -658,6 +722,7 @@ struct FakeShellSession {
     app_labels: Vec<AppLabelInfo>,
     current_app: Option<CurrentApp>,
     windows: CorrelatedWindowList,
+    dock_icon_bundles: Vec<(String, Point)>,
 }
 
 impl HarmonyHdcShellSession for FakeShellSession {
@@ -725,6 +790,16 @@ impl HarmonyHdcShellSession for FakeShellSession {
             .unwrap()
             .push(RecordedShellAction::Click { point, mode });
         Ok(())
+    }
+
+    fn dock_app_icon_point_by_bundle(
+        &mut self,
+        bundle_id: &str,
+    ) -> Result<Option<Point>, operator_core::OperatorError> {
+        Ok(self
+            .dock_icon_bundles
+            .iter()
+            .find_map(|(candidate, point)| (candidate == bundle_id).then_some(*point)))
     }
 
     fn input_text(&mut self, _text: &str) -> Result<(), operator_core::OperatorError> {
