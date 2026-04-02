@@ -208,6 +208,10 @@ impl Driver {
         Y: Into<Coord>,
     {
         let (x, y) = self.resolve_point(x.into(), y.into())?;
+        self.click_abs(x, y)
+    }
+
+    pub fn click_abs(&mut self, x: i32, y: i32) -> Result<()> {
         self.exec_side_effect_checked(&format!("uitest uiInput click {x} {y}"))
     }
 
@@ -217,6 +221,10 @@ impl Driver {
         Y: Into<Coord>,
     {
         let (x, y) = self.resolve_point(x.into(), y.into())?;
+        self.double_click_abs(x, y)
+    }
+
+    pub fn double_click_abs(&mut self, x: i32, y: i32) -> Result<()> {
         self.exec_side_effect_checked(&format!("uitest uiInput doubleClick {x} {y}"))
     }
 
@@ -226,6 +234,10 @@ impl Driver {
         Y: Into<Coord>,
     {
         let (x, y) = self.resolve_point(x.into(), y.into())?;
+        self.long_click_abs(x, y)
+    }
+
+    pub fn long_click_abs(&mut self, x: i32, y: i32) -> Result<()> {
         self.exec_side_effect_checked(&format!("uitest uiInput longClick {x} {y}"))
     }
 
@@ -235,6 +247,10 @@ impl Driver {
         Y: Into<Coord>,
     {
         let (x, y) = self.resolve_point(x.into(), y.into())?;
+        self.right_click_abs(x, y)
+    }
+
+    pub fn right_click_abs(&mut self, x: i32, y: i32) -> Result<()> {
         self.exec_side_effect_checked(&build_right_click_command(x, y))
     }
 
@@ -263,6 +279,17 @@ impl Driver {
     {
         let (x1, y1) = self.resolve_point(x1.into(), y1.into())?;
         let (x2, y2) = self.resolve_point(x2.into(), y2.into())?;
+        self.swipe_abs(x1, y1, x2, y2, speed)
+    }
+
+    pub fn swipe_abs(
+        &mut self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        speed: Option<u32>,
+    ) -> Result<()> {
         let speed = normalize_velocity(speed)?;
         self.exec_side_effect_checked(&format!("uitest uiInput swipe {x1} {y1} {x2} {y2} {speed}"))
     }
@@ -283,6 +310,17 @@ impl Driver {
     {
         let (x1, y1) = self.resolve_point(x1.into(), y1.into())?;
         let (x2, y2) = self.resolve_point(x2.into(), y2.into())?;
+        self.drag_abs(x1, y1, x2, y2, speed)
+    }
+
+    pub fn drag_abs(
+        &mut self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        speed: Option<u32>,
+    ) -> Result<()> {
         let speed = normalize_velocity(speed)?;
         self.exec_side_effect_checked(&format!("uitest uiInput drag {x1} {y1} {x2} {y2} {speed}"))
     }

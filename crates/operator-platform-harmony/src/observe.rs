@@ -56,7 +56,9 @@ pub(crate) async fn observe(
         artifact_path.as_deref(),
         frontmost_bounds,
     ) {
-        crop_artifact_to_bounds(path, bounds)?;
+        if frontmost_crop_required(bounds, capture.image_size_px) {
+            crop_artifact_to_bounds(path, bounds)?;
+        }
     }
 
     let image_size_px = Some(match &req.surface.kind {
@@ -163,6 +165,13 @@ fn crop_artifact_to_bounds(path: &Path, bounds: Rect) -> Result<(), OperatorErro
     Ok(())
 }
 
+fn frontmost_crop_required(bounds: Rect, image_size_px: ImageSizePx) -> bool {
+    bounds.x.round() as u32 != 0
+        || bounds.y.round() as u32 != 0
+        || bounds.width.round() as u32 != image_size_px.width
+        || bounds.height.round() as u32 != image_size_px.height
+}
+
 fn unsupported_surface_error(surface: &str) -> OperatorError {
     OperatorError::Platform(format!(
         "driver harmony.hdc only supports observe surfaces `frontmost` and `fullscreen` in the first phase, got `{surface}`"
@@ -187,4 +196,42 @@ fn next_artifact_id() -> operator_core::ArtifactId {
         .as_micros();
 
     format!("capture-{timestamp}-{counter}.jpeg").into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frontmost_crop_required;
+    use operator_core::{ImageSizePx, Rect};
+
+    #[test]
+    fn frontmost_crop_skips_fullscreen_bounds() {
+        assert!(!frontmost_crop_required(
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 3120.0,
+                height: 2080.0,
+            },
+            ImageSizePx {
+                width: 3120,
+                height: 2080,
+            }
+        ));
+    }
+
+    #[test]
+    fn frontmost_crop_keeps_partial_bounds() {
+        assert!(frontmost_crop_required(
+            Rect {
+                x: 10.0,
+                y: 20.0,
+                width: 800.0,
+                height: 600.0,
+            },
+            ImageSizePx {
+                width: 3120,
+                height: 2080,
+            }
+        ));
+    }
 }

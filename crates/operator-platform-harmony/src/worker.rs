@@ -1615,15 +1615,15 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
         match mode {
             ClickMode::Left => self
                 .driver
-                .click(x, y)
+                .click_abs(x, y)
                 .map_err(|error| hdc_platform_error("failed to click over hdc", error)),
             ClickMode::Right => self
                 .driver
-                .right_click(x, y)
+                .right_click_abs(x, y)
                 .map_err(|error| hdc_platform_error("failed to right click over hdc", error)),
             ClickMode::Double => self
                 .driver
-                .double_click(x, y)
+                .double_click_abs(x, y)
                 .map_err(|error| hdc_platform_error("failed to double click over hdc", error)),
             ClickMode::Middle => Err(OperatorError::Platform(
                 "harmony.hdc does not support middle click in the first phase".into(),
@@ -1659,7 +1659,7 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
         let (from_x, from_y) = screen_point(from)?;
         let (to_x, to_y) = screen_point(to)?;
         self.driver
-            .drag(from_x, from_y, to_x, to_y, speed)
+            .drag_abs(from_x, from_y, to_x, to_y, speed)
             .map_err(|error| hdc_platform_error("failed to drag over hdc", error))
     }
 
@@ -1667,7 +1667,7 @@ impl HarmonyHdcShellSession for RealHarmonyHdcShellSession {
         let (from_x, from_y) = screen_point(from)?;
         let (to_x, to_y) = screen_point(to)?;
         self.driver
-            .swipe(from_x, from_y, to_x, to_y, speed)
+            .swipe_abs(from_x, from_y, to_x, to_y, speed)
             .map_err(|error| hdc_platform_error("failed to swipe over hdc", error))
     }
 }
