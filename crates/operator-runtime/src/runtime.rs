@@ -714,7 +714,7 @@ impl RuntimeCore {
             &DigestOptions::default(),
         )
         .as_ref()
-        .and_then(|d| d.resolve_id(element.as_str()))
+        .and_then(|d| d.resolve_id(element.0.as_str()))
         {
             resolved_id = native_id.into();
             &resolved_id
