@@ -26,10 +26,12 @@ pub fn resolve_locator<I: TreeInspector>(
         )),
         Locator::Text(text) => resolve_text_locator(text, tree_inspector),
         Locator::Role { role, index } => resolve_role_locator(role, *index, tree_inspector),
-        Locator::SnapshotElement { .. } => Err(OperatorError::Platform(
-            "snapshot locators must be normalized by runtime before reaching the macOS driver"
-                .into(),
-        )),
+        Locator::SnapshotElement { .. } | Locator::SnapshotText { .. } => {
+            Err(OperatorError::Platform(
+                "snapshot locators must be normalized by runtime before reaching the macOS driver"
+                    .into(),
+            ))
+        }
     }
 }
 
